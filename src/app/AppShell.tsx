@@ -31,7 +31,9 @@ import { useAppShellUpdateEntry } from "./hooks/useAppShellUpdateEntry";
 import { saveMinSessionSecsSetting } from "./services/appSettingsRuntimeService.ts";
 
 const History = lazy(() => import("../features/history/components/History"));
+const Data = lazy(() => import("../features/data/components/Data"));
 const Settings = lazy(() => import("../features/settings/components/Settings"));
+const About = lazy(() => import("../features/about/components/About"));
 const AppMapping = lazy(() => import("../features/classification/components/AppMapping"));
 
 export default function AppShell() {
@@ -185,13 +187,28 @@ function AppShellContent() {
                   mappingVersion={mappingVersion}
                 />
               )}
+              {currentView === "data" && (
+                <Data
+                  key="data"
+                  refreshKey={refreshSignal}
+                  trackerHealth={trackerHealth}
+                  loadHistorySnapshot={loadHistoryRuntimeSnapshot}
+                  mappingVersion={mappingVersion}
+                />
+              )}
               {currentView === "settings" && (
                 <Settings
                   key="settings"
                   onSettingsChanged={setAppSettings}
-                  {...settingsUpdateEntry}
                   onRegisterSaveHandler={registerSettingsSaveHandler}
                   onDirtyChange={setSettingsDirty}
+                  onToast={pushToast}
+                />
+              )}
+              {currentView === "about" && (
+                <About
+                  key="about"
+                  {...settingsUpdateEntry}
                   onToast={pushToast}
                 />
               )}

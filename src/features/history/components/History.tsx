@@ -1,11 +1,11 @@
 ﻿import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  AreaChart,
-  Area,
+  Bar,
+  BarChart,
   XAxis,
   YAxis,
-  CartesianGrid,
   ResponsiveContainer,
 } from "recharts";
 import { ChevronLeft, ChevronRight, Clock, Minus, Plus } from "lucide-react";
@@ -15,7 +15,6 @@ import {
   formatDuration,
   formatTime,
   formatDateLabel,
-  formatChartHours,
 } from "../services/historyFormatting";
 import { useIconThemeColors } from "../../../shared/hooks/useIconThemeColors";
 import {
@@ -44,7 +43,25 @@ interface Props {
 }
 
 const TIMELINE_MIN_SESSION_MINUTES_RANGE = { min: 1, max: 10 } as const;
+const CALENDAR_WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"] as const;
 const clampMinute = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+const startOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1);
+const addMonths = (date: Date, delta: number) => new Date(date.getFullYear(), date.getMonth() + delta, 1);
+const isSameDay = (left: Date, right: Date) => left.toDateString() === right.toDateString();
+const formatCalendarMonth = (date: Date) => `${date.getFullYear()} 年 ${date.getMonth() + 1} 月`;
+const buildCalendarDays = (month: Date) => {
+  const monthStart = startOfMonth(month);
+  const mondayOffset = (monthStart.getDay() + 6) % 7;
+  const gridStart = new Date(monthStart);
+  gridStart.setDate(monthStart.getDate() - mondayOffset);
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(gridStart);
+    date.setDate(gridStart.getDate() + index);
+    return date;
+  });
+};
 
 export default function History({
   icons,
@@ -60,7 +77,12 @@ export default function History({
   const initialDate = new Date();
   const initialCachedSnapshot = getHistorySnapshotCache(initialDate);
   const iconThemeColors = useIconThemeColors(icons);
+  const datePickerRef = useRef<HTMLDivElement | null>(null);
+  const calendarPopoverRef = useRef<HTMLDivElement | null>(null);
   const [selectedDate, setSelectedDate] = useState(initialDate);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => startOfMonth(initialDate));
+  const [calendarPosition, setCalendarPosition] = useState({ left: 0, top: 0 });
   const [rawDaySessions, setRawDaySessions] = useState<HistorySession[]>(
     () => initialCachedSnapshot?.daySessions ?? [],
   );
@@ -131,10 +153,63 @@ export default function History({
     nextDate.setDate(nextDate.getDate() + delta);
     if (nextDate <= new Date()) {
       setSelectedDate(nextDate);
+      setCalendarMonth(startOfMonth(nextDate));
     }
   };
+  const openDatePicker = () => {
+    const triggerRect = datePickerRef.current?.getBoundingClientRect();
+    if (triggerRect) {
+      const popoverHalfWidth = 118;
+      const viewportPadding = 12;
+      const centeredLeft = triggerRect.left + triggerRect.width / 2;
+      setCalendarPosition({
+        left: Math.min(
+          Math.max(centeredLeft, popoverHalfWidth + viewportPadding),
+          window.innerWidth - popoverHalfWidth - viewportPadding,
+        ),
+        top: triggerRect.bottom + 8,
+      });
+    }
+    setCalendarMonth(startOfMonth(selectedDate));
+    setCalendarOpen((open) => !open);
+  };
+  const selectCalendarDate = (date: Date) => {
+    if (startOfDay(date) > startOfDay(new Date())) return;
+    setSelectedDate(date);
+    setCalendarMonth(startOfMonth(date));
+    setCalendarOpen(false);
+  };
+  const today = new Date();
+  const calendarDays = useMemo(() => buildCalendarDays(calendarMonth), [calendarMonth]);
+  const canGoNextCalendarMonth = startOfMonth(addMonths(calendarMonth, 1)) <= startOfMonth(today);
 
-  const isToday = selectedDate.toDateString() === new Date().toDateString();
+  useEffect(() => {
+    if (!calendarOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (
+        !datePickerRef.current?.contains(target)
+        && !calendarPopoverRef.current?.contains(target)
+      ) {
+        setCalendarOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setCalendarOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [calendarOpen]);
+
+  const isToday = selectedDate.toDateString() === today.toDateString();
   const showInitialLoading = loading && !hasFetchedOnce;
   const historyView = useMemo(
     () => buildHistoryReadModel({
@@ -151,8 +226,7 @@ export default function History({
   const {
     timelineSessions,
     appSummary,
-    chartData,
-    chartAxis,
+    hourlyActivity,
   } = historyView;
 
   const minSessionMinutes = clampMinute(
@@ -187,9 +261,86 @@ export default function History({
             >
               <ChevronLeft size={16} />
             </motion.button>
-            <span className="qp-status px-3 py-1.5 text-xs font-semibold text-[var(--qp-text-secondary)] min-w-[102px] text-center">
-              {formatDateLabel(selectedDate)}
-            </span>
+            <div ref={datePickerRef} className="relative">
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={openDatePicker}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openDatePicker();
+                  }
+                }}
+                className="qp-status relative inline-flex min-w-[102px] cursor-pointer items-center justify-center px-3 py-1.5 text-center text-xs font-semibold text-[var(--qp-text-secondary)]"
+              >
+                {formatDateLabel(selectedDate)}
+              </span>
+              {createPortal((
+              <AnimatePresence>
+                {calendarOpen && (
+                  <motion.div
+                    ref={calendarPopoverRef}
+                    initial={{ opacity: 0, y: -4, scale: 0.99 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -4, scale: 0.99 }}
+                    transition={{ duration: 0.12, ease: "easeOut" }}
+                    className="history-calendar-popover"
+                    style={{
+                      left: calendarPosition.left,
+                      top: calendarPosition.top,
+                    }}
+                  >
+                    <header className="history-calendar-header">
+                      <button
+                        type="button"
+                        onClick={() => setCalendarMonth((month) => addMonths(month, -1))}
+                        className="history-calendar-nav"
+                        aria-label="上个月"
+                      >
+                        <ChevronLeft size={14} />
+                      </button>
+                      <div className="history-calendar-title">{formatCalendarMonth(calendarMonth)}</div>
+                      <button
+                        type="button"
+                        onClick={() => setCalendarMonth((month) => addMonths(month, 1))}
+                        disabled={!canGoNextCalendarMonth}
+                        className="history-calendar-nav"
+                        aria-label="下个月"
+                      >
+                        <ChevronRight size={14} />
+                      </button>
+                    </header>
+                    <div className="history-calendar-grid history-calendar-weekdays">
+                      {CALENDAR_WEEKDAYS.map((weekday) => (
+                        <span key={weekday}>{weekday}</span>
+                      ))}
+                    </div>
+                    <div className="history-calendar-grid">
+                      {calendarDays.map((date) => {
+                        const disabled = startOfDay(date) > startOfDay(today);
+                        const muted = date.getMonth() !== calendarMonth.getMonth();
+                        const selected = isSameDay(date, selectedDate);
+                        return (
+                          <button
+                            key={date.toISOString()}
+                            type="button"
+                            disabled={disabled}
+                            onClick={() => selectCalendarDate(date)}
+                            className={`history-calendar-day ${muted ? "history-calendar-day-muted" : ""} ${
+                              selected ? "history-calendar-day-selected" : ""
+                            }`}
+                          >
+                            {date.getDate()}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              ), document.body)}
+            </div>
             <motion.button
               whileTap={{ scale: 0.995 }}
               transition={{ duration: 0.1, ease: "easeOut" }}
@@ -204,49 +355,39 @@ export default function History({
       />
 
       <div className="flex gap-4 md:gap-5 min-h-0 flex-1">
-        <div className="w-5/12 flex flex-col gap-4 md:gap-5 min-h-0">
-          <div className="qp-panel p-5">
-            <h3 className="font-semibold text-[var(--qp-text-primary)] text-sm mb-4">{UI_TEXT.history.pastSevenDays}</h3>
+        <div className="w-5/12 flex flex-col gap-4 md:gap-5 min-h-0 history-left-column">
+          <div className="qp-panel p-5 history-pulse-card">
+            <h3 className="font-semibold text-[var(--qp-text-primary)] text-sm">{UI_TEXT.history.dailyHourlyActivity}</h3>
             {showInitialLoading ? (
-              <div className="h-[120px] flex items-center justify-center text-[var(--qp-text-tertiary)] text-xs">
+              <div className="h-[120px] pt-3 flex items-center justify-center text-[var(--qp-text-tertiary)] text-xs">
                 {UI_TEXT.history.loading}
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height={120}>
-                <AreaChart data={chartData} margin={{ top: 4, right: 15, left: -30, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(156, 168, 186, 0.25)" />
-                  <XAxis
-                    dataKey="day"
-                    tick={{ fontSize: 10, fill: "var(--qp-text-tertiary)" }}
-                    axisLine={false}
-                    tickLine={false}
-                    interval={0}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 10, fill: "var(--qp-text-tertiary)" }}
-                    axisLine={false}
-                    tickLine={false}
-                    ticks={chartAxis.ticks}
-                    domain={[0, chartAxis.domainMax]}
-                    tickFormatter={(value) => formatChartHours(Number(value))}
-                  />
-                  <QuietChartTooltip formatter={(value) => `${formatChartHours(Number(value))}h`} />
-                  <Area
-                    type="monotone"
-                    dataKey="hours"
-                    stroke="var(--qp-accent-default)"
-                    strokeWidth={2}
-                    fill="var(--qp-accent-default)"
-                    fillOpacity={0.12}
-                    dot={{ fill: "var(--qp-accent-default)", r: 2.5 }}
-                    isAnimationActive={false}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+              <div className="pt-3 history-pulse-chart">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={hourlyActivity} margin={{ top: 4, right: 15, left: 0, bottom: 0 }}>
+                    <XAxis
+                      dataKey="hour"
+                      tick={{ fontSize: 10, fill: "var(--qp-text-tertiary)" }}
+                      axisLine={false}
+                      tickLine={false}
+                      interval={5}
+                      tickMargin={8}
+                      padding={{ left: 10, right: 10 }}
+                    />
+                    <YAxis hide domain={[0, 60]} allowDataOverflow />
+                    <QuietChartTooltip
+                      cursor={{ fill: "rgba(101, 114, 135, 0.12)" }}
+                      formatter={(value) => [`${Math.round(Number(value))}m`, UI_TEXT.dashboard.activeMinutes]}
+                    />
+                    <Bar dataKey="minutes" fill="var(--qp-accent-default)" radius={[3, 3, 0, 0]} barSize={8} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             )}
           </div>
 
-          <div className="qp-panel p-5 flex-1 min-h-0 flex flex-col">
+          <div className="qp-panel p-5 flex-1 min-h-0 flex flex-col history-app-distribution-card">
             <div className="mb-4">
               <h3 className="font-semibold text-[var(--qp-text-primary)] text-sm">{UI_TEXT.history.appDistribution}</h3>
             </div>

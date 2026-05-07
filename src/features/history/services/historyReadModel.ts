@@ -11,6 +11,10 @@ import {
   type HistoryChartPoint,
 } from "./historyFormatting.ts";
 import {
+  buildHourlyActivity,
+  type HourlyActivityPoint,
+} from "../../dashboard/services/dashboardFormatting.ts";
+import {
   buildAppSummary,
   buildDailySummaries,
   buildNormalizedAppStats,
@@ -41,6 +45,7 @@ export interface HistoryReadModel {
   weekly: DailySummary[];
   chartData: HistoryChartPoint[];
   chartAxis: ReturnType<typeof buildChartAxis>;
+  hourlyActivity: HourlyActivityPoint[];
   diagnostics: ReadModelDiagnostics;
 }
 
@@ -123,6 +128,7 @@ export function buildHistoryReadModel(params: {
     minSessionSecs,
   ).slice().reverse();
   const appSummary = buildAppSummary(buildNormalizedAppStats(compiledSessions));
+  const hourlyActivity = buildHourlyActivity(compiledSessions);
   const weekly = buildDailySummaries(
     liveWeeklySessions,
     rollingRanges,
@@ -144,6 +150,7 @@ export function buildHistoryReadModel(params: {
     weekly,
     chartData,
     chartAxis: buildChartAxis(chartData),
+    hourlyActivity,
     diagnostics,
   };
 }

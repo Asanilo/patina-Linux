@@ -48,9 +48,6 @@ const IDLE_TIMEOUT_SECONDS_RANGE = { min: 300, max: 1800, step: 60 } as const;
 const TIMELINE_MERGE_GAP_SECONDS_RANGE = { min: 60, max: 300, step: 60 } as const;
 const REFRESH_INTERVAL_OPTIONS = [1, 3];
 const MIN_SESSION_SECONDS_RANGE = { min: 60, max: 600, step: 60 } as const;
-const CLOSE_BEHAVIOR_OPTIONS: CloseBehavior[] = ["exit", "tray"];
-const MINIMIZE_BEHAVIOR_OPTIONS: MinimizeBehavior[] = ["taskbar", "widget"];
-
 function parseNumberSetting(value: string | undefined, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -79,13 +76,14 @@ function parseBooleanSetting(value: string | undefined, fallback: boolean) {
   return fallback;
 }
 
-function normalizeEnumOption<T extends string>(
-  value: string | undefined,
-  fallback: T,
-  allowedValues: readonly T[],
-) {
-  if (!value) return fallback;
-  return allowedValues.includes(value as T) ? (value as T) : fallback;
+function normalizeCloseBehavior(value: string | undefined): CloseBehavior {
+  if (value === undefined) return DEFAULT_SETTINGS.closeBehavior;
+  return value.trim().toLowerCase() === "tray" ? "tray" : "exit";
+}
+
+function normalizeMinimizeBehavior(value: string | undefined): MinimizeBehavior {
+  if (value === undefined) return DEFAULT_SETTINGS.minimizeBehavior;
+  return value.trim().toLowerCase() === "widget" ? "widget" : "taskbar";
 }
 
 function serializeSettingValue(value: PersistedSettingValue) {
@@ -118,16 +116,8 @@ export function normalizeSettingsRecord(record: Record<string, string | undefine
       MIN_SESSION_SECONDS_RANGE,
     ),
     trackingPaused: parseBooleanSetting(record.tracking_paused, DEFAULT_SETTINGS.trackingPaused),
-    closeBehavior: normalizeEnumOption(
-      record.close_behavior,
-      DEFAULT_SETTINGS.closeBehavior,
-      CLOSE_BEHAVIOR_OPTIONS,
-    ),
-    minimizeBehavior: normalizeEnumOption(
-      record.minimize_behavior,
-      DEFAULT_SETTINGS.minimizeBehavior,
-      MINIMIZE_BEHAVIOR_OPTIONS,
-    ),
+    closeBehavior: normalizeCloseBehavior(record.close_behavior),
+    minimizeBehavior: normalizeMinimizeBehavior(record.minimize_behavior),
     launchAtLogin: parseBooleanSetting(record.launch_at_login, DEFAULT_SETTINGS.launchAtLogin),
     startMinimized: parseBooleanSetting(record.start_minimized, DEFAULT_SETTINGS.startMinimized),
     onboardingCompleted: parseBooleanSetting(

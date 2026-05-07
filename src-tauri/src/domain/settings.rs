@@ -6,16 +6,16 @@ pub const DEFAULT_START_MINIMIZED: bool = true;
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum CloseBehavior {
-    #[default]
     Exit,
+    #[default]
     Tray,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum MinimizeBehavior {
-    #[default]
     Taskbar,
+    #[default]
     Widget,
 }
 
@@ -30,8 +30,8 @@ pub struct DesktopBehaviorSettings {
 impl Default for DesktopBehaviorSettings {
     fn default() -> Self {
         Self {
-            close_behavior: CloseBehavior::Exit,
-            minimize_behavior: MinimizeBehavior::Taskbar,
+            close_behavior: CloseBehavior::Tray,
+            minimize_behavior: MinimizeBehavior::Widget,
             launch_at_login: DEFAULT_LAUNCH_AT_LOGIN,
             start_minimized: DEFAULT_START_MINIMIZED,
         }
@@ -130,7 +130,7 @@ mod tests {
     };
 
     #[test]
-    fn parse_desktop_behavior_defaults_to_safe_values() {
+    fn parse_desktop_behavior_keeps_invalid_values_conservative() {
         assert_eq!(parse_close_behavior("tray"), CloseBehavior::Tray);
         assert_eq!(parse_close_behavior("unknown"), CloseBehavior::Exit);
         assert_eq!(parse_minimize_behavior("tray"), MinimizeBehavior::Taskbar);
@@ -184,19 +184,20 @@ mod tests {
 
     #[test]
     fn tray_visibility_and_autostart_rules_follow_settings_semantics() {
-        let hidden = DesktopBehaviorSettings::default();
-        assert!(!hidden.should_keep_tray_visible());
-        assert!(hidden.should_start_minimized_on_autostart());
+        let defaults = DesktopBehaviorSettings::default();
+        assert!(defaults.should_keep_tray_visible());
+        assert_eq!(defaults.minimize_behavior, MinimizeBehavior::Widget);
+        assert!(defaults.should_start_minimized_on_autostart());
 
-        let close_to_tray =
-            hidden.with_desktop_behavior(CloseBehavior::Tray, MinimizeBehavior::Taskbar);
-        assert!(close_to_tray.should_keep_tray_visible());
+        let close_to_exit =
+            defaults.with_desktop_behavior(CloseBehavior::Exit, MinimizeBehavior::Widget);
+        assert!(!close_to_exit.should_keep_tray_visible());
 
         let minimize_to_widget =
-            hidden.with_desktop_behavior(CloseBehavior::Exit, MinimizeBehavior::Widget);
+            defaults.with_desktop_behavior(CloseBehavior::Exit, MinimizeBehavior::Widget);
         assert!(!minimize_to_widget.should_keep_tray_visible());
 
-        let no_autostart_minimize = hidden.with_launch_behavior(false, true);
+        let no_autostart_minimize = defaults.with_launch_behavior(false, true);
         assert!(!no_autostart_minimize.should_start_minimized_on_autostart());
     }
 

@@ -85,7 +85,11 @@ export default function AppMapping(props: Props) {
         subtitle={UI_TEXT.mapping.subtitle}
         rightSlot={(
           <div className="flex items-center gap-2.5">
-            <div className="qp-status flex px-3 py-1.5 rounded-[8px] items-center text-xs font-semibold">
+            <div
+              className={`qp-status ${
+                saveStatus !== "saving" && hasUnsavedChanges ? "qp-status-danger" : ""
+              } flex px-3 py-1.5 rounded-[8px] items-center text-xs font-semibold`}
+            >
               {saveStatus === "saving" && (
                 <span className="text-[var(--qp-accent-default)] flex items-center gap-2">
                   <RefreshCw size={12} className="animate-spin" />
@@ -95,12 +99,10 @@ export default function AppMapping(props: Props) {
               {saveStatus === "saved" && !hasUnsavedChanges && (
                 <span className="text-[var(--qp-success)] flex items-center gap-1.5">
                   <Save size={14} />
-                  {UI_TEXT.mapping.saved}
+                  {UI_TEXT.settings.saved}
                 </span>
               )}
-              {saveStatus !== "saving" && hasUnsavedChanges && (
-                <span className="text-[var(--qp-warning)]">{UI_TEXT.mapping.unsaved}</span>
-              )}
+              {saveStatus !== "saving" && hasUnsavedChanges && <span>{UI_TEXT.mapping.unsaved}</span>}
               {saveStatus === "idle" && !hasUnsavedChanges && (
                 <span className="text-[var(--qp-text-tertiary)]">{UI_TEXT.mapping.idle}</span>
               )}

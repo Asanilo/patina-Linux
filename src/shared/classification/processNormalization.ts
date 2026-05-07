@@ -24,6 +24,17 @@ const LIFECYCLE_ALIAS_MARKERS = [
 ];
 
 const LIFECYCLE_ALIAS_MARKER_SET = new Set(LIFECYCLE_ALIAS_MARKERS);
+const STANDALONE_UNINSTALLER_APP_IDENTITIES = new Set([
+  "geek",
+  "geekuninstaller",
+  "revouninstaller",
+  "revouninstallerpro",
+  "iobituninstaller",
+  "hibituninstaller",
+  "bcuninstaller",
+  "bulkcrapuninstaller",
+  "uninstalr",
+]);
 const LIFECYCLE_ALIAS_NOISE_TOKENS = new Set([
   ...LIFECYCLE_ALIAS_MARKERS,
   "win",
@@ -118,10 +129,26 @@ function stripExeSuffix(exeName: string) {
   return exeName.endsWith(".exe") ? exeName.slice(0, -4) : exeName;
 }
 
+function isTemporaryExecutable(exeName: string) {
+  return normalizeExecutable(exeName).endsWith(".tmp");
+}
+
+function normalizeAppIdentityStem(stem: string) {
+  return stem.replace(/[^a-z0-9]+/g, "");
+}
+
+function isStandaloneUninstallerAppStem(stem: string) {
+  return STANDALONE_UNINSTALLER_APP_IDENTITIES.has(normalizeAppIdentityStem(stem));
+}
+
 function isLifecycleUtilityExecutable(exeName: string) {
   const normalized = normalizeExecutable(exeName);
   const stem = stripExeSuffix(normalized);
   if (!stem) {
+    return false;
+  }
+
+  if (isStandaloneUninstallerAppStem(stem)) {
     return false;
   }
 
@@ -306,6 +333,10 @@ export function shouldTrackProcess(
   exeName: string,
   options: { appName?: string; windowTitle?: string } = {},
 ) {
+  if (isTemporaryExecutable(exeName)) {
+    return false;
+  }
+
   if (isLifecycleUtilityExecutable(exeName)) {
     return false;
   }

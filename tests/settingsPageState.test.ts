@@ -177,6 +177,10 @@ await runTest("commitSettingsPatchWithDeps does not attempt runtime sync when pe
 });
 
 await runTest("normalizeSettingsRecord accepts widget minimize behavior and maps legacy tray to taskbar", () => {
+  const defaultSettings = normalizeSettingsRecord({});
+  assert.equal(defaultSettings.minimizeBehavior, "widget");
+  assert.equal(defaultSettings.closeBehavior, "tray");
+
   const widgetSettings = normalizeSettingsRecord({
     minimize_behavior: "widget",
     close_behavior: "tray",

@@ -252,6 +252,18 @@ export function runProcessMapperTests() {
     assert.equal(shouldTrackProcess("cursor-installer.exe"), false);
     assert.equal(shouldTrackProcess("cursor-updater.exe"), false);
     assert.equal(shouldTrackProcess("maintenancetool.exe"), false);
+    assert.equal(shouldTrackProcess("bscccloud-3.33.0.tmp", {
+      appName: "Setup/Uninstall",
+    }), false);
+    assert.equal(shouldTrackProcess("geek.exe", {
+      appName: "Geek Uninstaller",
+    }), true);
+    assert.equal(shouldTrackProcess("geek-uninstaller.exe", {
+      appName: "Geek Uninstaller",
+    }), true);
+    assert.equal(shouldTrackProcess("bcuninstaller.exe", {
+      appName: "Bulk Crap Uninstaller",
+    }), true);
     assert.equal(shouldTrackProcess("alma-0.0.750-win-x64.exe", {
       appName: "AI Provider Management Desktop App",
       windowTitle: "Alma \u5b89\u88c5",

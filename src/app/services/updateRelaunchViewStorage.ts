@@ -11,8 +11,10 @@ function getStorage(): Storage | null {
 function isView(value: string | null): value is View {
   return value === "dashboard"
     || value === "history"
+    || value === "data"
     || value === "mapping"
-    || value === "settings";
+    || value === "settings"
+    || value === "about";
 }
 
 export function rememberLastActiveView(view: View) {

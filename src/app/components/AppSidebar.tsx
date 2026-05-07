@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { motion } from "framer-motion";
-import { ArrowUpCircle, Zap, Monitor, Clock, Settings2, Sparkles } from "lucide-react";
+import { ArrowUpCircle, Monitor, Clock, Settings2, Sparkles, BarChart3, Info } from "lucide-react";
+import appIconUrl from "../../../src-tauri/icons/32x32.png";
 import { UI_TEXT } from "../../shared/copy/uiText";
 import type { View } from "../types/view";
 
@@ -17,8 +18,10 @@ const NO_DRAG_STYLE: AppRegionStyle = { WebkitAppRegion: "no-drag" };
 const NAV_ITEMS = [
   { id: "dashboard" as View, icon: Monitor, label: UI_TEXT.dashboard.title },
   { id: "history" as View, icon: Clock, label: UI_TEXT.history.title },
+  { id: "data" as View, icon: BarChart3, label: UI_TEXT.data.title },
   { id: "mapping" as View, icon: Sparkles, label: UI_TEXT.mapping.title },
   { id: "settings" as View, icon: Settings2, label: UI_TEXT.settings.title },
+  { id: "about" as View, icon: Info, label: UI_TEXT.about.title },
 ];
 
 export default function AppSidebar({
@@ -35,8 +38,8 @@ export default function AppSidebar({
       className="qp-canvas w-[88px] md:w-[96px] shrink-0 flex flex-col items-center py-5 md:py-6 gap-5"
       style={NO_DRAG_STYLE}
     >
-      <div className="w-10 h-10 rounded-[10px] flex items-center justify-center border border-[var(--qp-border-subtle)] bg-[var(--qp-bg-panel)] text-[var(--qp-accent-default)]">
-        <Zap size={18} strokeWidth={2.1} />
+      <div className="w-10 h-10 rounded-[10px] flex items-center justify-center border border-[var(--qp-border-subtle)] bg-[var(--qp-bg-panel)]">
+        <img src={appIconUrl} alt="" draggable={false} className="h-6 w-6 object-contain" />
       </div>
 
       <nav className="flex flex-col gap-2.5 mt-1 w-full px-2">

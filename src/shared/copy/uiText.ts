@@ -17,7 +17,7 @@ export const UI_TEXT = {
     yesterday: "昨天",
   },
   dashboard: {
-    title: "概览",
+    title: "今天",
     tracking: (activeAppName: string) => `正在追踪: ${activeAppName}`,
     trackingPaused: "追踪已暂停",
     idle: "静候活动中",
@@ -37,6 +37,7 @@ export const UI_TEXT = {
     title: "历史概览",
     sessionCount: (count: number) => `${count} 段会话`,
     pastSevenDays: "近 7 天",
+    dailyHourlyActivity: "当日能量脉冲",
     appDistribution: "应用分布",
     noData: "暂无数据",
     timeline: "专注时间流",
@@ -44,6 +45,20 @@ export const UI_TEXT = {
     emptyDay: "当天暂无记录",
     mergedCount: (count: number) => `${count} 次活动`,
     untilNow: "至今",
+  },
+  data: {
+    title: "数据",
+    subtitle: "查看跨日趋势与长期变化",
+    pastSevenDays: "近 7 天",
+    activityHeatmap: "活跃热力图",
+    activityHeatmapHint: "每日活跃强度",
+    recentYear: "近一年",
+    less: "少",
+    more: "多",
+  },
+  about: {
+    title: "关于",
+    subtitle: "版本、更新与反馈",
   },
   settings: {
     loading: "正在获取配置...",

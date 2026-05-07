@@ -14,10 +14,7 @@ import {
   cancelSettingsPageState,
   saveSettingsPageStateWithDeps,
 } from "./settingsPageStateInteractions.ts";
-import {
-  DEFAULT_SETTINGS,
-  type AppSettings,
-} from "../../../shared/settings/appSettings";
+import type { AppSettings } from "../../../shared/settings/appSettings";
 import type { CleanupRange } from "../types";
 
 const CLEANUP_OPTIONS: Array<{ value: CleanupRange; label: string }> = [
@@ -29,9 +26,6 @@ const CLEANUP_OPTIONS: Array<{ value: CleanupRange; label: string }> = [
   { value: 7, label: UI_TEXT.settings.cleanupRangeLabels[7] },
 ];
 
-const CLOSE_BEHAVIOR_DEFAULT = DEFAULT_SETTINGS.closeBehavior;
-const CLOSE_BEHAVIOR_ALTERNATE: AppSettings["closeBehavior"] =
-  CLOSE_BEHAVIOR_DEFAULT === "tray" ? "exit" : "tray";
 const IDLE_TIMEOUT_MINUTES_RANGE = { min: 5, max: 30 } as const;
 const TIMELINE_MERGE_GAP_MINUTES_RANGE = { min: 1, max: 5 } as const;
 const MIN_SESSION_MINUTES_RANGE = { min: 1, max: 10 } as const;
@@ -39,10 +33,6 @@ const MIN_SESSION_MINUTES_RANGE = { min: 1, max: 10 } as const;
 const clampMinute = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const secondsToMinute = (seconds: number, min: number, max: number) =>
   clampMinute(Math.round(seconds / 60), min, max);
-
-const MINIMIZE_BEHAVIOR_DEFAULT = DEFAULT_SETTINGS.minimizeBehavior;
-const MINIMIZE_BEHAVIOR_ALTERNATE: AppSettings["minimizeBehavior"] =
-  MINIMIZE_BEHAVIOR_DEFAULT === "widget" ? "taskbar" : "widget";
 
 export interface UseSettingsPageStateOptions {
   onSettingsChanged: (settings: AppSettings) => void;
@@ -325,10 +315,6 @@ export function useSettingsPageState({
     timelineMergeGapMinutes,
     minSessionMinutes,
     cleanupOptions: CLEANUP_OPTIONS,
-    minimizeBehaviorDefault: MINIMIZE_BEHAVIOR_DEFAULT,
-    minimizeBehaviorAlternate: MINIMIZE_BEHAVIOR_ALTERNATE,
-    closeBehaviorDefault: CLOSE_BEHAVIOR_DEFAULT,
-    closeBehaviorAlternate: CLOSE_BEHAVIOR_ALTERNATE,
     idleTimeoutMinutesRange: IDLE_TIMEOUT_MINUTES_RANGE,
     timelineMergeGapMinutesRange: TIMELINE_MERGE_GAP_MINUTES_RANGE,
     minSessionMinutesRange: MIN_SESSION_MINUTES_RANGE,

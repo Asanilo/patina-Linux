@@ -7,21 +7,12 @@ import { UI_TEXT } from "../../../shared/copy/uiText.ts";
 import type { SettingsPageProps } from "../types";
 import QuietPageHeader from "../../../shared/components/QuietPageHeader";
 import SettingsDataSafetyPanel from "./SettingsDataSafetyPanel";
-import SettingsAboutPanel from "./SettingsAboutPanel";
 import SettingsResidentPanel from "./SettingsResidentPanel";
 import SettingsTrackingPanel from "./SettingsTrackingPanel";
 import { useSettingsPageState } from "../hooks/useSettingsPageState";
 
 export default function Settings({
   onSettingsChanged,
-  onCheckForUpdates,
-  onOpenUpdateDialog,
-  onOpenUpdateReleasePage,
-  onOpenUpdateDownload,
-  updateSnapshot,
-  updateChecking,
-  updateInstalling,
-  updateDialogOpen,
   onDirtyChange,
   onToast,
   onRegisterSaveHandler,
@@ -31,7 +22,6 @@ export default function Settings({
     loading,
     savedSettings,
     draftSettings,
-    appVersion,
     saveStatus,
     hasUnsavedChanges,
     handleCancel,
@@ -45,16 +35,10 @@ export default function Settings({
     handleCleanup,
     handleExportBackup,
     handleRestoreBackup,
-    handleOpenReleaseNotes,
-    handleOpenFeedback,
     idleTimeoutMinutes,
     timelineMergeGapMinutes,
     minSessionMinutes,
     cleanupOptions,
-    minimizeBehaviorDefault,
-    minimizeBehaviorAlternate,
-    closeBehaviorDefault,
-    closeBehaviorAlternate,
     idleTimeoutMinutesRange,
     timelineMergeGapMinutesRange,
     minSessionMinutesRange,
@@ -74,20 +58,6 @@ export default function Settings({
     );
   }
 
-  const effectiveUpdateSnapshot = updateSnapshot ?? {
-    currentVersion: appVersion,
-    status: "idle",
-    latestVersion: null,
-    releaseNotes: null,
-    releaseDate: null,
-    errorMessage: null,
-    errorStage: null,
-    downloadedBytes: null,
-    totalBytes: null,
-    releasePageUrl: null,
-    assetDownloadUrl: null,
-  };
-
   return (
     <div className="flex h-full w-full min-w-0 flex-col gap-4 md:gap-5">
       {dialogs}
@@ -97,7 +67,11 @@ export default function Settings({
         subtitle={UI_TEXT.settings.subtitle}
         rightSlot={(
           <div className="flex items-center gap-2.5">
-            <div className="qp-status flex px-3 py-1.5 rounded-[8px] items-center text-xs font-semibold">
+            <div
+              className={`qp-status ${
+                saveStatus !== "saving" && hasUnsavedChanges ? "qp-status-danger" : ""
+              } flex px-3 py-1.5 rounded-[8px] items-center text-xs font-semibold`}
+            >
               {saveStatus === "saving" && (
                 <span className="text-[var(--qp-accent-default)] flex items-center gap-2">
                   <RefreshCw size={12} className="animate-spin" />
@@ -111,7 +85,7 @@ export default function Settings({
                 </span>
               )}
               {saveStatus !== "saving" && hasUnsavedChanges && (
-                <span className="text-[var(--qp-warning)]">{UI_TEXT.settings.unsaved}</span>
+                <span>{UI_TEXT.settings.unsaved}</span>
               )}
               {saveStatus === "idle" && !hasUnsavedChanges && (
                 <span className="text-[var(--qp-text-tertiary)]">{UI_TEXT.settings.idle}</span>
@@ -169,18 +143,18 @@ export default function Settings({
           />
 
           <SettingsResidentPanel
-            minimizeToWidgetChecked={draftSettings.minimizeBehavior !== minimizeBehaviorDefault}
+            minimizeToWidgetChecked={draftSettings.minimizeBehavior === "widget"}
             onMinimizeToWidgetChange={(nextChecked) => {
               handleChange(
                 "minimizeBehavior",
-                nextChecked ? minimizeBehaviorAlternate : minimizeBehaviorDefault,
+                nextChecked ? "widget" : "taskbar",
               );
             }}
-            closeToTrayChecked={draftSettings.closeBehavior !== closeBehaviorDefault}
+            closeToTrayChecked={draftSettings.closeBehavior === "tray"}
             onCloseToTrayChange={(nextChecked) => {
               handleChange(
                 "closeBehavior",
-                nextChecked ? closeBehaviorAlternate : closeBehaviorDefault,
+                nextChecked ? "tray" : "exit",
               );
             }}
             launchAtLoginChecked={draftSettings.launchAtLogin}
@@ -200,32 +174,6 @@ export default function Settings({
             onCleanup={handleCleanup}
             onExportBackup={() => void handleExportBackup()}
             onRestoreBackup={() => void handleRestoreBackup()}
-          />
-          <SettingsAboutPanel
-            appVersion={appVersion}
-            effectiveUpdateSnapshot={effectiveUpdateSnapshot}
-            updateChecking={updateChecking ?? false}
-            updateInstalling={updateInstalling ?? false}
-            updateDialogOpen={updateDialogOpen ?? false}
-            onCheckForUpdates={() => {
-              if (!onCheckForUpdates) return;
-              void onCheckForUpdates();
-            }}
-            onOpenUpdateDialog={() => onOpenUpdateDialog?.()}
-            onOpenUpdateReleasePage={() => {
-              if (!onOpenUpdateReleasePage) return;
-              void onOpenUpdateReleasePage();
-            }}
-            onOpenUpdateDownload={() => {
-              if (!onOpenUpdateDownload) return;
-              void onOpenUpdateDownload();
-            }}
-            onOpenReleaseNotes={() => {
-              void handleOpenReleaseNotes();
-            }}
-            onOpenFeedback={() => {
-              void handleOpenFeedback();
-            }}
           />
         </div>
       </div>

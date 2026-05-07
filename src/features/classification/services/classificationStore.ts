@@ -375,7 +375,7 @@ export async function loadObservedAppCandidates(
 
   for (const row of rows) {
     const canonicalExe = resolveCanonicalExecutable(row.exeName);
-    if (!canonicalExe || !shouldTrackProcess(row.exeName)) {
+    if (!canonicalExe || !shouldTrackProcess(row.exeName, { appName: row.appName })) {
       continue;
     }
 

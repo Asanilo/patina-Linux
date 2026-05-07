@@ -60,6 +60,10 @@ pub fn should_track(exe_name: &str) -> bool {
         return false;
     }
 
+    if is_temporary_executable_process(&lower_name) {
+        return false;
+    }
+
     if is_lifecycle_utility_process(&lower_name) {
         return false;
     }
@@ -450,6 +454,10 @@ fn is_lifecycle_utility_process(lower_name: &str) -> bool {
         return false;
     }
 
+    if is_standalone_uninstaller_app_stem(stem) {
+        return false;
+    }
+
     if matches!(
         stem,
         "setup"
@@ -499,7 +507,31 @@ fn is_lifecycle_utility_process(lower_name: &str) -> bool {
                     | "maintenance"
                     | "maintenancetool"
             )
-        })
+    })
+}
+
+fn is_temporary_executable_process(lower_name: &str) -> bool {
+    lower_name.trim().trim_matches('"').ends_with(".tmp")
+}
+
+fn is_standalone_uninstaller_app_stem(stem: &str) -> bool {
+    let compact: String = stem
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .collect();
+
+    matches!(
+        compact.as_str(),
+        "geek"
+            | "geekuninstaller"
+            | "revouninstaller"
+            | "revouninstallerpro"
+            | "iobituninstaller"
+            | "hibituninstaller"
+            | "bcuninstaller"
+            | "bulkcrapuninstaller"
+            | "uninstalr"
+    )
 }
 
 fn is_lifecycle_utility_window(window: WindowTrackingCandidate<'_>) -> bool {
@@ -726,6 +758,10 @@ mod tests {
         assert!(!should_track("SearchHost.exe"));
         assert!(!should_track("obsidian-setup.exe"));
         assert!(!should_track("cursor-updater.exe"));
+        assert!(!should_track("bscccloud-3.33.0.tmp"));
+        assert!(should_track("geek.exe"));
+        assert!(should_track("geek-uninstaller.exe"));
+        assert!(should_track("bcuninstaller.exe"));
         assert!(should_track("Antigravity.exe"));
     }
 

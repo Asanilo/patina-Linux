@@ -74,6 +74,14 @@ export async function getSessionsInRange(startMs: number, endMs: number): Promis
   return rows.map(mapRawHistorySession);
 }
 
+export async function getEarliestSessionStartTime(): Promise<number | null> {
+  const db = await getDB();
+  const rows = await db.select<{ earliest_start_time: number | null }[]>(
+    "SELECT MIN(start_time) AS earliest_start_time FROM sessions",
+  );
+  return rows[0]?.earliest_start_time ?? null;
+}
+
 export async function getHistoryByDate(date: Date): Promise<HistorySession[]> {
   const start = new Date(date);
   start.setHours(0, 0, 0, 0);

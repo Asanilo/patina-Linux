@@ -1,1 +1,1 @@
-export type View = "dashboard" | "history" | "mapping" | "settings";
+export type View = "dashboard" | "history" | "data" | "mapping" | "settings" | "about";

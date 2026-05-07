@@ -1,4 +1,5 @@
 ﻿import { motion } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
 import { Monitor, BarChart3 } from "lucide-react";
 import { Cell, Pie, PieChart, ResponsiveContainer, BarChart, Bar, XAxis, YAxis } from "recharts";
 import { UI_TEXT } from "../../../shared/copy/uiText.ts";
@@ -16,6 +17,29 @@ interface Props {
   isTrackingActive: boolean;
   activeAppName: string | null;
   trackingPaused: boolean;
+}
+
+const FOCUS_CATEGORY_LIMIT = 4;
+const FOCUS_CATEGORY_EXPANDED_LIMIT = 6;
+const FOCUS_CATEGORY_EXPANDED_WIDTH = 440;
+
+function buildFocusCategoryDist(categoryDist: DashboardReadModel["categoryDist"], limit: number) {
+  const visible = categoryDist.slice(0, limit);
+  const rest = categoryDist.slice(limit);
+  const restValue = rest.reduce((sum, item) => sum + item.value, 0);
+
+  if (restValue <= 0) {
+    return visible;
+  }
+
+  return [
+    ...visible,
+    {
+      name: "其他",
+      value: restValue,
+      color: "var(--qp-text-tertiary)",
+    },
+  ];
 }
 
 export default function Dashboard({
@@ -45,6 +69,27 @@ export default function Dashboard({
     : isTrackingActive
       ? "bg-[var(--qp-success)]"
       : "bg-[var(--qp-border-strong)]";
+  const focusCardRef = useRef<HTMLDivElement | null>(null);
+  const [focusCategoryLimit, setFocusCategoryLimit] = useState(FOCUS_CATEGORY_LIMIT);
+  const visibleCategoryDist = buildFocusCategoryDist(categoryDist, focusCategoryLimit);
+
+  useEffect(() => {
+    const card = focusCardRef.current;
+    if (!card) return;
+
+    const updateLimit = (width: number) => {
+      setFocusCategoryLimit(
+        width >= FOCUS_CATEGORY_EXPANDED_WIDTH ? FOCUS_CATEGORY_EXPANDED_LIMIT : FOCUS_CATEGORY_LIMIT,
+      );
+    };
+
+    updateLimit(card.getBoundingClientRect().width);
+    const observer = new ResizeObserver(([entry]) => {
+      updateLimit(entry.contentRect.width);
+    });
+    observer.observe(card);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <div className="flex flex-col gap-4 md:gap-5 h-full overflow-hidden">
@@ -80,41 +125,65 @@ export default function Dashboard({
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-5 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden pr-1">
-        <div className="lg:col-span-4 flex flex-col gap-4 md:gap-5 min-h-0 dashboard-left-column">
-          <div className="qp-panel p-5 md:p-6 flex flex-col items-center relative overflow-hidden shrink-0 min-h-[320px] dashboard-focus-card">
+        <div className="lg:col-span-5 2xl:col-span-4 flex flex-col gap-4 md:gap-5 min-h-0 dashboard-left-column">
+          <div
+            ref={focusCardRef}
+            className="qp-panel p-5 md:p-6 relative overflow-hidden shrink-0 min-h-[250px] dashboard-focus-card"
+          >
             <h3 className="w-full text-[var(--qp-text-primary)] font-semibold text-sm mb-4">{UI_TEXT.dashboard.focusShare}</h3>
-            <div className="relative w-full h-[180px] dashboard-focus-chart">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={categoryDist} innerRadius="70%" outerRadius="100%" paddingAngle={6} dataKey="value" stroke="none">
-                      {categoryDist.map((item, index) => (
+            <div className="dashboard-focus-layout">
+              <div className="relative w-full h-[185px] dashboard-focus-chart">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={visibleCategoryDist}
+                      innerRadius="68%"
+                      outerRadius="100%"
+                      paddingAngle={4}
+                      dataKey="value"
+                      startAngle={90}
+                      endAngle={-270}
+                      stroke="none"
+                    >
+                      {visibleCategoryDist.map((item, index) => (
                         <Cell key={`cell-${index}`} fill={item.color || "var(--qp-accent-default)"} />
-                    ))}
-                  </Pie>
-                  <QuietChartTooltip formatter={(v) => formatDashboardDuration(Number(v))} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <span className="text-2xl font-semibold text-[var(--qp-text-primary)] tabular-nums">
-                  {formatDashboardDuration(totalTrackedTime)}
-                </span>
-                <span className="text-[9px] font-semibold text-[var(--qp-text-tertiary)] uppercase tracking-[0.12em]">{UI_TEXT.dashboard.total}</span>
-              </div>
-            </div>
-            <div className="mt-6 w-full space-y-2 dashboard-focus-legend">
-              {categoryDist.map((cat) => (
-                <div key={cat.name} className="flex items-center justify-between text-[10px]">
-                  <div className="flex items-center gap-1.5 font-semibold text-[var(--qp-text-secondary)]">
-                    <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: cat.color || "var(--qp-accent-default)" }} />
-                    {cat.name}
-                  </div>
-                  <span className="text-[var(--qp-text-tertiary)] font-medium tabular-nums">{formatDashboardDuration(cat.value)}</span>
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="dashboard-focus-total-center absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <span className="text-[22px] font-semibold text-[var(--qp-text-primary)] tabular-nums">
+                    {formatDashboardDuration(totalTrackedTime)}
+                  </span>
+                  <span className="max-w-[88px] truncate text-[11px] font-semibold text-[var(--qp-text-tertiary)] uppercase tracking-[0.06em]">
+                    {UI_TEXT.dashboard.total}
+                  </span>
                 </div>
-              ))}
+              </div>
+
+              <div className="dashboard-focus-ranking" aria-label={UI_TEXT.dashboard.focusShare}>
+                {visibleCategoryDist.map((cat) => (
+                  <div key={cat.name} className="dashboard-focus-ranking-row">
+                    <div className="min-w-0 flex items-center gap-2">
+                      <span
+                        className="dashboard-focus-ranking-dot"
+                        style={{ backgroundColor: cat.color || "var(--qp-accent-default)" }}
+                      />
+                      <span className="truncate font-semibold text-[var(--qp-text-secondary)]">{cat.name}</span>
+                    </div>
+                    <span className="text-[var(--qp-text-primary)] font-semibold tabular-nums">
+                      {formatDashboardDuration(cat.value)}
+                    </span>
+                  </div>
+                ))}
+                {visibleCategoryDist.length === 0 && (
+                  <div className="text-xs font-medium text-[var(--qp-text-tertiary)]">{UI_TEXT.dashboard.emptyState}</div>
+                )}
+              </div>
             </div>
           </div>
 
-          <div className="qp-panel p-5 flex-1 min-h-0 flex flex-col overflow-hidden dashboard-pulse-card">
+          <div className="qp-panel p-5 flex min-h-0 flex-col overflow-hidden dashboard-pulse-card">
             <h3 className="text-[var(--qp-text-primary)] font-semibold text-sm mb-4 flex items-center gap-2">
               <BarChart3 size={14} className="text-[var(--qp-accent-default)] flex-shrink-0" />
               {UI_TEXT.dashboard.hourlyActivity}
@@ -124,7 +193,7 @@ export default function Dashboard({
                 <BarChart data={hourlyActivity} margin={{ top: 6, right: 12, left: 10, bottom: 4 }}>
                   <XAxis
                     dataKey="hour"
-                    tick={{ fontSize: 8, fill: "var(--qp-text-tertiary)" }}
+                    tick={{ fontSize: 10, fill: "var(--qp-text-tertiary)" }}
                     axisLine={false}
                     tickLine={false}
                     tickMargin={8}
@@ -143,7 +212,7 @@ export default function Dashboard({
           </div>
         </div>
 
-        <div className="lg:col-span-8 qp-panel p-5 md:p-6 flex flex-col overflow-hidden min-h-[420px] lg:min-h-0">
+        <div className="lg:col-span-7 2xl:col-span-8 qp-panel p-5 md:p-6 flex flex-col overflow-hidden min-h-[420px] lg:min-h-0">
           <header className="flex justify-between items-center mb-5">
             <h3 className="font-semibold text-[var(--qp-text-primary)] text-base">{UI_TEXT.dashboard.topApps}</h3>
             <div className="qp-chip px-2.5 py-1 text-[10px] font-semibold text-[var(--qp-text-secondary)]">
