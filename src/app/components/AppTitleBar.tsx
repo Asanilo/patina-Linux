@@ -7,6 +7,7 @@ import {
   startCurrentWindowDrag,
   toggleCurrentWindowMaximized,
 } from "../../platform/desktop/windowControlGateway";
+import { UI_TEXT } from "../../shared/copy/uiText";
 
 const APP_TITLE = "Time Tracker";
 
@@ -52,7 +53,7 @@ export default function AppTitleBar({ isMaximized }: AppTitleBarProps) {
         <button
           type="button"
           className="app-titlebar-button"
-          aria-label="最小化窗口"
+          aria-label={UI_TEXT.accessibility.titleBar.minimize}
           onClick={() => runWindowAction(minimizeCurrentWindow, "minimize current window")}
         >
           <Minus size={13} strokeWidth={2.1} />
@@ -60,7 +61,7 @@ export default function AppTitleBar({ isMaximized }: AppTitleBarProps) {
         <button
           type="button"
           className="app-titlebar-button"
-          aria-label={isMaximized ? "还原窗口" : "最大化窗口"}
+          aria-label={isMaximized ? UI_TEXT.accessibility.titleBar.restore : UI_TEXT.accessibility.titleBar.maximize}
           onClick={() => runWindowAction(toggleCurrentWindowMaximized, "toggle window maximize")}
         >
           {isMaximized ? (
@@ -72,7 +73,7 @@ export default function AppTitleBar({ isMaximized }: AppTitleBarProps) {
         <button
           type="button"
           className="app-titlebar-button app-titlebar-close"
-          aria-label="关闭窗口"
+          aria-label={UI_TEXT.accessibility.titleBar.close}
           onClick={() => runWindowAction(closeCurrentWindow, "close current window")}
         >
           <X size={13} strokeWidth={2.1} />

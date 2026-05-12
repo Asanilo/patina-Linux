@@ -7,6 +7,7 @@ import {
 import { executeWriteBatch, type SqlWriteOperation } from "./sqlite.ts";
 import {
   DEFAULT_SETTINGS,
+  type AppLanguage,
   type AppSettings,
   type CloseBehavior,
   type ColorScheme,
@@ -30,6 +31,7 @@ type RawAppSettingsKey =
   | "close_behavior"
   | "minimize_behavior"
   | "theme_mode"
+  | "language"
   | "color_scheme"
   | "color_scheme_light"
   | "color_scheme_dark"
@@ -46,6 +48,7 @@ const APP_SETTINGS_RAW_KEYS: Record<keyof AppSettings, RawAppSettingsKey> = {
   closeBehavior: "close_behavior",
   minimizeBehavior: "minimize_behavior",
   themeMode: "theme_mode",
+  language: "language",
   colorSchemeLight: "color_scheme_light",
   colorSchemeDark: "color_scheme_dark",
   launchAtLogin: "launch_at_login",
@@ -99,6 +102,12 @@ function normalizeThemeMode(value: string | undefined): ThemeMode {
   if (value === undefined) return DEFAULT_SETTINGS.themeMode;
   const normalized = value.trim().toLowerCase();
   return normalized === "dark" || normalized === "system" ? normalized : "light";
+}
+
+function normalizeLanguage(value: string | undefined): AppLanguage {
+  if (value === undefined) return DEFAULT_SETTINGS.language;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "en-us" ? "en-US" : "zh-CN";
 }
 
 const LIGHT_COLOR_SCHEMES = new Set<string>([
@@ -190,6 +199,7 @@ export function normalizeSettingsRecord(record: Record<string, string | undefine
     closeBehavior: normalizeCloseBehavior(record.close_behavior),
     minimizeBehavior: normalizeMinimizeBehavior(record.minimize_behavior),
     themeMode: normalizeThemeMode(record.theme_mode),
+    language: normalizeLanguage(record.language),
     colorSchemeLight: normalizeColorScheme(
       record.color_scheme_light ?? record.color_scheme ?? DEFAULT_SETTINGS.colorSchemeLight,
       LIGHT_COLOR_SCHEMES,

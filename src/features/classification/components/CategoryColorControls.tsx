@@ -5,6 +5,7 @@ import QuietIconAction from "../../../shared/components/QuietIconAction";
 import QuietResetAction from "../../../shared/components/QuietResetAction";
 import type { ColorDisplayFormat } from "../../../shared/lib/colorFormatting";
 import { AppClassification } from "../../../shared/classification/appClassification.ts";
+import { UI_TEXT } from "../../../shared/copy/uiText.ts";
 
 interface Props {
   categories: AppCategory[];
@@ -53,21 +54,21 @@ export default function CategoryColorControls({
                   format={colorFormat}
                   onChange={(nextColor) => onApplyColor(category, nextColor)}
                   onFormatChange={onColorFormatChange}
-                  title="颜色"
+                  title={UI_TEXT.mapping.color}
                 />
 
                 <QuietResetAction
                   onClick={() => onApplyColor(category, null)}
-                  title="恢复默认颜色"
+                  title={UI_TEXT.mapping.restoreDefaultColor}
                 >
-                  默认
+                  {UI_TEXT.common.default}
                 </QuietResetAction>
 
                 <QuietIconAction
                   icon={<Trash2 size={12} />}
                   tone="danger"
                   onClick={() => onDeleteCategory(category)}
-                  title={`删除分类：${label}`}
+                  title={UI_TEXT.mapping.deleteCategory(label)}
                 />
               </div>
             </div>

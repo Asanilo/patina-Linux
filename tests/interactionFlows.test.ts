@@ -34,6 +34,7 @@ const BASE_SETTINGS: AppSettings = {
   closeBehavior: "tray",
   minimizeBehavior: "taskbar",
   themeMode: "light",
+  language: "zh-CN",
   colorSchemeLight: "default",
   colorSchemeDark: "default",
   launchAtLogin: false,

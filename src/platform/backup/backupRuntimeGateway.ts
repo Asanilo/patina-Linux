@@ -6,6 +6,8 @@ interface RawBackupPreview {
   schema_version: number;
   app_version: string;
   compatibility_level: string;
+  compatibility_message_key?: string;
+  compatibility_message_args?: string[];
   compatibility_message: string;
   session_count: number;
   setting_count: number;
@@ -18,6 +20,8 @@ export interface BackupPreview {
   schemaVersion: number;
   appVersion: string;
   compatibilityLevel: string;
+  compatibilityMessageKey: string | null;
+  compatibilityMessageArgs: string[];
   compatibilityMessage: string;
   sessionCount: number;
   settingCount: number;
@@ -48,6 +52,8 @@ function mapRawBackupPreview(raw: RawBackupPreview): BackupPreview {
     schemaVersion: raw.schema_version,
     appVersion: raw.app_version,
     compatibilityLevel: raw.compatibility_level,
+    compatibilityMessageKey: raw.compatibility_message_key ?? null,
+    compatibilityMessageArgs: raw.compatibility_message_args ?? [],
     compatibilityMessage: raw.compatibility_message,
     sessionCount: raw.session_count,
     settingCount: raw.setting_count,

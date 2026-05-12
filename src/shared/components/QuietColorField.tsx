@@ -11,6 +11,7 @@ import {
   type HslColor,
   type RgbColor,
 } from "../lib/colorFormatting";
+import { UI_TEXT } from "../copy/uiText.ts";
 
 interface Props {
   color: string;
@@ -262,7 +263,7 @@ export default function QuietColorField({
       ref={triggerRef}
       type="button"
       disabled={disabled}
-      aria-label={title ?? "颜色"}
+      aria-label={title ?? UI_TEXT.accessibility.color.color}
       onClick={() => {
         if (disabled) return;
         setOpen((previousOpen) => {
@@ -282,7 +283,9 @@ export default function QuietColorField({
       <span className="qp-color-trigger-value">{normalizedColor}</span>
     </button>
   );
-  const eyedropperLabel = supportsEyedropper ? "取色器" : "当前环境不支持取色器";
+  const eyedropperLabel = supportsEyedropper
+    ? UI_TEXT.accessibility.color.eyedropper
+    : UI_TEXT.accessibility.color.eyedropperUnsupported;
 
   return (
     <>
@@ -297,11 +300,11 @@ export default function QuietColorField({
           ref={popoverRef}
           className={`qp-color-popover ${position.placement === "top" ? "qp-color-popover-top" : "qp-color-popover-bottom"}`}
           role="dialog"
-          aria-label="颜色选择器"
+          aria-label={UI_TEXT.accessibility.color.colorPicker}
           style={{ top: `${position.top}px`, left: `${position.left}px` }}
         >
           <div className="qp-color-popover-head">
-            <div className="qp-color-popover-title">颜色</div>
+            <div className="qp-color-popover-title">{UI_TEXT.accessibility.color.color}</div>
             <QuietTooltip label={eyedropperLabel}>
               <button
                 type="button"
@@ -328,7 +331,7 @@ export default function QuietColorField({
             />
           </div>
 
-          <div className="qp-color-format-switch" role="tablist" aria-label="颜色格式">
+          <div className="qp-color-format-switch" role="tablist" aria-label={UI_TEXT.accessibility.color.colorFormat}>
             {FORMAT_LIST.map((item) => (
               <button
                 key={item}

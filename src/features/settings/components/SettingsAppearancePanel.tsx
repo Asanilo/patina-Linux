@@ -2,13 +2,16 @@ import { ChevronRight, Palette } from "lucide-react";
 import { useState } from "react";
 import QuietDialog from "../../../shared/components/QuietDialog";
 import QuietSegmentedFilter from "../../../shared/components/QuietSegmentedFilter";
-import type { ColorScheme, ThemeMode } from "../../../shared/settings/appSettings.ts";
+import type { AppLanguage, ColorScheme, ThemeMode } from "../../../shared/settings/appSettings.ts";
+import { UI_TEXT } from "../../../shared/copy/uiText.ts";
 
 type ThemeLibrary = "light" | "dark";
 
 type SettingsAppearancePanelProps = {
   themeMode: ThemeMode;
   onThemeModeChange: (nextThemeMode: ThemeMode) => void;
+  language: AppLanguage;
+  onLanguageChange: (nextLanguage: AppLanguage) => void;
   colorSchemeLight: ColorScheme;
   onColorSchemeLightChange: (nextColorScheme: ColorScheme) => void;
   colorSchemeDark: ColorScheme;
@@ -17,27 +20,13 @@ type SettingsAppearancePanelProps = {
   colorSchemeConfirming: boolean;
 };
 
-const THEME_MODE_OPTIONS: Array<{ value: ThemeMode; label: string }> = [
-  { value: "light", label: "浅色" },
-  { value: "dark", label: "深色" },
-  { value: "system", label: "跟随系统" },
-];
-
-const THEME_LIBRARY_OPTIONS: Array<{
-  value: ThemeLibrary;
-  label: string;
-}> = [
-  { value: "light", label: "浅色主题" },
-  { value: "dark", label: "深色主题" },
-];
-
 const COLOR_SCHEME_OPTIONS: Record<ThemeLibrary, Array<{
   value: ColorScheme;
   label: string;
   swatches: [string, string, string, string, string, string];
 }>> = {
   light: [
-    { value: "default", label: "默认", swatches: ["#fbfbfb", "#ffffff", "#f5f5f5", "#315f9f", "#3f74c2", "#2f7d49"] },
+    { value: "default", label: UI_TEXT.common.default, swatches: ["#fbfbfb", "#ffffff", "#f5f5f5", "#315f9f", "#3f74c2", "#2f7d49"] },
     { value: "absolutely", label: "Absolutely", swatches: ["#f9f9f7", "#2d2d2b", "#cc7d5e", "#00c853", "#ff5f38", "#cc7d5e"] },
     { value: "catppuccin", label: "Catppuccin", swatches: ["#eff1f5", "#4c4f69", "#8839ef", "#40a02b", "#d20f39", "#8839ef"] },
     { value: "everforest", label: "Everforest", swatches: ["#fdf6e3", "#5c6a72", "#93b259", "#8da101", "#f85552", "#df69ba"] },
@@ -55,7 +44,7 @@ const COLOR_SCHEME_OPTIONS: Record<ThemeLibrary, Array<{
     { value: "xcode", label: "Xcode", swatches: ["#ffffff", "#000000d9", "#0e0eff", "#00a240", "#c41a16", "#0e0eff"] },
   ],
   dark: [
-    { value: "default", label: "默认", swatches: ["#212121", "#2d2d2d", "#404040", "#8ba1c0", "#93a9c8", "#82ad8b"] },
+    { value: "default", label: UI_TEXT.common.default, swatches: ["#212121", "#2d2d2d", "#404040", "#8ba1c0", "#93a9c8", "#82ad8b"] },
     { value: "absolutely", label: "Absolutely", swatches: ["#2d2d2b", "#f9f9f7", "#cc7d5e", "#00c853", "#ff5f38", "#cc7d5e"] },
     { value: "ayu", label: "Ayu", swatches: ["#0b0e14", "#bfbdb6", "#e6b450", "#7fd962", "#ea6c73", "#cda1fa"] },
     { value: "catppuccin", label: "Catppuccin", swatches: ["#1e1e2e", "#cdd6f4", "#cba6f7", "#a6e3a1", "#f38ba8", "#cba6f7"] },
@@ -88,6 +77,8 @@ const COLOR_SCHEME_OPTIONS: Record<ThemeLibrary, Array<{
 export default function SettingsAppearancePanel({
   themeMode,
   onThemeModeChange,
+  language,
+  onLanguageChange,
   colorSchemeLight,
   onColorSchemeLightChange,
   colorSchemeDark,
@@ -100,7 +91,23 @@ export default function SettingsAppearancePanel({
     library: ThemeLibrary;
     colorScheme: ColorScheme;
   } | null>(null);
-  const activeLibraryOption = THEME_LIBRARY_OPTIONS.find((option) => option.value === activeLibrary);
+  const themeModeOptions: Array<{ value: ThemeMode; label: string }> = [
+    { value: "light", label: UI_TEXT.settings.themeModeOptions.light },
+    { value: "dark", label: UI_TEXT.settings.themeModeOptions.dark },
+    { value: "system", label: UI_TEXT.settings.themeModeOptions.system },
+  ];
+  const languageOptions: Array<{ value: AppLanguage; label: string }> = [
+    { value: "zh-CN", label: UI_TEXT.settings.languageOptions.zhCN },
+    { value: "en-US", label: UI_TEXT.settings.languageOptions.enUS },
+  ];
+  const themeLibraryOptions: Array<{
+    value: ThemeLibrary;
+    label: string;
+  }> = [
+    { value: "light", label: UI_TEXT.settings.themeLibraryOptions.light },
+    { value: "dark", label: UI_TEXT.settings.themeLibraryOptions.dark },
+  ];
+  const activeLibraryOption = themeLibraryOptions.find((option) => option.value === activeLibrary);
   const activeColorScheme = activeLibrary === "dark" ? colorSchemeDark : colorSchemeLight;
   const changeActiveColorScheme = activeLibrary === "dark" ? onColorSchemeDarkChange : onColorSchemeLightChange;
 
@@ -137,22 +144,22 @@ export default function SettingsAppearancePanel({
     <section className="qp-panel p-5 md:p-6">
       <div className="flex items-center gap-2.5 border-b border-[var(--qp-border-subtle)] pb-2">
         <Palette size={16} className="text-[var(--qp-accent-default)]" />
-        <h2 className="text-sm font-semibold text-[var(--qp-text-primary)]">外观</h2>
+        <h2 className="text-sm font-semibold text-[var(--qp-text-primary)]">{UI_TEXT.settings.appearanceTitle}</h2>
       </div>
 
       <div className="mt-5 grid grid-cols-1 items-start gap-3 md:grid-cols-[minmax(0,1fr)_236px] md:gap-4">
         <div>
           <label className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--qp-text-tertiary)]">
-            主题模式
+            {UI_TEXT.settings.themeModeLabel}
           </label>
           <p className="mt-2 text-sm leading-relaxed text-[var(--qp-text-secondary)]">
-            选择浅色、深色，或跟随系统外观自动切换。
+            {UI_TEXT.settings.themeModeHint}
           </p>
         </div>
 
         <QuietSegmentedFilter
           value={themeMode}
-          options={THEME_MODE_OPTIONS}
+          options={themeModeOptions}
           onChange={onThemeModeChange}
           className="md:self-end md:justify-self-end"
         />
@@ -161,15 +168,19 @@ export default function SettingsAppearancePanel({
       <div className="mt-5 grid grid-cols-1 items-start gap-3 md:grid-cols-[minmax(0,1fr)_236px] md:gap-4">
         <div>
           <label className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--qp-text-tertiary)]">
-            配色方案
+            {UI_TEXT.settings.colorSchemeLabel}
           </label>
           <p className="mt-2 text-sm leading-relaxed text-[var(--qp-text-secondary)]">
-            分别设置浅色和深色主题的整体配色风格。
+            {UI_TEXT.settings.colorSchemeHint}
           </p>
         </div>
 
-        <div className="settings-theme-entry-list md:self-end md:justify-self-end" role="group" aria-label="配色方案">
-          {THEME_LIBRARY_OPTIONS.map((option) => (
+        <div
+          className="settings-theme-entry-list md:self-end md:justify-self-end"
+          role="group"
+          aria-label={UI_TEXT.accessibility.settings.colorScheme}
+        >
+          {themeLibraryOptions.map((option) => (
             <button
               key={option.value}
               type="button"
@@ -183,10 +194,28 @@ export default function SettingsAppearancePanel({
         </div>
       </div>
 
+      <div className="mt-5 grid grid-cols-1 items-start gap-3 md:grid-cols-[minmax(0,1fr)_236px] md:gap-4">
+        <div>
+          <label className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--qp-text-tertiary)]">
+            {UI_TEXT.settings.languageLabel}
+          </label>
+          <p className="mt-2 text-sm leading-relaxed text-[var(--qp-text-secondary)]">
+            {UI_TEXT.settings.languageHint}
+          </p>
+        </div>
+
+        <QuietSegmentedFilter
+          value={language}
+          options={languageOptions}
+          onChange={onLanguageChange}
+          className="md:self-end md:justify-self-end"
+        />
+      </div>
+
       <QuietDialog
         open={activeLibrary !== null}
-        title={activeLibraryOption?.label ?? "主题"}
-        description="选择后会即时预览对应主题的整体配色，保存后生效。"
+        title={activeLibraryOption?.label ?? UI_TEXT.settings.colorSchemeDialogFallbackTitle}
+        description={UI_TEXT.settings.colorSchemeDialogDescription}
         onClose={closeColorSchemeDialog}
         surfaceClassName="qp-theme-dialog-surface"
         actions={(
@@ -197,7 +226,7 @@ export default function SettingsAppearancePanel({
               className="qp-button-secondary qp-dialog-action"
               disabled={colorSchemeConfirming}
             >
-              取消
+              {UI_TEXT.common.cancel}
             </button>
             <button
               type="button"
@@ -205,7 +234,7 @@ export default function SettingsAppearancePanel({
               className="qp-button-primary qp-dialog-action"
               disabled={colorSchemeConfirming}
             >
-              {colorSchemeConfirming ? "保存中" : "确认"}
+              {colorSchemeConfirming ? UI_TEXT.settings.colorSchemeSaving : UI_TEXT.common.confirm}
             </button>
           </>
         )}

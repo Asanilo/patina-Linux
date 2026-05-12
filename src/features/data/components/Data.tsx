@@ -39,7 +39,6 @@ interface Props {
   mappingVersion?: number;
 }
 
-const HEATMAP_WEEKDAYS = ["一", "", "三", "", "五", "", "日"] as const;
 const HEATMAP_LOADING_HEIGHT = 104;
 const TREND_RANGE_OPTIONS: DataTrendRange[] = [7, 30, 365];
 
@@ -311,7 +310,7 @@ export default function Data({
             <h3 className="font-semibold text-[var(--qp-text-primary)] text-sm">
               {UI_TEXT.data.activityTrend}
             </h3>
-            <div className="data-trend-inline-metrics" aria-label="趋势摘要">
+            <div className="data-trend-inline-metrics" aria-label={UI_TEXT.accessibility.data.trendSummary}>
               <div className="data-trend-inline-metric">
                 <Clock3 size={13} aria-hidden />
                 <span>{trendViewModel?.metricLabels.total ?? UI_TEXT.data.weeklyTotal}</span>
@@ -323,13 +322,13 @@ export default function Data({
                 <strong>{trendViewModel ? formatDuration(trendViewModel.averageDuration) : "-"}</strong>
               </div>
             </div>
-            <div className="data-heatmap-range-control" aria-label="选择趋势范围">
+            <div className="data-heatmap-range-control" aria-label={UI_TEXT.accessibility.data.trendRange}>
               <button
                 type="button"
                 onClick={() => selectAdjacentTrendRange(-1)}
                 disabled={!canSelectShorterTrendRange}
                 className="qp-control data-heatmap-range-arrow"
-                aria-label="查看更短趋势范围"
+                aria-label={UI_TEXT.accessibility.data.shorterTrendRange}
               >
                 <ChevronLeft size={14} />
               </button>
@@ -345,7 +344,7 @@ export default function Data({
                 onClick={() => selectAdjacentTrendRange(1)}
                 disabled={!canSelectLongerTrendRange}
                 className="qp-control data-heatmap-range-arrow"
-                aria-label="查看更长趋势范围"
+                aria-label={UI_TEXT.accessibility.data.longerTrendRange}
               >
                 <ChevronRight size={14} />
               </button>
@@ -380,7 +379,7 @@ export default function Data({
                   <QuietChartTooltip
                     formatter={(value) => [
                       formatDuration(Number(value) * 3600000),
-                      "时长",
+                      UI_TEXT.data.duration,
                     ]}
                   />
                   <Area
@@ -418,13 +417,13 @@ export default function Data({
                 <span className="data-heatmap-swatch data-heatmap-level-4" />
                 <span>{UI_TEXT.data.more}</span>
               </div>
-              <div className="data-heatmap-range-control" aria-label="选择热力图范围">
+              <div className="data-heatmap-range-control" aria-label={UI_TEXT.accessibility.data.heatmapRange}>
                 <button
                   type="button"
                   onClick={() => selectAdjacentHeatmapView(1)}
                   disabled={!canSelectOlderHeatmapView}
                   className="qp-control data-heatmap-range-arrow"
-                  aria-label="查看更早范围"
+                  aria-label={UI_TEXT.accessibility.data.earlierRange}
                 >
                   <ChevronLeft size={14} />
                 </button>
@@ -440,7 +439,7 @@ export default function Data({
                   onClick={() => selectAdjacentHeatmapView(-1)}
                   disabled={!canSelectNewerHeatmapView}
                   className="qp-control data-heatmap-range-arrow"
-                  aria-label="查看更新范围"
+                  aria-label={UI_TEXT.accessibility.data.newerRange}
                 >
                   <ChevronRight size={14} />
                 </button>
@@ -467,7 +466,7 @@ export default function Data({
                   </div>
                   <div className="data-heatmap-body" aria-label={UI_TEXT.data.activityHeatmap}>
                     <div className="data-heatmap-weekdays" aria-hidden>
-                      {HEATMAP_WEEKDAYS.map((weekday, index) => (
+                      {UI_TEXT.date.heatmapWeekdays.map((weekday, index) => (
                         <span key={`${weekday}-${index}`}>{weekday}</span>
                       ))}
                     </div>
@@ -521,13 +520,13 @@ export default function Data({
                 )}
               </div>
             ) : null}
-            <div className="data-heatmap-range-control" aria-label="选择应用趋势范围">
+            <div className="data-heatmap-range-control" aria-label={UI_TEXT.accessibility.data.appTrendRange}>
               <button
                 type="button"
                 onClick={() => selectAdjacentAppTrendRange(-1)}
                 disabled={!canSelectShorterAppTrendRange}
                 className="qp-control data-heatmap-range-arrow"
-                aria-label="查看更短应用趋势范围"
+                aria-label={UI_TEXT.accessibility.data.shorterAppTrendRange}
               >
                 <ChevronLeft size={14} />
               </button>
@@ -543,7 +542,7 @@ export default function Data({
                 onClick={() => selectAdjacentAppTrendRange(1)}
                 disabled={!canSelectLongerAppTrendRange}
                 className="qp-control data-heatmap-range-arrow"
-                aria-label="查看更长应用趋势范围"
+                aria-label={UI_TEXT.accessibility.data.longerAppTrendRange}
               >
                 <ChevronRight size={14} />
               </button>
@@ -613,7 +612,7 @@ export default function Data({
                   <strong>{formatDuration(appTrendViewModel.selectedApp?.totalDuration ?? 0)}</strong>
                 </div>
                 <div className="data-app-metric">
-                  <span>{selectedAppTrendRange === 365 ? "月均" : UI_TEXT.data.appTrendAverage}</span>
+                  <span>{selectedAppTrendRange === 365 ? UI_TEXT.data.monthlyAverage : UI_TEXT.data.appTrendAverage}</span>
                   <strong>{formatDuration(appTrendViewModel.selectedApp?.averageDuration ?? 0)}</strong>
                 </div>
                 <div className="data-app-metric">

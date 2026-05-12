@@ -8,6 +8,7 @@ import QuietInlineAction from "../../../shared/components/QuietInlineAction";
 import QuietIconAction from "../../../shared/components/QuietIconAction";
 import QuietBadge from "../../../shared/components/QuietBadge";
 import QuietResetAction from "../../../shared/components/QuietResetAction";
+import { UI_TEXT } from "../../../shared/copy/uiText.ts";
 
 interface AppMappingCandidateCardProps {
   candidate: ObservedAppCandidate;
@@ -110,7 +111,7 @@ export default function AppMappingCandidateCard({
               )}
               <QuietIconAction
                 icon={<Pencil size={13} />}
-                title="修改应用名称"
+                title={UI_TEXT.mapping.editAppName}
                 disabled={isBusy}
                 onClick={onStartNameEdit}
               />
@@ -121,12 +122,12 @@ export default function AppMappingCandidateCard({
               </QuietBadge>
               {!trackingEnabled && (
                 <QuietBadge tone="warning">
-                  不统计
+                  {UI_TEXT.mapping.noStats}
                 </QuietBadge>
               )}
               {!titleCaptureEnabled && (
                 <QuietBadge tone="subtle">
-                  不记标题
+                  {UI_TEXT.mapping.titleNotRecorded}
                 </QuietBadge>
               )}
             </div>
@@ -142,16 +143,16 @@ export default function AppMappingCandidateCard({
                 disabled={isBusy}
                 onChange={(nextColor) => onColorAssign(nextColor)}
                 onFormatChange={onColorFormatChange}
-                title="颜色"
+                title={UI_TEXT.mapping.color}
               />
 
               <QuietResetAction
                 disabled={isBusy}
                 dimmed={!hasManualColor}
                 onClick={() => onColorAssign(null)}
-                title="恢复默认颜色"
+                title={UI_TEXT.mapping.restoreDefaultColor}
               >
-                默认
+                {UI_TEXT.common.default}
               </QuietResetAction>
             </div>
             <QuietSelect
@@ -167,35 +168,35 @@ export default function AppMappingCandidateCard({
               disabled={isBusy}
               onClick={onToggleTitleCapture}
               tone={titleCaptureEnabled ? "neutral" : "accent"}
-              title={titleCaptureEnabled ? "不记录该应用窗口标题" : "恢复记录该应用窗口标题"}
+              title={titleCaptureEnabled ? UI_TEXT.mapping.disableTitleCapture : UI_TEXT.mapping.enableTitleCapture}
             >
-              {titleCaptureEnabled ? "记录标题" : "不记标题"}
+              {titleCaptureEnabled ? UI_TEXT.mapping.titleRecorded : UI_TEXT.mapping.titleNotRecorded}
             </QuietInlineAction>
             <QuietInlineAction
               disabled={isBusy}
               onClick={onToggleTracking}
               tone={trackingEnabled ? "warning" : "accent"}
-              title={trackingEnabled ? "将该应用排除出统计" : "恢复该应用进入统计"}
+              title={trackingEnabled ? UI_TEXT.mapping.disableTracking : UI_TEXT.mapping.enableTracking}
             >
-              {trackingEnabled ? "统计中" : "不统计"}
+              {trackingEnabled ? UI_TEXT.mapping.statsEnabled : UI_TEXT.mapping.noStats}
             </QuietInlineAction>
             <QuietInlineAction
               disabled={isBusy}
               onClick={onResetOverride}
               tone="neutral"
-              title="恢复该应用默认识别"
+              title={UI_TEXT.mapping.restoreDefaultApp}
               leadingIcon={<RotateCcw size={12} />}
             >
-              恢复默认
+              {UI_TEXT.mapping.restoreDefaultApp}
             </QuietInlineAction>
             <QuietInlineAction
               disabled={isBusy}
               onClick={onDeleteAllSessions}
               tone="danger"
-              title="删除应用记录"
+              title={UI_TEXT.mapping.deleteAppRecords}
               leadingIcon={<Trash2 size={12} />}
             >
-              删除应用记录
+              {UI_TEXT.mapping.deleteAppRecords}
             </QuietInlineAction>
           </div>
         </div>

@@ -17,9 +17,9 @@ interface Props {
 }
 
 const FILTER_OPTIONS: Array<{ value: CandidateFilter; label: string }> = [
-  { value: "all", label: "全部" },
-  { value: "other", label: "未分类" },
-  { value: "classified", label: "已分类" },
+  { value: "all", label: UI_TEXT.mapping.filters.all },
+  { value: "other", label: UI_TEXT.mapping.filters.other },
+  { value: "classified", label: UI_TEXT.mapping.filters.classified },
 ];
 
 export default function AppMapping(props: Props) {
@@ -219,8 +219,8 @@ export default function AppMapping(props: Props) {
 
       <QuietDialog
         open={showCategoryDialog}
-        title="分类控制"
-        description="在这里新建分类并调整分类主色"
+        title={UI_TEXT.mapping.categoryDialogTitle}
+        description={UI_TEXT.mapping.categoryDialogDescription}
         onClose={() => setShowCategoryDialog(false)}
         surfaceClassName="qp-category-dialog-surface"
         actions={(
@@ -230,14 +230,14 @@ export default function AppMapping(props: Props) {
               onClick={() => setShowCategoryDialog(false)}
               className="qp-button-secondary qp-dialog-action"
             >
-              关闭
+              {UI_TEXT.common.close}
             </button>
             <button
               type="button"
               onClick={() => void handleCreateCustomCategory()}
               className="qp-button-primary qp-dialog-action"
             >
-              + 新建分类
+              {UI_TEXT.mapping.createCategoryAction}
             </button>
           </>
         )}

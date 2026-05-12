@@ -20,6 +20,7 @@ const BASE_SETTINGS: AppSettings = {
   closeBehavior: "exit",
   minimizeBehavior: "widget",
   themeMode: "light",
+  language: "zh-CN",
   colorSchemeLight: "default",
   colorSchemeDark: "default",
   launchAtLogin: true,

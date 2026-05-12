@@ -3,6 +3,7 @@ import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import * as esbuild from "esbuild";
+import { COPY } from "../src/shared/copy/uiText.ts";
 
 const EXPECTED_VIEWS = [
   "dashboard",
@@ -15,10 +16,10 @@ const EXPECTED_VIEWS = [
 
 const EXPECTED_NAV_LABELS = [
   "今天",
-  "历史概览",
+  "历史",
   "数据",
-  "应用美化与隐私",
-  "系统设置",
+  "应用",
+  "设置",
   "关于",
 ] as const;
 
@@ -33,6 +34,21 @@ async function runTest(name: string, fn: () => Promise<void> | void) {
 
 function readUtf8(path: string) {
   return readFileSync(path, "utf8");
+}
+
+function collectCopyKeyPaths(value: unknown, prefix = ""): string[] {
+  if (typeof value === "function" || value === null || typeof value !== "object") {
+    return [prefix];
+  }
+
+  if (Array.isArray(value)) {
+    return [prefix];
+  }
+
+  return Object.entries(value).flatMap(([key, child]) => {
+    const nextPrefix = prefix ? `${prefix}.${key}` : key;
+    return collectCopyKeyPaths(child, nextPrefix);
+  });
 }
 
 function tauriStubFor(path: string) {
@@ -140,6 +156,13 @@ await runTest("app shell declares every primary desktop view", () => {
     assert.match(shell, new RegExp(`currentView === "${view}"`));
     assert.match(sidebar, new RegExp(`id: "${view}" as View`));
   }
+});
+
+await runTest("Chinese and English copy packages keep the same key structure", () => {
+  assert.deepEqual(
+    collectCopyKeyPaths(COPY["en-US"]).sort(),
+    collectCopyKeyPaths(COPY["zh-CN"]).sort(),
+  );
 });
 
 await runTest("app shell renders dashboard and primary navigation without Tauri runtime", async () => {

@@ -9,6 +9,7 @@ import {
 import { DEFAULT_APP_MAPPINGS } from "./defaultMappings.ts";
 import { resolveCanonicalExecutable, shouldTrackProcess } from "./processNormalization.ts";
 import { CategoryColorRegistry } from "./categoryColorRegistry.ts";
+import { UI_TEXT } from "../copy/uiText.ts";
 
 export type MappingConfidence = "high" | "medium" | "low";
 
@@ -110,7 +111,7 @@ function normalizeUserAssignableCategory(category: string | undefined): UserAssi
   }
 
   if (normalized === "custom") {
-    return buildCustomCategory("自定义");
+    return buildCustomCategory(UI_TEXT.categories.custom);
   }
 
   if (normalized === "meeting") {

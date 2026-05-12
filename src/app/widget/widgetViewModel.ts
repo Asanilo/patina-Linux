@@ -1,4 +1,5 @@
 import { AppClassification } from "../../shared/classification/appClassification.ts";
+import { UI_TEXT } from "../../shared/copy/uiText.ts";
 import type { AppSettings } from "../../shared/settings/appSettings.ts";
 import type {
   TrackerHealthSnapshot,
@@ -33,27 +34,6 @@ const WIDGET_SELF_WINDOW_TITLES = new Set([
   "Time Tracker Widget",
   "Time Tracking",
 ]);
-
-const TEXT = {
-  tracking: "\u8ffd\u8e2a\u4e2d",
-  sustainedTracking: "\u6301\u7eed\u53c2\u4e0e",
-  currentApp: "\u5f53\u524d\u5e94\u7528",
-  currentActivityRecording: "\u5f53\u524d\u6d3b\u52a8\u6b63\u5728\u8bb0\u5f55",
-  currentSustainedRecording: "\u5f53\u524d\u6301\u7eed\u53c2\u4e0e\u6b63\u5728\u8bb0\u5f55",
-  pause: "\u6682\u505c",
-  resume: "\u6062\u590d",
-  error: "\u5f02\u5e38",
-  trackingService: "\u8ffd\u8e2a\u670d\u52a1",
-  trackingNotSynced: "\u8ffd\u8e2a\u72b6\u6001\u6682\u65f6\u672a\u540c\u6b65",
-  paused: "\u5df2\u6682\u505c",
-  trackingPaused: "\u8ffd\u8e2a\u5df2\u6682\u505c",
-  clickToResume: "\u70b9\u51fb\u5373\u53ef\u6062\u590d\u8ffd\u8e2a",
-  idle: "\u7a7a\u95f2",
-  currentlyIdle: "\u5f53\u524d\u7a7a\u95f2\u4e2d",
-  currentAppNotTracked: "\u5f53\u524d\u5e94\u7528\u4e0d\u8ffd\u8e2a",
-  noTrackableActivity: "\u5f53\u524d\u6682\u65e0\u53ef\u8ffd\u8e2a\u6d3b\u52a8",
-  windowExcluded: "\u5f53\u524d\u7a97\u53e3\u4e0d\u4f1a\u8fdb\u5165\u8bb0\u5f55",
-} as const;
 
 export function isWidgetSelfWindow(activeWindow: TrackingWindowSnapshot | null): boolean {
   if (!activeWindow) {
@@ -93,12 +73,13 @@ function buildActiveTrackingViewModel(
     helperText: string;
   },
 ): WidgetViewModel {
+  const text = UI_TEXT.widget;
   return {
     statusTone: options.statusTone,
     statusLabel: options.statusLabel,
-    appName: trackableAppName ?? TEXT.currentApp,
+    appName: trackableAppName ?? text.currentApp,
     helperText: options.helperText,
-    pauseActionLabel: TEXT.pause,
+    pauseActionLabel: text.pause,
     showObjectSlot: true,
     objectIconKey: activeWindow ? AppClassification.resolveCanonicalExecutable(activeWindow.exeName) : null,
   };
@@ -110,6 +91,7 @@ export function buildWidgetViewModel(
   appSettings: AppSettings,
   trackerHealth: TrackerHealthSnapshot,
 ): WidgetViewModel {
+  const text = UI_TEXT.widget;
   const trackableAppName = resolveTrackableAppName(activeWindow);
   const hasTrackableForegroundApp = trackableAppName !== null;
   const isTrackingForegroundApp = Boolean(
@@ -122,10 +104,10 @@ export function buildWidgetViewModel(
   if (trackerHealth.status !== "healthy") {
     return {
       statusTone: "error",
-      statusLabel: TEXT.error,
-      appName: hasTrackableForegroundApp ? trackableAppName : TEXT.trackingService,
-      helperText: TEXT.trackingNotSynced,
-      pauseActionLabel: appSettings.trackingPaused ? TEXT.resume : TEXT.pause,
+      statusLabel: text.error,
+      appName: hasTrackableForegroundApp ? trackableAppName : text.trackingService,
+      helperText: text.trackingNotSynced,
+      pauseActionLabel: appSettings.trackingPaused ? text.resume : text.pause,
       showObjectSlot: false,
       objectIconKey: null,
     };
@@ -134,10 +116,10 @@ export function buildWidgetViewModel(
   if (appSettings.trackingPaused) {
     return {
       statusTone: "paused",
-      statusLabel: TEXT.paused,
-      appName: hasTrackableForegroundApp ? trackableAppName : TEXT.trackingPaused,
-      helperText: TEXT.clickToResume,
-      pauseActionLabel: TEXT.resume,
+      statusLabel: text.paused,
+      appName: hasTrackableForegroundApp ? trackableAppName : text.trackingPaused,
+      helperText: text.clickToResume,
+      pauseActionLabel: text.resume,
       showObjectSlot: false,
       objectIconKey: null,
     };
@@ -146,18 +128,18 @@ export function buildWidgetViewModel(
   if (!isTrackingForegroundApp) {
     return {
       statusTone: "idle",
-      statusLabel: TEXT.idle,
+      statusLabel: text.idle,
       appName: activeWindow?.isAfk
-        ? TEXT.currentlyIdle
+        ? text.currentlyIdle
         : hasTrackableForegroundApp
           ? trackableAppName
-          : TEXT.currentAppNotTracked,
+          : text.currentAppNotTracked,
       helperText: activeWindow?.isAfk
-        ? TEXT.noTrackableActivity
+        ? text.noTrackableActivity
         : hasTrackableForegroundApp
-          ? TEXT.noTrackableActivity
-          : TEXT.windowExcluded,
-      pauseActionLabel: TEXT.pause,
+          ? text.noTrackableActivity
+          : text.windowExcluded,
+      pauseActionLabel: text.pause,
       showObjectSlot: false,
       objectIconKey: null,
     };
@@ -166,14 +148,14 @@ export function buildWidgetViewModel(
   if (isSustainedParticipationTracking(trackingStatus, isTrackingForegroundApp)) {
     return buildActiveTrackingViewModel(activeWindow, trackableAppName, {
       statusTone: "tracking-sustained",
-      statusLabel: TEXT.sustainedTracking,
-      helperText: TEXT.currentSustainedRecording,
+      statusLabel: text.sustainedTracking,
+      helperText: text.currentSustainedRecording,
     });
   }
 
   return buildActiveTrackingViewModel(activeWindow, trackableAppName, {
     statusTone: "tracking",
-    statusLabel: TEXT.tracking,
-    helperText: TEXT.currentActivityRecording,
+    statusLabel: text.tracking,
+    helperText: text.currentActivityRecording,
   });
 }

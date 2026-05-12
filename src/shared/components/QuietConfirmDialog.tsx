@@ -1,4 +1,5 @@
 import QuietDialog from "./QuietDialog";
+import { UI_TEXT } from "../copy/uiText.ts";
 
 interface QuietConfirmDialogProps {
   open: boolean;
@@ -46,7 +47,7 @@ export default function QuietConfirmDialog({
             disabled={confirmDisabled || confirmLoading}
             className={`qp-dialog-action ${danger ? "qp-button-danger" : "qp-button-primary"} disabled:opacity-50 disabled:cursor-not-allowed`}
           >
-            {confirmLoading ? "处理中..." : confirmLabel}
+            {confirmLoading ? UI_TEXT.common.processing : confirmLabel}
           </button>
         </>
       )}

@@ -69,12 +69,12 @@ export async function runSettingsCleanupFlow(options: CleanupFlowOptions): Promi
   options.onExecutionStart?.();
   try {
     await options.clearSessionsByRange(options.cleanupRange);
-    options.notify("历史数据已清理。", "success");
+    options.notify(UI_TEXT.toast.cleanupSuccess, "success");
     options.reload();
     return true;
   } catch (error) {
     options.reportError?.("cleanup failed", error);
-    options.notify("历史数据清理失败，请稍后重试。", "warning");
+    options.notify(UI_TEXT.toast.cleanupFailed, "warning");
     return false;
   } finally {
     options.onExecutionEnd?.();
@@ -90,11 +90,11 @@ export async function runBackupExportFlow(options: BackupExportFlowOptions): Pro
     }
 
     options.setExportPath(exportedPath);
-    options.notify(`备份导出成功：${exportedPath}`, "success");
+    options.notify(UI_TEXT.toast.backupExportSuccess(exportedPath), "success");
     return exportedPath;
   } catch (error) {
     options.reportError?.("export backup failed", error);
-    options.notify("备份导出失败，请检查路径后重试。", "warning");
+    options.notify(UI_TEXT.toast.backupExportFailed, "warning");
     return null;
   } finally {
     options.onExecutionEnd?.();
@@ -111,12 +111,12 @@ export async function runBackupRestoreFlow(options: BackupRestoreFlowOptions): P
 
     options.setRestorePath(preparation.path);
     if (!preparation.compatible) {
-      options.notify(`备份不兼容：${preparation.incompatibilityMessage ?? "未知原因"}`, "warning");
+      options.notify(UI_TEXT.toast.backupIncompatible(preparation.incompatibilityMessage), "warning");
       return false;
     }
   } catch (error) {
     options.reportError?.("prepare backup restore failed", error);
-    options.notify("备份文件预览失败，无法确认覆盖范围。", "warning");
+    options.notify(UI_TEXT.toast.backupPreviewFailed, "warning");
     return false;
   }
 
@@ -137,12 +137,12 @@ export async function runBackupRestoreFlow(options: BackupRestoreFlowOptions): P
   options.onExecutionStart?.();
   try {
     await options.restoreBackup(preparation.path);
-    options.notify("备份恢复成功，正在刷新界面。", "success");
+    options.notify(UI_TEXT.toast.backupRestoreSuccess, "success");
     options.reload();
     return true;
   } catch (error) {
     options.reportError?.("restore backup failed", error);
-    options.notify("备份恢复失败，已自动回滚，不会破坏当前数据。", "warning");
+    options.notify(UI_TEXT.toast.backupRestoreFailed, "warning");
     return false;
   } finally {
     options.onExecutionEnd?.();

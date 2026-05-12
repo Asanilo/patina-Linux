@@ -65,7 +65,7 @@ export default function About({
       await SettingsRuntimeAdapterService.openReleaseNotes();
     } catch (error) {
       console.error("open release notes failed", error);
-      notify("无法打开更新说明链接。", "warning");
+      notify(UI_TEXT.toast.releaseNotesOpenFailed, "warning");
     }
   }, [notify]);
 
@@ -74,7 +74,7 @@ export default function About({
       await SettingsRuntimeAdapterService.openFeedback();
     } catch (error) {
       console.error("open feedback link failed", error);
-      notify("无法打开反馈链接。", "warning");
+      notify(UI_TEXT.toast.feedbackOpenFailed, "warning");
     }
   }, [notify]);
 

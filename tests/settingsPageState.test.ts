@@ -21,6 +21,7 @@ interface AppSettings {
   closeBehavior: "exit" | "tray";
   minimizeBehavior: "taskbar" | "widget";
   themeMode: "light" | "dark" | "system";
+  language: "zh-CN" | "en-US";
   colorSchemeLight:
     | "default"
     | "absolutely"
@@ -95,6 +96,7 @@ const BASE_SETTINGS: AppSettings = {
   closeBehavior: "tray",
   minimizeBehavior: "taskbar",
   themeMode: "light",
+  language: "zh-CN",
   colorSchemeLight: "default",
   colorSchemeDark: "default",
   launchAtLogin: false,
@@ -138,6 +140,7 @@ await runTest("buildSettingsPatch only keeps changed keys", () => {
     minSessionSecs: saved.minSessionSecs + 60,
     trackingPaused: true,
     themeMode: "dark",
+    language: "en-US",
     colorSchemeLight: "linear",
     colorSchemeDark: "github",
   });
@@ -146,6 +149,7 @@ await runTest("buildSettingsPatch only keeps changed keys", () => {
     minSessionSecs: draft.minSessionSecs,
     trackingPaused: true,
     themeMode: "dark",
+    language: "en-US",
     colorSchemeLight: "linear",
     colorSchemeDark: "github",
   });
@@ -263,6 +267,7 @@ await runTest("normalizeSettingsRecord accepts widget minimize behavior and maps
   assert.equal(defaultSettings.minimizeBehavior, "widget");
   assert.equal(defaultSettings.closeBehavior, "tray");
   assert.equal(defaultSettings.themeMode, "light");
+  assert.equal(defaultSettings.language, "zh-CN");
   assert.equal(defaultSettings.colorSchemeLight, "default");
   assert.equal(defaultSettings.colorSchemeDark, "default");
 
@@ -290,6 +295,13 @@ await runTest("normalizeSettingsRecord accepts theme modes and falls back to lig
   assert.equal(normalizeSettingsRecord({ theme_mode: "system" }).themeMode, "system");
   assert.equal(normalizeSettingsRecord({ theme_mode: "SYSTEM" }).themeMode, "system");
   assert.equal(normalizeSettingsRecord({ theme_mode: "midnight" }).themeMode, "light");
+});
+
+await runTest("normalizeSettingsRecord accepts UI language and falls back to Chinese", () => {
+  assert.equal(normalizeSettingsRecord({ language: "zh-CN" }).language, "zh-CN");
+  assert.equal(normalizeSettingsRecord({ language: "en-US" }).language, "en-US");
+  assert.equal(normalizeSettingsRecord({ language: "EN-us" }).language, "en-US");
+  assert.equal(normalizeSettingsRecord({ language: "fr-FR" }).language, "zh-CN");
 });
 
 await runTest("normalizeSettingsRecord accepts color schemes and falls back to default", () => {

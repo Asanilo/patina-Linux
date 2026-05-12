@@ -233,7 +233,7 @@ export function useAppMappingState({
 
   const candidateCategoryOptions = useMemo(
     () => [
-      { value: AUTO_CATEGORY_VALUE, label: "自动识别" },
+      { value: AUTO_CATEGORY_VALUE, label: UI_TEXT.mapping.autoCategory },
       ...orderedAssignableCategories.map((category) => ({
         value: category,
         label: AppClassification.getCategoryLabel(category),

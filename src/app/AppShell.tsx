@@ -1,12 +1,12 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
-import { UI_TEXT } from "../shared/copy/uiText.ts";
+import { setUiTextLanguage, UI_TEXT } from "../shared/copy/uiText.ts";
 import AppSidebar from "./components/AppSidebar";
 import AppTitleBar from "./components/AppTitleBar";
 import Dashboard from "../features/dashboard/components/Dashboard";
 import { watchCurrentWindowMaximized } from "../platform/desktop/windowControlGateway";
 import QuietToastStack from "../shared/components/QuietToastStack";
-import type { ThemeMode } from "../shared/settings/appSettings.ts";
+import type { AppLanguage, ThemeMode } from "../shared/settings/appSettings.ts";
 import type { ColorSchemePreview } from "../features/settings/types.ts";
 import { useDashboardStats } from "../features/dashboard/hooks/useDashboardStats";
 import { useWindowTracking } from "./hooks/useWindowTracking";
@@ -63,6 +63,7 @@ function AppShellContent() {
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [settingsThemeModePreview, setSettingsThemeModePreview] = useState<ThemeMode | null>(null);
   const [settingsColorSchemePreview, setSettingsColorSchemePreview] = useState<ColorSchemePreview | null>(null);
+  const [settingsLanguagePreview, setSettingsLanguagePreview] = useState<AppLanguage | null>(null);
   const didPrewarmBootstrapCachesRef = useRef(false);
   const didPrewarmSnapshotCachesRef = useRef(false);
   const {
@@ -74,6 +75,7 @@ function AppShellContent() {
     syncTick,
     trackerHealth,
   } = useWindowTracking();
+  setUiTextLanguage(settingsLanguagePreview ?? appSettings.language);
   useAppThemeMode(
     settingsThemeModePreview ?? appSettings.themeMode,
     settingsColorSchemePreview?.light ?? appSettings.colorSchemeLight,
@@ -214,11 +216,13 @@ function AppShellContent() {
                     setAppSettings(nextSettings);
                     setSettingsThemeModePreview(null);
                     setSettingsColorSchemePreview(null);
+                    setSettingsLanguagePreview(null);
                   }}
                   onRegisterSaveHandler={registerSettingsSaveHandler}
                   onDirtyChange={setSettingsDirty}
                   onThemeModePreview={setSettingsThemeModePreview}
                   onColorSchemePreview={setSettingsColorSchemePreview}
+                  onLanguagePreview={setSettingsLanguagePreview}
                   onToast={pushToast}
                 />
               )}

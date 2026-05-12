@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { UI_TEXT } from "../../../shared/copy/uiText.ts";
+import { setUiTextLanguage, UI_TEXT } from "../../../shared/copy/uiText.ts";
 import type { QuietToastTone } from "../../../shared/components/QuietToast";
 import { useQuietDialogs } from "../../../shared/hooks/useQuietDialogs";
 import { getSettingsBootstrapCache, setSettingsBootstrapCache } from "../services/settingsBootstrapCache";
@@ -17,7 +17,7 @@ import {
 import type { AppSettings } from "../../../shared/settings/appSettings";
 import type { CleanupRange } from "../types";
 
-const CLEANUP_OPTIONS: Array<{ value: CleanupRange; label: string }> = [
+const buildCleanupOptions = (): Array<{ value: CleanupRange; label: string }> => [
   { value: 180, label: UI_TEXT.settings.cleanupRangeLabels[180] },
   { value: 90, label: UI_TEXT.settings.cleanupRangeLabels[90] },
   { value: 60, label: UI_TEXT.settings.cleanupRangeLabels[60] },
@@ -66,6 +66,7 @@ export function useSettingsPageState({
   const [isRestoringBackup, setIsRestoringBackup] = useState(false);
   const [appVersion, setAppVersion] = useState(() => initialBootstrap?.appVersion ?? "-");
   const hasUnsavedChangesRef = useRef(false);
+  const cleanupOptions = buildCleanupOptions();
 
   const notify = useCallback((message: string, tone: QuietToastTone = "info") => {
     onToast?.(message, tone);
@@ -159,6 +160,7 @@ export function useSettingsPageState({
       }
       if (result.nextBootstrap) {
         setSettingsBootstrapCache(result.nextBootstrap);
+        setUiTextLanguage(result.nextBootstrap.settings.language);
         onSettingsChanged(result.nextBootstrap.settings);
       }
       setSaveStatus(result.nextSaveStatus);
@@ -166,7 +168,7 @@ export function useSettingsPageState({
         window.setTimeout(() => setSaveStatus("idle"), 1800);
       }
       if (result.toastKind === "runtime-sync-warning") {
-        notify("设置已保存，但部分运行时同步未完成。重启或下次刷新后会重新生效。", "warning");
+        notify(UI_TEXT.toast.settingsRuntimeSyncPartial, "warning");
       } else {
         notify(UI_TEXT.settings.saved, "success");
       }
@@ -200,7 +202,7 @@ export function useSettingsPageState({
   }, [hasUnsavedChanges, notify, savedSettings]);
 
   const handleCleanup = useCallback(async () => {
-    const selectedLabel = CLEANUP_OPTIONS.find((option) => option.value === cleanupRange)?.label
+    const selectedLabel = cleanupOptions.find((option) => option.value === cleanupRange)?.label
       ?? UI_TEXT.settings.confirmRangeFallback;
     await runSettingsCleanupFlow({
       cleanupRange,
@@ -215,7 +217,7 @@ export function useSettingsPageState({
         console.error(message, error);
       },
     });
-  }, [cleanupRange, confirm, notify]);
+  }, [cleanupOptions, cleanupRange, confirm, notify]);
 
   const handleExportBackup = useCallback(async () => {
     if (isExportingBackup) return;
@@ -255,7 +257,7 @@ export function useSettingsPageState({
       await SettingsRuntimeAdapterService.openReleaseNotes();
     } catch (error) {
       console.error("open release notes failed", error);
-      notify("无法打开更新说明链接。", "warning");
+      notify(UI_TEXT.toast.releaseNotesOpenFailed, "warning");
     }
   }, [notify]);
 
@@ -264,7 +266,7 @@ export function useSettingsPageState({
       await SettingsRuntimeAdapterService.openFeedback();
     } catch (error) {
       console.error("open feedback link failed", error);
-      notify("无法打开反馈链接。", "warning");
+      notify(UI_TEXT.toast.feedbackOpenFailed, "warning");
     }
   }, [notify]);
 
@@ -314,7 +316,7 @@ export function useSettingsPageState({
     idleTimeoutMinutes,
     timelineMergeGapMinutes,
     minSessionMinutes,
-    cleanupOptions: CLEANUP_OPTIONS,
+    cleanupOptions,
     idleTimeoutMinutesRange: IDLE_TIMEOUT_MINUTES_RANGE,
     timelineMergeGapMinutesRange: TIMELINE_MERGE_GAP_MINUTES_RANGE,
     minSessionMinutesRange: MIN_SESSION_MINUTES_RANGE,

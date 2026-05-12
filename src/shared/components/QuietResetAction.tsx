@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { UI_TEXT } from "../copy/uiText.ts";
 import QuietTooltip from "./QuietTooltip";
 
 interface Props {
@@ -10,7 +11,7 @@ interface Props {
 }
 
 export default function QuietResetAction({
-  children = "默认",
+  children = UI_TEXT.common.default,
   disabled = false,
   dimmed = false,
   title,

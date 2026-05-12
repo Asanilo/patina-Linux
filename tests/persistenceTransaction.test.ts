@@ -120,6 +120,7 @@ await runTest("settings batch operations stop on the first failed write", async 
     timelineMergeGapSecs: 180,
     refreshIntervalSecs: 2,
     themeMode: "dark",
+    language: "en-US",
     colorSchemeLight: "github",
     colorSchemeDark: "nord",
   }));
@@ -137,10 +138,12 @@ await runTest("settings batch operations stop on the first failed write", async 
 await runTest("settings raw patch persists theme mode with snake case key", () => {
   assert.deepEqual(buildRawAppSettingsPatch({
     themeMode: "system",
+    language: "en-US",
     colorSchemeLight: "rose-pine",
     colorSchemeDark: "gruvbox",
   }), {
     theme_mode: "system",
+    language: "en-US",
     color_scheme_light: "rose-pine",
     color_scheme_dark: "gruvbox",
   });

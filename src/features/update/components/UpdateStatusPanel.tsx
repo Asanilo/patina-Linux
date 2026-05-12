@@ -5,6 +5,7 @@ import {
   type UpdateActionModel,
 } from "../services/updateViewModel";
 import UpdateProgressBar from "./UpdateProgressBar";
+import { UI_TEXT } from "../../../shared/copy/uiText.ts";
 
 interface UpdateStatusPanelProps {
   snapshot: UpdateSnapshot;
@@ -62,7 +63,7 @@ export default function UpdateStatusPanel({
 
   return (
     <div className="qp-subpanel">
-      <p className="text-sm font-semibold text-[var(--qp-text-primary)]">应用更新</p>
+      <p className="text-sm font-semibold text-[var(--qp-text-primary)]">{UI_TEXT.update.appUpdate}</p>
       <p className="mt-2 text-sm font-semibold text-[var(--qp-text-primary)]">{viewModel.statusTitle}</p>
       {viewModel.statusDetail ? (
         <p className="mt-1 text-xs leading-relaxed break-words text-[var(--qp-text-secondary)]">
@@ -86,7 +87,7 @@ export default function UpdateStatusPanel({
             onClick={onOpenReleaseNotes}
             className="text-xs text-[var(--qp-text-tertiary)] hover:text-[var(--qp-text-secondary)]"
           >
-            更新说明
+            {UI_TEXT.update.releaseNotes}
           </button>
           <span aria-hidden>·</span>
           <button
@@ -94,7 +95,7 @@ export default function UpdateStatusPanel({
             onClick={onOpenFeedback}
             className="text-xs text-[var(--qp-text-tertiary)] hover:text-[var(--qp-text-secondary)]"
           >
-            问题反馈
+            {UI_TEXT.update.feedback}
           </button>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">

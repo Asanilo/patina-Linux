@@ -52,6 +52,8 @@ pub struct BackupPreview {
     pub schema_version: u32,
     pub app_version: String,
     pub compatibility_level: String,
+    pub compatibility_message_key: String,
+    pub compatibility_message_args: Vec<String>,
     pub compatibility_message: String,
     pub session_count: usize,
     pub setting_count: usize,
@@ -78,6 +80,8 @@ impl BackupCompatibilityLevel {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BackupCompatibility {
     pub level: BackupCompatibilityLevel,
+    pub message_key: &'static str,
+    pub message_args: Vec<String>,
     pub message: String,
     pub supported: bool,
 }
@@ -93,6 +97,8 @@ impl BackupPayload {
         if self.version > CURRENT_BACKUP_VERSION {
             return BackupCompatibility {
                 level: BackupCompatibilityLevel::Incompatible,
+                message_key: "backup.compatibility.versionTooNew",
+                message_args: vec![self.version.to_string(), CURRENT_BACKUP_VERSION.to_string()],
                 message: format!(
                     "备份格式版本 {} 高于当前支持的 {}，请升级应用后再恢复。",
                     self.version, CURRENT_BACKUP_VERSION
@@ -104,6 +110,8 @@ impl BackupPayload {
         if self.version < CURRENT_BACKUP_VERSION {
             return BackupCompatibility {
                 level: BackupCompatibilityLevel::Legacy,
+                message_key: "backup.compatibility.legacyVersion",
+                message_args: vec![self.version.to_string(), CURRENT_BACKUP_VERSION.to_string()],
                 message: format!(
                     "备份格式版本 {} 低于当前版本 {}，将按兼容模式尝试恢复。",
                     self.version, CURRENT_BACKUP_VERSION
@@ -115,6 +123,11 @@ impl BackupPayload {
         if self.meta.schema_version > CURRENT_BACKUP_SCHEMA_VERSION {
             return BackupCompatibility {
                 level: BackupCompatibilityLevel::Incompatible,
+                message_key: "backup.compatibility.schemaTooNew",
+                message_args: vec![
+                    self.meta.schema_version.to_string(),
+                    CURRENT_BACKUP_SCHEMA_VERSION.to_string(),
+                ],
                 message: format!(
                     "备份 schema 版本 {} 高于当前支持的 {}，请升级应用后再恢复。",
                     self.meta.schema_version, CURRENT_BACKUP_SCHEMA_VERSION
@@ -125,6 +138,8 @@ impl BackupPayload {
 
         BackupCompatibility {
             level: BackupCompatibilityLevel::Compatible,
+            message_key: "backup.compatibility.compatible",
+            message_args: Vec::new(),
             message: "当前版本可直接恢复该备份。".to_string(),
             supported: true,
         }
@@ -139,6 +154,8 @@ impl BackupPayload {
             schema_version: self.meta.schema_version,
             app_version: self.meta.app_version.clone(),
             compatibility_level: compatibility.level_str().to_string(),
+            compatibility_message_key: compatibility.message_key.to_string(),
+            compatibility_message_args: compatibility.message_args,
             compatibility_message: compatibility.message,
             session_count: self.sessions.len(),
             setting_count: self.settings.len(),

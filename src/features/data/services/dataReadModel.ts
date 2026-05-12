@@ -6,6 +6,7 @@ import {
   getRollingDayRanges,
   type SessionRange,
 } from "../../../shared/lib/sessionReadCompiler.ts";
+import { UI_TEXT } from "../../../shared/copy/uiText.ts";
 
 export type { HistorySession };
 
@@ -111,9 +112,9 @@ const RECENT_HEATMAP_WEEK_COUNT = 53;
 const heatmapSessionCache = new Map<string, HistorySession[]>();
 let earliestSessionStartTimeCache: number | null | undefined;
 const DATA_TREND_RANGE_LABELS: Record<DataTrendRange, string> = {
-  7: "近 7 天",
-  30: "近 30 天",
-  365: "近一年",
+  7: UI_TEXT.data.pastSevenDays,
+  30: UI_TEXT.data.pastThirtyDays,
+  365: UI_TEXT.data.recentYear,
 };
 
 function startOfLocalDay(date: Date) {
@@ -152,7 +153,7 @@ function formatDuration(durationMs: number) {
 }
 
 function formatHeatmapMonthLabel(date: Date) {
-  return `${date.getMonth() + 1}月`;
+  return UI_TEXT.date.monthLabel(date.getMonth() + 1);
 }
 
 function buildChartAxis(points: DataTrendPoint[]) {
@@ -173,7 +174,7 @@ function buildChartAxis(points: DataTrendPoint[]) {
 
 function formatMonthLabel(monthKey: string) {
   const month = Number(monthKey.slice(5, 7));
-  return `${month}月`;
+  return UI_TEXT.date.monthLabel(month);
 }
 
 function formatAppDayLabel(dateKey: string) {
@@ -284,9 +285,9 @@ export function buildDataTrendViewModel(
     chartData,
     chartAxis: buildChartAxis(chartData),
     metricLabels: {
-      total: range === 7 ? "7 日总时长" : range === 30 ? "30 日总时长" : "近一年总时长",
-      average: shouldGroupByMonth ? "月均时长" : "日均时长",
-      averageHint: shouldGroupByMonth ? "按近一年月份计算" : `按${rangeLabel}计算`,
+      total: UI_TEXT.data.trendTotal(range),
+      average: shouldGroupByMonth ? UI_TEXT.data.yearlyAverage : UI_TEXT.data.dailyAverage,
+      averageHint: shouldGroupByMonth ? UI_TEXT.data.yearlyAverageHint : UI_TEXT.data.rangeAverageHint(rangeLabel),
     },
   };
 }
@@ -481,7 +482,7 @@ export function buildActivityHeatmap(
           isFuture,
           isOutsideYear,
           intensity: duration <= 0 || isFuture || isOutsideYear ? 0 : Math.max(0.16, duration / maxDuration),
-          label: `${formatHeatmapDateLabel(dateKey)} · ${isFuture ? "未开始" : formatDuration(duration)}`,
+          label: `${formatHeatmapDateLabel(dateKey)} · ${isFuture ? UI_TEXT.data.notStarted : formatDuration(duration)}`,
         };
       }),
     };

@@ -1,6 +1,7 @@
 import { Clock, Minus, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import QuietSwitch from "../../../shared/components/QuietSwitch";
+import { UI_TEXT } from "../../../shared/copy/uiText.ts";
 
 type MinuteControlProps = {
   label: string;
@@ -48,7 +49,7 @@ function MinuteStepperSlider({
           type="button"
           onClick={() => updateMinutes(minutes - 1)}
           disabled={!canDecrease}
-          aria-label={`${ariaLabel}减少 1 分钟`}
+          aria-label={UI_TEXT.settings.decreaseMinute(ariaLabel)}
           className="qp-button-secondary order-1 inline-flex h-6 w-6 items-center justify-center rounded-[6px] p-0 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Minus size={11} />
@@ -75,14 +76,14 @@ function MinuteStepperSlider({
           type="button"
           onClick={() => updateMinutes(minutes + 1)}
           disabled={!canIncrease}
-          aria-label={`${ariaLabel}增加 1 分钟`}
+          aria-label={UI_TEXT.settings.increaseMinute(ariaLabel)}
           className="qp-button-secondary order-4 inline-flex h-6 w-6 items-center justify-center rounded-[6px] p-0 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Plus size={11} />
         </button>
       </div>
       <p className="order-3 min-w-[48px] text-center text-xs font-medium tabular-nums text-[var(--qp-text-secondary)]">
-        {minutes} 分钟
+        {UI_TEXT.settings.minuteValue(minutes)}
       </p>
     </div>
   );
@@ -124,7 +125,7 @@ export default function SettingsTrackingPanel({
     <section className="qp-panel min-h-[240px] p-5 md:p-6">
       <div className="flex items-center gap-2.5 pb-2 border-b border-[var(--qp-border-subtle)]">
         <Clock size={16} className="text-[var(--qp-accent-default)]" />
-        <h2 className="text-sm font-semibold text-[var(--qp-text-primary)]">追踪</h2>
+        <h2 className="text-sm font-semibold text-[var(--qp-text-primary)]">{UI_TEXT.settings.trackingPanelTitle}</h2>
       </div>
 
       <div className="mt-5 space-y-5">
@@ -133,15 +134,17 @@ export default function SettingsTrackingPanel({
         <TrackingMinuteField {...minSessionControl} />
 
         <div>
-          <label className="text-[11px] font-semibold text-[var(--qp-text-tertiary)] uppercase tracking-[0.06em]">暂停追踪</label>
+          <label className="text-[11px] font-semibold text-[var(--qp-text-tertiary)] uppercase tracking-[0.06em]">
+            {UI_TEXT.settings.trackingPausedLabel}
+          </label>
           <div className="mt-2 flex items-start justify-between gap-4">
             <p className="text-sm text-[var(--qp-text-secondary)] leading-relaxed">
-              暂停后不再写入新记录，恢复后继续计时。
+              {UI_TEXT.settings.trackingPausedHint}
             </p>
             <QuietSwitch
               checked={trackingPaused}
               onChange={onTrackingPausedChange}
-              ariaLabel="切换暂停追踪"
+              ariaLabel={UI_TEXT.accessibility.settings.toggleTrackingPaused}
               tone="warning"
             />
           </div>

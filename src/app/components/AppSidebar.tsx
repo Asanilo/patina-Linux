@@ -15,21 +15,21 @@ interface Props {
 type AppRegionStyle = CSSProperties & { WebkitAppRegion?: "drag" | "no-drag" };
 const NO_DRAG_STYLE: AppRegionStyle = { WebkitAppRegion: "no-drag" };
 
-const NAV_ITEMS = [
-  { id: "dashboard" as View, icon: Monitor, label: UI_TEXT.dashboard.title },
-  { id: "history" as View, icon: Clock, label: UI_TEXT.history.title },
-  { id: "data" as View, icon: BarChart3, label: UI_TEXT.data.title },
-  { id: "mapping" as View, icon: Sparkles, label: UI_TEXT.mapping.title },
-  { id: "settings" as View, icon: Settings2, label: UI_TEXT.settings.title },
-  { id: "about" as View, icon: Info, label: UI_TEXT.about.title },
-];
-
 export default function AppSidebar({
   currentView,
   onNavigate,
   showUpdateEntry = false,
   onOpenUpdateDialog,
 }: Props) {
+  const navItems = [
+    { id: "dashboard" as View, icon: Monitor, label: UI_TEXT.dashboard.title },
+    { id: "history" as View, icon: Clock, label: UI_TEXT.history.title },
+    { id: "data" as View, icon: BarChart3, label: UI_TEXT.data.title },
+    { id: "mapping" as View, icon: Sparkles, label: UI_TEXT.mapping.title },
+    { id: "settings" as View, icon: Settings2, label: UI_TEXT.settings.title },
+    { id: "about" as View, icon: Info, label: UI_TEXT.about.title },
+  ];
+
   return (
     <motion.aside
       initial={{ x: -4, opacity: 0 }}
@@ -43,7 +43,7 @@ export default function AppSidebar({
       </div>
 
       <nav className="flex flex-col gap-2.5 mt-1 w-full px-2">
-        {NAV_ITEMS.map((item) => (
+        {navItems.map((item) => (
           <motion.button
             key={item.id}
             whileTap={{ scale: 0.995 }}
@@ -76,7 +76,7 @@ export default function AppSidebar({
           >
             <span className="inline-flex w-full items-center justify-center gap-1 pl-px text-[10px] leading-none font-medium">
               <ArrowUpCircle size={11} strokeWidth={1.85} className="shrink-0" />
-              <span className="block leading-none">更新</span>
+              <span className="block leading-none">{UI_TEXT.update.sidebarEntry}</span>
             </span>
           </motion.button>
         ) : null}

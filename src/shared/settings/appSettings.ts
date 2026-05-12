@@ -3,6 +3,7 @@ import { RELEASE_DEFAULT_SETTINGS } from "./releaseDefaultProfile.ts";
 export type CloseBehavior = "exit" | "tray";
 export type MinimizeBehavior = "taskbar" | "widget";
 export type ThemeMode = "light" | "dark" | "system";
+export type AppLanguage = "zh-CN" | "en-US";
 export type ColorScheme =
   | "default"
   | "absolutely"
@@ -42,6 +43,7 @@ export interface AppSettings {
   closeBehavior: CloseBehavior;
   minimizeBehavior: MinimizeBehavior;
   themeMode: ThemeMode;
+  language: AppLanguage;
   colorSchemeLight: ColorScheme;
   colorSchemeDark: ColorScheme;
   launchAtLogin: boolean;

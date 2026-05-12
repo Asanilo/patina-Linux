@@ -5,6 +5,7 @@ import {
   type UpdateActionModel,
 } from "../services/updateViewModel";
 import UpdateProgressBar from "./UpdateProgressBar";
+import { UI_TEXT } from "../../../shared/copy/uiText.ts";
 
 interface UpdateConfirmDialogProps {
   open: boolean;
@@ -63,7 +64,7 @@ export default function UpdateConfirmDialog({
             onClick={onClose}
             className="qp-button-secondary qp-dialog-action"
           >
-            稍后
+            {UI_TEXT.update.later}
           </button>
           {viewModel.secondaryAction ? (
             <button
@@ -83,7 +84,7 @@ export default function UpdateConfirmDialog({
               className={buildButtonClass(viewModel.primaryAction)}
             >
               {installing && viewModel.primaryAction.action === "open_confirm"
-                ? "处理中..."
+                ? UI_TEXT.update.processing
                 : viewModel.primaryAction.label}
             </button>
           ) : null}
@@ -103,7 +104,7 @@ export default function UpdateConfirmDialog({
         ) : null}
         {viewModel.notesPreview ? (
           <div className="qp-subpanel">
-            <p className="text-xs font-semibold text-[var(--qp-text-tertiary)]">更新说明</p>
+            <p className="text-xs font-semibold text-[var(--qp-text-tertiary)]">{UI_TEXT.update.releaseNotes}</p>
             <p
               className="mt-1 break-words text-xs leading-relaxed text-[var(--qp-text-tertiary)]"
               style={{

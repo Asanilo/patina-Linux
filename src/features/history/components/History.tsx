@@ -43,13 +43,12 @@ interface Props {
 }
 
 const TIMELINE_MIN_SESSION_MINUTES_RANGE = { min: 1, max: 10 } as const;
-const CALENDAR_WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"] as const;
 const clampMinute = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
 const startOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1);
 const addMonths = (date: Date, delta: number) => new Date(date.getFullYear(), date.getMonth() + delta, 1);
 const isSameDay = (left: Date, right: Date) => left.toDateString() === right.toDateString();
-const formatCalendarMonth = (date: Date) => `${date.getFullYear()} 年 ${date.getMonth() + 1} 月`;
+const formatCalendarMonth = (date: Date) => UI_TEXT.date.yearMonthLabel(date.getFullYear(), date.getMonth() + 1);
 const buildCalendarDays = (month: Date) => {
   const monthStart = startOfMonth(month);
   const mondayOffset = (monthStart.getDay() + 6) % 7;
@@ -296,7 +295,7 @@ export default function History({
                         type="button"
                         onClick={() => setCalendarMonth((month) => addMonths(month, -1))}
                         className="history-calendar-nav"
-                        aria-label="上个月"
+                        aria-label={UI_TEXT.accessibility.history.previousMonth}
                       >
                         <ChevronLeft size={14} />
                       </button>
@@ -306,13 +305,13 @@ export default function History({
                         onClick={() => setCalendarMonth((month) => addMonths(month, 1))}
                         disabled={!canGoNextCalendarMonth}
                         className="history-calendar-nav"
-                        aria-label="下个月"
+                        aria-label={UI_TEXT.accessibility.history.nextMonth}
                       >
                         <ChevronRight size={14} />
                       </button>
                     </header>
                     <div className="history-calendar-grid history-calendar-weekdays">
-                      {CALENDAR_WEEKDAYS.map((weekday) => (
+                      {UI_TEXT.date.weekdaysShort.map((weekday) => (
                         <span key={weekday}>{weekday}</span>
                       ))}
                     </div>
@@ -438,19 +437,19 @@ export default function History({
                 type="button"
                 onClick={() => updateMinSessionMinutes(minSessionMinutes - 1)}
                 disabled={!canDecreaseMinSession}
-                aria-label="减少最少时长 1 分钟"
+                aria-label={UI_TEXT.accessibility.history.decreaseMinDuration}
                 className="qp-button-secondary inline-flex h-6 w-6 items-center justify-center rounded-[6px] p-0 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Minus size={11} />
               </button>
               <span className="min-w-[62px] text-center text-xs font-medium tabular-nums text-[var(--qp-text-secondary)]">
-                {minSessionMinutes} 分钟
+                {UI_TEXT.settings.minuteValue(minSessionMinutes)}
               </span>
               <button
                 type="button"
                 onClick={() => updateMinSessionMinutes(minSessionMinutes + 1)}
                 disabled={!canIncreaseMinSession}
-                aria-label="增加最少时长 1 分钟"
+                aria-label={UI_TEXT.accessibility.history.increaseMinDuration}
                 className="qp-button-secondary inline-flex h-6 w-6 items-center justify-center rounded-[6px] p-0 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Plus size={11} />

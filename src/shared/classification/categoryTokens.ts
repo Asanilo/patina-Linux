@@ -1,3 +1,5 @@
+import { UI_TEXT } from "../copy/uiText.ts";
+
 export const CUSTOM_CATEGORY_PREFIX = "custom:" as const;
 
 export type BuiltinAppCategory =
@@ -79,28 +81,32 @@ export const QUIET_PRO_CATEGORY_PALETTE_37 = [
 
 export const OTHER_CATEGORY_FIXED_COLOR = "#8F98A8";
 
-const BUILTIN_LABELS: Record<BuiltinAppCategory, string> = {
-  ai: "AI",
-  development: "开发",
-  office: "办公",
-  browser: "浏览",
-  communication: "通讯",
-  video: "视频",
-  music: "音乐",
-  game: "游戏",
-  design: "设计",
-  utility: "工具",
-  other: "未分类",
-  system: "系统",
-};
+const BUILTIN_CATEGORY_IDS: BuiltinAppCategory[] = [
+  "ai",
+  "development",
+  "office",
+  "browser",
+  "communication",
+  "video",
+  "music",
+  "game",
+  "design",
+  "utility",
+  "other",
+  "system",
+];
 
-const SYSTEM_TOKEN: CategoryToken = { label: "系统", color: "#475569" };
-const BUILTIN_SET = new Set<string>(Object.keys(BUILTIN_LABELS));
+const BUILTIN_SET = new Set<string>(BUILTIN_CATEGORY_IDS);
+
+function getBuiltinLabel(category: BuiltinAppCategory): string {
+  if (category === "ai") return UI_TEXT.categories.ai;
+  return UI_TEXT.categories.short[category];
+}
 
 function normalizeCustomCategoryLabel(label: string): string {
   const trimmed = label.trim().replace(/\s+/g, " ");
   if (!trimmed) {
-    return "自定义";
+    return UI_TEXT.categories.custom;
   }
   return trimmed.slice(0, 20);
 }
@@ -108,7 +114,7 @@ function normalizeCustomCategoryLabel(label: string): string {
 export function resolveCustomCategoryLabel(category: CustomAppCategory): string {
   const raw = category.slice(CUSTOM_CATEGORY_PREFIX.length);
   if (!raw) {
-    return "自定义";
+    return UI_TEXT.categories.custom;
   }
   try {
     return normalizeCustomCategoryLabel(decodeURIComponent(raw));
@@ -137,12 +143,12 @@ export function isAppCategory(category: string): category is AppCategory {
 
 export function getCategoryToken(category: AppCategory): CategoryToken {
   if (category === "system") {
-    return SYSTEM_TOKEN;
+    return { label: UI_TEXT.categories.system, color: "#475569" };
   }
 
   if (category === "other") {
     return {
-      label: BUILTIN_LABELS.other,
+      label: getBuiltinLabel("other"),
       color: OTHER_CATEGORY_FIXED_COLOR,
     };
   }
@@ -155,7 +161,7 @@ export function getCategoryToken(category: AppCategory): CategoryToken {
   }
 
   return {
-    label: BUILTIN_LABELS[category],
+    label: getBuiltinLabel(category),
     color: QUIET_PRO_CATEGORY_PALETTE_37[0],
   };
 }

@@ -16,6 +16,7 @@ import {
 import { openExternalUrl } from "../../../platform/desktop/externalUrlGateway.ts";
 import { emitAppSettingsChanged } from "../../../platform/runtime/appSettingsEventGateway.ts";
 import { setAfkThreshold } from "../../../platform/runtime/trackingRuntimeGateway.ts";
+import { UI_TEXT } from "../../../shared/copy/uiText.ts";
 import type { CleanupRange } from "../types.ts";
 import {
   buildSessionCleanupPlan,
@@ -59,11 +60,11 @@ const FEEDBACK_URL = "https://github.com/Ceceliaee/time-tracking/issues/new/choo
 function buildBackupPreviewSummary(preview: BackupPreview): string {
   const exportedAt = new Date(preview.exportedAtMs).toLocaleString();
   return [
-    `备份版本：v${preview.version}（Schema ${preview.schemaVersion}）`,
-    `导出时间：${exportedAt}`,
-    `应用版本：${preview.appVersion}`,
-    `兼容提示：${preview.compatibilityMessage}`,
-    `会话数：${preview.sessionCount}，设置项：${preview.settingCount}，图标缓存：${preview.iconCacheCount}`,
+    `${UI_TEXT.backup.versionLabel(preview.version)}（${UI_TEXT.backup.schemaLabel(preview.schemaVersion)}）`,
+    UI_TEXT.backup.exportedAt(exportedAt),
+    UI_TEXT.backup.appVersion(preview.appVersion),
+    UI_TEXT.backup.compatibility(preview.compatibilityMessage),
+    UI_TEXT.backup.itemCounts(preview.sessionCount, preview.settingCount, preview.iconCacheCount),
   ].join("\n");
 }
 

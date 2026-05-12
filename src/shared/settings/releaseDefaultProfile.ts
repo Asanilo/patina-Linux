@@ -7,6 +7,7 @@ export interface ReleaseDefaultSettingsProfile {
   closeBehavior: "exit" | "tray";
   minimizeBehavior: "taskbar" | "widget";
   themeMode: "light" | "dark" | "system";
+  language: "zh-CN" | "en-US";
   colorSchemeLight:
     | "default"
     | "absolutely"
@@ -66,6 +67,7 @@ export const RELEASE_DEFAULT_SETTINGS: ReleaseDefaultSettingsProfile = {
   closeBehavior: "tray",
   minimizeBehavior: "widget",
   themeMode: "light",
+  language: "zh-CN",
   colorSchemeLight: "default",
   colorSchemeDark: "default",
   launchAtLogin: true,

@@ -1,4 +1,5 @@
 import type { UpdateErrorStage, UpdateSnapshot } from "../../../shared/types/update";
+import { UI_TEXT } from "../../../shared/copy/uiText.ts";
 
 export type UpdateAction =
   | "check"
@@ -90,14 +91,14 @@ function buildErrorDetail(
 ): string | null {
   const summary = summarizeErrorMessage(errorMessage);
   const prefix = stage === "check"
-    ? "无法访问更新清单。你可以稍后重试，或直接转到手动下载。"
+    ? UI_TEXT.update.checkErrorDetail
     : stage === "download"
-      ? "已经发现新版本，但自动下载安装包失败。你可以直接转到手动下载。"
+      ? UI_TEXT.update.downloadErrorDetail
       : stage === "install"
-        ? "更新包已经准备好，但安装没有完成。你可以重新尝试安装，或重新下载安装包。"
-        : "更新流程未能完成。你可以稍后重试。";
+        ? UI_TEXT.update.installErrorDetail
+        : UI_TEXT.update.genericErrorDetail;
 
-  return summary ? `${prefix} 详细信息：${summary}` : prefix;
+  return summary ? UI_TEXT.update.errorDetailWithSummary(prefix, summary) : prefix;
 }
 
 function buildUpdateProgressModel(snapshot: UpdateSnapshot): UpdateProgressModel | null {
@@ -119,8 +120,8 @@ function buildUpdateProgressModel(snapshot: UpdateSnapshot): UpdateProgressModel
       label: hasDownloadedBytes && hasTotalBytes
         ? `${formatByteCount(downloadedBytes)} / ${formatByteCount(totalBytes)}`
         : hasDownloadedBytes
-          ? `已下载 ${formatByteCount(downloadedBytes)}`
-          : "正在获取进度",
+          ? UI_TEXT.update.downloadedBytes(formatByteCount(downloadedBytes))
+          : UI_TEXT.update.progressPending,
       valueText: percent !== null ? `${percent}%` : null,
       indeterminate: percent === null,
     };
@@ -129,7 +130,7 @@ function buildUpdateProgressModel(snapshot: UpdateSnapshot): UpdateProgressModel
   if (snapshot.status === "downloaded") {
     return {
       percent: 100,
-      label: hasDownloadedBytes ? `更新包 ${formatByteCount(downloadedBytes)} 已下载完成` : "更新包已下载完成",
+      label: UI_TEXT.update.packageDownloaded(hasDownloadedBytes ? formatByteCount(downloadedBytes) : undefined),
       valueText: "100%",
       indeterminate: false,
     };
@@ -138,7 +139,7 @@ function buildUpdateProgressModel(snapshot: UpdateSnapshot): UpdateProgressModel
   if (snapshot.status === "installing") {
     return {
       percent: 100,
-      label: "正在安装更新，应用将很快重启",
+      label: UI_TEXT.update.installingProgress,
       valueText: null,
       indeterminate: true,
     };
@@ -147,7 +148,7 @@ function buildUpdateProgressModel(snapshot: UpdateSnapshot): UpdateProgressModel
   return null;
 }
 
-function buildOpenReleaseAction(snapshot: UpdateSnapshot, label = "手动下载"): UpdateActionModel | null {
+function buildOpenReleaseAction(snapshot: UpdateSnapshot, label: string = UI_TEXT.update.manualDownload): UpdateActionModel | null {
   if (!snapshot.releasePageUrl) return null;
   return {
     label,
@@ -158,7 +159,7 @@ function buildOpenReleaseAction(snapshot: UpdateSnapshot, label = "手动下载"
   };
 }
 
-function buildOpenDownloadAction(snapshot: UpdateSnapshot, label = "下载安装包"): UpdateActionModel | null {
+function buildOpenDownloadAction(snapshot: UpdateSnapshot, label: string = UI_TEXT.update.downloadInstaller): UpdateActionModel | null {
   if (!snapshot.assetDownloadUrl) return null;
   return {
     label,
@@ -179,10 +180,10 @@ export function buildUpdateStatusPanelModel(
 
   if (snapshot.status === "available") {
     return {
-      statusTitle: `发现新版本：${latestVersion ?? "未知版本"}`,
-      statusDetail: "新版本已就绪，确认后将先下载更新包。",
+      statusTitle: UI_TEXT.update.foundVersion(latestVersion ?? UI_TEXT.update.unknownVersion),
+      statusDetail: UI_TEXT.update.updateReadyDetail,
       primaryAction: {
-        label: "立即下载",
+        label: UI_TEXT.update.downloadNow,
         action: "open_confirm",
         disabled: isInstalling,
         loading: isInstalling,
@@ -195,42 +196,42 @@ export function buildUpdateStatusPanelModel(
 
   if (snapshot.status === "downloaded") {
     return {
-      statusTitle: `更新已下载：${latestVersion ?? "未知版本"}`,
-      statusDetail: "更新包已准备完成，确认后将重启并安装。",
+      statusTitle: UI_TEXT.update.downloadedTitle(latestVersion ?? UI_TEXT.update.unknownVersion),
+      statusDetail: UI_TEXT.update.downloadedDetail,
       primaryAction: {
-        label: "重启安装",
+        label: UI_TEXT.update.restartInstall,
         action: "open_confirm",
         disabled: isInstalling,
         loading: isInstalling,
         emphasis: "primary",
       },
-      secondaryAction: buildOpenDownloadAction(snapshot, "重新下载安装包"),
+      secondaryAction: buildOpenDownloadAction(snapshot, UI_TEXT.update.redownloadInstaller),
       progress,
     };
   }
 
   if (snapshot.status === "downloading") {
     return {
-      statusTitle: "正在下载更新...",
-      statusDetail: latestVersion ? `目标版本：${latestVersion}` : "正在准备安装所需的更新包。",
+      statusTitle: UI_TEXT.update.downloading,
+      statusDetail: latestVersion ? UI_TEXT.update.targetVersion(latestVersion) : UI_TEXT.update.preparingPackage,
       primaryAction: {
-        label: "处理中...",
+        label: UI_TEXT.update.processing,
         action: "check",
         disabled: true,
         loading: true,
         emphasis: "primary",
       },
-      secondaryAction: buildOpenReleaseAction(snapshot, "改为手动下载"),
+      secondaryAction: buildOpenReleaseAction(snapshot, UI_TEXT.update.manualDownload),
       progress,
     };
   }
 
   if (snapshot.status === "installing") {
     return {
-      statusTitle: "正在安装更新...",
-      statusDetail: latestVersion ? `目标版本：${latestVersion}` : "安装完成后应用会自动进入重启流程。",
+      statusTitle: UI_TEXT.update.installing,
+      statusDetail: latestVersion ? UI_TEXT.update.targetVersion(latestVersion) : UI_TEXT.update.installRestartDetail,
       primaryAction: {
-        label: "处理中...",
+        label: UI_TEXT.update.processing,
         action: "check",
         disabled: true,
         loading: true,
@@ -243,10 +244,10 @@ export function buildUpdateStatusPanelModel(
 
   if (snapshot.status === "checking" || isChecking) {
     return {
-      statusTitle: "正在检查更新...",
+      statusTitle: UI_TEXT.update.checkingUpdates,
       statusDetail: null,
       primaryAction: {
-        label: "检查中...",
+        label: UI_TEXT.update.checking,
         action: "check",
         disabled: true,
         loading: true,
@@ -259,10 +260,10 @@ export function buildUpdateStatusPanelModel(
 
   if (snapshot.status === "up_to_date") {
     return {
-      statusTitle: "已是最新版本",
+      statusTitle: UI_TEXT.update.upToDate,
       statusDetail: null,
       primaryAction: {
-        label: "检查更新",
+        label: UI_TEXT.update.checkUpdates,
         action: "check",
         disabled: isChecking || isInstalling,
         loading: isChecking,
@@ -274,20 +275,20 @@ export function buildUpdateStatusPanelModel(
   }
 
   if (snapshot.status === "error") {
-    const releaseAction = buildOpenReleaseAction(snapshot, "手动下载");
-    const downloadAction = buildOpenDownloadAction(snapshot, "下载安装包");
+    const releaseAction = buildOpenReleaseAction(snapshot, UI_TEXT.update.manualDownload);
+    const downloadAction = buildOpenDownloadAction(snapshot, UI_TEXT.update.downloadInstaller);
     const primaryAction = snapshot.errorStage === "download" && downloadAction
       ? downloadAction
       : snapshot.errorStage === "install"
         ? {
-          label: "再次安装",
+          label: UI_TEXT.update.installAgain,
           action: "open_confirm" as const,
           disabled: isInstalling,
           loading: false,
           emphasis: "primary" as const,
         }
         : releaseAction ?? {
-          label: "重新检查",
+          label: UI_TEXT.update.checkAgain,
           action: "check",
           disabled: isChecking || isInstalling,
           loading: isChecking,
@@ -297,14 +298,14 @@ export function buildUpdateStatusPanelModel(
       ? releaseAction ?? downloadAction
       : snapshot.errorStage === "install"
         ? downloadAction ?? releaseAction ?? {
-          label: "重新检查",
+          label: UI_TEXT.update.checkAgain,
           action: "check" as const,
           disabled: isChecking || isInstalling,
           loading: isChecking,
           emphasis: "secondary" as const,
         }
         : {
-          label: "重新检查",
+          label: UI_TEXT.update.checkAgain,
           action: "check" as const,
           disabled: isChecking || isInstalling,
           loading: isChecking,
@@ -313,12 +314,12 @@ export function buildUpdateStatusPanelModel(
 
     return {
       statusTitle: snapshot.errorStage === "check"
-        ? "无法检查更新"
+        ? UI_TEXT.update.checkFailed
         : snapshot.errorStage === "download"
-          ? "无法下载安装包"
+          ? UI_TEXT.update.downloadFailed
           : snapshot.errorStage === "install"
-            ? "更新安装失败"
-            : "更新失败",
+            ? UI_TEXT.update.installFailed
+            : UI_TEXT.update.updateFailed,
       statusDetail: buildErrorDetail(snapshot.errorStage, snapshot.errorMessage),
       primaryAction,
       secondaryAction,
@@ -327,10 +328,10 @@ export function buildUpdateStatusPanelModel(
   }
 
   return {
-    statusTitle: "尚未检查更新",
+    statusTitle: UI_TEXT.update.notChecked,
     statusDetail: null,
     primaryAction: {
-      label: "检查更新",
+      label: UI_TEXT.update.checkUpdates,
       action: "check",
       disabled: isChecking || isInstalling,
       loading: isChecking,
@@ -350,38 +351,38 @@ export function buildUpdateConfirmDialogModel(snapshot: UpdateSnapshot): UpdateC
 
   if (snapshot.status === "error") {
     const primaryAction = snapshot.errorStage === "download"
-      ? buildOpenDownloadAction(snapshot, "下载安装包") ?? buildOpenReleaseAction(snapshot)
+      ? buildOpenDownloadAction(snapshot, UI_TEXT.update.downloadInstaller) ?? buildOpenReleaseAction(snapshot)
       : snapshot.errorStage === "install"
         ? {
-          label: "再次安装",
+          label: UI_TEXT.update.installAgain,
           action: "open_confirm" as const,
           disabled: false,
           loading: false,
           emphasis: "primary" as const,
         }
-        : buildOpenReleaseAction(snapshot, "手动下载");
+        : buildOpenReleaseAction(snapshot, UI_TEXT.update.manualDownload);
 
     return {
       title: snapshot.errorStage === "check"
-        ? "无法检查更新"
+        ? UI_TEXT.update.checkFailedDialog
         : snapshot.errorStage === "download"
-          ? "下载更新失败"
+          ? UI_TEXT.update.downloadFailedDialog
           : snapshot.errorStage === "install"
-            ? "安装更新失败"
-            : "更新失败",
+            ? UI_TEXT.update.installFailedDialog
+            : UI_TEXT.update.updateFailedDialog,
       versionCompareLabel: `${currentVersion} -> ${latestVersion}`,
       confirmDescription: buildErrorDetail(snapshot.errorStage, snapshot.errorMessage)
-        ?? "更新流程未能完成。",
+        ?? UI_TEXT.update.updateProcessFailed,
       notesPreview: getReleaseNotesPreview(snapshot.releaseNotes),
       progress: buildUpdateProgressModel(snapshot),
       primaryAction,
       secondaryAction: primaryAction?.action === "check"
-        ? buildOpenReleaseAction(snapshot, "手动下载")
+        ? buildOpenReleaseAction(snapshot, UI_TEXT.update.manualDownload)
         : snapshot.errorStage === "install"
-          ? buildOpenDownloadAction(snapshot, "重新下载安装包")
-            ?? buildOpenReleaseAction(snapshot, "手动下载")
+          ? buildOpenDownloadAction(snapshot, UI_TEXT.update.redownloadInstaller)
+            ?? buildOpenReleaseAction(snapshot, UI_TEXT.update.manualDownload)
           : {
-            label: "重新检查",
+            label: UI_TEXT.update.checkAgain,
             action: "check",
             disabled: false,
             loading: false,
@@ -392,33 +393,33 @@ export function buildUpdateConfirmDialogModel(snapshot: UpdateSnapshot): UpdateC
 
   return {
     title: isInstalling
-      ? "正在安装更新"
+      ? UI_TEXT.update.dialogInstalling
       : isDownloading
-        ? "正在下载更新"
+        ? UI_TEXT.update.dialogDownloading
         : isDownloaded
-          ? "更新已下载"
-          : "发现新版本",
+          ? UI_TEXT.update.dialogDownloaded
+          : UI_TEXT.update.dialogAvailable,
     versionCompareLabel: `${currentVersion} -> ${latestVersion}`,
     confirmDescription: isInstalling
-      ? "更新安装已经开始，请保持应用开启，安装完成后会进入重启流程。"
+      ? UI_TEXT.update.dialogInstallingDetail
       : isDownloading
-        ? "更新包正在下载中，下载完成后会自动切换到安装确认状态。"
+        ? UI_TEXT.update.dialogDownloadingDetail
         : isDownloaded
-          ? "更新包已准备完成，确认后将重启并完成安装。"
-          : "新版本已就绪，确认后将先下载更新包，下载完成后需要再次确认安装。",
+          ? UI_TEXT.update.dialogDownloadedDetail
+          : UI_TEXT.update.dialogAvailableDetail,
     notesPreview: getReleaseNotesPreview(snapshot.releaseNotes),
     progress: buildUpdateProgressModel(snapshot),
     primaryAction: isInstalling
       ? null
       : {
-        label: isDownloaded ? "重启安装" : "立即下载",
+        label: isDownloaded ? UI_TEXT.update.restartInstall : UI_TEXT.update.downloadNow,
         action: "open_confirm",
         disabled: isDownloading,
         loading: isDownloading,
         emphasis: "primary",
       },
     secondaryAction: isDownloading
-      ? buildOpenReleaseAction(snapshot, "改为手动下载")
+      ? buildOpenReleaseAction(snapshot, UI_TEXT.update.manualDownload)
       : null,
   };
 }

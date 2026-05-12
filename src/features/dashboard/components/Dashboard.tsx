@@ -35,7 +35,7 @@ function buildFocusCategoryDist(categoryDist: DashboardReadModel["categoryDist"]
   return [
     ...visible,
     {
-      name: "其他",
+      name: UI_TEXT.categories.other,
       value: restValue,
       color: "var(--qp-text-tertiary)",
     },

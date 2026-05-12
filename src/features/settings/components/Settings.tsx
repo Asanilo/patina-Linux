@@ -20,6 +20,7 @@ export default function Settings({
   onRegisterSaveHandler,
   onThemeModePreview,
   onColorSchemePreview,
+  onLanguagePreview,
 }: SettingsPageProps) {
   const {
     dialogs,
@@ -60,12 +61,14 @@ export default function Settings({
       light: draftSettings.colorSchemeLight,
       dark: draftSettings.colorSchemeDark,
     });
-  }, [draftSettings, onColorSchemePreview, onThemeModePreview]);
+    onLanguagePreview?.(draftSettings.language);
+  }, [draftSettings, onColorSchemePreview, onLanguagePreview, onThemeModePreview]);
 
   useEffect(() => () => {
     onThemeModePreview?.(null);
     onColorSchemePreview?.(null);
-  }, [onColorSchemePreview, onThemeModePreview]);
+    onLanguagePreview?.(null);
+  }, [onColorSchemePreview, onLanguagePreview, onThemeModePreview]);
 
   if (loading || !savedSettings || !draftSettings) {
     return (
@@ -163,6 +166,8 @@ export default function Settings({
           <SettingsAppearancePanel
             themeMode={draftSettings.themeMode}
             onThemeModeChange={(nextThemeMode) => handleChange("themeMode", nextThemeMode)}
+            language={draftSettings.language}
+            onLanguageChange={(nextLanguage) => handleChange("language", nextLanguage)}
             colorSchemeLight={draftSettings.colorSchemeLight}
             onColorSchemeLightChange={(nextColorScheme) => handleChange("colorSchemeLight", nextColorScheme)}
             colorSchemeDark={draftSettings.colorSchemeDark}
