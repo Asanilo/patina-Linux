@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  prewarmSecondaryViewCachesWithDeps,
   prewarmStartupBootstrapCachesWithDeps,
   prewarmStartupSnapshotCachesWithDeps,
 } from "../src/app/services/startupPrewarmService.ts";
@@ -58,6 +59,24 @@ await runTest("startup snapshot prewarm passes the same date to dashboard and hi
     `history:${date.toISOString()}`,
   ]);
   assert.deepEqual(warnings, ["Failed to prewarm startup snapshot cache::history busy"]);
+});
+
+await runTest("secondary view cache prewarm warns without blocking completion", async () => {
+  const events: string[] = [];
+  const warnings: string[] = [];
+
+  await prewarmSecondaryViewCachesWithDeps({
+    prewarmRecentDataHeatmapCache: async () => {
+      events.push("data-heatmap:start");
+      throw new Error("data busy");
+    },
+    warn: (message, error) => {
+      warnings.push(`${message}:${error instanceof Error ? error.message : String(error)}`);
+    },
+  });
+
+  assert.deepEqual(events, ["data-heatmap:start"]);
+  assert.deepEqual(warnings, ["Failed to prewarm secondary view cache::data busy"]);
 });
 
 console.log(`Passed ${passed} startup prewarm tests`);

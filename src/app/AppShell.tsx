@@ -21,6 +21,7 @@ import {
 } from "./services/readModelRuntimeService";
 import {
   prewarmStartupBootstrapCaches,
+  prewarmSecondaryViewCaches,
   prewarmStartupSnapshotCaches,
 } from "./services/startupPrewarmService";
 import { clearDataReadModelCache } from "../features/data/services/dataReadModel.ts";
@@ -33,6 +34,7 @@ import { useAppShellToasts } from "./hooks/useAppShellToasts";
 import { useAppShellUpdateEntry } from "./hooks/useAppShellUpdateEntry";
 import { useAppThemeMode } from "./hooks/useAppThemeMode.ts";
 import { saveMinSessionSecsSetting } from "./services/appSettingsRuntimeService.ts";
+import { scheduleLazyViewChunkPreload } from "./services/viewChunkPreloadService";
 
 const History = lazy(() => import("../features/history/components/History"));
 const Data = lazy(() => import("../features/data/components/Data"));
@@ -67,7 +69,8 @@ function AppShellContent() {
   const [settingsLanguagePreview, setSettingsLanguagePreview] = useState<AppLanguage | null>(null);
   const didPrewarmBootstrapCachesRef = useRef(false);
   const didPrewarmSnapshotCachesRef = useRef(false);
-  const didPreloadDataViewRef = useRef(false);
+  const didPrewarmSecondaryViewCachesRef = useRef(false);
+  const didPreloadLazyViewsRef = useRef(false);
   const {
     activeWindow,
     trackingStatus,
@@ -127,12 +130,24 @@ function AppShellContent() {
   }, [classificationReady]);
 
   useEffect(() => {
-    if (!classificationReady || didPreloadDataViewRef.current) return undefined;
-    didPreloadDataViewRef.current = true;
+    if (!classificationReady || didPreloadLazyViewsRef.current) return undefined;
+    didPreloadLazyViewsRef.current = true;
+
+    return scheduleLazyViewChunkPreload({
+      views: ["history", "data", "settings", "mapping"],
+      initialDelayMs: 1200,
+      staggerMs: 200,
+      idleTimeoutMs: 1500,
+    });
+  }, [classificationReady]);
+
+  useEffect(() => {
+    if (!classificationReady || didPrewarmSecondaryViewCachesRef.current) return undefined;
+    didPrewarmSecondaryViewCachesRef.current = true;
 
     const timer = window.setTimeout(() => {
-      void import("../features/data/components/Data");
-    }, 800);
+      void prewarmSecondaryViewCaches();
+    }, 2200);
 
     return () => {
       window.clearTimeout(timer);

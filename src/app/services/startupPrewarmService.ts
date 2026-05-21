@@ -10,12 +10,16 @@ import {
 import {
   prewarmHistorySnapshotCache,
 } from "../../features/history/services/historySnapshotCache.ts";
+import {
+  prewarmRecentDataHeatmapCache,
+} from "../../features/data/services/dataReadModel.ts";
 
 interface StartupPrewarmDeps {
   prewarmSettingsBootstrapCache: () => Promise<unknown>;
   prewarmClassificationBootstrapCache: () => Promise<unknown>;
   prewarmDashboardSnapshotCache: (date: Date) => Promise<unknown>;
   prewarmHistorySnapshotCache: (date: Date) => Promise<unknown>;
+  prewarmRecentDataHeatmapCache: () => Promise<unknown>;
   warn: (message: string, error: unknown) => void;
 }
 
@@ -24,6 +28,7 @@ const startupPrewarmDeps: StartupPrewarmDeps = {
   prewarmClassificationBootstrapCache,
   prewarmDashboardSnapshotCache,
   prewarmHistorySnapshotCache,
+  prewarmRecentDataHeatmapCache,
   warn: console.warn,
 };
 
@@ -74,4 +79,21 @@ export async function prewarmStartupSnapshotCachesWithDeps(
 
 export async function prewarmStartupSnapshotCaches(date: Date = new Date()): Promise<void> {
   return prewarmStartupSnapshotCachesWithDeps(date, startupPrewarmDeps);
+}
+
+export async function prewarmSecondaryViewCachesWithDeps(
+  deps: Pick<
+    StartupPrewarmDeps,
+    "prewarmRecentDataHeatmapCache" | "warn"
+  >,
+): Promise<void> {
+  const results = await Promise.allSettled([
+    deps.prewarmRecentDataHeatmapCache(),
+  ]);
+
+  warnRejectedPrewarm("Failed to prewarm secondary view cache:", results, deps.warn);
+}
+
+export async function prewarmSecondaryViewCaches(): Promise<void> {
+  return prewarmSecondaryViewCachesWithDeps(startupPrewarmDeps);
 }

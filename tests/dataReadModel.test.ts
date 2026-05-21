@@ -6,6 +6,7 @@ import {
   getCachedDataHeatmapSessions,
   getHeatmapRange,
   loadDataHeatmapSnapshot,
+  prewarmRecentDataHeatmapCache,
   resetDataReadModelCacheForTests,
   type DataHeatmapDependencies,
   type HistorySession,
@@ -220,6 +221,37 @@ await runTest("heatmap snapshot caches earliest activity and refreshes sessions"
   assert.equal(second.sessions, sessions);
   assert.equal(earliestLoadCount, 1);
   assert.equal(sessionLoadCount, 2);
+});
+
+await runTest("recent heatmap prewarm reuses a warm cache", async () => {
+  resetDataReadModelCacheForTests();
+  let earliestLoadCount = 0;
+  let sessionLoadCount = 0;
+  const sessions = [
+    makeSession({
+      startTime: new Date(2026, 0, 1, 9, 0, 0).getTime(),
+      endTime: new Date(2026, 0, 1, 10, 0, 0).getTime(),
+    }),
+  ];
+  const deps: DataHeatmapDependencies = {
+    getEarliestSessionStartTime: async () => {
+      earliestLoadCount += 1;
+      return sessions[0].startTime;
+    },
+    getSessionsInRange: async () => {
+      sessionLoadCount += 1;
+      return sessions;
+    },
+  };
+  const nowMs = new Date(2026, 0, 3, 12, 0, 0).getTime();
+
+  const first = await prewarmRecentDataHeatmapCache(nowMs, deps);
+  const second = await prewarmRecentDataHeatmapCache(nowMs, deps);
+
+  assert.equal(first.sessions, sessions);
+  assert.equal(second.sessions, sessions);
+  assert.equal(earliestLoadCount, 1);
+  assert.equal(sessionLoadCount, 1);
 });
 
 console.log(`Passed ${passed} data read model tests`);

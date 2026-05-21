@@ -605,3 +605,21 @@ export async function loadDataHeatmapSnapshot(
     cacheKey,
   };
 }
+
+export async function prewarmRecentDataHeatmapCache(
+  nowMs: number = Date.now(),
+  deps?: DataHeatmapDependencies,
+): Promise<DataHeatmapSnapshot> {
+  const cachedSessions = getCachedDataHeatmapSessions("recent", nowMs);
+  if (cachedSessions && earliestSessionStartTimeCache !== undefined) {
+    const range = getHeatmapRange("recent", nowMs);
+    return {
+      earliestStartTime: earliestSessionStartTimeCache,
+      sessions: cachedSessions,
+      range,
+      cacheKey: getHeatmapSelectionKey("recent", nowMs),
+    };
+  }
+
+  return loadDataHeatmapSnapshot("recent", nowMs, deps);
+}
