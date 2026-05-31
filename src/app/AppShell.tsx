@@ -2,6 +2,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { getUiText, setUiTextLanguage } from "../shared/copy/uiText.ts";
 import AppSidebar from "./components/AppSidebar";
 import AppTitleBar from "./components/AppTitleBar";
+import type { View } from "./types/view";
 import Dashboard from "../features/dashboard/components/Dashboard";
 import { watchCurrentWindowMaximized } from "../platform/desktop/windowControlGateway";
 import QuietToastStack from "../shared/components/QuietToastStack";
@@ -43,6 +44,35 @@ const Settings = createPreloadableViewComponent("settings");
 const About = createPreloadableViewComponent("about");
 const AppMapping = createPreloadableViewComponent("mapping");
 
+type HistoryDateRequest = {
+  dateKey: string;
+  requestId: number;
+};
+
+function parseLocalDateKey(dateKey: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+
+  if (
+    date.getFullYear() !== year
+    || date.getMonth() !== month - 1
+    || date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return date;
+}
+
+function startOfLocalDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
 export default function AppShell() {
   return (
     <UpdateDialogProvider>
@@ -68,6 +98,7 @@ function AppShellContent() {
   const [settingsThemeModePreview, setSettingsThemeModePreview] = useState<ThemeMode | null>(null);
   const [settingsColorSchemePreview, setSettingsColorSchemePreview] = useState<ColorSchemePreview | null>(null);
   const [settingsLanguagePreview, setSettingsLanguagePreview] = useState<AppLanguage | null>(null);
+  const [historyDateRequest, setHistoryDateRequest] = useState<HistoryDateRequest | null>(null);
   const warmupRuntimeReadyResolveRef = useRef<(() => void) | null>(null);
   const warmupRuntimeReadyPromiseRef = useRef<Promise<void> | null>(null);
   const {
@@ -178,6 +209,28 @@ function AppShellContent() {
     void saveMinSessionSecsSetting(nextValue).catch(console.warn);
   }, [setAppSettings]);
 
+  const openHistoryForDate = useCallback(async (dateKey: string) => {
+    const targetDate = parseLocalDateKey(dateKey);
+    if (!targetDate || startOfLocalDay(targetDate) > startOfLocalDay(new Date())) {
+      return;
+    }
+
+    const result = await handleNavigate("history");
+    if (!result.navigated) {
+      return;
+    }
+
+    setHistoryDateRequest((current) => ({
+      dateKey,
+      requestId: (current?.requestId ?? 0) + 1,
+    }));
+  }, [handleNavigate]);
+
+  const handleSidebarNavigate = useCallback((nextView: View) => {
+    setHistoryDateRequest(null);
+    void handleNavigate(nextView);
+  }, [handleNavigate]);
+
   return (
     <div className={isWindowMaximized ? "qp-app-frame qp-app-frame-maximized" : "qp-app-frame"}>
       <AppTitleBar isMaximized={isWindowMaximized} />
@@ -187,7 +240,7 @@ function AppShellContent() {
         {dialogs}
         <AppSidebar
           currentView={currentView}
-          onNavigate={handleNavigate}
+          onNavigate={handleSidebarNavigate}
           {...sidebarUpdateEntry}
         />
 
@@ -222,6 +275,7 @@ function AppShellContent() {
                   trackerHealth={trackerHealth}
                   loadHistorySnapshot={loadHistoryRuntimeSnapshot}
                   mappingVersion={mappingVersion}
+                  selectedDateRequest={historyDateRequest}
                 />
               )}
               {currentView === "data" && (
@@ -232,6 +286,7 @@ function AppShellContent() {
                   trackerHealth={trackerHealth}
                   loadHistorySnapshot={loadHistoryRuntimeSnapshot}
                   mappingVersion={mappingVersion}
+                  onOpenHistoryDate={openHistoryForDate}
                 />
               )}
               {currentView === "settings" && (

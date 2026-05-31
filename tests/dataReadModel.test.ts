@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   buildActivityHeatmap,
+  buildDataTrendViewModel,
   buildDataAppTrendViewModel,
   buildYearOptions,
   getCachedDataHeatmapSessions,
@@ -86,6 +87,26 @@ await runTest("year options include every year from current back to earliest act
   assert.deepEqual(buildYearOptions(null, 2026), [2026]);
 });
 
+await runTest("activity trend exposes dates only for day granularity", () => {
+  const nowMs = new Date(2026, 4, 8, 12, 0, 0).getTime();
+  const sessions = [
+    makeSession({
+      startTime: new Date(2026, 4, 7, 9, 0, 0).getTime(),
+      endTime: new Date(2026, 4, 7, 10, 0, 0).getTime(),
+    }),
+  ];
+  const weekly = buildDataTrendViewModel(sessions, 7, nowMs);
+  const monthly = buildDataTrendViewModel(sessions, 30, nowMs);
+  const yearly = buildDataTrendViewModel(sessions, 365, nowMs);
+
+  assert.equal(weekly.granularity, "day");
+  assert.equal(monthly.granularity, "day");
+  assert.equal(yearly.granularity, "month");
+  assert.equal(weekly.chartData.at(-2)?.date, "2026-05-07");
+  assert.match(monthly.chartData.at(-1)?.date ?? "", /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(yearly.chartData.at(-1)?.date, null);
+});
+
 await runTest("app trend groups sessions by application and day", () => {
   const nowMs = new Date(2026, 4, 8, 12, 0, 0).getTime();
   const rows = buildDataAppTrendViewModel([
@@ -113,6 +134,7 @@ await runTest("app trend groups sessions by application and day", () => {
   const may7 = rows.dayRows.find((row) => row.date === "2026-05-07");
 
   assert.equal(rows.selectedApp?.appName, "Blender");
+  assert.equal(rows.granularity, "day");
   assert.equal(rows.selectedApp?.totalDuration, 210 * 60 * 1000);
   assert.equal(rows.selectedApp?.activeDayCount, 2);
   assert.equal(rows.dayRows.length, 7);
@@ -178,6 +200,7 @@ await runTest("yearly app trend averages by month", () => {
     }),
   ], 365, nowMs, "blender.exe");
 
+  assert.equal(rows.granularity, "month");
   assert.equal(rows.selectedApp?.averageDuration, 60 * 60 * 1000);
 });
 

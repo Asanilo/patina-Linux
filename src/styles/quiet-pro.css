@@ -534,6 +534,16 @@
   background: transparent;
 }
 
+.data-chart-openable {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.data-chart-openable * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 @media (min-width: 1536px) and (min-height: 900px) {
   .data-trend-chart {
     height: 214px;
@@ -955,8 +965,16 @@
   width: var(--data-heatmap-cell-size);
 }
 
-.data-heatmap-cell:hover {
+.data-heatmap-cell-openable {
+  cursor: default;
+}
+
+.data-heatmap-cell-openable:hover {
   border-color: color-mix(in srgb, var(--qp-accent-default) 42%, var(--qp-border-subtle));
+}
+
+.data-heatmap-cell-openable:active {
+  border-color: color-mix(in srgb, var(--qp-accent-default) 58%, var(--qp-border-subtle));
 }
 
 .data-heatmap-cell-future,

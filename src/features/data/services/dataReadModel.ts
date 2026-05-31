@@ -18,6 +18,7 @@ export type DataTrendRange = 7 | 30 | 365;
 
 export interface DataTrendPoint {
   label: string;
+  date: string | null;
   hours: number;
 }
 
@@ -31,6 +32,7 @@ export interface DataTrendViewModel {
   title: string;
   rangeLabel: string;
   rangeDays: number;
+  granularity: "day" | "month";
   totalDuration: number;
   averageDuration: number;
   averageDivisor: number;
@@ -69,6 +71,7 @@ export interface DataAppDayRow {
 export interface DataAppTrendViewModel {
   range: DataTrendRange;
   rangeLabel: string;
+  granularity: "day" | "month";
   appOptions: DataAppOption[];
   selectedApp: DataAppOption | null;
   chartData: DataAppTrendPoint[];
@@ -302,6 +305,7 @@ export function buildDataTrendViewModel(
   const averageDivisor = Math.max(1, shouldGroupByMonth ? summaries.length : dayRanges.length);
   const chartData = summaries.map((item) => ({
     label: shouldGroupByMonth ? formatMonthLabel(item.date.slice(0, 7)) : item.date.slice(5),
+    date: shouldGroupByMonth ? null : item.date,
     hours: Math.max(0, item.totalDuration) / 3600000,
   }));
   const rangeLabel = getDataTrendRangeLabel(range);
@@ -310,6 +314,7 @@ export function buildDataTrendViewModel(
     title: rangeLabel,
     rangeLabel,
     rangeDays: range,
+    granularity: shouldGroupByMonth ? "month" : "day",
     totalDuration,
     averageDuration: Math.round(totalDuration / averageDivisor),
     averageDivisor,
@@ -439,6 +444,7 @@ export function buildDataAppTrendViewModel(
   return {
     range,
     rangeLabel: getDataTrendRangeLabel(range),
+    granularity: shouldGroupByMonth ? "month" : "day",
     appOptions,
     selectedApp,
     chartData,

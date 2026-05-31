@@ -1,4 +1,4 @@
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BarChart3, CalendarDays, ChevronLeft, ChevronRight, Clock3, Search } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import { UI_TEXT } from "../../../shared/copy/uiText.ts";
@@ -32,6 +32,7 @@ import {
   getHistorySnapshotCache,
   setHistorySnapshotCache,
 } from "../../history/services/historySnapshotCache";
+import { resolveTrendDateFromChartEvent } from "../services/dataChartInteraction.ts";
 
 interface Props {
   icons: Record<string, string>;
@@ -39,6 +40,7 @@ interface Props {
   trackerHealth: TrackerHealthSnapshot;
   loadHistorySnapshot: (date: Date, rollingDayCount?: number) => Promise<HistorySnapshot>;
   mappingVersion?: number;
+  onOpenHistoryDate?: (dateKey: string) => void;
 }
 
 const TREND_RANGE_OPTIONS: DataTrendRange[] = [7, 30, 365];
@@ -78,6 +80,7 @@ export default function Data({
   refreshKey = 0,
   loadHistorySnapshot,
   mappingVersion = 0,
+  onOpenHistoryDate,
 }: Props) {
   const today = new Date();
   const currentYear = today.getFullYear();
@@ -123,6 +126,8 @@ export default function Data({
   const hasFetchedAppOnceRef = useRef(Boolean(cachedAppSnapshot));
   const hasFetchedHeatmapOnceRef = useRef(Boolean(initialCachedHeatmapSessions));
   const snapshotLoadPromisesRef = useRef(new Map<string, Promise<HistorySnapshot>>());
+  const activeTrendDateRef = useRef<string | null>(null);
+  const activeAppTrendDateRef = useRef<string | null>(null);
 
   const loadDataRangeSnapshot = useCallback((range: DataTrendRange) => {
     const key = `${refreshKey}:${range}`;
@@ -372,6 +377,51 @@ export default function Data({
       setSelectedAppTrendRange(nextRange);
     }
   };
+  const canOpenTrendHistory = trendViewModel?.granularity === "day" && Boolean(onOpenHistoryDate);
+  const canOpenAppTrendHistory = visibleAppTrendViewModel?.granularity === "day" && Boolean(onOpenHistoryDate);
+  const handleTrendMouseMove = (event: unknown) => {
+    activeTrendDateRef.current = canOpenTrendHistory && trendViewModel
+      ? resolveTrendDateFromChartEvent(event, trendViewModel.chartData)
+      : null;
+  };
+  const handleTrendDoubleClick = () => {
+    const dateKey = activeTrendDateRef.current;
+    if (dateKey && canOpenTrendHistory) {
+      onOpenHistoryDate?.(dateKey);
+    }
+  };
+  const handleAppTrendMouseMove = (event: unknown) => {
+    activeAppTrendDateRef.current = canOpenAppTrendHistory && visibleAppTrendViewModel
+      ? resolveTrendDateFromChartEvent(event, visibleAppTrendViewModel.chartData)
+      : null;
+  };
+  const handleAppTrendDoubleClick = () => {
+    const dateKey = activeAppTrendDateRef.current;
+    if (dateKey && canOpenAppTrendHistory) {
+      onOpenHistoryDate?.(dateKey);
+    }
+  };
+  const preventChartTextSelection = (event: MouseEvent<HTMLDivElement>, canOpenHistory: boolean) => {
+    if (canOpenHistory && event.detail > 1) {
+      event.preventDefault();
+    }
+  };
+  const handleTrendDoubleClickCapture = (event: MouseEvent<HTMLDivElement>) => {
+    if (!canOpenTrendHistory) {
+      return;
+    }
+
+    event.preventDefault();
+    handleTrendDoubleClick();
+  };
+  const handleAppTrendDoubleClickCapture = (event: MouseEvent<HTMLDivElement>) => {
+    if (!canOpenAppTrendHistory) {
+      return;
+    }
+
+    event.preventDefault();
+    handleAppTrendDoubleClick();
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 md:gap-5 overflow-y-auto pr-1 custom-scrollbar">
@@ -437,13 +487,26 @@ export default function Data({
                 {UI_TEXT.history.loading}
               </div>
             ) : (
-              <div className="data-trend-chart">
+              <div
+                className={`data-trend-chart ${canOpenTrendHistory ? "data-chart-openable" : ""}`}
+                onMouseDownCapture={(event) => {
+                  preventChartTextSelection(event, canOpenTrendHistory);
+                }}
+                onDoubleClickCapture={handleTrendDoubleClickCapture}
+              >
                 <ResponsiveContainer
                   width="100%"
                   height="100%"
                   initialDimension={{ width: 760, height: 168 }}
                 >
-                <AreaChart data={trendViewModel.chartData} margin={{ top: 8, right: 22, left: -18, bottom: 0 }}>
+                <AreaChart
+                  data={trendViewModel.chartData}
+                  margin={{ top: 8, right: 22, left: -18, bottom: 0 }}
+                  onMouseMove={handleTrendMouseMove}
+                  onMouseLeave={() => {
+                    activeTrendDateRef.current = null;
+                  }}
+                >
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--qp-chart-grid)" />
                   <XAxis
                     dataKey="label"
@@ -566,6 +629,7 @@ export default function Data({
                             {week.cells.map((cell) => {
                               const isFutureOutsideRecentRange = selectedHeatmapView === "recent" && cell.isFuture;
                               const isUnavailable = isFutureOutsideRecentRange || cell.isOutsideYear;
+                              const canOpenHistoryDate = !isUnavailable && Boolean(onOpenHistoryDate);
                               return (
                                 <QuietTooltip
                                   key={`${selectedHeatmapViewKey}:${cell.key}`}
@@ -578,8 +642,16 @@ export default function Data({
                                 >
                                   <span
                                     className={`data-heatmap-cell ${
+                                      canOpenHistoryDate ? "data-heatmap-cell-openable" : ""
+                                    } ${
                                       isFutureOutsideRecentRange ? "data-heatmap-cell-future" : ""
                                     } ${cell.isOutsideYear ? "data-heatmap-cell-outside" : ""}`}
+                                    onDoubleClick={() => {
+                                      if (canOpenHistoryDate) {
+                                        onOpenHistoryDate?.(cell.date);
+                                      }
+                                    }}
+                                    data-history-date={canOpenHistoryDate ? cell.date : undefined}
                                     style={{ "--heatmap-intensity": cell.intensity } as CSSProperties}
                                   />
                                 </QuietTooltip>
@@ -723,13 +795,26 @@ export default function Data({
                   <strong>{visibleAppTrendViewModel.peakDay ? formatDuration(visibleAppTrendViewModel.peakDay.duration) : "-"}</strong>
                 </div>
               </div>
-              <div className="data-app-chart">
+              <div
+                className={`data-app-chart ${canOpenAppTrendHistory ? "data-chart-openable" : ""}`}
+                onMouseDownCapture={(event) => {
+                  preventChartTextSelection(event, canOpenAppTrendHistory);
+                }}
+                onDoubleClickCapture={handleAppTrendDoubleClickCapture}
+              >
                 <ResponsiveContainer
                   width="100%"
                   height="100%"
                   initialDimension={{ width: 620, height: 172 }}
                 >
-                  <AreaChart data={visibleAppTrendViewModel.chartData} margin={{ top: 10, right: 18, left: -20, bottom: 0 }}>
+                  <AreaChart
+                    data={visibleAppTrendViewModel.chartData}
+                    margin={{ top: 10, right: 18, left: -20, bottom: 0 }}
+                    onMouseMove={handleAppTrendMouseMove}
+                    onMouseLeave={() => {
+                      activeAppTrendDateRef.current = null;
+                    }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--qp-border-subtle)" strokeOpacity={0.58} />
                     <XAxis
                       dataKey="label"

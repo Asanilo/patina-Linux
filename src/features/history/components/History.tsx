@@ -40,6 +40,10 @@ interface Props {
   trackerHealth: TrackerHealthSnapshot;
   loadHistorySnapshot: (date: Date, rollingDayCount?: number) => Promise<HistorySnapshot>;
   mappingVersion?: number;
+  selectedDateRequest?: {
+    dateKey: string;
+    requestId: number;
+  } | null;
 }
 
 const TIMELINE_MIN_SESSION_MINUTES_RANGE = { min: 1, max: 10 } as const;
@@ -49,6 +53,26 @@ const startOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth(
 const addMonths = (date: Date, delta: number) => new Date(date.getFullYear(), date.getMonth() + delta, 1);
 const isSameDay = (left: Date, right: Date) => left.toDateString() === right.toDateString();
 const formatCalendarMonth = (date: Date) => UI_TEXT.date.yearMonthLabel(date.getFullYear(), date.getMonth() + 1);
+
+function parseLocalDateKey(dateKey: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+
+  if (
+    date.getFullYear() !== year
+    || date.getMonth() !== month - 1
+    || date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return date;
+}
 type TimelineDetailsPopover = {
   sessionId: number;
   titleSamples: TimelineDetailTitle[];
@@ -137,8 +161,10 @@ export default function History({
   trackerHealth,
   loadHistorySnapshot,
   mappingVersion = 0,
+  selectedDateRequest = null,
 }: Props) {
-  const initialDate = new Date();
+  const requestedInitialDate = selectedDateRequest ? parseLocalDateKey(selectedDateRequest.dateKey) : null;
+  const initialDate = requestedInitialDate ?? new Date();
   const initialCachedSnapshot = getHistorySnapshotCache(initialDate);
   const iconThemeColors = useIconThemeColors(icons);
   const datePickerRef = useRef<HTMLDivElement | null>(null);
@@ -160,6 +186,20 @@ export default function History({
   const timelineDetailsPopoverRef = useRef<HTMLDivElement | null>(null);
   const timelineDetailsTriggerRef = useRef<HTMLElement | null>(null);
   const hasLoadedRef = useRef(false);
+
+  useEffect(() => {
+    if (!selectedDateRequest) return;
+    const nextDate = parseLocalDateKey(selectedDateRequest.dateKey);
+    if (!nextDate || startOfDay(nextDate) > startOfDay(new Date())) {
+      return;
+    }
+
+    setSelectedDate(nextDate);
+    setCalendarMonth(startOfMonth(nextDate));
+    setCalendarOpen(false);
+    timelineDetailsTriggerRef.current = null;
+    setTimelineDetailsPopover(null);
+  }, [selectedDateRequest?.requestId]);
 
   const toggleTimelineSessionDetails = useCallback((
     sessionId: number,
@@ -246,8 +286,11 @@ export default function History({
     return undefined;
   }, [timelineDetailsPopover, updateTimelineDetailsPopoverPosition]);
 
-  const loadData = useCallback(async (showLoading: boolean = false) => {
-    const cachedSnapshot = getHistorySnapshotCache(selectedDate);
+  useEffect(() => {
+    let cancelled = false;
+    const requestDate = new Date(selectedDate);
+    const showLoading = !hasLoadedRef.current;
+    const cachedSnapshot = getHistorySnapshotCache(requestDate);
 
     if (cachedSnapshot) {
       setRawDaySessions(cachedSnapshot.daySessions);
@@ -261,25 +304,30 @@ export default function History({
       setLoading(!cachedSnapshot);
     }
 
-    try {
-      const snapshot = await loadHistorySnapshot(selectedDate);
-      setHistorySnapshotCache(snapshot, selectedDate);
+    const load = async () => {
+      try {
+        const snapshot = await loadHistorySnapshot(requestDate);
+        if (cancelled) return;
 
-      setRawDaySessions(snapshot.daySessions);
-      setRawWeeklySessions(snapshot.weeklySessions);
-      setNowMs(snapshot.fetchedAtMs);
-      setHasFetchedOnce(true);
-      hasLoadedRef.current = true;
-    } finally {
-      if (showLoading) {
-        setLoading(false);
+        setHistorySnapshotCache(snapshot, requestDate);
+
+        setRawDaySessions(snapshot.daySessions);
+        setRawWeeklySessions(snapshot.weeklySessions);
+        setNowMs(snapshot.fetchedAtMs);
+        setHasFetchedOnce(true);
+        hasLoadedRef.current = true;
+      } finally {
+        if (!cancelled && showLoading) {
+          setLoading(false);
+        }
       }
-    }
-  }, [loadHistorySnapshot, selectedDate]);
+    };
 
-  useEffect(() => {
-    void loadData(!hasLoadedRef.current);
-  }, [loadData, refreshKey]);
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadHistorySnapshot, refreshKey, selectedDate]);
 
   useEffect(() => {
     const hasLiveSession = rawDaySessions.some((session) => session.endTime === null)

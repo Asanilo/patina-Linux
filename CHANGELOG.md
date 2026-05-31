@@ -18,7 +18,7 @@ App note en: TBD.
 
 ### Added
 
-- 暂无。
+- 支持从数据页双击活动热力图、日粒度活动趋势和应用趋势中的日期，直接打开对应日期的历史详情（[#8](https://github.com/Ceceliaee/time-tracking/issues/8)）。
 
 ### Changed
 

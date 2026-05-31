@@ -8,6 +8,10 @@ import {
 
 type SaveHandler = (() => Promise<boolean>) | null;
 
+type NavigationResult = {
+  navigated: boolean;
+};
+
 interface ConfirmDialogOptions {
   title: string;
   description?: string;
@@ -56,48 +60,47 @@ export function useAppShellNavigation({ confirm }: UseAppShellNavigationParams) 
     setViewDirtyState((current) => ({ ...current, mapping: dirty }));
   }, []);
 
-  const handleNavigate = useCallback((nextView: View) => {
-    void (async () => {
-      if (nextView === currentView) {
-        return;
-      }
+  const handleNavigate = useCallback(async (nextView: View): Promise<NavigationResult> => {
+    if (nextView === currentView) {
+      return { navigated: true };
+    }
 
-      const hasUnsavedChanges = viewDirtyState.settings || viewDirtyState.mapping;
-      if (!hasUnsavedChanges) {
-        setCurrentView(nextView);
-        return;
-      }
-
-      const confirmed = await confirm({
-        title: UI_TEXT.app.unsavedConfirmTitle,
-        description: UI_TEXT.app.unsavedConfirmBody,
-        confirmLabel: UI_TEXT.app.unsavedConfirmSave,
-      });
-      if (!confirmed) {
-        return;
-      }
-
-      const saveHandler = currentView === "settings"
-        ? settingsSaveHandlerRef.current
-        : currentView === "mapping"
-          ? mappingSaveHandlerRef.current
-          : null;
-      const didSave = saveHandler ? await saveHandler() : false;
-      if (!didSave) {
-        return;
-      }
-
-      setViewDirtyState((current) => {
-        if (currentView === "settings") {
-          return { ...current, settings: false };
-        }
-        if (currentView === "mapping") {
-          return { ...current, mapping: false };
-        }
-        return current;
-      });
+    const hasUnsavedChanges = viewDirtyState.settings || viewDirtyState.mapping;
+    if (!hasUnsavedChanges) {
       setCurrentView(nextView);
-    })();
+      return { navigated: true };
+    }
+
+    const confirmed = await confirm({
+      title: UI_TEXT.app.unsavedConfirmTitle,
+      description: UI_TEXT.app.unsavedConfirmBody,
+      confirmLabel: UI_TEXT.app.unsavedConfirmSave,
+    });
+    if (!confirmed) {
+      return { navigated: false };
+    }
+
+    const saveHandler = currentView === "settings"
+      ? settingsSaveHandlerRef.current
+      : currentView === "mapping"
+        ? mappingSaveHandlerRef.current
+        : null;
+    const didSave = saveHandler ? await saveHandler() : false;
+    if (!didSave) {
+      return { navigated: false };
+    }
+
+    setViewDirtyState((current) => {
+      if (currentView === "settings") {
+        return { ...current, settings: false };
+      }
+      if (currentView === "mapping") {
+        return { ...current, mapping: false };
+      }
+      return current;
+    });
+    setCurrentView(nextView);
+    return { navigated: true };
   }, [confirm, currentView, viewDirtyState]);
 
   return {
