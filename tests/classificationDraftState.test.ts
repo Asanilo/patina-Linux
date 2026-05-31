@@ -6,14 +6,20 @@ import {
   type UserAssignableAppCategory,
 } from "../src/shared/classification/categoryTokens.ts";
 import {
+  buildAppMappingCategoryOverride,
   buildAppMappingOverride,
   createAppMappingDraftState,
   filterAndSortCandidates,
 } from "../src/features/classification/hooks/appMappingStateHelpers.ts";
 import {
   buildAppOverrideTransition,
+  buildLegacyAutoClassificationMigrationMutations,
   type ObservedAppCandidate,
 } from "../src/features/classification/services/classificationStore.ts";
+import {
+  buildLegacyAutoClassificationOverrides,
+  resolveLegacyAutoClassification,
+} from "../src/features/classification/services/legacyAutoClassificationMigration.ts";
 import {
   type ClassificationCommitDeps,
   commitDraftChangesWithDeps,
@@ -104,8 +110,8 @@ await runTest("first install assignable categories match the lean default set", 
     "utility",
     "other",
   ]);
-  assert.equal(ProcessMapper.map("zoom.exe").category, "office");
-  assert.equal(ProcessMapper.map("teams.exe").category, "office");
+  assert.equal(ProcessMapper.map("zoom.exe").category, "other");
+  assert.equal(ProcessMapper.map("teams.exe").category, "other");
   assert.equal(
     ProcessMapper.fromOverrideStorageValue(JSON.stringify({ category: "meeting", enabled: true }))?.category,
     undefined,
@@ -134,9 +140,103 @@ await runTest("default app mapping ignores saved runtime overrides", () => {
   assert.equal(mapped.name, "Work Browser");
   assert.equal(mapped.category, "other");
   assert.equal(defaults.name, "Google Chrome");
-  assert.equal(defaults.category, "browser");
+  assert.equal(defaults.category, "other");
 
   ProcessMapper.clearUserOverrides();
+});
+
+await runTest("historical other category overrides remain safely readable as unclassified", () => {
+  const parsed = ProcessMapper.fromOverrideStorageValue(JSON.stringify({
+    category: "other",
+    enabled: true,
+    updatedAt: 123,
+  }));
+
+  assert.equal(parsed?.category, "other");
+  ProcessMapper.setUserOverride("chrome.exe", parsed);
+  assert.equal(ProcessMapper.map("chrome.exe").category, "other");
+  ProcessMapper.clearUserOverrides();
+});
+
+await runTest("choosing unclassified clears only the manual category", () => {
+  assert.deepEqual(
+    buildAppMappingCategoryOverride({
+      category: "development",
+      displayName: "Work Browser",
+      color: "#112233",
+      track: false,
+      captureTitle: false,
+      enabled: true,
+      updatedAt: 123,
+    }, "other"),
+    {
+      displayName: "Work Browser",
+      color: "#112233",
+      track: false,
+      captureTitle: false,
+      enabled: true,
+      updatedAt: 123,
+    },
+  );
+  assert.equal(buildAppMappingCategoryOverride({ category: "office" }, "other"), null);
+  const assigned = buildAppMappingCategoryOverride(null, "development");
+  assert.equal(assigned?.category, "development");
+  assert.equal(assigned?.enabled, true);
+  assert.equal(typeof assigned?.updatedAt, "number");
+});
+
+await runTest("legacy auto-classification migration preserves historical categories without restoring runtime inference", () => {
+  const migratedAt = 456;
+  const migrated = buildLegacyAutoClassificationOverrides([
+    buildCandidate("douyin.exe", "抖音"),
+    buildCandidate("workbook-helper.exe", "Workbook Helper"),
+    buildCandidate("unknown.exe", "Unknown"),
+    buildCandidate("chrome.exe", "Google Chrome"),
+  ], {
+    "chrome.exe": {
+      category: "communication",
+      enabled: true,
+      updatedAt: 123,
+    },
+    "workbook-helper.exe": {
+      displayName: "Books",
+      enabled: true,
+      updatedAt: 234,
+    },
+  }, migratedAt);
+
+  assert.equal(resolveLegacyAutoClassification("douyin.exe"), "video");
+  assert.equal(resolveLegacyAutoClassification("workbook-helper.exe"), "browser");
+  assert.equal(resolveLegacyAutoClassification("unknown.exe"), null);
+  assert.deepEqual(migrated["douyin.exe"], {
+    category: "video",
+    enabled: true,
+    updatedAt: migratedAt,
+  });
+  assert.deepEqual(migrated["workbook-helper.exe"], {
+    displayName: "Books",
+    enabled: true,
+    updatedAt: 234,
+    category: "browser",
+  });
+  assert.equal(migrated["unknown.exe"], undefined);
+  assert.equal(migrated["chrome.exe"], undefined);
+  assert.equal(ProcessMapper.map("douyin.exe").category, "other");
+});
+
+await runTest("legacy auto-classification migration writes migrated overrides and a completion marker", () => {
+  const mutations = buildLegacyAutoClassificationMigrationMutations([
+    buildCandidate("douyin.exe", "抖音"),
+    buildCandidate("unknown.exe", "Unknown"),
+  ], {}, 789);
+
+  assert.equal(mutations.length, 2);
+  assert.equal(mutations[0].key, "__app_override::douyin.exe");
+  assert.equal(JSON.parse(mutations[0].value ?? "{}").category, "video");
+  assert.deepEqual(mutations[1], {
+    key: "__classification_manual_confirmation_migration::v1",
+    value: "789",
+  });
 });
 
 await runTest("unsupported historical classification overrides are ignored", () => {

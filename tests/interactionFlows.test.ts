@@ -196,6 +196,16 @@ await runTest("app mapping interaction helpers keep dirty state correct across e
     true,
   );
 
+  const cleared = syncAppMappingNameDraft(
+    edited,
+    candidate,
+    "   ",
+    "Chrome",
+    true,
+  );
+  assert.equal(cleared.draftState.overrides["chrome.exe"], undefined);
+  assert.equal(cleared.nameDrafts["chrome.exe"], "Chrome");
+
   const cancelled = cancelAppMappingNameEdit(
     edited,
     candidate,

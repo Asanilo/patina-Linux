@@ -30,6 +30,7 @@ interface AppRuntimeBootstrapDeps {
   initializeProcessMapperRuntime: () => Promise<void>;
   getCurrentTrackingSnapshot: typeof getCurrentTrackingSnapshot;
   loadTrackerHealthSnapshot: (nowMs?: number) => Promise<TrackerHealthSnapshot>;
+  reportWarning?: (message: string, error: unknown) => void;
 }
 
 const appRuntimeBootstrapDeps: AppRuntimeBootstrapDeps = {
@@ -58,9 +59,14 @@ export async function loadAppRuntimeBootstrapSnapshotWithDeps(
   deps: AppRuntimeBootstrapDeps,
 ): Promise<AppRuntimeBootstrapSnapshot> {
   const settings = await deps.loadCurrentAppSettings();
-  await deps.setAfkThreshold(settings.timelineMergeGapSecs).catch(console.warn);
+  const reportWarning = deps.reportWarning ?? console.warn;
+  await deps.setAfkThreshold(settings.timelineMergeGapSecs).catch((error) => {
+    reportWarning("Failed to sync AFK threshold during app bootstrap", error);
+  });
 
-  await deps.initializeProcessMapperRuntime();
+  await deps.initializeProcessMapperRuntime().catch((error) => {
+    reportWarning("Failed to initialize process mapper during app bootstrap", error);
+  });
 
   const [trackingSnapshot, trackerHealth] = await Promise.all([
     deps.getCurrentTrackingSnapshot(),

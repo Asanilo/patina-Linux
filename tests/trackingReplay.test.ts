@@ -396,6 +396,10 @@ runTest("dashboard formatting replay honors display name overrides", () => {
 
 runTest("hourly category compiler splits sessions across hours and preserves total minutes", () => {
   const hourStart = new Date(2026, 0, 2, 9, 0, 0, 0).getTime();
+  ProcessMapper.setUserOverrides({
+    "cursor.exe": { category: "development", enabled: true },
+    "chrome.exe": { category: "browser", enabled: true },
+  });
   const sessions = [
     makeSession({
       id: 1,
@@ -415,68 +419,90 @@ runTest("hourly category compiler splits sessions across hours and preserves tot
     }),
   ];
 
-  const totalActivity = buildHourlyActivity(sessions);
-  const categoryActivity = buildHourlyCategoryActivity(sessions);
-  const nineOClock = categoryActivity.points[9];
-  const tenOClock = categoryActivity.points[10];
-  const nineOClockSegments = Object.values(nineOClock?.segmentDetails ?? {});
-  const tenOClockSegments = Object.values(tenOClock?.segmentDetails ?? {});
+  try {
+    const totalActivity = buildHourlyActivity(sessions);
+    const categoryActivity = buildHourlyCategoryActivity(sessions);
+    const nineOClock = categoryActivity.points[9];
+    const tenOClock = categoryActivity.points[10];
+    const nineOClockSegments = Object.values(nineOClock?.segmentDetails ?? {});
+    const tenOClockSegments = Object.values(tenOClock?.segmentDetails ?? {});
 
-  assert.equal(totalActivity[9]?.minutes, 25);
-  assert.equal(totalActivity[10]?.minutes, 10);
-  assert.equal(nineOClock?.minutes, 25);
-  assert.equal(tenOClock?.minutes, 10);
-  assert.equal(nineOClockSegments.find((item) => item.category === "development")?.minutes, 10);
-  assert.equal(nineOClockSegments.find((item) => item.category === "browser")?.minutes, 15);
-  assert.equal(tenOClockSegments.find((item) => item.category === "development")?.minutes, 10);
-  assert.equal(categoryActivity.points.length, 24);
+    assert.equal(totalActivity[9]?.minutes, 25);
+    assert.equal(totalActivity[10]?.minutes, 10);
+    assert.equal(nineOClock?.minutes, 25);
+    assert.equal(tenOClock?.minutes, 10);
+    assert.equal(nineOClockSegments.find((item) => item.category === "development")?.minutes, 10);
+    assert.equal(nineOClockSegments.find((item) => item.category === "browser")?.minutes, 15);
+    assert.equal(tenOClockSegments.find((item) => item.category === "development")?.minutes, 10);
+    assert.equal(categoryActivity.points.length, 24);
+  } finally {
+    ProcessMapper.clearUserOverrides();
+  }
 });
 
 runTest("hourly category compiler sorts each stacked hour by its own category duration", () => {
   const hourStart = new Date(2026, 0, 2, 9, 0, 0, 0).getTime();
-  const categoryActivity = buildHourlyCategoryActivity([
-    makeSession({
-      id: 1,
-      appName: "Cursor",
-      exeName: "cursor.exe",
-      startTime: hourStart,
-      endTime: hourStart + 10 * 60_000,
-      duration: 10 * 60_000,
-    }),
-    makeSession({
-      id: 2,
-      appName: "Google Chrome",
-      exeName: "chrome.exe",
-      startTime: hourStart,
-      endTime: hourStart + 20 * 60_000,
-      duration: 20 * 60_000,
-    }),
-    makeSession({
-      id: 3,
-      appName: "Cursor",
-      exeName: "cursor.exe",
-      startTime: hourStart + 60 * 60_000,
-      endTime: hourStart + 90 * 60_000,
-      duration: 30 * 60_000,
-    }),
-    makeSession({
-      id: 4,
-      appName: "Google Chrome",
-      exeName: "chrome.exe",
-      startTime: hourStart + 60 * 60_000,
-      endTime: hourStart + 65 * 60_000,
-      duration: 5 * 60_000,
-    }),
-  ]);
-  const nineOClockSegments = Object.values(categoryActivity.points[9]?.segmentDetails ?? {});
-  const tenOClockSegments = Object.values(categoryActivity.points[10]?.segmentDetails ?? {});
+  ProcessMapper.setUserOverrides({
+    "cursor.exe": { category: "development", enabled: true },
+    "chrome.exe": { category: "browser", enabled: true },
+  });
 
-  assert.deepEqual(nineOClockSegments.map((item) => item.category), ["development", "browser"]);
-  assert.deepEqual(tenOClockSegments.map((item) => item.category), ["browser", "development"]);
+  try {
+    const categoryActivity = buildHourlyCategoryActivity([
+      makeSession({
+        id: 1,
+        appName: "Cursor",
+        exeName: "cursor.exe",
+        startTime: hourStart,
+        endTime: hourStart + 10 * 60_000,
+        duration: 10 * 60_000,
+      }),
+      makeSession({
+        id: 2,
+        appName: "Google Chrome",
+        exeName: "chrome.exe",
+        startTime: hourStart,
+        endTime: hourStart + 20 * 60_000,
+        duration: 20 * 60_000,
+      }),
+      makeSession({
+        id: 3,
+        appName: "Cursor",
+        exeName: "cursor.exe",
+        startTime: hourStart + 60 * 60_000,
+        endTime: hourStart + 90 * 60_000,
+        duration: 30 * 60_000,
+      }),
+      makeSession({
+        id: 4,
+        appName: "Google Chrome",
+        exeName: "chrome.exe",
+        startTime: hourStart + 60 * 60_000,
+        endTime: hourStart + 65 * 60_000,
+        duration: 5 * 60_000,
+      }),
+    ]);
+    const nineOClockSegments = Object.values(categoryActivity.points[9]?.segmentDetails ?? {});
+    const tenOClockSegments = Object.values(categoryActivity.points[10]?.segmentDetails ?? {});
+
+    assert.deepEqual(nineOClockSegments.map((item) => item.category), ["development", "browser"]);
+    assert.deepEqual(tenOClockSegments.map((item) => item.category), ["browser", "development"]);
+  } finally {
+    ProcessMapper.clearUserOverrides();
+  }
 });
 
 runTest("hourly category compiler keeps remainder distinct from the real other category", () => {
   const hourStart = new Date(2026, 0, 2, 9, 0, 0, 0).getTime();
+  ProcessMapper.setUserOverrides({
+    "cursor.exe": { category: "development", enabled: true },
+    "chrome.exe": { category: "browser", enabled: true },
+    "qq.exe": { category: "communication", enabled: true },
+    "spotify.exe": { category: "music", enabled: true },
+    "figma.exe": { category: "design", enabled: true },
+    "winword.exe": { category: "office", enabled: true },
+    "terminal.exe": { category: "utility", enabled: true },
+  });
   const sessions = [
     ["cursor.exe", "Cursor", 30],
     ["chrome.exe", "Chrome", 25],
@@ -495,25 +521,36 @@ runTest("hourly category compiler keeps remainder distinct from the real other c
     duration: Number(minutes) * 60_000,
   }));
 
-  const categoryActivity = buildHourlyCategoryActivity(sessions);
-  const visibleCategoryActivity = limitHourlyCategoryActivity(categoryActivity, 6);
-  const otherSeries = categoryActivity.series.find((item) => item.category === "other");
-  const nineOClock = visibleCategoryActivity.points[9];
-  const remainderSeries = Object.values(nineOClock?.segmentDetails ?? {}).find((item) => item.isRemainder);
-  const stackedTotal = Object.values(nineOClock?.segmentDetails ?? {}).reduce(
-    (total, item) => total + item.minutes,
-    0,
-  );
+  try {
+    const categoryActivity = buildHourlyCategoryActivity(sessions);
+    const visibleCategoryActivity = limitHourlyCategoryActivity(categoryActivity, 6);
+    const otherSeries = categoryActivity.series.find((item) => item.category === "other");
+    const nineOClock = visibleCategoryActivity.points[9];
+    const remainderSeries = Object.values(nineOClock?.segmentDetails ?? {}).find((item) => item.isRemainder);
+    const stackedTotal = Object.values(nineOClock?.segmentDetails ?? {}).reduce(
+      (total, item) => total + item.minutes,
+      0,
+    );
 
-  assert.equal(categoryActivity.series.length, 8);
-  assert.equal(otherSeries?.name, "未分类");
-  assert.equal(remainderSeries?.name, "其他");
-  assert.equal(remainderSeries?.category, null);
-  assert.equal(stackedTotal, nineOClock?.minutes);
+    assert.equal(categoryActivity.series.length, 8);
+    assert.equal(otherSeries?.name, "未分类");
+    assert.equal(remainderSeries?.name, "其他");
+    assert.equal(remainderSeries?.category, null);
+    assert.equal(stackedTotal, nineOClock?.minutes);
+  } finally {
+    ProcessMapper.clearUserOverrides();
+  }
 });
 
 runTest("hourly category compiler only adds remainder after the per-hour limit is exceeded", () => {
   const hourStart = new Date(2026, 0, 2, 9, 0, 0, 0).getTime();
+  ProcessMapper.setUserOverrides({
+    "cursor.exe": { category: "development", enabled: true },
+    "chrome.exe": { category: "browser", enabled: true },
+    "qq.exe": { category: "communication", enabled: true },
+    "spotify.exe": { category: "music", enabled: true },
+    "figma.exe": { category: "design", enabled: true },
+  });
   const sessions = [
     ["cursor.exe", "Cursor", 30],
     ["chrome.exe", "Chrome", 25],
@@ -528,18 +565,22 @@ runTest("hourly category compiler only adds remainder after the per-hour limit i
     endTime: hourStart + Number(minutes) * 60_000,
     duration: Number(minutes) * 60_000,
   }));
-  const categoryActivity = buildHourlyCategoryActivity(sessions);
-  const fourPlusRemainder = Object.values(
-    limitHourlyCategoryActivity(categoryActivity, 4).points[9]?.segmentDetails ?? {},
-  );
-  const sixWithoutRemainder = Object.values(
-    limitHourlyCategoryActivity(categoryActivity, 6).points[9]?.segmentDetails ?? {},
-  );
+  try {
+    const categoryActivity = buildHourlyCategoryActivity(sessions);
+    const fourPlusRemainder = Object.values(
+      limitHourlyCategoryActivity(categoryActivity, 4).points[9]?.segmentDetails ?? {},
+    );
+    const sixWithoutRemainder = Object.values(
+      limitHourlyCategoryActivity(categoryActivity, 6).points[9]?.segmentDetails ?? {},
+    );
 
-  assert.equal(fourPlusRemainder.length, 5);
-  assert.equal(fourPlusRemainder.filter((item) => item.isRemainder).length, 1);
-  assert.equal(sixWithoutRemainder.length, 5);
-  assert.equal(sixWithoutRemainder.filter((item) => item.isRemainder).length, 0);
+    assert.equal(fourPlusRemainder.length, 5);
+    assert.equal(fourPlusRemainder.filter((item) => item.isRemainder).length, 1);
+    assert.equal(sixWithoutRemainder.length, 5);
+    assert.equal(sixWithoutRemainder.filter((item) => item.isRemainder).length, 0);
+  } finally {
+    ProcessMapper.clearUserOverrides();
+  }
 });
 
 runTest("hourly category compiler honors category and category color overrides", () => {

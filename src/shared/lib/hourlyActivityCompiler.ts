@@ -198,7 +198,7 @@ export function limitHourlyCategoryActivity(
     const displaySegments = [
       ...(remainderMinutes > 0 ? [{
         category: null,
-        name: UI_TEXT.dashboard.remainingCategories,
+        name: UI_TEXT.hourlyActivityChart.remainingCategories,
         color: "var(--qp-text-tertiary)",
         minutes: remainderMinutes,
         isRemainder: true,

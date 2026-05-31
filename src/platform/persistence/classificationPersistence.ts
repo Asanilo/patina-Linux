@@ -42,8 +42,13 @@ export async function deleteSettingValue(key: string): Promise<void> {
   await executeWrite("DELETE FROM settings WHERE key = ?", [key]);
 }
 
-export async function deleteSettingsByKeyPrefix(keyPrefix: string): Promise<void> {
-  await executeWrite("DELETE FROM settings WHERE key LIKE ?", [`${keyPrefix}%`]);
+export async function loadSettingValue(key: string): Promise<string | null> {
+  const db = await getDB();
+  const rows = await db.select<{ value: string }[]>(
+    "SELECT value FROM settings WHERE key = ? LIMIT 1",
+    [key],
+  );
+  return rows[0]?.value ?? null;
 }
 
 export async function loadSettingRowsByKeyPrefix(keyPrefix: string): Promise<SettingKeyValueRow[]> {

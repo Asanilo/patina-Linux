@@ -16,9 +16,10 @@ import {
 } from "../services/historyReadModel";
 import type { TrackerHealthSnapshot } from "../../../shared/types/tracking";
 import { AppClassification } from "../../../shared/classification/appClassification.ts";
-import HourlyActivityChart, { type HourlyActivityChartMode } from "../../../shared/charts/HourlyActivityChart";
+import HourlyActivityChart from "../../../shared/charts/HourlyActivityChart";
 import QuietIconAction from "../../../shared/components/QuietIconAction";
 import QuietPageHeader from "../../../shared/components/QuietPageHeader";
+import type { HourlyActivityChartMode } from "../../../shared/settings/appSettings.ts";
 import {
   getHistorySnapshotCache,
   setHistorySnapshotCache,

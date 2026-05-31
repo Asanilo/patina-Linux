@@ -1,10 +1,10 @@
 import {
   deleteSessionsByExeNames,
   deleteSessionsByExeNamesBetween,
-  deleteSettingsByKeyPrefix,
   deleteSettingValue,
   loadDistinctSessionExeNames,
   loadObservedSessionStats,
+  loadSettingValue,
   loadSettingKeysByKeyPrefix,
   loadSettingRowsByKeyPrefix,
   upsertSettingValue,
@@ -22,19 +22,14 @@ import {
 } from "../../../shared/classification/categoryTokens.ts";
 import { resolveCanonicalExecutable, shouldTrackProcess } from "../../../shared/classification/processNormalization.ts";
 import type { ClassificationDraftChangePlan } from "./classificationDraftState.ts";
+import { buildLegacyAutoClassificationOverrides } from "./legacyAutoClassificationMigration.ts";
 
 const APP_OVERRIDE_KEY_PREFIX = "__app_override::";
+const LEGACY_AUTO_CLASSIFICATION_MIGRATION_KEY = "__classification_manual_confirmation_migration::v1";
 const CATEGORY_COLOR_OVERRIDE_KEY_PREFIX = "__category_color_override::";
 const CATEGORY_DEFAULT_COLOR_ASSIGNMENT_KEY_PREFIX = "__category_default_color_assignment::";
 const CUSTOM_CATEGORY_KEY_PREFIX = "__custom_category::";
 const DELETED_CATEGORY_KEY_PREFIX = "__deleted_category::";
-
-export interface OtherCategoryCandidate {
-  exeName: string;
-  appName: string;
-  totalDuration: number;
-  lastSeenMs: number;
-}
 
 export interface ObservedAppCandidate {
   exeName: string;
@@ -50,6 +45,8 @@ export interface AppOverrideTransitionResult {
   override: AppOverride | null;
   mutations: ClassificationSettingMutation[];
 }
+
+let legacyAutoClassificationMigrationPromise: Promise<void> | null = null;
 
 function isPersistableDeletedCategory(category: string): category is AppCategory {
   return isAppCategory(category)
@@ -70,9 +67,10 @@ function normalizeHexColor(colorValue: string | undefined): string | null {
   return normalized.toUpperCase();
 }
 
-export async function loadAppOverrides(): Promise<Record<string, AppOverride>> {
-  const rows = await loadSettingRowsByKeyPrefix(APP_OVERRIDE_KEY_PREFIX);
-
+function buildLoadedAppOverrides(rows: readonly { key: string; value: string }[]): {
+  overrides: Record<string, AppOverride>;
+  transitionMutations: ClassificationSettingMutation[];
+} {
   const overrides: Record<string, AppOverride> = {};
   const transitionMutations: ClassificationSettingMutation[] = [];
   for (const row of rows) {
@@ -81,6 +79,58 @@ export async function loadAppOverrides(): Promise<Record<string, AppOverride>> {
     overrides[result.canonicalExe] = result.override;
     transitionMutations.push(...result.mutations);
   }
+  return { overrides, transitionMutations };
+}
+
+export function buildLegacyAutoClassificationMigrationMutations(
+  observed: readonly ObservedAppCandidate[],
+  existingOverrides: Readonly<Record<string, AppOverride>>,
+  migratedAt: number,
+): ClassificationSettingMutation[] {
+  const migratedOverrides = buildLegacyAutoClassificationOverrides(observed, existingOverrides, migratedAt);
+  const mutations = Object.entries(migratedOverrides)
+    .flatMap(([exeName, override]) => buildSaveAppOverrideMutations(exeName, override));
+  mutations.push({
+    key: LEGACY_AUTO_CLASSIFICATION_MIGRATION_KEY,
+    value: String(migratedAt),
+  });
+  return mutations;
+}
+
+async function runLegacyAutoClassificationMigration(): Promise<void> {
+  if (await loadSettingValue(LEGACY_AUTO_CLASSIFICATION_MIGRATION_KEY) !== null) {
+    return;
+  }
+
+  const migratedAt = Date.now();
+  const [overrideRows, observed] = await Promise.all([
+    loadSettingRowsByKeyPrefix(APP_OVERRIDE_KEY_PREFIX),
+    loadObservedSessionStats(0, migratedAt),
+  ]);
+  const { overrides, transitionMutations } = buildLoadedAppOverrides(overrideRows);
+  const mutations = [
+    ...transitionMutations,
+    ...buildLegacyAutoClassificationMigrationMutations(observed, overrides, migratedAt),
+  ];
+  await commitClassificationSettingMutations(mutations);
+}
+
+async function ensureLegacyAutoClassificationMigration(): Promise<void> {
+  if (!legacyAutoClassificationMigrationPromise) {
+    legacyAutoClassificationMigrationPromise = runLegacyAutoClassificationMigration()
+      .catch((error) => {
+        legacyAutoClassificationMigrationPromise = null;
+        throw error;
+      });
+  }
+  await legacyAutoClassificationMigrationPromise;
+}
+
+export async function loadAppOverrides(): Promise<Record<string, AppOverride>> {
+  await ensureLegacyAutoClassificationMigration();
+  const rows = await loadSettingRowsByKeyPrefix(APP_OVERRIDE_KEY_PREFIX);
+
+  const { overrides, transitionMutations } = buildLoadedAppOverrides(rows);
 
   await commitClassificationSettingMutations(transitionMutations);
 
@@ -158,10 +208,6 @@ function buildSaveAppOverrideMutations(
   }];
 }
 
-export async function clearAllAppOverrides(): Promise<void> {
-  await deleteSettingsByKeyPrefix(APP_OVERRIDE_KEY_PREFIX);
-}
-
 export async function loadCategoryColorOverrides(): Promise<Record<string, string>> {
   const rows = await loadSettingRowsByKeyPrefix(CATEGORY_COLOR_OVERRIDE_KEY_PREFIX);
 
@@ -212,10 +258,6 @@ function buildSaveCategoryColorOverrideMutations(
     key,
     value: normalizedColor,
   }];
-}
-
-export async function clearAllCategoryColorOverrides(): Promise<void> {
-  await deleteSettingsByKeyPrefix(CATEGORY_COLOR_OVERRIDE_KEY_PREFIX);
 }
 
 export async function loadCategoryDefaultColorAssignments(): Promise<Record<string, string>> {
@@ -388,17 +430,6 @@ export function buildCommitDraftChangePlanSettingMutations(
 
 export async function commitDraftChangePlan(changePlan: ClassificationDraftChangePlan): Promise<void> {
   await commitClassificationSettingMutations(buildCommitDraftChangePlanSettingMutations(changePlan));
-}
-
-export async function loadOtherCategoryCandidates(
-  days: number = 30,
-  limit: number = 30,
-): Promise<OtherCategoryCandidate[]> {
-  const observed = await loadObservedAppCandidates(days, Math.max(limit, 1) * 2);
-  const otherOnly = observed.filter((item) => (
-    ProcessMapper.map(item.exeName, { appName: item.appName }).category === "other"
-  ));
-  return otherOnly.slice(0, Math.max(1, limit));
 }
 
 export async function loadObservedAppCandidates(

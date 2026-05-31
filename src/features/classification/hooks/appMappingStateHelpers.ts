@@ -7,8 +7,6 @@ import {
   type ClassificationDraftState,
 } from "../services/classificationDraftState.ts";
 
-export const AUTO_CATEGORY_VALUE = "__auto__";
-
 function createAppMappingCollator() {
   return new Intl.Collator(getUiLocale(), {
     numeric: true,
@@ -75,6 +73,20 @@ export function buildAppMappingOverride(params: AppMappingOverrideParams): AppOv
   if (track === false) next.track = false;
   if (captureTitle === false) next.captureTitle = false;
   return next;
+}
+
+export function buildAppMappingCategoryOverride(
+  current: AppOverride | null,
+  categoryValue: string,
+): AppOverride | null {
+  return buildAppMappingOverride({
+    category: categoryValue === "other" ? undefined : categoryValue as UserAssignableAppCategory,
+    color: current?.color,
+    displayName: current?.displayName,
+    track: current?.track !== false,
+    captureTitle: current?.captureTitle !== false,
+    updatedAt: current?.updatedAt,
+  });
 }
 
 export function createAppMappingDraftState(

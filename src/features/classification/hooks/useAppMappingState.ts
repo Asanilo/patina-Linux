@@ -16,7 +16,7 @@ import {
 } from "../services/classificationBootstrapCache";
 import type { CandidateFilter, ObservedAppCandidate } from "../types";
 import {
-  AUTO_CATEGORY_VALUE,
+  buildAppMappingCategoryOverride,
   buildAppMappingOverride,
   cloneObservedCandidates,
   createAppMappingDraftState,
@@ -266,13 +266,10 @@ export function useAppMappingState({
   }, [activeBuiltinCategories, customCategoryOptions]);
 
   const candidateCategoryOptions = useMemo(
-    () => [
-      { value: AUTO_CATEGORY_VALUE, label: UI_TEXT.mapping.autoCategory },
-      ...orderedAssignableCategories.map((category) => ({
-        value: category,
-        label: AppClassification.getCategoryLabel(category),
-      })),
-    ],
+    () => orderedAssignableCategories.map((category) => ({
+      value: category,
+      label: AppClassification.getCategoryLabel(category),
+    })),
     [orderedAssignableCategories],
   );
 
@@ -397,15 +394,7 @@ export function useAppMappingState({
 
   const handleCategoryAssign = useCallback((candidate: ObservedAppCandidate, categoryValue: string) => {
     const current = draftOverrides[candidate.exeName] ?? null;
-    const category = categoryValue === AUTO_CATEGORY_VALUE ? undefined : categoryValue as UserAssignableAppCategory;
-    const nextOverride = buildAppMappingOverride({
-      category,
-      color: current?.color,
-      displayName: current?.displayName,
-      track: current?.track !== false,
-      captureTitle: current?.captureTitle !== false,
-      updatedAt: current?.updatedAt,
-    });
+    const nextOverride = buildAppMappingCategoryOverride(current, categoryValue);
     updateOverride(candidate.exeName, nextOverride);
   }, [draftOverrides, updateOverride]);
 
@@ -494,22 +483,6 @@ export function useAppMappingState({
     setEditingNameExe(nextState.editingNameExe);
     setNameDrafts(nextState.nameDrafts);
   }, [draftState, editingNameExe, nameDrafts, nameEditSnapshots, resolveEffectiveDisplayName, savedState]);
-
-  const handleResetAppOverride = useCallback((candidate: ObservedAppCandidate) => {
-    updateOverride(candidate.exeName, null);
-    setNameDrafts((prev) => {
-      const next = { ...prev };
-      delete next[candidate.exeName];
-      return next;
-    });
-    setNameEditSnapshots((prev) => {
-      const next = { ...prev };
-      delete next[candidate.exeName];
-      return next;
-    });
-    setEditingNameExe((prev) => (prev === candidate.exeName ? null : prev));
-    skipNextNameBlurExeRef.current = candidate.exeName;
-  }, [updateOverride]);
 
   const handleDeleteAllSessions = useCallback(async (candidate: ObservedAppCandidate) => {
     const displayName = resolveEffectiveDisplayName(candidate);
@@ -678,7 +651,6 @@ export function useAppMappingState({
     handleCategoryAssign,
     handleTitleCaptureToggle,
     handleTrackingToggle,
-    handleResetAppOverride,
     handleDeleteAllSessions,
     applyCategoryColor,
   };

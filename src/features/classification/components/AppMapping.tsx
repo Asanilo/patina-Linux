@@ -64,7 +64,6 @@ export default function AppMapping(props: Props) {
     handleCategoryAssign,
     handleTitleCaptureToggle,
     handleTrackingToggle,
-    handleResetAppOverride,
     handleDeleteAllSessions,
     applyCategoryColor,
   } = useAppMappingState(props);
@@ -217,7 +216,6 @@ export default function AppMapping(props: Props) {
                     onCategoryAssign={(value) => handleCategoryAssign(candidate, value)}
                     onToggleTitleCapture={() => handleTitleCaptureToggle(candidate, !titleCaptureEnabled)}
                     onToggleTracking={() => handleTrackingToggle(candidate, !trackingEnabled)}
-                    onResetOverride={() => handleResetAppOverride(candidate)}
                     onDeleteAllSessions={() => {
                       void handleDeleteAllSessions(candidate);
                     }}

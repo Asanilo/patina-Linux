@@ -627,8 +627,7 @@ export default function Data({
                         {visibleHeatmapRows.map((week) => (
                           <div key={`${selectedHeatmapViewKey}:${week.key}`} className="data-heatmap-week">
                             {week.cells.map((cell) => {
-                              const isFutureOutsideRecentRange = selectedHeatmapView === "recent" && cell.isFuture;
-                              const isUnavailable = isFutureOutsideRecentRange || cell.isOutsideYear;
+                              const isUnavailable = cell.isFuture || cell.isOutsideYear;
                               const canOpenHistoryDate = !isUnavailable && Boolean(onOpenHistoryDate);
                               return (
                                 <QuietTooltip
@@ -644,7 +643,7 @@ export default function Data({
                                     className={`data-heatmap-cell ${
                                       canOpenHistoryDate ? "data-heatmap-cell-openable" : ""
                                     } ${
-                                      isFutureOutsideRecentRange ? "data-heatmap-cell-future" : ""
+                                      cell.isFuture ? "data-heatmap-cell-future" : ""
                                     } ${cell.isOutsideYear ? "data-heatmap-cell-outside" : ""}`}
                                     onDoubleClick={() => {
                                       if (canOpenHistoryDate) {

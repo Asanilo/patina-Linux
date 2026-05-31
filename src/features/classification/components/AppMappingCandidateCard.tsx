@@ -32,7 +32,6 @@ interface AppMappingCandidateCardProps {
   onCategoryAssign: (value: string) => void;
   onToggleTitleCapture: () => void;
   onToggleTracking: () => void;
-  onResetOverride: () => void;
   onDeleteAllSessions: () => void;
 }
 
@@ -59,7 +58,6 @@ export default function AppMappingCandidateCard({
   onCategoryAssign,
   onToggleTitleCapture,
   onToggleTracking,
-  onResetOverride,
   onDeleteAllSessions,
 }: AppMappingCandidateCardProps) {
   return (
@@ -177,15 +175,6 @@ export default function AppMappingCandidateCard({
               title={trackingEnabled ? UI_TEXT.mapping.disableTracking : UI_TEXT.mapping.enableTracking}
             >
               {trackingEnabled ? UI_TEXT.mapping.statsEnabled : UI_TEXT.mapping.noStats}
-            </QuietInlineAction>
-            <QuietInlineAction
-              disabled={isBusy}
-              onClick={onResetOverride}
-              tone="neutral"
-              title={UI_TEXT.mapping.restoreDefaultApp}
-              leadingIcon={<RotateCcw size={12} />}
-            >
-              {UI_TEXT.mapping.restoreDefaultApp}
             </QuietInlineAction>
             <QuietInlineAction
               disabled={isBusy}

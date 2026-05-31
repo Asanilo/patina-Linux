@@ -116,6 +116,7 @@ fn is_allowed_app_setting_key(key: &str) -> bool {
             | "minimize_behavior"
             | "theme_mode"
             | "language"
+            | "hourly_activity_chart_mode"
             | "color_scheme_light"
             | "color_scheme_dark"
             | "launch_at_login"
@@ -163,6 +164,10 @@ mod tests {
                         key: "language".to_string(),
                         value: "en-US".to_string(),
                     },
+                    AppSettingMutation {
+                        key: "hourly_activity_chart_mode".to_string(),
+                        value: "category".to_string(),
+                    },
                 ],
             )
             .await
@@ -175,6 +180,10 @@ mod tests {
             assert_eq!(
                 load_setting(&pool, "language").await,
                 Some("en-US".to_string())
+            );
+            assert_eq!(
+                load_setting(&pool, "hourly_activity_chart_mode").await,
+                Some("category".to_string())
             );
         });
     }

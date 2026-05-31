@@ -73,7 +73,11 @@ function tauriStubFor(path: string) {
 
       function loadStoredSettings() {
         try {
-          return JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) ?? "{}");
+          return {
+            "__app_override::cursor.exe": JSON.stringify({ category: "development", enabled: true }),
+            "__app_override::deep-research-workbench.exe": JSON.stringify({ category: "office", enabled: true }),
+            ...JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) ?? "{}"),
+          };
         } catch {
           return {};
         }
@@ -125,7 +129,11 @@ function tauriStubFor(path: string) {
 
       function loadStoredSettings() {
         try {
-          return JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) ?? "{}");
+          return {
+            "__app_override::cursor.exe": JSON.stringify({ category: "development", enabled: true }),
+            "__app_override::deep-research-workbench.exe": JSON.stringify({ category: "office", enabled: true }),
+            ...JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) ?? "{}"),
+          };
         } catch {
           return {};
         }
@@ -654,6 +662,65 @@ try {
       true,
     );
     await waitForExpression(client!, sessionId, "!document.querySelector('.settings-color-scheme-list')");
+  });
+
+  await runTest("app mapping only offers explicit manual categories", async () => {
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const node = document.querySelector('[aria-label=' + ${jsonString(JSON.stringify("应用"))} + ']');
+          if (!node) return false;
+          node.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(client!, sessionId, `Boolean(document.querySelector(".qp-select-trigger"))`);
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        !document.body.innerText.includes("自动识别")
+          && !document.body.innerText.includes("恢复默认识别")
+      `),
+      true,
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const trigger = document.querySelector(".qp-select-trigger");
+          if (!trigger) return false;
+          trigger.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(client!, sessionId, `Boolean(document.querySelector(".qp-select-menu"))`);
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const labels = Array.from(document.querySelectorAll(".qp-select-option"))
+            .map((node) => node.textContent?.trim());
+          return labels.at(-1) === "未分类" && !labels.includes("自动识别");
+        })()
+      `),
+      true,
+    );
+    await evaluate(client!, sessionId, `
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    `);
+    await waitForExpression(client!, sessionId, `!document.querySelector(".qp-select-menu")`);
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const node = document.querySelector('[aria-label=' + ${jsonString(JSON.stringify("今天"))} + ']');
+          if (!node) return false;
+          node.click();
+          return true;
+        })()
+      `),
+      true,
+    );
   });
 
   await runTest("dashboard viewport has no horizontal overflow", async () => {

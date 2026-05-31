@@ -15,7 +15,6 @@ export type MappingConfidence = "high" | "medium" | "low";
 
 export interface MappingHints {
   appName?: string;
-  processPath?: string;
 }
 
 export interface AppOverride {
@@ -33,27 +32,8 @@ export interface AppInfo {
   category: AppCategory;
   color: string;
   confidence: MappingConfidence;
-  source: "default" | "override" | "heuristic" | "fallback";
+  source: "default" | "override" | "fallback";
 }
-
-const CATEGORY_BY_KEYWORD: Array<{
-  category: AppCategory;
-  keywords: string[];
-}> = [
-  { category: "ai", keywords: ["alma", "chatgpt", "openai", "claude", "anthropic", "gemini", "copilot", "deepseek", "kimi", "qwen", "tongyi", "yuanbao", "ollama", "llm", "aistudio", "anythingllm"] },
-  { category: "development", keywords: ["vscode", "vscodium", "cursor", "idea", "goland", "pycharm", "webstorm", "clion", "rider", "dev", "code"] },
-  { category: "office", keywords: ["office", "word", "excel", "powerpoint", "wps", "onenote", "calendar", "outlook"] },
-  { category: "browser", keywords: ["chrome", "edge", "firefox", "browser", "safari", "vivaldi", "opera", "brave", "arc"] },
-  { category: "communication", keywords: ["wechat", "weixin", "qq", "telegram", "discord", "slack", "lark", "dingtalk"] },
-  { category: "office", keywords: ["zoom", "teams", "meeting", "voov", "tencent meeting"] },
-  { category: "video", keywords: ["douyin", "bilibili", "youtube", "netflix", "player", "video"] },
-  { category: "music", keywords: ["spotify", "music", "netease", "qqmusic"] },
-  { category: "game", keywords: ["steam", "epic", "hoyoplay", "mihoyo", "genshin", "star rail", "valorant", "league", "game"] },
-  { category: "design", keywords: ["figma", "sketch", "photoshop", "illustrator", "after effects", "adobe xd", "canva"] },
-  { category: "browser", keywords: ["obsidian", "zotero", "typora", "reader", "pdf", "kindle", "book"] },
-  { category: "utility", keywords: ["trader", "bank", "finance", "stock", "binance", "okx", "huobi"] },
-  { category: "utility", keywords: ["todesk", "teamviewer", "anydesk", "terminal", "flash", "snip", "screenshot", "tool", "utility"] },
-];
 
 const USER_ASSIGNABLE_CATEGORY_SET = new Set<string>(USER_ASSIGNABLE_CATEGORIES);
 
@@ -80,28 +60,6 @@ function normalizeHexColor(color: string | undefined): string | null {
   }
 
   return normalized.toUpperCase();
-}
-
-function buildSearchText(canonicalExe: string, hints: MappingHints) {
-  return [
-    canonicalExe,
-    normalizeDisplayName(hints.appName),
-    normalizeDisplayName(hints.processPath),
-  ]
-    .join(" ")
-    .toLowerCase();
-}
-
-function classifyByKeywords(canonicalExe: string, hints: MappingHints): AppCategory | null {
-  const searchText = buildSearchText(canonicalExe, hints);
-
-  for (const rule of CATEGORY_BY_KEYWORD) {
-    if (rule.keywords.some((keyword) => searchText.includes(keyword))) {
-      return rule.category;
-    }
-  }
-
-  return null;
 }
 
 function resolveDefaultMappingName(defaultMapping: { name: string; localizedNames?: Partial<Record<string, string>> }) {
@@ -273,7 +231,7 @@ export class ProcessMapper {
     );
 
     if (defaultMapping) {
-      const mappedCategory = override?.category ?? defaultMapping.category;
+      const mappedCategory = override?.category ?? defaultMapping.category ?? "other";
       const category = this.categoryColors.resolveActiveCategory(mappedCategory);
       const name = override?.displayName || resolveDefaultMappingName(defaultMapping);
       return {
@@ -285,10 +243,9 @@ export class ProcessMapper {
       };
     }
 
-    const categoryByRule = classifyByKeywords(canonicalExe, hints);
     const fallbackName = formatFallbackName(canonicalExe) || canonicalExe;
     const resolvedName = override?.displayName || normalizeDisplayName(hints.appName) || fallbackName;
-    const rawCategory = override?.category ?? categoryByRule ?? "other";
+    const rawCategory = override?.category ?? "other";
     const resolvedCategory = this.categoryColors.resolveActiveCategory(rawCategory);
 
     return {
@@ -297,10 +254,8 @@ export class ProcessMapper {
       color: override?.color ?? this.categoryColors.getCategoryColor(resolvedCategory),
       confidence: override?.category || override?.color || override?.track === false || override?.captureTitle === false
         ? "high"
-        : categoryByRule
-          ? "medium"
-          : "low",
-      source: hasOverride ? "override" : categoryByRule ? "heuristic" : "fallback",
+        : "low",
+      source: hasOverride ? "override" : "fallback",
     };
   }
 

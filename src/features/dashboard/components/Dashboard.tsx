@@ -7,9 +7,10 @@ import { useIconThemeColors } from "../../../shared/hooks/useIconThemeColors";
 import { formatDashboardDuration } from "../services/dashboardFormatting";
 import type { DashboardReadModel } from "../services/dashboardReadModel";
 import { AppClassification } from "../../../shared/classification/appClassification.ts";
-import HourlyActivityChart, { type HourlyActivityChartMode } from "../../../shared/charts/HourlyActivityChart";
+import HourlyActivityChart from "../../../shared/charts/HourlyActivityChart";
 import QuietIconAction from "../../../shared/components/QuietIconAction";
 import QuietPageHeader from "../../../shared/components/QuietPageHeader";
+import type { HourlyActivityChartMode } from "../../../shared/settings/appSettings.ts";
 
 interface Props {
   dashboard: DashboardReadModel;

@@ -5,6 +5,7 @@ const CATEGORY_COLOR_OVERRIDE_KEY_PREFIX: &str = "__category_color_override::";
 const CATEGORY_DEFAULT_COLOR_ASSIGNMENT_KEY_PREFIX: &str = "__category_default_color_assignment::";
 const CUSTOM_CATEGORY_KEY_PREFIX: &str = "__custom_category::";
 const DELETED_CATEGORY_KEY_PREFIX: &str = "__deleted_category::";
+const MIGRATION_KEY_PREFIX: &str = "__classification_manual_confirmation_migration::";
 const MAX_SETTING_KEY_LEN: usize = 256;
 const MAX_SETTING_VALUE_LEN: usize = 4096;
 
@@ -97,6 +98,7 @@ fn is_allowed_classification_setting_key(key: &str) -> bool {
         CATEGORY_DEFAULT_COLOR_ASSIGNMENT_KEY_PREFIX,
         CUSTOM_CATEGORY_KEY_PREFIX,
         DELETED_CATEGORY_KEY_PREFIX,
+        MIGRATION_KEY_PREFIX,
     ]
     .iter()
     .any(|prefix| key.starts_with(prefix) && key.len() > prefix.len())
@@ -157,6 +159,29 @@ mod tests {
             .unwrap();
 
             assert_eq!(load_setting(&pool, key).await, None);
+        });
+    }
+
+    #[test]
+    fn commit_classification_setting_mutations_accepts_manual_confirmation_migration_marker() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            let key = "__classification_manual_confirmation_migration::v1";
+
+            commit_classification_setting_mutations(
+                &pool,
+                &[ClassificationSettingMutation {
+                    key: key.to_string(),
+                    value: Some("1780226815860".to_string()),
+                }],
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(
+                load_setting(&pool, key).await,
+                Some("1780226815860".to_string())
+            );
         });
     }
 

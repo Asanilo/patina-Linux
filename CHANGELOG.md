@@ -18,11 +18,11 @@ App note en: TBD.
 
 ### Added
 
-- 支持从数据页双击活动热力图、日粒度活动趋势和应用趋势中的日期，直接打开对应日期的历史详情（[#8](https://github.com/Ceceliaee/time-tracking/issues/8)）。
+- 暂无。
 
 ### Changed
 
-- Dashboard“今日活动”和 History“当日活动”支持切换分类分层小时柱，便于查看每小时活动构成；所选模式会在页面之间同步，并在重新打开应用后保留（[#3](https://github.com/Ceceliaee/time-tracking/issues/3)、[#6](https://github.com/Ceceliaee/time-tracking/issues/6)）。
+- 暂无。
 
 ### Fixed
 
@@ -35,6 +35,34 @@ App note en: TBD.
 ### Internal
 
 - 暂无。
+
+## [1.2.0] - 2026-05-31
+
+Release: 增强活动回看与应用分类控制，新增按小时查看分类构成和从数据页直达历史详情。
+App note: 增强活动回看与分类控制。
+App note en: Improved activity review and app classification control.
+
+### Added
+
+- 支持从数据页双击活动热力图、日粒度活动趋势和应用趋势中的日期，直接打开对应日期的历史详情（[#8](https://github.com/Ceceliaee/time-tracking/issues/8)）。
+
+### Changed
+
+- Dashboard“今日活动”和 History“当日活动”支持切换分类分层小时柱，便于查看每小时活动构成；所选模式会在页面之间同步，并在重新打开应用后保留（[#3](https://github.com/Ceceliaee/time-tracking/issues/3)、[#6](https://github.com/Ceceliaee/time-tracking/issues/6)）。
+- 应用分类改为由用户手动确认；升级时会保留历史记录中已有应用的旧版自动分类结果，此后新出现且未手动分类的应用统一进入“未分类”，不再持续通过内置映射或关键字规则自动归类（[#6](https://github.com/Ceceliaee/time-tracking/issues/6)）。
+
+### Fixed
+
+- 暂无。
+
+### Removed
+
+- 暂无。
+
+### Internal
+
+- 增加一次性分类兼容桥接，升级时原子保存历史应用分类和完成标记，兼容窗口结束后可独立移除。
+- 补充分类迁移、设置持久化、主题初始化、数据热力图交互和小时分类分层的回归验证。
 
 ## [1.1.3] - 2026-05-30
 

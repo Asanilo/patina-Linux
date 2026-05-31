@@ -23,8 +23,37 @@ import {
   buildDashboardView,
   makeStaleTrackerHealth,
 } from "../helpers/trackingReadModelFixtures.ts";
+import { loadAppRuntimeBootstrapSnapshotWithDeps } from "../../src/app/services/appRuntimeBootstrapService.ts";
+import { DEFAULT_SETTINGS } from "../../src/shared/settings/appSettings.ts";
 
 export function runRuntimeEffectsTests() {
+  runTest("app bootstrap preserves loaded settings when process mapper initialization fails", async () => {
+    const mapperError = new Error("mapper init failed");
+    const trackerHealth = resolveTrackerHealth(10_000, 10_000, 8_000);
+    const warnings: Array<{ message: string; error: unknown }> = [];
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      themeMode: "system" as const,
+    };
+
+    const snapshot = await loadAppRuntimeBootstrapSnapshotWithDeps({
+      loadCurrentAppSettings: async () => settings,
+      setAfkThreshold: async () => undefined,
+      initializeProcessMapperRuntime: async () => {
+        throw mapperError;
+      },
+      getCurrentTrackingSnapshot: async () => null,
+      loadTrackerHealthSnapshot: async () => trackerHealth,
+      reportWarning: (message, error) => warnings.push({ message, error }),
+    });
+
+    assert.equal(snapshot.settings.themeMode, "system");
+    assert.equal(snapshot.settings, settings);
+    assert.equal(snapshot.trackerHealth, trackerHealth);
+    assert.equal(warnings.length, 1);
+    assert.equal(warnings[0].error, mapperError);
+  });
+
   runTest("tracking runtime payload guards accept expected contracts", () => {
     assert.equal(isRawTrackingWindowSnapshot({
       hwnd: "0x100",

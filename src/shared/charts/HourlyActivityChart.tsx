@@ -15,8 +15,6 @@ import {
 import QuietChartTooltip from "../components/QuietChartTooltip";
 import type { HourlyActivityChartMode } from "../settings/appSettings.ts";
 
-export type { HourlyActivityChartMode } from "../settings/appSettings.ts";
-
 interface Props {
   mode: HourlyActivityChartMode;
   hourlyActivity: HourlyActivityPoint[];
@@ -132,11 +130,11 @@ export default function HourlyActivityChart({
             const totalMinutes = Number(payload[0]?.payload && (
               payload[0].payload as { minutes?: number }
             ).minutes) || 0;
-            return `${String(label)} · ${UI_TEXT.dashboard.activeMinutes} ${Math.round(totalMinutes)}m`;
+            return `${String(label)} · ${UI_TEXT.hourlyActivityChart.activeMinutes} ${Math.round(totalMinutes)}m`;
           }}
           formatter={(value, _name, item) => [
             `${Math.round(Number(value))}m`,
-            categoryMode ? getTooltipSegment(item)?.name : UI_TEXT.dashboard.activeMinutes,
+            categoryMode ? getTooltipSegment(item)?.name : UI_TEXT.hourlyActivityChart.activeMinutes,
           ]}
         />
         {categoryMode ? (

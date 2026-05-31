@@ -52,7 +52,7 @@ export function runProcessMapperTests() {
     assert.equal(ProcessMapper.shouldTrack("Antigravity.exe"), true);
   });
 
-  runTest("terminal apps are treated as normal development tools", () => {
+  runTest("terminal apps stay trackable but unclassified until assigned", () => {
     for (
       const exeName of [
         "cmd.exe",
@@ -66,15 +66,15 @@ export function runProcessMapperTests() {
     ) {
       assert.equal(shouldTrackProcess(exeName), true);
       assert.equal(ProcessMapper.shouldTrack(exeName), true);
-      assert.equal(ProcessMapper.map(exeName).category, "development");
+      assert.equal(ProcessMapper.map(exeName).category, "other");
     }
   });
 
-  runTest("file explorer is treated as a normal utility app", () => {
+  runTest("file explorer is treated as a normal unclassified app", () => {
     ProcessMapper.clearUserOverrides();
     assert.equal(shouldTrackProcess("explorer.exe"), true);
     assert.equal(ProcessMapper.shouldTrack("explorer.exe"), true);
-    assert.equal(ProcessMapper.map("explorer.exe").category, "utility");
+    assert.equal(ProcessMapper.map("explorer.exe").category, "other");
 
     setUiTextLanguage("zh-CN");
     assert.equal(ProcessMapper.map("explorer.exe").name, "文件资源管理器");
@@ -94,11 +94,11 @@ export function runProcessMapperTests() {
     setUiTextLanguage("zh-CN");
   });
 
-  runTest("wallpaper engine app windows remain trackable utilities", () => {
+  runTest("wallpaper engine app windows remain trackable but unclassified", () => {
     for (const exeName of ["ui32.exe", "wallpaper32.exe", "wallpaper64.exe", "wallpaperengine.exe"]) {
       assert.equal(shouldTrackProcess(exeName), true);
       assert.equal(ProcessMapper.shouldTrack(exeName), true);
-      assert.equal(ProcessMapper.map(exeName).category, "utility");
+      assert.equal(ProcessMapper.map(exeName).category, "other");
     }
   });
 
@@ -145,7 +145,7 @@ export function runProcessMapperTests() {
     const mapped = ProcessMapper.map("DouYin_Tray.exe");
 
     assert.equal(mapped.name, "\u6296\u97f3");
-    assert.equal(mapped.category, "video");
+    assert.equal(mapped.category, "other");
   });
 
   runTest("process mapper user override can reclassify an unknown app", () => {
@@ -162,6 +162,47 @@ export function runProcessMapperTests() {
     const after = ProcessMapper.map("atlas.exe");
     assert.equal(after.category, "utility");
     assert.equal(after.source, "override");
+
+    ProcessMapper.clearUserOverrides();
+  });
+
+  runTest("ordinary apps stay unclassified until the user explicitly assigns a category", () => {
+    ProcessMapper.clearUserOverrides();
+
+    for (const exeName of [
+      "wps.exe",
+      "chrome.exe",
+      "sublime_text.exe",
+      "atlas.exe",
+      "mycodec.exe",
+      "knowledge.exe",
+      "openair.exe",
+    ]) {
+      assert.equal(ProcessMapper.map(exeName).category, "other");
+    }
+
+    ProcessMapper.setUserOverride("wps.exe", {
+      category: "office",
+      enabled: true,
+      updatedAt: Date.now(),
+    });
+    assert.equal(ProcessMapper.map("wps.exe").category, "office");
+
+    ProcessMapper.clearUserOverrides();
+  });
+
+  runTest("non-category overrides do not classify an app", () => {
+    ProcessMapper.clearUserOverrides();
+    ProcessMapper.setUserOverride("chrome.exe", {
+      displayName: "Work Browser",
+      color: "#112233",
+      captureTitle: false,
+      enabled: true,
+      updatedAt: Date.now(),
+    });
+
+    assert.equal(ProcessMapper.map("chrome.exe").category, "other");
+    assert.equal(ProcessMapper.map("chrome.exe").name, "Work Browser");
 
     ProcessMapper.clearUserOverrides();
   });
@@ -186,14 +227,14 @@ export function runProcessMapperTests() {
     ProcessMapper.clearUserOverrides();
   });
 
-  runTest("process mapper category snapshot remains stable for key desktop apps", () => {
+  runTest("ordinary desktop apps remain unclassified without user overrides", () => {
     ProcessMapper.clearUserOverrides();
     const cases: Array<{ exeName: string; appName: string; expectedCategory: string }> = [
-      { exeName: "vscodium.exe", appName: "VSCodium", expectedCategory: "development" },
-      { exeName: "alma.exe", appName: "Alma", expectedCategory: "ai" },
-      { exeName: "zotero.exe", appName: "Zotero", expectedCategory: "browser" },
-      { exeName: "ToDesk.exe", appName: "ToDesk", expectedCategory: "utility" },
-      { exeName: "HoYoPlay.exe", appName: "HoYoPlay", expectedCategory: "game" },
+      { exeName: "vscodium.exe", appName: "VSCodium", expectedCategory: "other" },
+      { exeName: "alma.exe", appName: "Alma", expectedCategory: "other" },
+      { exeName: "zotero.exe", appName: "Zotero", expectedCategory: "other" },
+      { exeName: "ToDesk.exe", appName: "ToDesk", expectedCategory: "other" },
+      { exeName: "HoYoPlay.exe", appName: "HoYoPlay", expectedCategory: "other" },
       { exeName: "atlas.exe", appName: "Atlas", expectedCategory: "other" },
     ];
 
@@ -208,7 +249,7 @@ export function runProcessMapperTests() {
     const mapped = ProcessMapper.map("windowsterminal.exe", { appName: "WindowsTerminal" });
 
     assert.equal(mapped.name, "Windows Terminal");
-    assert.equal(mapped.category, "development");
+    assert.equal(mapped.category, "other");
   });
 
   runTest("display name overrides propagate into compiled app stats", () => {
