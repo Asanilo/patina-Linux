@@ -13,6 +13,10 @@ import {
 import {
   normalizeSettingsRecord,
 } from "../src/platform/persistence/appSettingsStore.ts";
+import {
+  buildLocalApiEnabledChange,
+  createLocalApiToken,
+} from "../src/features/settings/services/localApiTokenService.ts";
 
 interface AppSettings {
   idleTimeoutSecs: number;
@@ -310,6 +314,13 @@ await runTest("normalizeSettingsRecord accepts current minimize behavior values"
   assert.equal(invalidLocalApiSettings.localApiEnabled, false);
   assert.equal(invalidLocalApiSettings.localApiPort, 17321);
 
+  const missingTokenSettings = normalizeSettingsRecord({
+    local_api_enabled: "1",
+    local_api_token: "   ",
+  });
+  assert.equal(missingTokenSettings.localApiEnabled, false);
+  assert.equal(missingTokenSettings.localApiToken, "");
+
   const widgetSettings = normalizeSettingsRecord({
     minimize_behavior: "widget",
     close_behavior: "tray",
@@ -398,6 +409,27 @@ await runTest("normalizeSettingsRecord accepts color schemes and falls back to d
   assert.equal(normalizeSettingsRecord({ color_scheme_light: "marketplace" }).colorSchemeLight, "default");
   assert.equal(normalizeSettingsRecord({ color_scheme: "github" }).colorSchemeLight, "default");
   assert.equal(normalizeSettingsRecord({ color_scheme: "github" }).colorSchemeDark, "default");
+});
+
+await runTest("local API token is generated before enabling", () => {
+  const token = createLocalApiToken((bytes) => {
+    bytes.fill(10);
+    return bytes;
+  });
+  assert.equal(token, "0a".repeat(24));
+
+  assert.deepEqual(buildLocalApiEnabledChange(true, "", () => "generated-token"), {
+    enabled: true,
+    token: "generated-token",
+  });
+  assert.deepEqual(buildLocalApiEnabledChange(true, " existing-token "), {
+    enabled: true,
+    token: "existing-token",
+  });
+  assert.deepEqual(buildLocalApiEnabledChange(false, "existing-token"), {
+    enabled: false,
+    token: null,
+  });
 });
 
 await runTest("runSettingsCleanupFlow executes confirmed cleanup and reloads", async () => {

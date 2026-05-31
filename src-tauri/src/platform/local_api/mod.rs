@@ -1,8 +1,9 @@
 use crate::domain::settings::LocalApiSettings;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::future::Future;
+use std::io;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener as StdTcpListener};
 use std::pin::Pin;
 use std::sync::Mutex;
 use tauri::{AppHandle, Runtime};
@@ -78,12 +79,7 @@ impl LocalApiRuntimeState {
         }
 
         if settings.enabled && (should_restart || inner.server_task.is_none()) {
-            inner.server_task = Some(spawn_server(
-                app,
-                self.event_tx.clone(),
-                settings.clone(),
-                deps,
-            ));
+            inner.server_task = spawn_server(app, self.event_tx.clone(), settings.clone(), deps);
         }
 
         inner.settings = settings;
@@ -99,13 +95,23 @@ fn spawn_server<R: Runtime + 'static>(
     event_tx: broadcast::Sender<String>,
     settings: LocalApiSettings,
     deps: LocalApiRuntimeDeps<R>,
-) -> tauri::async_runtime::JoinHandle<()> {
-    tauri::async_runtime::spawn(async move {
-        let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), settings.port);
-        let listener = match TcpListener::bind(address).await {
+) -> Option<tauri::async_runtime::JoinHandle<()>> {
+    let (address, std_listener) = match open_local_api_listener(settings.port) {
+        Ok(listener) => listener,
+        Err(error) => {
+            eprintln!(
+                "[local-api] failed to bind 127.0.0.1:{}: {error}",
+                settings.port
+            );
+            return None;
+        }
+    };
+
+    Some(tauri::async_runtime::spawn(async move {
+        let listener = match TcpListener::from_std(std_listener) {
             Ok(listener) => listener,
             Err(error) => {
-                eprintln!("[local-api] failed to bind {address}: {error}");
+                eprintln!("[local-api] failed to attach listener {address}: {error}");
                 return;
             }
         };
@@ -132,7 +138,14 @@ fn spawn_server<R: Runtime + 'static>(
                 }
             });
         }
-    })
+    }))
+}
+
+fn open_local_api_listener(port: u16) -> io::Result<(SocketAddr, StdTcpListener)> {
+    let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
+    let listener = StdTcpListener::bind(address)?;
+    listener.set_nonblocking(true)?;
+    Ok((address, listener))
 }
 
 async fn handle_client<R: Runtime>(
@@ -282,5 +295,18 @@ mod tests {
 
         let wrong = Message::Text(r#"{"type":"hello","token":"abc"}"#.into());
         assert_eq!(parse_auth_token(&wrong), None);
+    }
+
+    #[test]
+    fn listener_bind_can_recover_after_occupied_port_is_released() {
+        let (_address, occupied_listener) = open_local_api_listener(0).unwrap();
+        let port = occupied_listener.local_addr().unwrap().port();
+
+        assert!(open_local_api_listener(port).is_err());
+
+        drop(occupied_listener);
+
+        let (_address, recovered_listener) = open_local_api_listener(port).unwrap();
+        assert_eq!(recovered_listener.local_addr().unwrap().port(), port);
     }
 }

@@ -106,6 +106,10 @@ function normalizeIntegerRangeValue(
   return parsed;
 }
 
+function normalizeLocalApiToken(value: string | undefined) {
+  return value?.trim() ?? DEFAULT_SETTINGS.localApiToken;
+}
+
 function parseBooleanSetting(value: string | undefined, fallback: boolean) {
   if (value === undefined) return fallback;
   const normalized = value.trim().toLowerCase();
@@ -207,6 +211,8 @@ function serializeSettingValue(value: PersistedSettingValue) {
 }
 
 export function normalizeSettingsRecord(record: Record<string, string | undefined>): AppSettings {
+  const localApiToken = normalizeLocalApiToken(record.local_api_token);
+
   return {
     idleTimeoutSecs: normalizeRangeStepValue(
       record.idle_timeout_secs,
@@ -248,13 +254,14 @@ export function normalizeSettingsRecord(record: Record<string, string | undefine
       record.onboarding_completed,
       DEFAULT_SETTINGS.onboardingCompleted,
     ),
-    localApiEnabled: parseBooleanSetting(record.local_api_enabled, DEFAULT_SETTINGS.localApiEnabled),
+    localApiEnabled: parseBooleanSetting(record.local_api_enabled, DEFAULT_SETTINGS.localApiEnabled)
+      && localApiToken.length > 0,
     localApiPort: normalizeIntegerRangeValue(
       record.local_api_port,
       DEFAULT_SETTINGS.localApiPort,
       LOCAL_API_PORT_RANGE,
     ),
-    localApiToken: record.local_api_token ?? DEFAULT_SETTINGS.localApiToken,
+    localApiToken,
   };
 }
 

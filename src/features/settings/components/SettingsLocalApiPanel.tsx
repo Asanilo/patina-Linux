@@ -2,6 +2,7 @@ import { Cable } from "lucide-react";
 import { useEffect, useState } from "react";
 import QuietSwitch from "../../../shared/components/QuietSwitch";
 import { UI_TEXT } from "../../../shared/copy/uiText.ts";
+import { buildLocalApiEnabledChange } from "../services/localApiTokenService.ts";
 
 type SettingsLocalApiPanelProps = {
   enabled: boolean;
@@ -36,6 +37,14 @@ export default function SettingsLocalApiPanel({
     setPortDraft(String(port));
   }, [port]);
 
+  const handleEnabledChange = (nextChecked: boolean) => {
+    const change = buildLocalApiEnabledChange(nextChecked, token);
+    if (change.token !== null && change.token !== token) {
+      onTokenChange(change.token);
+    }
+    onEnabledChange(change.enabled);
+  };
+
   return (
     <section className="qp-panel p-5 md:p-6">
       <div className="flex items-center gap-2.5 pb-2 border-b border-[var(--qp-border-subtle)]">
@@ -54,7 +63,7 @@ export default function SettingsLocalApiPanel({
             </p>
             <QuietSwitch
               checked={enabled}
-              onChange={onEnabledChange}
+              onChange={handleEnabledChange}
               ariaLabel={UI_TEXT.accessibility.settings.toggleLocalApi}
             />
           </div>
@@ -79,7 +88,7 @@ export default function SettingsLocalApiPanel({
             max={LOCAL_API_PORT_MAX}
             step={1}
             value={portDraft}
-          onChange={(event) => {
+            onChange={(event) => {
               const nextDraft = event.target.value;
               setPortDraft(nextDraft);
               const normalized = normalizePort(nextDraft);

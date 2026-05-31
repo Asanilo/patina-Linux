@@ -54,14 +54,18 @@ impl LocalApiSettings {
         port: Option<&str>,
         token: Option<&str>,
     ) -> Self {
+        let token = token.unwrap_or(DEFAULT_LOCAL_API_TOKEN).trim().to_string();
+        let enabled = enabled
+            .map(|raw| parse_boolean_setting(raw, DEFAULT_LOCAL_API_ENABLED))
+            .unwrap_or(DEFAULT_LOCAL_API_ENABLED)
+            && !token.is_empty();
+
         Self {
-            enabled: enabled
-                .map(|raw| parse_boolean_setting(raw, DEFAULT_LOCAL_API_ENABLED))
-                .unwrap_or(DEFAULT_LOCAL_API_ENABLED),
+            enabled,
             port: port
                 .and_then(parse_local_api_port)
                 .unwrap_or(DEFAULT_LOCAL_API_PORT),
-            token: token.unwrap_or(DEFAULT_LOCAL_API_TOKEN).to_string(),
+            token,
         }
     }
 }
@@ -162,7 +166,9 @@ pub fn parse_boolean_setting(raw: &str, fallback: bool) -> bool {
 
 pub fn parse_local_api_port(raw: &str) -> Option<u16> {
     let port = raw.trim().parse::<u16>().ok()?;
-    (LOCAL_API_PORT_MIN..=u16::MAX).contains(&port).then_some(port)
+    (LOCAL_API_PORT_MIN..=u16::MAX)
+        .contains(&port)
+        .then_some(port)
 }
 
 #[cfg(test)]
@@ -178,7 +184,10 @@ mod tests {
         assert_eq!(parse_close_behavior("tray"), CloseBehavior::Tray);
         assert_eq!(parse_close_behavior("unknown"), CloseBehavior::Exit);
         assert_eq!(parse_minimize_behavior("widget"), MinimizeBehavior::Widget);
-        assert_eq!(parse_minimize_behavior("taskbar"), MinimizeBehavior::Taskbar);
+        assert_eq!(
+            parse_minimize_behavior("taskbar"),
+            MinimizeBehavior::Taskbar
+        );
         assert_eq!(
             parse_minimize_behavior("anything-else"),
             MinimizeBehavior::Widget
@@ -207,6 +216,14 @@ mod tests {
                 enabled: true,
                 port: DEFAULT_LOCAL_API_PORT,
                 token: "secret".to_string(),
+            }
+        );
+        assert_eq!(
+            LocalApiSettings::from_storage_values(Some("1"), Some("18080"), Some("   ")),
+            LocalApiSettings {
+                enabled: false,
+                port: 18_080,
+                token: String::new(),
             }
         );
         assert_eq!(parse_local_api_port("65535"), Some(65_535));

@@ -274,11 +274,11 @@ const ZH_CN_UI_TEXT = {
     startMinimizedHint: "仅对自启动生效：启动时按当前最小化行为收起。",
     localApiTitle: "本机接口",
     localApiEnabledLabel: "WebSocket 服务",
-    localApiEnabledHint: "只监听 127.0.0.1，供本机脚本或面板读取当前追踪状态。",
+    localApiEnabledHint: "仅本机监听，供第三方脚本或面板读取当前追踪状态。",
     localApiPortLabel: "端口",
-    localApiPortHint: "本机访问地址为 ws://127.0.0.1:端口。",
+    localApiPortHint: "本机访问地址为 ws://127.0.0.1:[端口]。",
     localApiTokenLabel: "Token",
-    localApiTokenHint: "非空时，客户端连接后需先发送 auth 消息；留空则跳过认证。",
+    localApiTokenHint: "开启时会自动生成 Token；客户端连接后需先发送 auth 消息。",
     appearanceTitle: "外观",
     themeModeOptions: {
       light: "浅色",
@@ -761,7 +761,7 @@ const EN_US_UI_TEXT: UiText = {
     localApiPortLabel: "Port",
     localApiPortHint: "Local address: ws://127.0.0.1:port.",
     localApiTokenLabel: "Token",
-    localApiTokenHint: "When set, clients must send an auth message after connecting. Leave empty to skip auth.",
+    localApiTokenHint: "A token is generated when enabled. Clients must send an auth message after connecting.",
     appearanceTitle: "Appearance",
     themeModeOptions: {
       light: "Light",
