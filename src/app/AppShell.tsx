@@ -29,6 +29,7 @@ import {
   scheduleStartupWarmupRefresh,
   startStartupWarmup,
 } from "./services/startupWarmupService";
+import { LONG_BACKGROUND_DELAY_MS } from "./services/backgroundReturnHomePolicy.ts";
 import {
   clearDashboardSnapshotCache,
 } from "../features/dashboard/services/dashboardSnapshotCache.ts";
@@ -55,7 +56,7 @@ import {
 import { watchCurrentWindowForegroundState, watchCurrentWindowMaximized } from "../platform/desktop/windowControlGateway";
 
 const DATA_FOREGROUND_PREWARM_DELAY_MS = 1_200;
-const BACKGROUND_CACHE_RELEASE_DELAY_MS = 10 * 60 * 1000;
+const BACKGROUND_CACHE_RELEASE_DELAY_MS = LONG_BACKGROUND_DELAY_MS;
 
 const History = createPreloadableViewComponent("history");
 const Data = createPreloadableViewComponent("data");
@@ -108,6 +109,7 @@ function AppShellContent() {
     handleNavigate,
     registerSettingsSaveHandler,
     registerMappingSaveHandler,
+    resetToDashboardAfterLongBackground,
     setSettingsDirty,
     setMappingDirty,
   } = useAppShellNavigation({ confirm });
@@ -122,6 +124,8 @@ function AppShellContent() {
   ));
   const [isWindowForegroundLike, setIsWindowForegroundLike] = useState(true);
   const [historyDateRequest, setHistoryDateRequest] = useState<HistoryDateRequest | null>(null);
+  const backgroundEnteredAtMsRef = useRef<number | null>(null);
+  const wasForegroundReadyRef = useRef<boolean | null>(null);
   const warmupRuntimeReadyResolveRef = useRef<(() => void) | null>(null);
   const warmupRuntimeReadyPromiseRef = useRef<Promise<void> | null>(null);
   const {
@@ -295,13 +299,40 @@ function AppShellContent() {
   }, [classificationReady, isForegroundReady, mappingVersion, uiTextLanguage]);
 
   useEffect(() => {
+    const wasForegroundReady = wasForegroundReadyRef.current;
+    wasForegroundReadyRef.current = isForegroundReady;
+
+    if (wasForegroundReady === null) {
+      if (!isForegroundReady) {
+        backgroundEnteredAtMsRef.current = Date.now();
+      }
+      return;
+    }
+
+    if (wasForegroundReady && !isForegroundReady) {
+      backgroundEnteredAtMsRef.current = Date.now();
+      return;
+    }
+
+    if (!wasForegroundReady && isForegroundReady) {
+      const backgroundEnteredAtMs = backgroundEnteredAtMsRef.current;
+      backgroundEnteredAtMsRef.current = null;
+      if (backgroundEnteredAtMs === null) return;
+
+      const backgroundDurationMs = Date.now() - backgroundEnteredAtMs;
+      if (resetToDashboardAfterLongBackground(backgroundDurationMs)) {
+        setHistoryDateRequest(null);
+      }
+    }
+  }, [isForegroundReady, resetToDashboardAfterLongBackground]);
+
+  useEffect(() => {
     if (isForegroundReady) return undefined;
 
     const timer = window.setTimeout(() => {
       if (document.visibilityState !== "hidden" && isWindowForegroundLike) return;
 
       try {
-        clearDashboardSnapshotCache();
         clearHistorySnapshotCache();
         clearDataHeavyCaches();
       } catch (error) {

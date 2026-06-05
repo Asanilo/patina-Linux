@@ -1,4 +1,4 @@
-﻿import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { HistorySession } from "../../../shared/types/sessions";
 import {
   buildDashboardReadModel,
@@ -21,9 +21,10 @@ export function useDashboardStats(
   loadDashboardSnapshot: (date?: Date) => Promise<DashboardSnapshot>,
   mappingVersion: number = 0,
   classificationReady: boolean = true,
-  refreshEnabled: boolean = true,
+  foregroundRefreshEnabled: boolean = true,
 ): UseStatsResult {
   const initialSnapshot = getDashboardSnapshotCache();
+  const hasRequestedInitialSnapshotRef = useRef(false);
   const [rawSessions, setRawSessions] = useState<HistorySession[]>(
     () => initialSnapshot?.sessions ?? [],
   );
@@ -35,9 +36,7 @@ export function useDashboardStats(
   );
   const [nowMs, setNowMs] = useState(() => initialSnapshot?.fetchedAtMs ?? Date.now());
 
-  const fetchData = useCallback(async () => {
-    if (!classificationReady || !refreshEnabled) return;
-
+  const loadSnapshot = useCallback(async () => {
     try {
       const snapshot = await loadDashboardSnapshot(new Date());
 
@@ -50,20 +49,23 @@ export function useDashboardStats(
     } catch (err) {
       console.error("Failed to load stats:", err);
     }
-  }, [classificationReady, loadDashboardSnapshot, refreshEnabled]);
+  }, [loadDashboardSnapshot]);
 
   useEffect(() => {
-    void fetchData();
-  }, [fetchData]);
+    if (!classificationReady || hasRequestedInitialSnapshotRef.current) return;
+    hasRequestedInitialSnapshotRef.current = true;
+
+    void loadSnapshot();
+  }, [classificationReady, loadSnapshot]);
 
   useEffect(() => {
-    if (refreshKey === 0 || !refreshEnabled) return;
-    void fetchData();
-  }, [refreshKey, fetchData, refreshEnabled]);
+    if (refreshKey === 0 || !classificationReady || !foregroundRefreshEnabled) return;
+    void loadSnapshot();
+  }, [classificationReady, foregroundRefreshEnabled, refreshKey, loadSnapshot]);
 
   useEffect(() => {
     const hasLiveSession = rawSessions.some((session) => session.endTime === null);
-    if (!classificationReady || !refreshEnabled || !hasLiveSession || trackerHealth.status !== "healthy") {
+    if (!classificationReady || !foregroundRefreshEnabled || !hasLiveSession || trackerHealth.status !== "healthy") {
       return;
     }
 
@@ -88,7 +90,7 @@ export function useDashboardStats(
     return () => {
       window.clearInterval(timer);
     };
-  }, [classificationReady, icons, rawSessions, refreshEnabled, refreshIntervalSecs, trackerHealth.status]);
+  }, [classificationReady, icons, rawSessions, foregroundRefreshEnabled, refreshIntervalSecs, trackerHealth.status]);
 
   const dashboard = useMemo(
     () => buildDashboardReadModel(

@@ -5,6 +5,7 @@ import {
   consumePendingUpdateRelaunchView,
   rememberLastActiveView,
 } from "../services/updateRelaunchViewStorage.ts";
+import { shouldReturnHomeAfterBackground } from "../services/backgroundReturnHomePolicy.ts";
 
 type SaveHandler = (() => Promise<boolean>) | null;
 
@@ -60,6 +61,20 @@ export function useAppShellNavigation({ confirm }: UseAppShellNavigationParams) 
     setViewDirtyState((current) => ({ ...current, mapping: dirty }));
   }, []);
 
+  const resetToDashboardAfterLongBackground = useCallback((backgroundDurationMs: number): boolean => {
+    const hasDirtyDraft = viewDirtyState.settings || viewDirtyState.mapping;
+    const shouldReset = shouldReturnHomeAfterBackground({
+      backgroundDurationMs,
+      currentView,
+      hasDirtyDraft,
+    });
+
+    if (!shouldReset) return false;
+
+    setCurrentView("dashboard");
+    return true;
+  }, [currentView, viewDirtyState]);
+
   const handleNavigate = useCallback(async (nextView: View): Promise<NavigationResult> => {
     if (nextView === currentView) {
       return { navigated: true };
@@ -108,6 +123,7 @@ export function useAppShellNavigation({ confirm }: UseAppShellNavigationParams) 
     handleNavigate,
     registerSettingsSaveHandler,
     registerMappingSaveHandler,
+    resetToDashboardAfterLongBackground,
     setSettingsDirty,
     setMappingDirty,
   };

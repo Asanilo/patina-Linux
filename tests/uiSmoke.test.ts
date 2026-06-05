@@ -218,13 +218,45 @@ await runTest("app shell uses feature-owned Data prewarm and heavy cache lifecyc
 
 await runTest("app shell uses feature-owned page cache lifecycle exits", () => {
   const shell = readUtf8("src/app/AppShell.tsx");
+  const cleanupEffect = shell.slice(shell.indexOf("if (isForegroundReady) return undefined;"), shell.indexOf("const handleMinSessionSecsChange"));
 
   assert.match(shell, /clearDashboardSnapshotCache/);
   assert.match(shell, /clearHistorySnapshotCache/);
   assert.match(shell, /includeDashboard: isDashboardRefreshEnabled/);
   assert.match(shell, /includeHistory: isHistoryRefreshEnabled/);
+  assert.doesNotMatch(cleanupEffect, /clearDashboardSnapshotCache/);
+  assert.match(cleanupEffect, /clearHistorySnapshotCache/);
+  assert.match(cleanupEffect, /clearDataHeavyCaches/);
   assert.doesNotMatch(shell, /DASHBOARD_SNAPSHOT_CACHE/);
   assert.doesNotMatch(shell, /HISTORY_SNAPSHOT_CACHE/);
+});
+
+await runTest("app shell uses one fifteen minute threshold for long background behavior", () => {
+  const policy = readUtf8("src/app/services/backgroundReturnHomePolicy.ts");
+  const shell = readUtf8("src/app/AppShell.tsx");
+
+  assert.match(policy, /LONG_BACKGROUND_DELAY_MS = 15 \* 60 \* 1000/);
+  assert.doesNotMatch(shell, /10 \* 60 \* 1000/);
+  assert.match(shell, /const BACKGROUND_CACHE_RELEASE_DELAY_MS = LONG_BACKGROUND_DELAY_MS/);
+  assert.match(shell, /resetToDashboardAfterLongBackground/);
+  assert.match(shell, /backgroundEnteredAtMsRef/);
+});
+
+await runTest("Dashboard first snapshot load is not gated by foreground refresh", () => {
+  const hook = readUtf8("src/features/dashboard/hooks/useDashboardStats.ts");
+
+  const firstLoadEffect = hook.slice(
+    hook.indexOf("if (!classificationReady || hasRequestedInitialSnapshotRef.current) return;"),
+    hook.indexOf("if (refreshKey === 0"),
+  );
+  const refreshEffect = hook.slice(
+    hook.indexOf("if (refreshKey === 0"),
+    hook.indexOf("const hasLiveSession"),
+  );
+
+  assert.doesNotMatch(firstLoadEffect, /foregroundRefreshEnabled/);
+  assert.match(firstLoadEffect, /void loadSnapshot\(\)/);
+  assert.match(refreshEffect, /foregroundRefreshEnabled/);
 });
 
 await runTest("update snapshot listener disposes if subscription resolves after unmount", () => {

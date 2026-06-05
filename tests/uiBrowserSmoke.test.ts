@@ -12,6 +12,7 @@ const SETTINGS_MARKER = "主题模式";
 const APP_LOADING_VIEW = COPY["zh-CN"].app.loadingView;
 const HISTORY_LOADING_VIEW = COPY["zh-CN"].history.loading;
 const HISTORY_TITLE_DETAIL_COUNT = 10;
+const LONG_BACKGROUND_DELAY_MS = 15 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 let passed = 0;
@@ -26,6 +27,14 @@ function tauriStubFor(path: string) {
   if (path === "@tauri-apps/api/window") {
     return `
       const noop = async () => {};
+      const foregroundListeners = new Set();
+      const resizeListeners = new Set();
+      let foregroundState = { visible: true, focused: false };
+      globalThis.__TIME_TRACKER_SET_FOREGROUND_STATE = (nextState) => {
+        foregroundState = { ...foregroundState, ...nextState };
+        for (const listener of foregroundListeners) listener();
+        for (const listener of resizeListeners) listener();
+      };
       const currentWindow = {
         label: "main",
         minimize: noop,
@@ -34,13 +43,19 @@ function tauriStubFor(path: string) {
         startDragging: noop,
         setFocusable: noop,
         isMaximized: async () => false,
-        isVisible: async () => true,
-        isFocused: async () => false,
+        isVisible: async () => foregroundState.visible,
+        isFocused: async () => foregroundState.focused,
         outerPosition: async () => ({ x: 0, y: 0 }),
         outerSize: async () => ({ width: 1280, height: 800 }),
         onMoved: async () => () => {},
-        onFocusChanged: async () => () => {},
-        onResized: async () => () => {},
+        onFocusChanged: async (listener) => {
+          foregroundListeners.add(listener);
+          return () => foregroundListeners.delete(listener);
+        },
+        onResized: async (listener) => {
+          resizeListeners.add(listener);
+          return () => resizeListeners.delete(listener);
+        },
       };
       export function getCurrentWindow() {
         return currentWindow;
@@ -686,6 +701,85 @@ try {
       await evaluate(client!, sessionId, `document.body.innerText.includes(${jsonString(HISTORY_LOADING_VIEW)})`),
       false,
     );
+  });
+
+  await runTest("short background return keeps Data active", async () => {
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const node = document.querySelector('[aria-label=' + ${jsonString(JSON.stringify("数据"))} + ']');
+          if (!node) return false;
+          node.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(
+      client!,
+      sessionId,
+      `document.querySelector('[aria-label=' + ${jsonString(JSON.stringify("数据"))} + ']')?.className.includes("qp-nav-item-active")`,
+    );
+    await evaluate(client!, sessionId, `globalThis.__TIME_TRACKER_SET_FOREGROUND_STATE?.({ visible: false, focused: false });`);
+    await delay(80);
+    await evaluate(client!, sessionId, `globalThis.__TIME_TRACKER_SET_FOREGROUND_STATE?.({ visible: true, focused: false });`);
+    await delay(80);
+    assert.equal(
+      await evaluate(
+        client!,
+        sessionId,
+        `document.querySelector('[aria-label=' + ${jsonString(JSON.stringify("数据"))} + ']')?.className.includes("qp-nav-item-active")`,
+      ),
+      true,
+    );
+  });
+
+  await runTest("long background return from browsing views opens Dashboard", async () => {
+    const simulateLongBackgroundReturn = async (label: string) => {
+      assert.equal(
+        await evaluate(client!, sessionId, `
+          (() => {
+            const node = document.querySelector('[aria-label=' + ${jsonString(JSON.stringify(label))} + ']');
+            if (!node) return false;
+            node.click();
+            return true;
+          })()
+        `),
+        true,
+        `missing navigation entry ${label}`,
+      );
+      await waitForExpression(
+        client!,
+        sessionId,
+        `document.querySelector('[aria-label=' + ${jsonString(JSON.stringify(label))} + ']')?.className.includes("qp-nav-item-active")`,
+      );
+      await evaluate(client!, sessionId, `globalThis.__TIME_TRACKER_SET_FOREGROUND_STATE?.({ visible: false, focused: false });`);
+      await delay(80);
+      await evaluate(client!, sessionId, `
+        (() => {
+          const originalNow = Date.now;
+          Date.now = () => originalNow() + ${LONG_BACKGROUND_DELAY_MS + 1};
+          globalThis.__TIME_TRACKER_RESTORE_NOW = () => {
+            Date.now = originalNow;
+            delete globalThis.__TIME_TRACKER_RESTORE_NOW;
+          };
+          globalThis.__TIME_TRACKER_SET_FOREGROUND_STATE?.({ visible: true, focused: false });
+        })()
+      `);
+      await waitForExpression(
+        client!,
+        sessionId,
+        `document.querySelector('[aria-label=' + ${jsonString(JSON.stringify("今天"))} + ']')?.className.includes("qp-nav-item-active")`,
+      );
+      assert.equal(
+        await evaluate(client!, sessionId, `document.body.innerText.includes(${jsonString(APP_LOADING_VIEW)})`),
+        false,
+      );
+      await evaluate(client!, sessionId, `globalThis.__TIME_TRACKER_RESTORE_NOW?.();`);
+    };
+
+    await simulateLongBackgroundReturn("数据");
+    await simulateLongBackgroundReturn("历史");
   });
 
   await runTest("settings theme dialog opens and closes in a real browser", async () => {
