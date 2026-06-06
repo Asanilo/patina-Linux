@@ -14,6 +14,7 @@ const HISTORY_LOADING_VIEW = COPY["zh-CN"].history.loading;
 const HISTORY_TITLE_DETAIL_COUNT = 10;
 const LONG_BACKGROUND_DELAY_MS = 5 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 15_000;
+const FIRST_RENDER_TIMEOUT_MS = process.env.CI ? 45_000 : DEFAULT_TIMEOUT_MS;
 
 let passed = 0;
 
@@ -497,8 +498,9 @@ async function waitForExpression(
   sessionId: string,
   expression: string,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  label = "browser expression",
 ) {
-  return waitFor("browser expression", async () => {
+  return waitFor(label, async () => {
     const value = await evaluate(client, sessionId, expression);
     return value ? value : null;
   }, timeoutMs);
@@ -590,6 +592,8 @@ try {
       client!,
       sessionId,
       `document.body.innerText.includes(${jsonString(DASHBOARD_MARKERS[0])})`,
+      FIRST_RENDER_TIMEOUT_MS,
+      "dashboard first render",
     );
 
     for (const marker of DASHBOARD_MARKERS) {
