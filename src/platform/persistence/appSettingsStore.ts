@@ -44,6 +44,7 @@ type RawAppSettingsKey =
   | "color_scheme_dark"
   | "launch_at_login"
   | "start_minimized"
+  | "background_optimization"
   | "onboarding_completed"
   | "local_api_enabled"
   | "local_api_port"
@@ -64,6 +65,7 @@ const APP_SETTINGS_RAW_KEYS: Record<keyof AppSettings, RawAppSettingsKey> = {
   colorSchemeDark: "color_scheme_dark",
   launchAtLogin: "launch_at_login",
   startMinimized: "start_minimized",
+  backgroundOptimization: "background_optimization",
   onboardingCompleted: "onboarding_completed",
   localApiEnabled: "local_api_enabled",
   localApiPort: "local_api_port",
@@ -250,6 +252,10 @@ export function normalizeSettingsRecord(record: Record<string, string | undefine
     ),
     launchAtLogin: parseBooleanSetting(record.launch_at_login, DEFAULT_SETTINGS.launchAtLogin),
     startMinimized: parseBooleanSetting(record.start_minimized, DEFAULT_SETTINGS.startMinimized),
+    backgroundOptimization: parseBooleanSetting(
+      record.background_optimization,
+      DEFAULT_SETTINGS.backgroundOptimization,
+    ),
     onboardingCompleted: parseBooleanSetting(
       record.onboarding_completed,
       DEFAULT_SETTINGS.onboardingCompleted,

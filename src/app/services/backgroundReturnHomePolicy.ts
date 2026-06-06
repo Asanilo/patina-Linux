@@ -1,6 +1,6 @@
 import type { View } from "../types/view";
 
-export const LONG_BACKGROUND_DELAY_MS = 15 * 60 * 1000;
+export const LONG_BACKGROUND_DELAY_MS = 5 * 60 * 1000;
 
 const RETURN_HOME_SOURCE_VIEWS = new Set<View>(["data", "history"]);
 

@@ -17,7 +17,7 @@ const WIDGET_EXPANDED_HEIGHT: u32 = 48;
 const WIDGET_COLLAPSED_WIDTH: u32 = 64;
 const WIDGET_COLLAPSED_HEIGHT: u32 = 48;
 const WIDGET_COLLAPSED_VISIBLE_WIDTH: u32 = 64;
-const WIDGET_DESTROY_AFTER_IDLE_SECS: u64 = 60;
+const WIDGET_DESTROY_AFTER_IDLE_SECS: u64 = 5 * 60;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct WidgetWindowBounds {

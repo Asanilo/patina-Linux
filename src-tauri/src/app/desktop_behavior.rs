@@ -59,6 +59,13 @@ pub(crate) fn set_launch_behavior<R: Runtime>(
     Ok(())
 }
 
+pub(crate) fn set_background_optimization(
+    state: &DesktopBehaviorState,
+    background_optimization: bool,
+) {
+    let _ = state.update_background_optimization(background_optimization);
+}
+
 pub(crate) async fn sync_desktop_behavior_from_storage<R: Runtime>(
     app: AppHandle<R>,
     launched_by_autostart: bool,

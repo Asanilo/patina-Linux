@@ -40,6 +40,7 @@ const BASE_SETTINGS: AppSettings = {
   colorSchemeDark: "default",
   launchAtLogin: false,
   startMinimized: false,
+  backgroundOptimization: false,
   onboardingCompleted: false,
   localApiEnabled: false,
   localApiPort: 17321,

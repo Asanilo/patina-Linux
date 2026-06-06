@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_LAUNCH_AT_LOGIN: bool = true;
 pub const DEFAULT_START_MINIMIZED: bool = true;
+pub const DEFAULT_BACKGROUND_OPTIMIZATION: bool = false;
 pub const DEFAULT_LOCAL_API_ENABLED: bool = false;
 pub const DEFAULT_LOCAL_API_PORT: u16 = 17_321;
 pub const DEFAULT_LOCAL_API_TOKEN: &str = "";
@@ -29,6 +30,7 @@ pub struct DesktopBehaviorSettings {
     pub minimize_behavior: MinimizeBehavior,
     pub launch_at_login: bool,
     pub start_minimized: bool,
+    pub background_optimization: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -77,6 +79,7 @@ impl Default for DesktopBehaviorSettings {
             minimize_behavior: MinimizeBehavior::Widget,
             launch_at_login: DEFAULT_LAUNCH_AT_LOGIN,
             start_minimized: DEFAULT_START_MINIMIZED,
+            background_optimization: DEFAULT_BACKGROUND_OPTIMIZATION,
         }
     }
 }
@@ -109,11 +112,19 @@ impl DesktopBehaviorSettings {
         }
     }
 
+    pub fn with_background_optimization(self, background_optimization: bool) -> Self {
+        Self {
+            background_optimization,
+            ..self
+        }
+    }
+
     pub fn from_storage_values(
         close_behavior: Option<&str>,
         minimize_behavior: Option<&str>,
         launch_at_login: Option<&str>,
         start_minimized: Option<&str>,
+        background_optimization: Option<&str>,
     ) -> Self {
         let close_behavior = close_behavior.map(parse_close_behavior).unwrap_or_default();
         let minimize_behavior = minimize_behavior
@@ -125,10 +136,14 @@ impl DesktopBehaviorSettings {
         let start_minimized = start_minimized
             .map(|raw| parse_boolean_setting(raw, DEFAULT_START_MINIMIZED))
             .unwrap_or(DEFAULT_START_MINIMIZED);
+        let background_optimization = background_optimization
+            .map(|raw| parse_boolean_setting(raw, DEFAULT_BACKGROUND_OPTIMIZATION))
+            .unwrap_or(DEFAULT_BACKGROUND_OPTIMIZATION);
 
         Self::default()
             .with_desktop_behavior(close_behavior, minimize_behavior)
             .with_launch_behavior(launch_at_login, start_minimized)
+            .with_background_optimization(background_optimization)
     }
 
     pub fn should_keep_tray_visible(self) -> bool {
@@ -137,6 +152,10 @@ impl DesktopBehaviorSettings {
 
     pub fn should_start_minimized_on_autostart(self) -> bool {
         self.launch_at_login && self.start_minimized
+    }
+
+    pub fn should_optimize_background_resources(self) -> bool {
+        self.background_optimization
     }
 }
 
@@ -176,7 +195,8 @@ mod tests {
     use super::{
         parse_boolean_setting, parse_close_behavior, parse_local_api_port, parse_minimize_behavior,
         CloseBehavior, DesktopBehaviorSettings, LocalApiSettings, MinimizeBehavior,
-        DEFAULT_LAUNCH_AT_LOGIN, DEFAULT_LOCAL_API_PORT, DEFAULT_START_MINIMIZED,
+        DEFAULT_BACKGROUND_OPTIMIZATION, DEFAULT_LAUNCH_AT_LOGIN, DEFAULT_LOCAL_API_PORT,
+        DEFAULT_START_MINIMIZED,
     };
 
     #[test]
@@ -235,18 +255,24 @@ mod tests {
         let defaults = DesktopBehaviorSettings::default();
         let updated = defaults
             .with_desktop_behavior(CloseBehavior::Tray, MinimizeBehavior::Taskbar)
-            .with_launch_behavior(false, true);
+            .with_launch_behavior(false, true)
+            .with_background_optimization(true);
 
         assert_eq!(updated.close_behavior, CloseBehavior::Tray);
         assert_eq!(updated.minimize_behavior, MinimizeBehavior::Taskbar);
         assert!(!updated.launch_at_login);
         assert!(updated.start_minimized);
+        assert!(updated.background_optimization);
         assert_eq!(defaults.launch_at_login, DEFAULT_LAUNCH_AT_LOGIN);
+        assert_eq!(
+            defaults.background_optimization,
+            DEFAULT_BACKGROUND_OPTIMIZATION
+        );
     }
 
     #[test]
     fn from_storage_values_applies_defaults_and_domain_parsing() {
-        let defaults = DesktopBehaviorSettings::from_storage_values(None, None, None, None);
+        let defaults = DesktopBehaviorSettings::from_storage_values(None, None, None, None, None);
         assert_eq!(defaults, DesktopBehaviorSettings::default());
 
         let merged = DesktopBehaviorSettings::from_storage_values(
@@ -254,11 +280,13 @@ mod tests {
             Some("widget"),
             Some("no"),
             Some("invalid"),
+            Some("yes"),
         );
         assert_eq!(merged.close_behavior, CloseBehavior::Tray);
         assert_eq!(merged.minimize_behavior, MinimizeBehavior::Widget);
         assert!(!merged.launch_at_login);
         assert_eq!(merged.start_minimized, DEFAULT_START_MINIMIZED);
+        assert!(merged.background_optimization);
     }
 
     #[test]
@@ -267,6 +295,7 @@ mod tests {
         assert!(defaults.should_keep_tray_visible());
         assert_eq!(defaults.minimize_behavior, MinimizeBehavior::Widget);
         assert!(defaults.should_start_minimized_on_autostart());
+        assert!(!defaults.should_optimize_background_resources());
 
         let close_to_exit =
             defaults.with_desktop_behavior(CloseBehavior::Exit, MinimizeBehavior::Widget);

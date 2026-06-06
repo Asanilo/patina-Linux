@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use crate::app::{
     runtime,
-    state::{AppExitState, DesktopBehaviorState, WidgetWindowLifecycleState},
+    state::{
+        AppExitState, DesktopBehaviorState, MainWindowLifecycleState, WidgetWindowLifecycleState,
+    },
     tray,
 };
 use crate::engine::{
@@ -10,6 +12,7 @@ use crate::engine::{
     updater::UpdaterRuntimeState,
 };
 use crate::{commands, data};
+use tauri::Manager;
 
 pub struct BootstrapInput {
     pub runtime_health: Arc<RuntimeHealthState>,
@@ -45,6 +48,7 @@ fn register_managed_state_and_plugins(
     builder
         .manage(DesktopBehaviorState::default())
         .manage(AppExitState::default())
+        .manage(MainWindowLifecycleState::default())
         .manage(WidgetWindowLifecycleState::default())
         .manage(TrackingRuntimeSnapshotState::default())
         .manage(crate::platform::local_api::LocalApiRuntimeState::default())
@@ -74,6 +78,7 @@ fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Build
         commands::tracking::cmd_set_afk_threshold,
         commands::settings::cmd_set_desktop_behavior,
         commands::settings::cmd_set_launch_behavior,
+        commands::settings::cmd_set_background_optimization,
         commands::settings::cmd_commit_app_settings,
         commands::settings::cmd_commit_classification_settings,
         commands::widget::cmd_get_widget_icon_map,
@@ -124,4 +129,18 @@ fn register_runtime_hooks(
                 launched_by_autostart,
             )?)
         })
+}
+
+pub(crate) fn handle_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
+    if let tauri::RunEvent::ExitRequested { api, .. } = event {
+        let exit_requested = app.state::<AppExitState>().is_exit_requested();
+        let keep_tray_visible = app
+            .state::<DesktopBehaviorState>()
+            .snapshot()
+            .should_keep_tray_visible();
+
+        if keep_tray_visible && !exit_requested {
+            api.prevent_exit();
+        }
+    }
 }

@@ -56,6 +56,7 @@ export interface ReleaseDefaultSettingsProfile {
     | "xcode";
   launchAtLogin: boolean;
   startMinimized: boolean;
+  backgroundOptimization: boolean;
   onboardingCompleted: boolean;
   localApiEnabled: boolean;
   localApiPort: number;
@@ -77,6 +78,7 @@ export const RELEASE_DEFAULT_SETTINGS: ReleaseDefaultSettingsProfile = {
   colorSchemeDark: "default",
   launchAtLogin: true,
   startMinimized: true,
+  backgroundOptimization: false,
   onboardingCompleted: true,
   localApiEnabled: false,
   localApiPort: 17321,

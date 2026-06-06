@@ -50,6 +50,7 @@ export interface AppSettings {
   colorSchemeDark: ColorScheme;
   launchAtLogin: boolean;
   startMinimized: boolean;
+  backgroundOptimization: boolean;
   onboardingCompleted: boolean;
   localApiEnabled: boolean;
   localApiPort: number;

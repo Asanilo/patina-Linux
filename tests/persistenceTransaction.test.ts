@@ -121,6 +121,7 @@ await runTest("settings batch operations stop on the first failed write", async 
     trackingPaused: true,
     timelineMergeGapSecs: 180,
     refreshIntervalSecs: 2,
+    backgroundOptimization: true,
     themeMode: "dark",
     language: "en-US",
     hourlyActivityChartMode: "category",
@@ -140,12 +141,14 @@ await runTest("settings batch operations stop on the first failed write", async 
 
 await runTest("settings raw patch persists theme mode with snake case key", () => {
   assert.deepEqual(buildRawAppSettingsPatch({
+    backgroundOptimization: true,
     themeMode: "system",
     language: "en-US",
     hourlyActivityChartMode: "category",
     colorSchemeLight: "rose-pine",
     colorSchemeDark: "gruvbox",
   }), {
+    background_optimization: true,
     theme_mode: "system",
     language: "en-US",
     hourly_activity_chart_mode: "category",
@@ -158,12 +161,14 @@ await runTest("app setting mutations serialize values for backend transaction co
   assert.deepEqual(buildAppSettingMutations(buildRawAppSettingsPatch({
     trackingPaused: true,
     timelineMergeGapSecs: 180,
+    backgroundOptimization: true,
     themeMode: "system",
     language: "en-US",
     hourlyActivityChartMode: "category",
   })), [
     { key: "tracking_paused", value: "1" },
     { key: "timeline_merge_gap_secs", value: "180" },
+    { key: "background_optimization", value: "1" },
     { key: "theme_mode", value: "system" },
     { key: "language", value: "en-US" },
     { key: "hourly_activity_chart_mode", value: "category" },

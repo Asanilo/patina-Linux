@@ -95,6 +95,7 @@ interface AppSettings {
     | "xcode";
   launchAtLogin: boolean;
   startMinimized: boolean;
+  backgroundOptimization: boolean;
   onboardingCompleted: boolean;
   localApiEnabled: boolean;
   localApiPort: number;
@@ -118,6 +119,7 @@ const BASE_SETTINGS: AppSettings = {
   colorSchemeDark: "default",
   launchAtLogin: false,
   startMinimized: false,
+  backgroundOptimization: false,
   onboardingCompleted: false,
   localApiEnabled: false,
   localApiPort: 17321,
@@ -169,6 +171,7 @@ await runTest("buildSettingsPatch only keeps changed keys", () => {
     localApiEnabled: true,
     localApiPort: 18080,
     localApiToken: "secret",
+    backgroundOptimization: true,
   });
 
   assert.deepEqual(SettingsRuntimeAdapterService.buildSettingsPatch(saved, draft), {
@@ -181,6 +184,7 @@ await runTest("buildSettingsPatch only keeps changed keys", () => {
     localApiEnabled: true,
     localApiPort: 18080,
     localApiToken: "secret",
+    backgroundOptimization: true,
   });
 });
 
@@ -335,6 +339,7 @@ await runTest("normalizeSettingsRecord accepts current minimize behavior values"
   const defaultSettings = normalizeSettingsRecord({});
   assert.equal(defaultSettings.minimizeBehavior, "widget");
   assert.equal(defaultSettings.closeBehavior, "tray");
+  assert.equal(defaultSettings.backgroundOptimization, false);
   assert.equal(defaultSettings.themeMode, "light");
   assert.equal(defaultSettings.language, "zh-CN");
   assert.equal(defaultSettings.colorSchemeLight, "default");
@@ -370,9 +375,11 @@ await runTest("normalizeSettingsRecord accepts current minimize behavior values"
   const widgetSettings = normalizeSettingsRecord({
     minimize_behavior: "widget",
     close_behavior: "tray",
+    background_optimization: "yes",
   });
   assert.equal(widgetSettings.minimizeBehavior, "widget");
   assert.equal(widgetSettings.closeBehavior, "tray");
+  assert.equal(widgetSettings.backgroundOptimization, true);
 
   const retiredTraySettings = normalizeSettingsRecord({
     minimize_behavior: "tray",

@@ -35,6 +35,7 @@ pub fn run() {
         launched_by_autostart,
         app_version,
     })
-    .run(context)
-    .expect("error while running tauri application");
+    .build(context)
+    .expect("error while building tauri application")
+    .run(app::bootstrap::handle_run_event);
 }

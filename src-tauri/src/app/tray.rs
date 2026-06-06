@@ -1,3 +1,4 @@
+use crate::app::main_window;
 use crate::app::runtime::now_ms;
 use crate::app::state::{AppExitState, DesktopBehaviorState};
 use crate::app::widget;
@@ -12,7 +13,7 @@ use tauri::{
     AppHandle, Manager, Runtime, Window, WindowEvent,
 };
 
-pub(crate) const MAIN_WINDOW_LABEL: &str = "main";
+pub(crate) use crate::app::main_window::MAIN_WINDOW_LABEL;
 const TRAY_ID: &str = "main";
 const TRAY_MENU_SHOW_ID: &str = "tray-show-main";
 const TRAY_MENU_TOGGLE_PAUSE_ID: &str = "tray-toggle-pause";
@@ -24,13 +25,8 @@ fn should_redirect_close_to_tray(settings: DesktopBehaviorSettings, exit_request
         && settings.should_keep_tray_visible()
 }
 
-pub(crate) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
-    widget::close_widget_window(app);
-    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
-    }
+pub(crate) fn show_main_window<R: Runtime + 'static>(app: &AppHandle<R>) {
+    main_window::show_main_window(app);
 }
 
 pub(crate) fn apply_tray_visibility<R: Runtime>(
@@ -138,7 +134,7 @@ pub(crate) fn handle_window_event<R: Runtime>(window: &Window<R>, event: &Window
         if should_redirect_close_to_tray(settings, exit_requested) {
             api.prevent_close();
             widget::close_widget_window(app);
-            let _ = window.hide();
+            main_window::hide_main_window_for_background(app, window);
         }
         return;
     }

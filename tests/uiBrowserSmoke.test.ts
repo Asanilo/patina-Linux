@@ -12,7 +12,7 @@ const SETTINGS_MARKER = "主题模式";
 const APP_LOADING_VIEW = COPY["zh-CN"].app.loadingView;
 const HISTORY_LOADING_VIEW = COPY["zh-CN"].history.loading;
 const HISTORY_TITLE_DETAIL_COUNT = 10;
-const LONG_BACKGROUND_DELAY_MS = 15 * 60 * 1000;
+const LONG_BACKGROUND_DELAY_MS = 5 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 let passed = 0;

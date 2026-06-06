@@ -27,7 +27,11 @@ const BASE_SETTINGS: AppSettings = {
   colorSchemeDark: "default",
   launchAtLogin: true,
   startMinimized: true,
+  backgroundOptimization: false,
   onboardingCompleted: true,
+  localApiEnabled: false,
+  localApiPort: 17321,
+  localApiToken: "",
 };
 
 const BASE_TRACKING_STATUS: TrackingStatusSnapshot = {

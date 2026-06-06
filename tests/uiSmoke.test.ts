@@ -231,11 +231,12 @@ await runTest("app shell uses feature-owned page cache lifecycle exits", () => {
   assert.doesNotMatch(shell, /HISTORY_SNAPSHOT_CACHE/);
 });
 
-await runTest("app shell uses one fifteen minute threshold for long background behavior", () => {
+await runTest("app shell uses one five minute threshold for long background behavior", () => {
   const policy = readUtf8("src/app/services/backgroundReturnHomePolicy.ts");
   const shell = readUtf8("src/app/AppShell.tsx");
 
-  assert.match(policy, /LONG_BACKGROUND_DELAY_MS = 15 \* 60 \* 1000/);
+  assert.match(policy, /LONG_BACKGROUND_DELAY_MS = 5 \* 60 \* 1000/);
+  assert.doesNotMatch(shell, /15 \* 60 \* 1000/);
   assert.doesNotMatch(shell, /10 \* 60 \* 1000/);
   assert.match(shell, /const BACKGROUND_CACHE_RELEASE_DELAY_MS = LONG_BACKGROUND_DELAY_MS/);
   assert.match(shell, /resetToDashboardAfterLongBackground/);

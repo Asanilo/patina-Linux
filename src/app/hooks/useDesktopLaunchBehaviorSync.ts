@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import type { AppSettings } from "../../shared/settings/appSettings";
 import {
+  setBackgroundOptimization,
   setDesktopBehavior,
   setLaunchBehavior,
 } from "../../platform/desktop/desktopBehaviorRuntimeGateway";
@@ -21,4 +22,9 @@ export function useDesktopLaunchBehaviorSync(appSettings: AppSettings, enabled: 
       appSettings.startMinimized,
     ).catch(console.warn);
   }, [appSettings.launchAtLogin, appSettings.startMinimized, enabled]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    void setBackgroundOptimization(appSettings.backgroundOptimization).catch(console.warn);
+  }, [appSettings.backgroundOptimization, enabled]);
 }

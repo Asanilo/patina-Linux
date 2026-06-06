@@ -53,6 +53,23 @@ impl DesktopBehaviorState {
         }
     }
 
+    pub(crate) fn update_background_optimization(
+        &self,
+        background_optimization: bool,
+    ) -> DesktopBehaviorSettings {
+        match self.inner.lock() {
+            Ok(mut guard) => {
+                *guard = guard.with_background_optimization(background_optimization);
+                *guard
+            }
+            Err(poisoned) => {
+                let mut guard = poisoned.into_inner();
+                *guard = guard.with_background_optimization(background_optimization);
+                *guard
+            }
+        }
+    }
+
     pub(crate) fn replace(&self, next: DesktopBehaviorSettings) -> DesktopBehaviorSettings {
         match self.inner.lock() {
             Ok(mut guard) => {
@@ -80,6 +97,59 @@ impl AppExitState {
 
     pub(crate) fn is_exit_requested(&self) -> bool {
         self.requested.load(Ordering::Relaxed)
+    }
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct MainWindowLifecycleState {
+    inner: Mutex<MainWindowLifecycle>,
+}
+
+#[derive(Debug, Default)]
+struct MainWindowLifecycle {
+    desired_visible: bool,
+    hide_generation: u64,
+}
+
+impl MainWindowLifecycleState {
+    pub(crate) fn show(&self) {
+        match self.inner.lock() {
+            Ok(mut guard) => {
+                guard.desired_visible = true;
+                guard.hide_generation = guard.hide_generation.wrapping_add(1);
+            }
+            Err(poisoned) => {
+                let mut guard = poisoned.into_inner();
+                guard.desired_visible = true;
+                guard.hide_generation = guard.hide_generation.wrapping_add(1);
+            }
+        }
+    }
+
+    pub(crate) fn hide(&self) -> u64 {
+        match self.inner.lock() {
+            Ok(mut guard) => {
+                guard.desired_visible = false;
+                guard.hide_generation = guard.hide_generation.wrapping_add(1);
+                guard.hide_generation
+            }
+            Err(poisoned) => {
+                let mut guard = poisoned.into_inner();
+                guard.desired_visible = false;
+                guard.hide_generation = guard.hide_generation.wrapping_add(1);
+                guard.hide_generation
+            }
+        }
+    }
+
+    pub(crate) fn should_destroy_hidden_window(&self, hide_generation: u64) -> bool {
+        match self.inner.lock() {
+            Ok(guard) => !guard.desired_visible && guard.hide_generation == hide_generation,
+            Err(poisoned) => {
+                let guard = poisoned.into_inner();
+                !guard.desired_visible && guard.hide_generation == hide_generation
+            }
+        }
     }
 }
 
@@ -185,7 +255,19 @@ impl WidgetWindowLifecycleState {
 
 #[cfg(test)]
 mod tests {
-    use super::WidgetWindowLifecycleState;
+    use super::{MainWindowLifecycleState, WidgetWindowLifecycleState};
+
+    #[test]
+    fn main_window_lifecycle_cancels_stale_destroy_after_show() {
+        let state = MainWindowLifecycleState::default();
+
+        state.show();
+        let hide_generation = state.hide();
+        assert!(state.should_destroy_hidden_window(hide_generation));
+        state.show();
+
+        assert!(!state.should_destroy_hidden_window(hide_generation));
+    }
 
     #[test]
     fn widget_lifecycle_coalesces_concurrent_show_requests() {
