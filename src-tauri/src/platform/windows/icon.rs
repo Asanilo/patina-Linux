@@ -1,20 +1,56 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use image::{ImageBuffer, Rgba};
+use serde::Serialize;
+use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::io::Cursor;
 use std::os::windows::ffi::OsStrExt;
+use std::sync::{Mutex, OnceLock};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits, GetObjectA, ReleaseDC, BITMAP,
-    BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
+    CreateCompatibleDC, GetDC, GetDIBits, GetObjectA, BITMAP, BITMAPINFO, BITMAPINFOHEADER, BI_RGB,
+    DIB_RGB_COLORS,
 };
 use windows::Win32::UI::Shell::ExtractIconExW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    DestroyIcon, GetClassLongPtrW, GetIconInfo, SendMessageTimeoutW, GCLP_HICON, GCLP_HICONSM,
-    HICON, ICON_BIG, ICON_SMALL, ICON_SMALL2, SMTO_ABORTIFHUNG, SMTO_BLOCK, WM_GETICON,
+    GetClassLongPtrW, GetIconInfo, SendMessageTimeoutW, GCLP_HICON, GCLP_HICONSM, HICON, ICON_BIG,
+    ICON_SMALL, ICON_SMALL2, SMTO_ABORTIFHUNG, SMTO_BLOCK, WM_GETICON,
 };
 
+use crate::platform::windows::handles::{MemoryDcGuard, OwnedBitmap, OwnedIcon, ScreenDcGuard};
+
+const ICON_RESULT_CACHE_MAX_ENTRIES: usize = 256;
+const ICON_RESULT_CACHE_TTL_MS: u64 = 10 * 60 * 1000;
+const ICON_RESULT_NEGATIVE_CACHE_TTL_MS: u64 = 60 * 1000;
+
+#[derive(Clone)]
+struct IconResultCacheEntry {
+    cached_at_ms: u64,
+    value: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct IconResultCacheStats {
+    pub entries: usize,
+    pub positive_entries: usize,
+    pub negative_entries: usize,
+    pub max_entries: usize,
+    pub ttl_ms: u64,
+    pub negative_ttl_ms: u64,
+}
+
 pub fn get_icon_base64(exe_path: &str) -> Option<String> {
+    let cache_key = format!("file:{}", exe_path.trim().to_ascii_lowercase());
+    if let Some(cached) = read_icon_result_cache(&cache_key, now_ms()) {
+        return cached;
+    }
+
+    let result = get_icon_base64_uncached(exe_path);
+    write_icon_result_cache(cache_key, result.clone(), now_ms());
+    result
+}
+
+fn get_icon_base64_uncached(exe_path: &str) -> Option<String> {
     unsafe {
         let path_wide: Vec<u16> = OsStr::new(exe_path).encode_wide().chain(Some(0)).collect();
 
@@ -33,18 +69,18 @@ pub fn get_icon_base64(exe_path: &str) -> Option<String> {
             return None;
         }
 
-        let hicon = if !icon_large.is_invalid() {
-            icon_large
-        } else if !icon_small.is_invalid() {
-            icon_small
+        let icon_large = OwnedIcon::new(icon_large);
+        let icon_small = OwnedIcon::new(icon_small);
+
+        let hicon = if let Some(icon_large) = icon_large.as_ref() {
+            icon_large.raw()
+        } else if let Some(icon_small) = icon_small.as_ref() {
+            icon_small.raw()
         } else {
             return None;
         };
 
-        let result = hicon_to_base64(hicon);
-        let _ = DestroyIcon(icon_large);
-        let _ = DestroyIcon(icon_small);
-        result
+        hicon_to_base64(hicon)
     }
 }
 
@@ -114,30 +150,28 @@ unsafe fn hicon_to_base64(hicon: HICON) -> Option<String> {
     if GetIconInfo(hicon, &mut icon_info).is_err() {
         return None;
     }
+    let color_bitmap = OwnedBitmap::new(icon_info.hbmColor)?;
+    let _mask_bitmap = OwnedBitmap::new(icon_info.hbmMask);
 
     // GetObjectA works for BITMAP (no string fields, identical to W variant)
     let mut bm: BITMAP = std::mem::zeroed();
     let got = GetObjectA(
-        icon_info.hbmColor.into(),
+        color_bitmap.raw().into(),
         std::mem::size_of::<BITMAP>() as i32,
         Some(&mut bm as *mut _ as *mut _),
     );
     if got == 0 {
-        let _ = DeleteObject(icon_info.hbmColor.into());
-        let _ = DeleteObject(icon_info.hbmMask.into());
         return None;
     }
 
     let width = bm.bmWidth as u32;
     let height = bm.bmHeight.unsigned_abs();
     if width == 0 || height == 0 {
-        let _ = DeleteObject(icon_info.hbmColor.into());
-        let _ = DeleteObject(icon_info.hbmMask.into());
         return None;
     }
 
-    let hdc = GetDC(None);
-    let mem_dc = CreateCompatibleDC(Some(hdc));
+    let hdc = ScreenDcGuard::new(None, GetDC(None))?;
+    let mem_dc = MemoryDcGuard::new(CreateCompatibleDC(Some(hdc.raw())))?;
 
     let mut bmi = BITMAPINFO {
         bmiHeader: BITMAPINFOHEADER {
@@ -154,19 +188,14 @@ unsafe fn hicon_to_base64(hicon: HICON) -> Option<String> {
 
     let mut pixels: Vec<u8> = vec![0u8; (width * height * 4) as usize];
     let lines = GetDIBits(
-        mem_dc,
-        icon_info.hbmColor,
+        mem_dc.raw(),
+        color_bitmap.raw(),
         0,
         height,
         Some(pixels.as_mut_ptr() as *mut _),
         &mut bmi,
         DIB_RGB_COLORS,
     );
-
-    let _ = DeleteDC(mem_dc);
-    let _ = ReleaseDC(None, hdc);
-    let _ = DeleteObject(icon_info.hbmColor.into());
-    let _ = DeleteObject(icon_info.hbmMask.into());
 
     if lines == 0 {
         return None;
@@ -182,6 +211,81 @@ unsafe fn hicon_to_base64(hicon: HICON) -> Option<String> {
 
     let b64 = STANDARD.encode(png_bytes.into_inner());
     Some(format!("data:image/png;base64,{}", b64))
+}
+
+fn read_icon_result_cache(cache_key: &str, now_ms: u64) -> Option<Option<String>> {
+    let cache = icon_result_cache().lock().ok()?;
+    let entry = cache.get(cache_key)?;
+    let ttl_ms = if entry.value.is_some() {
+        ICON_RESULT_CACHE_TTL_MS
+    } else {
+        ICON_RESULT_NEGATIVE_CACHE_TTL_MS
+    };
+
+    if now_ms.saturating_sub(entry.cached_at_ms) <= ttl_ms {
+        Some(entry.value.clone())
+    } else {
+        None
+    }
+}
+
+fn write_icon_result_cache(cache_key: String, value: Option<String>, now_ms: u64) {
+    if let Ok(mut cache) = icon_result_cache().lock() {
+        if cache.len() >= ICON_RESULT_CACHE_MAX_ENTRIES && !cache.contains_key(&cache_key) {
+            if let Some(oldest_key) = cache
+                .iter()
+                .min_by_key(|(_, entry)| entry.cached_at_ms)
+                .map(|(key, _)| key.clone())
+            {
+                cache.remove(&oldest_key);
+            }
+        }
+
+        cache.insert(
+            cache_key,
+            IconResultCacheEntry {
+                cached_at_ms: now_ms,
+                value,
+            },
+        );
+    }
+}
+
+fn icon_result_cache() -> &'static Mutex<HashMap<String, IconResultCacheEntry>> {
+    static ICON_RESULT_CACHE: OnceLock<Mutex<HashMap<String, IconResultCacheEntry>>> =
+        OnceLock::new();
+    ICON_RESULT_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+pub fn icon_result_cache_stats() -> IconResultCacheStats {
+    let (entries, positive_entries, negative_entries) = icon_result_cache()
+        .lock()
+        .map(|cache| {
+            let entries = cache.len();
+            let positive_entries = cache.values().filter(|entry| entry.value.is_some()).count();
+            (
+                entries,
+                positive_entries,
+                entries.saturating_sub(positive_entries),
+            )
+        })
+        .unwrap_or((0, 0, 0));
+
+    IconResultCacheStats {
+        entries,
+        positive_entries,
+        negative_entries,
+        max_entries: ICON_RESULT_CACHE_MAX_ENTRIES,
+        ttl_ms: ICON_RESULT_CACHE_TTL_MS,
+        negative_ttl_ms: ICON_RESULT_NEGATIVE_CACHE_TTL_MS,
+    }
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -201,5 +305,27 @@ mod tests {
         assert!(parse_hwnd("").is_none());
         assert!(parse_hwnd("0x0").is_none());
         assert!(parse_hwnd("not-a-hwnd").is_none());
+    }
+
+    #[test]
+    fn icon_result_cache_expires_positive_entries_after_ttl() {
+        write_icon_result_cache("file:test.exe".to_string(), Some("icon".to_string()), 1_000);
+
+        assert_eq!(
+            read_icon_result_cache("file:test.exe", 60_000),
+            Some(Some("icon".to_string()))
+        );
+        assert_eq!(read_icon_result_cache("file:test.exe", 601_001), None);
+    }
+
+    #[test]
+    fn icon_result_cache_expires_negative_entries_quickly() {
+        write_icon_result_cache("file:missing.exe".to_string(), None, 1_000);
+
+        assert_eq!(
+            read_icon_result_cache("file:missing.exe", 30_000),
+            Some(None)
+        );
+        assert_eq!(read_icon_result_cache("file:missing.exe", 61_001), None);
     }
 }

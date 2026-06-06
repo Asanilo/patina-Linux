@@ -1,8 +1,12 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::os::windows::prelude::OsStringExt;
-use std::sync::atomic::{AtomicU64, Ordering};
-use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Mutex, OnceLock,
+};
+use windows::Win32::Foundation::{HANDLE, HWND};
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 };
@@ -16,6 +20,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible, GA_ROOTOWNER, GWL_EXSTYLE,
     GW_OWNER, WS_EX_TOOLWINDOW,
 };
+
+use crate::platform::windows::handles::OwnedHandle;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct WindowInfo {
@@ -31,6 +37,25 @@ pub struct WindowInfo {
 }
 
 static AFK_THRESHOLD_SECS: AtomicU64 = AtomicU64::new(180);
+const PROCESS_DETAILS_CACHE_TTL_MS: u64 = 10_000;
+const PROCESS_DETAILS_NEGATIVE_CACHE_TTL_MS: u64 = 1_000;
+
+#[derive(Clone, Debug)]
+struct ProcessDetailsCacheEntry {
+    exe_name: String,
+    process_path: String,
+    cached_at_ms: u64,
+    is_negative: bool,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct ProcessDetailsCacheStats {
+    pub entries: usize,
+    pub positive_entries: usize,
+    pub negative_entries: usize,
+    pub ttl_ms: u64,
+    pub negative_ttl_ms: u64,
+}
 
 pub fn has_meaningful_change(previous: Option<&WindowInfo>, next: &WindowInfo) -> bool {
     let Some(previous) = previous else {
@@ -220,24 +245,33 @@ pub fn get_process_exe_name(process_id: u32) -> String {
 }
 
 fn get_process_details(process_id: u32) -> (String, String) {
-    if let Some(process_path) = unsafe { get_process_path_from_handle(process_id) } {
-        if let Some(exe_name) = extract_exe_name_from_process_path(&process_path) {
-            return (exe_name, process_path);
-        }
-
-        return resolve_process_details(Some(process_path), unsafe {
-            get_process_name_from_snapshot(process_id)
-        });
+    let now_ms = now_ms();
+    if let Some(entry) = read_cached_process_details(process_id, now_ms) {
+        return (entry.exe_name, entry.process_path);
     }
 
-    resolve_process_details(None, unsafe { get_process_name_from_snapshot(process_id) })
+    if let Some(process_path) = unsafe { get_process_path_from_handle(process_id) } {
+        let details = if let Some(exe_name) = extract_exe_name_from_process_path(&process_path) {
+            (exe_name, process_path)
+        } else {
+            resolve_process_details(Some(process_path), unsafe {
+                get_process_name_from_snapshot(process_id)
+            })
+        };
+        write_cached_process_details(process_id, &details, now_ms);
+        return details;
+    }
+
+    let details =
+        resolve_process_details(None, unsafe { get_process_name_from_snapshot(process_id) });
+    write_cached_process_details(process_id, &details, now_ms);
+    details
 }
 
 unsafe fn get_process_path_from_handle(process_id: u32) -> Option<String> {
-    let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_id).ok()?;
-    let path = query_process_image_path(handle);
-    let _ = CloseHandle(handle);
-    path
+    let handle =
+        OwnedHandle::new(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_id).ok()?)?;
+    query_process_image_path(handle.raw())
 }
 
 unsafe fn query_process_image_path(handle: HANDLE) -> Option<String> {
@@ -285,7 +319,7 @@ fn resolve_process_details(
 }
 
 unsafe fn get_process_name_from_snapshot(process_id: u32) -> Option<String> {
-    let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).ok()?;
+    let snapshot = OwnedHandle::new(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).ok()?)?;
 
     let mut entry = PROCESSENTRY32W {
         dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
@@ -294,7 +328,7 @@ unsafe fn get_process_name_from_snapshot(process_id: u32) -> Option<String> {
 
     let mut exe_name = None;
 
-    if Process32FirstW(snapshot, &mut entry).is_ok() {
+    if Process32FirstW(snapshot.raw(), &mut entry).is_ok() {
         loop {
             if entry.th32ProcessID == process_id {
                 let len = entry
@@ -311,22 +345,88 @@ unsafe fn get_process_name_from_snapshot(process_id: u32) -> Option<String> {
                 break;
             }
 
-            if Process32NextW(snapshot, &mut entry).is_err() {
+            if Process32NextW(snapshot.raw(), &mut entry).is_err() {
                 break;
             }
         }
     }
 
-    let _ = CloseHandle(snapshot);
     exe_name
+}
+
+fn read_cached_process_details(process_id: u32, now_ms: u64) -> Option<ProcessDetailsCacheEntry> {
+    let cache = process_details_cache().lock().ok()?;
+    let entry = cache.get(&process_id)?;
+    let ttl_ms = if entry.is_negative {
+        PROCESS_DETAILS_NEGATIVE_CACHE_TTL_MS
+    } else {
+        PROCESS_DETAILS_CACHE_TTL_MS
+    };
+
+    if now_ms.saturating_sub(entry.cached_at_ms) <= ttl_ms {
+        Some(entry.clone())
+    } else {
+        None
+    }
+}
+
+fn write_cached_process_details(process_id: u32, details: &(String, String), now_ms: u64) {
+    if let Ok(mut cache) = process_details_cache().lock() {
+        cache.insert(
+            process_id,
+            ProcessDetailsCacheEntry {
+                exe_name: details.0.clone(),
+                process_path: details.1.clone(),
+                cached_at_ms: now_ms,
+                is_negative: details.0.trim().is_empty() && details.1.trim().is_empty(),
+            },
+        );
+    }
+}
+
+fn process_details_cache() -> &'static Mutex<HashMap<u32, ProcessDetailsCacheEntry>> {
+    static PROCESS_DETAILS_CACHE: OnceLock<Mutex<HashMap<u32, ProcessDetailsCacheEntry>>> =
+        OnceLock::new();
+    PROCESS_DETAILS_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+pub fn process_details_cache_stats() -> ProcessDetailsCacheStats {
+    let (entries, positive_entries, negative_entries) = process_details_cache()
+        .lock()
+        .map(|cache| {
+            let entries = cache.len();
+            let negative_entries = cache.values().filter(|entry| entry.is_negative).count();
+            (
+                entries,
+                entries.saturating_sub(negative_entries),
+                negative_entries,
+            )
+        })
+        .unwrap_or((0, 0, 0));
+
+    ProcessDetailsCacheStats {
+        entries,
+        positive_entries,
+        negative_entries,
+        ttl_ms: PROCESS_DETAILS_CACHE_TTL_MS,
+        negative_ttl_ms: PROCESS_DETAILS_NEGATIVE_CACHE_TTL_MS,
+    }
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
         build_inactive_window, extract_exe_name_from_process_path, has_resolved_window_process,
-        is_application_top_level_window, resolve_process_details,
+        is_application_top_level_window, read_cached_process_details, resolve_process_details,
         should_treat_shell_surface_as_inactive, should_treat_window_as_inactive,
+        write_cached_process_details,
     };
     use windows::Win32::Foundation::HWND;
 
@@ -375,6 +475,26 @@ mod tests {
 
         assert_eq!(exe_name, "App.exe");
         assert_eq!(process_path, r"C:\Program Files\App\App.exe");
+    }
+
+    #[test]
+    fn process_details_cache_expires_positive_entries_after_ttl() {
+        write_cached_process_details(
+            42,
+            &("App.exe".to_string(), r"C:\App\App.exe".to_string()),
+            1_000,
+        );
+
+        assert!(read_cached_process_details(42, 10_000).is_some());
+        assert!(read_cached_process_details(42, 12_001).is_none());
+    }
+
+    #[test]
+    fn process_details_cache_expires_negative_entries_quickly() {
+        write_cached_process_details(43, &(String::new(), String::new()), 1_000);
+
+        assert!(read_cached_process_details(43, 1_500).is_some());
+        assert!(read_cached_process_details(43, 2_001).is_none());
     }
 
     #[test]

@@ -1,6 +1,8 @@
 pub mod audio;
 pub mod foreground;
+pub mod handles;
 pub mod icon;
 pub mod input;
 pub mod media;
 pub mod power;
+pub mod resource;
