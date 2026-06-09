@@ -5,8 +5,7 @@ pub const CURRENT_BASELINE_MIGRATION_DESCRIPTION: &str = "create_current_baselin
 pub const TOOLS_TABLES_MIGRATION_VERSION: i64 = 2;
 pub const TOOLS_TABLES_MIGRATION_DESCRIPTION: &str = "create_tools_tables";
 pub const SOFTWARE_REMINDER_RULES_MIGRATION_VERSION: i64 = 3;
-pub const SOFTWARE_REMINDER_RULES_MIGRATION_DESCRIPTION: &str =
-    "create_software_reminder_rules";
+pub const SOFTWARE_REMINDER_RULES_MIGRATION_DESCRIPTION: &str = "create_software_reminder_rules";
 
 pub const CURRENT_BASELINE_SCHEMA_SQL: &str = "
     CREATE TABLE IF NOT EXISTS sessions (

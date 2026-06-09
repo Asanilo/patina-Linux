@@ -29,7 +29,7 @@ type IdleWindow = Window & typeof globalThis & {
   cancelIdleCallback?: (handle: number) => void;
 };
 
-const DEFAULT_PRELOADABLE_VIEWS: PreloadableView[] = ["history", "data", "mapping", "tools", "settings", "about"];
+const DEFAULT_PRELOADABLE_VIEWS: PreloadableView[] = ["history", "data", "tools", "mapping", "settings", "about"];
 const DEFAULT_INITIAL_DELAY_MS = 1200;
 const DEFAULT_STAGGER_MS = 200;
 const DEFAULT_IDLE_TIMEOUT_MS = 1500;

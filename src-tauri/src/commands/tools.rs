@@ -1,6 +1,4 @@
-use crate::domain::tools::{
-    TimerMode, ToolAlert, ToolsRuntimeSnapshot,
-};
+use crate::domain::tools::{TimerMode, ToolAlert, ToolsRuntimeSnapshot};
 use crate::engine::tools::{
     self, CreateSoftwareReminderRuleRequest, StartPomodoroRequest, StartTimerRequest,
 };

@@ -1,16 +1,12 @@
 interface ToolDurationInputProps {
   id: string;
   label: string;
-  minutes: number;
+  minutes: string;
   minMinutes: number;
   maxMinutes: number;
-  onMinutesChange: (nextMinutes: number) => void;
+  onMinutesChange: (nextMinutes: string) => void;
   disabled?: boolean;
   hint?: string;
-}
-
-function clampMinute(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, Math.round(value)));
 }
 
 export default function ToolDurationInput({
@@ -23,10 +19,6 @@ export default function ToolDurationInput({
   disabled = false,
   hint,
 }: ToolDurationInputProps) {
-  const updateMinutes = (nextMinutes: number) => {
-    onMinutesChange(clampMinute(nextMinutes, minMinutes, maxMinutes));
-  };
-
   return (
     <div className="tools-duration-field">
       <div className="tools-field-copy">
@@ -43,7 +35,7 @@ export default function ToolDurationInput({
           step={1}
           value={minutes}
           disabled={disabled}
-          onChange={(event) => updateMinutes(Number(event.target.value))}
+          onChange={(event) => onMinutesChange(event.target.value)}
           className="qp-input tools-duration-input"
         />
       </div>

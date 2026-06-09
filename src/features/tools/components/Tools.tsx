@@ -2,7 +2,7 @@ import { AlarmClock, BellRing, RefreshCw, Timer, ToolCase } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import QuietPageHeader from "../../../shared/components/QuietPageHeader.tsx";
 import type { QuietToastTone } from "../../../shared/components/QuietToast.tsx";
-import { UI_TEXT } from "../../../shared/copy/uiText.ts";
+import { UI_TEXT, type UiText } from "../../../shared/copy/uiText.ts";
 import type { TimerMode } from "../../../shared/types/tools.ts";
 import { useToolsPageState } from "../hooks/useToolsPageState.ts";
 import {
@@ -18,6 +18,7 @@ interface ToolsProps {
   initialTarget?: ToolsOpenTarget;
   icons: Record<string, string>;
   onToast?: (message: string, tone?: QuietToastTone) => void;
+  uiText?: UiText;
 }
 
 const DEFAULT_TOOLS_TARGET: ToolsOpenTarget = { section: "reminders" };
@@ -33,18 +34,34 @@ function isTimerMode(mode: ToolsOpenTarget["timingMode"]): mode is TimerMode {
   return mode === "stopwatch" || mode === "countdown";
 }
 
+function addVisitedSection(current: ReadonlySet<ToolsSection>, section: ToolsSection): ReadonlySet<ToolsSection> {
+  if (current.has(section)) {
+    return current;
+  }
+
+  const next = new Set(current);
+  next.add(section);
+  return next;
+}
+
 export default function Tools({
   initialTarget = DEFAULT_TOOLS_TARGET,
   icons,
   onToast,
+  uiText = UI_TEXT,
 }: ToolsProps) {
   const [activeSection, setActiveSection] = useState<ToolsSection>(() => normalizeToolsSection(initialTarget));
+  const [visitedSections, setVisitedSections] = useState<ReadonlySet<ToolsSection>>(
+    () => new Set([normalizeToolsSection(initialTarget)]),
+  );
   const [selectedTimerMode, setSelectedTimerMode] = useState<TimerMode>(readToolsTimerMode);
   const handleError = useCallback((message: string) => {
     onToast?.(message, "warning");
   }, [onToast]);
   const state = useToolsPageState({
+    activeSection,
     onError: handleError,
+    uiText,
   });
 
   const resolveTimerMode = useCallback((target: ToolsOpenTarget): TimerMode | null => {
@@ -60,6 +77,7 @@ export default function Tools({
   useEffect(() => {
     const nextSection = normalizeToolsSection(initialTarget);
     setActiveSection(nextSection);
+    setVisitedSections((current) => addVisitedSection(current, nextSection));
     if (nextSection === "timer") {
       const nextTimerMode = resolveTimerMode(initialTarget);
       if (nextTimerMode) {
@@ -72,6 +90,11 @@ export default function Tools({
   const handleTimerModeChange = useCallback((mode: TimerMode) => {
     setSelectedTimerMode(mode);
     rememberToolsTimerMode(mode);
+  }, []);
+
+  const handleSectionChange = useCallback((section: ToolsSection) => {
+    setActiveSection(section);
+    setVisitedSections((current) => addVisitedSection(current, section));
   }, []);
 
   const sections = [
@@ -123,7 +146,7 @@ export default function Tools({
                   key={section.id}
                   type="button"
                   aria-pressed={selected}
-                  onClick={() => setActiveSection(section.id)}
+                  onClick={() => handleSectionChange(section.id)}
                   aria-label={section.title}
                   className={selected ? "tools-section-tab tools-section-tab-active" : "tools-section-tab"}
                 >
@@ -136,45 +159,51 @@ export default function Tools({
           </aside>
 
           <div className="tools-active-panel">
-            <div className={activeSection === "reminders" ? "tools-section-pane" : "tools-section-pane tools-section-pane-hidden"} data-tools-section="reminders">
-              <ReminderToolPanel
-                reminderRows={state.reminderRows}
-                softwareReminderRuleRows={state.softwareReminderRuleRows}
-                softwareReminderAppCandidates={state.softwareReminderAppCandidates}
-                icons={icons}
-                busyAction={state.busyAction}
-                onCreateReminder={state.createReminder}
-                onCancelReminder={state.cancelReminder}
-                onCreateSoftwareReminderRule={state.createSoftwareReminderRule}
-                onDisableSoftwareReminderRule={state.disableSoftwareReminderRule}
-              />
-            </div>
-            <div className={activeSection === "timer" ? "tools-section-pane" : "tools-section-pane tools-section-pane-hidden"} data-tools-section="timer">
-              <TimerToolPanel
-                snapshot={state.snapshot}
-                viewModel={state.timerViewModel}
-                mode={selectedTimerMode}
-                busyAction={state.busyAction}
-                onModeChange={handleTimerModeChange}
-                onStartTimer={state.startTimer}
-                onPauseTimer={state.pauseTimer}
-                onResumeTimer={state.resumeTimer}
-                onResetTimer={state.resetTimer}
-                onAddTimerLap={state.addTimerLap}
-              />
-            </div>
-            <div className={activeSection === "pomodoro" ? "tools-section-pane" : "tools-section-pane tools-section-pane-hidden"} data-tools-section="pomodoro">
-              <PomodoroToolPanel
-                snapshot={state.snapshot}
-                viewModel={state.pomodoroViewModel}
-                busyAction={state.busyAction}
-                onStartPomodoro={state.startPomodoro}
-                onPausePomodoro={state.pausePomodoro}
-                onResumePomodoro={state.resumePomodoro}
-                onSkipPomodoroPhase={state.skipPomodoroPhase}
-                onResetPomodoro={state.resetPomodoro}
-              />
-            </div>
+            {visitedSections.has("reminders") ? (
+              <div className={activeSection === "reminders" ? "tools-section-pane" : "tools-section-pane tools-section-pane-hidden"} data-tools-section="reminders">
+                <ReminderToolPanel
+                  reminderRows={state.reminderRows}
+                  softwareReminderRuleRows={state.softwareReminderRuleRows}
+                  softwareReminderAppCandidates={state.softwareReminderAppCandidates}
+                  icons={icons}
+                  busyAction={state.busyAction}
+                  onCreateReminder={state.createReminder}
+                  onCancelReminder={state.cancelReminder}
+                  onCreateSoftwareReminderRule={state.createSoftwareReminderRule}
+                  onDisableSoftwareReminderRule={state.disableSoftwareReminderRule}
+                />
+              </div>
+            ) : null}
+            {visitedSections.has("timer") ? (
+              <div className={activeSection === "timer" ? "tools-section-pane" : "tools-section-pane tools-section-pane-hidden"} data-tools-section="timer">
+                <TimerToolPanel
+                  snapshot={state.snapshot}
+                  viewModel={state.timerViewModel}
+                  mode={selectedTimerMode}
+                  busyAction={state.busyAction}
+                  onModeChange={handleTimerModeChange}
+                  onStartTimer={state.startTimer}
+                  onPauseTimer={state.pauseTimer}
+                  onResumeTimer={state.resumeTimer}
+                  onResetTimer={state.resetTimer}
+                  onAddTimerLap={state.addTimerLap}
+                />
+              </div>
+            ) : null}
+            {visitedSections.has("pomodoro") ? (
+              <div className={activeSection === "pomodoro" ? "tools-section-pane" : "tools-section-pane tools-section-pane-hidden"} data-tools-section="pomodoro">
+                <PomodoroToolPanel
+                  snapshot={state.snapshot}
+                  viewModel={state.pomodoroViewModel}
+                  busyAction={state.busyAction}
+                  onStartPomodoro={state.startPomodoro}
+                  onPausePomodoro={state.pausePomodoro}
+                  onResumePomodoro={state.resumePomodoro}
+                  onSkipPomodoroPhase={state.skipPomodoroPhase}
+                  onResetPomodoro={state.resetPomodoro}
+                />
+              </div>
+            ) : null}
           </div>
         </div>
       </div>

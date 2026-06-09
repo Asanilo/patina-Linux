@@ -1,26 +1,65 @@
 import type { TrackerHealthSnapshot } from "../../shared/types/tracking";
-import { loadTrackerHealthSnapshot } from "./appRuntimeBootstrapService";
+import { loadTrackerHealthSnapshot } from "./appRuntimeBootstrapService.ts";
 
 const TRACKER_HEARTBEAT_POLL_MS = 1_000;
 
+interface TrackerHealthPollingDeps {
+  clearInterval: (timerId: number) => void;
+  loadSnapshot: (nowMs: number) => Promise<TrackerHealthSnapshot>;
+  now: () => number;
+  setInterval: (callback: () => void, intervalMs: number) => number;
+  warn: (message: string, error: unknown) => void;
+}
+
+interface TrackerHealthPollingOptions {
+  deps?: Partial<TrackerHealthPollingDeps>;
+  intervalMs?: number;
+  refreshImmediately?: boolean;
+}
+
+function resolveTrackerHealthPollingDeps(
+  deps: Partial<TrackerHealthPollingDeps> = {},
+): TrackerHealthPollingDeps {
+  return {
+    clearInterval: deps.clearInterval ?? ((timerId) => window.clearInterval(timerId)),
+    loadSnapshot: deps.loadSnapshot ?? loadTrackerHealthSnapshot,
+    now: deps.now ?? (() => Date.now()),
+    setInterval: deps.setInterval ?? ((callback, intervalMs) => window.setInterval(callback, intervalMs)),
+    warn: deps.warn ?? ((message, error) => console.warn(message, error)),
+  };
+}
+
 export function startTrackerHealthPolling(
   onSnapshot: (snapshot: TrackerHealthSnapshot) => void,
+  options: TrackerHealthPollingOptions = {},
 ) {
   let disposed = false;
+  const deps = resolveTrackerHealthPollingDeps(options.deps);
+  const intervalMs = options.intervalMs ?? TRACKER_HEARTBEAT_POLL_MS;
 
   const refreshTrackerHealth = async () => {
-    const snapshot = await loadTrackerHealthSnapshot(Date.now());
-    if (!disposed) {
-      onSnapshot(snapshot);
+    try {
+      const snapshot = await deps.loadSnapshot(deps.now());
+      if (!disposed) {
+        onSnapshot(snapshot);
+      }
+    } catch (error) {
+      if (!disposed) {
+        deps.warn("load tracker health failed", error);
+      }
     }
   };
 
-  const timerId = window.setInterval(() => {
+  if (options.refreshImmediately ?? true) {
     void refreshTrackerHealth();
-  }, TRACKER_HEARTBEAT_POLL_MS);
+  }
+
+  const timerId = deps.setInterval(() => {
+    void refreshTrackerHealth();
+  }, intervalMs);
 
   return () => {
     disposed = true;
-    window.clearInterval(timerId);
+    deps.clearInterval(timerId);
   };
 }

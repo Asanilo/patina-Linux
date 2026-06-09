@@ -223,7 +223,7 @@ await runTest("defaults preload the core lazy view chunks", async () => {
     await flushPromises();
   }
 
-  assert.deepEqual(calls, ["history", "data", "mapping", "tools", "settings", "about"]);
+  assert.deepEqual(calls, ["history", "data", "tools", "mapping", "settings", "about"]);
   assert.equal(scheduler.tasks.length, 0);
 });
 

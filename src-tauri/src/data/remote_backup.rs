@@ -152,7 +152,8 @@ fn temp_backup_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .app_data_dir()
         .map_err(|error| format!("failed to resolve app data dir: {error}"))?
         .join("remote-backup-temp");
-    fs::create_dir_all(&dir).map_err(|error| format!("failed to create temp backup dir: {error}"))?;
+    fs::create_dir_all(&dir)
+        .map_err(|error| format!("failed to create temp backup dir: {error}"))?;
     Ok(dir)
 }
 
@@ -263,7 +264,9 @@ pub async fn upload_webdav_backup(
         Ok(mut index) => {
             index.backups.retain(|item| item.id != entry.id);
             index.backups.insert(0, entry.clone());
-            index.backups.sort_by_key(|entry| Reverse(entry.created_at_ms));
+            index
+                .backups
+                .sort_by_key(|entry| Reverse(entry.created_at_ms));
             index.updated_at_ms = now_ms();
             save_index(&client, &config.remote_dir, &index).await?;
             Ok(RemoteBackupUploadResult {
@@ -285,7 +288,9 @@ pub async fn list_webdav_backups(
 ) -> Result<Vec<RemoteBackupEntry>, String> {
     let (config, client) = webdav_client(config)?;
     let mut index = load_index(&client, &config.remote_dir).await?;
-    index.backups.sort_by_key(|entry| Reverse(entry.created_at_ms));
+    index
+        .backups
+        .sort_by_key(|entry| Reverse(entry.created_at_ms));
     index.backups.truncate(MAX_BACKUP_LIST_ITEMS);
     Ok(index.backups)
 }
@@ -308,7 +313,9 @@ pub async fn download_webdav_backup(
         .find(|entry| entry.id == trimmed_id)
         .ok_or_else(|| "remote backup was not found in the WebDAV index".to_string())?;
     let local_path = temp_backup_path(&app, &entry.file_name)?;
-    client.download_file(&entry.remote_path, &local_path).await?;
+    client
+        .download_file(&entry.remote_path, &local_path)
+        .await?;
     let local_path_string = local_path.to_string_lossy().to_string();
     let preview = backup::preview_backup(local_path_string.clone()).await?;
     Ok(RemoteBackupDownloadResult {

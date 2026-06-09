@@ -39,6 +39,7 @@ import {
 } from "../features/data/services/dataCacheLifecycle.ts";
 import { prewarmDataFirstScreen } from "../features/data/services/dataFirstScreenPrewarm.ts";
 import { clearHistorySnapshotCache } from "../features/history/services/historySnapshotCache.ts";
+import { clearToolsPageCaches } from "../features/tools/services/toolsCacheLifecycle.ts";
 import { AppClassification } from "../shared/classification/appClassification.ts";
 import { useQuietDialogs } from "../shared/hooks/useQuietDialogs";
 import UpdateDialogProvider from "./providers/UpdateDialogProvider";
@@ -133,6 +134,7 @@ function AppShellContent() {
   const wasForegroundReadyRef = useRef<boolean | null>(null);
   const warmupRuntimeReadyResolveRef = useRef<(() => void) | null>(null);
   const warmupRuntimeReadyPromiseRef = useRef<Promise<void> | null>(null);
+  const isForegroundReady = isDocumentVisible && isWindowForegroundLike;
   const {
     activeWindow,
     trackingStatus,
@@ -141,7 +143,7 @@ function AppShellContent() {
     setAppSettings,
     syncTick,
     trackerHealth,
-  } = useWindowTracking();
+  } = useWindowTracking({ trackerHealthPollingEnabled: isForegroundReady });
   const [syncedUiTextLanguage, setSyncedUiTextLanguage] = useState<AppLanguage>(appSettings.language);
   const uiTextLanguage = settingsLanguagePreview ?? appSettings.language;
   const uiText = getUiText(uiTextLanguage);
@@ -164,7 +166,6 @@ function AppShellContent() {
   const refreshSignal = resolveReadModelRefreshSignal(syncTick, readModelRefreshState);
   void syncedUiTextLanguage;
   const { mappingVersion } = readModelRefreshState;
-  const isForegroundReady = isDocumentVisible && isWindowForegroundLike;
   const isDashboardRefreshEnabled = currentView === "dashboard" && isForegroundReady;
   const isHistoryRefreshEnabled = currentView === "history" && isForegroundReady;
   const isDataRefreshEnabled = currentView === "data" && isForegroundReady;
@@ -345,6 +346,7 @@ function AppShellContent() {
       try {
         clearHistorySnapshotCache();
         clearDataHeavyCaches();
+        clearToolsPageCaches();
       } catch (error) {
         console.warn("clear page heavy caches after background delay failed", error);
       }
@@ -404,7 +406,7 @@ function AppShellContent() {
         <AppSidebar
           currentView={currentView}
           onNavigate={handleSidebarNavigate}
-          footerContent={<ToolsSidebarStatusEntry onOpenSection={handleToolsStatusChipOpen} />}
+          footerContent={<ToolsSidebarStatusEntry onOpenSection={handleToolsStatusChipOpen} uiText={uiText} />}
           {...sidebarUpdateEntry}
         />
 
@@ -465,6 +467,7 @@ function AppShellContent() {
                   initialTarget={toolsInitialTarget}
                   icons={icons}
                   onToast={pushToast}
+                  uiText={uiText}
                 />
               )}
               {currentView === "settings" && (
@@ -507,6 +510,7 @@ function AppShellContent() {
                   onOverridesChanged={() => {
                     clearDashboardSnapshotCache();
                     clearHistorySnapshotCache();
+                    clearToolsPageCaches();
                     void clearDataBootstrapCache();
                     setReadModelRefreshState(applyMappingOverridesReadModelRefresh);
                     pushToast(uiText.app.mappingUpdated, "success");

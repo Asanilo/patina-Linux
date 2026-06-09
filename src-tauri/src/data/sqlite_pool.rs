@@ -150,9 +150,7 @@ async fn table_has_columns(
         "tool_timer_laps" => "PRAGMA table_info(tool_timer_laps)",
         "tool_pomodoro_runs" => "PRAGMA table_info(tool_pomodoro_runs)",
         "tool_daily_stats" => "PRAGMA table_info(tool_daily_stats)",
-        "tool_software_reminder_rules" => {
-            "PRAGMA table_info(tool_software_reminder_rules)"
-        }
+        "tool_software_reminder_rules" => "PRAGMA table_info(tool_software_reminder_rules)",
         _ => {
             return Err(format!(
                 "unsupported schema inspection table `{table_name}`"
@@ -194,9 +192,7 @@ async fn table_has_index(
         "tool_timer_laps" => "PRAGMA index_list(tool_timer_laps)",
         "tool_pomodoro_runs" => "PRAGMA index_list(tool_pomodoro_runs)",
         "tool_daily_stats" => "PRAGMA index_list(tool_daily_stats)",
-        "tool_software_reminder_rules" => {
-            "PRAGMA index_list(tool_software_reminder_rules)"
-        }
+        "tool_software_reminder_rules" => "PRAGMA index_list(tool_software_reminder_rules)",
         _ => return Err(format!("unsupported index inspection table `{table_name}`")),
     };
 

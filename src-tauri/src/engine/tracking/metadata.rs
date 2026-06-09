@@ -117,8 +117,7 @@ fn icon_cache_in_flight() -> &'static Mutex<HashSet<String>> {
 
 fn icon_cache_semaphore() -> &'static Arc<Semaphore> {
     static ICON_CACHE_SEMAPHORE: OnceLock<Arc<Semaphore>> = OnceLock::new();
-    ICON_CACHE_SEMAPHORE
-        .get_or_init(|| Arc::new(Semaphore::new(ICON_CACHE_CONCURRENCY_LIMIT)))
+    ICON_CACHE_SEMAPHORE.get_or_init(|| Arc::new(Semaphore::new(ICON_CACHE_CONCURRENCY_LIMIT)))
 }
 
 fn should_skip_window_icon_fallback(exe_name: &str, window_class: &str) -> bool {

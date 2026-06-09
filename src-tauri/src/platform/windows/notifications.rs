@@ -8,7 +8,13 @@ use windows::Win32::System::Registry::{
     REG_OPTION_NON_VOLATILE, REG_SZ,
 };
 
-pub fn send(app_id: &str, app_name: &str, title: &str, body: &str, icon_path: Option<PathBuf>) -> Result<(), String> {
+pub fn send(
+    app_id: &str,
+    app_name: &str,
+    title: &str,
+    body: &str,
+    icon_path: Option<PathBuf>,
+) -> Result<(), String> {
     register_app_user_model_id(app_id, app_name, icon_path)?;
     Toast::new(app_id)
         .title(title)
@@ -17,7 +23,11 @@ pub fn send(app_id: &str, app_name: &str, title: &str, body: &str, icon_path: Op
         .map_err(|error| error.to_string())
 }
 
-fn register_app_user_model_id(app_id: &str, app_name: &str, icon_path: Option<PathBuf>) -> Result<(), String> {
+fn register_app_user_model_id(
+    app_id: &str,
+    app_name: &str,
+    icon_path: Option<PathBuf>,
+) -> Result<(), String> {
     let subkey = HSTRING::from(format!(r"SOFTWARE\Classes\AppUserModelId\{app_id}"));
     let mut key = HKEY::default();
 

@@ -22,8 +22,8 @@ fn parse_base_url(raw: &str) -> Result<Url, String> {
         return Err("WebDAV server address cannot be empty".to_string());
     }
 
-    let mut url = Url::parse(trimmed)
-        .map_err(|error| format!("invalid WebDAV server address: {error}"))?;
+    let mut url =
+        Url::parse(trimmed).map_err(|error| format!("invalid WebDAV server address: {error}"))?;
     if url.scheme() != "https" && url.scheme() != "http" {
         return Err("WebDAV server address must use http or https".to_string());
     }
@@ -58,7 +58,9 @@ pub fn normalize_remote_dir(raw: &str) -> Result<String, String> {
 }
 
 fn split_path(path: &str) -> impl Iterator<Item = &str> {
-    path.trim_matches('/').split('/').filter(|segment| !segment.is_empty())
+    path.trim_matches('/')
+        .split('/')
+        .filter(|segment| !segment.is_empty())
 }
 
 impl WebDavClient {
@@ -105,7 +107,11 @@ impl WebDavClient {
         Ok(url)
     }
 
-    async fn request(&self, method: Method, remote_path: &str) -> Result<reqwest::RequestBuilder, String> {
+    async fn request(
+        &self,
+        method: Method,
+        remote_path: &str,
+    ) -> Result<reqwest::RequestBuilder, String> {
         let url = self.remote_url(remote_path)?;
         Ok(self
             .client
@@ -124,7 +130,10 @@ impl WebDavClient {
             current.push('/');
             current.push_str(segment);
             let response = self
-                .request(Method::from_bytes(b"MKCOL").map_err(|error| error.to_string())?, &current)
+                .request(
+                    Method::from_bytes(b"MKCOL").map_err(|error| error.to_string())?,
+                    &current,
+                )
                 .await?
                 .send()
                 .await

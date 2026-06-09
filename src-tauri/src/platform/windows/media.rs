@@ -99,11 +99,8 @@ impl MediaSignalSourceState {
             query_media_session_signal().await
         });
 
-        let signal = match timeout(
-            Duration::from_secs(MEDIA_SESSION_QUERY_TIMEOUT_SECS),
-            query,
-        )
-        .await
+        let signal = match timeout(Duration::from_secs(MEDIA_SESSION_QUERY_TIMEOUT_SECS), query)
+            .await
         {
             Ok(Ok(Ok(Some(signal)))) => signal,
             Ok(Ok(Ok(None))) => SustainedParticipationSignalSnapshot::default(),

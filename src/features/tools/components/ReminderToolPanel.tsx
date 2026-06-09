@@ -1,6 +1,7 @@
 import { BellRing, Plus, Search, X } from "lucide-react";
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -23,6 +24,10 @@ import type {
   ReminderRowViewModel,
   SoftwareReminderRuleRowViewModel,
 } from "../types.ts";
+import {
+  formatMinuteInput,
+  parseBoundedMinuteInput,
+} from "../services/toolsNumberInput.ts";
 
 interface ReminderToolPanelProps {
   reminderRows: ReminderRowViewModel[];
@@ -412,10 +417,10 @@ export default function ReminderToolPanel({
   const [reminderMode, setReminderMode] = useState<ReminderMode>(readToolsReminderMode);
   const [mode, setMode] = useState<ReminderFormMode>(readToolsReminderFormMode);
   const [label, setLabel] = useState("");
-  const [relativeMinutes, setRelativeMinutes] = useState(15);
+  const [relativeMinutes, setRelativeMinutes] = useState(() => formatMinuteInput(15));
   const [absoluteDate, setAbsoluteDate] = useState(() => toDateInputValue(new Date()));
   const [absoluteTime, setAbsoluteTime] = useState(() => toTimeInputValue(new Date()));
-  const [validationMessage, setValidationMessage] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const scheduledRows = reminderRows.filter((row) => row.status === "scheduled");
   const creating = busyAction === "create-reminder";
   const reminderModes = [
@@ -426,6 +431,24 @@ export default function ReminderToolPanel({
     { value: "relative" as const, label: UI_TEXT.tools.reminderModeRelative },
     { value: "absolute" as const, label: UI_TEXT.tools.reminderModeAbsolute },
   ];
+
+  useEffect(() => {
+    if (reminderMode !== "event" || mode !== "absolute") return undefined;
+
+    let refreshTimeout: number | null = null;
+    const refreshNow = () => {
+      const nextNowMs = Date.now();
+      setNowMs(nextNowMs);
+      refreshTimeout = window.setTimeout(refreshNow, 60_000 - (nextNowMs % 60_000) + 25);
+    };
+
+    refreshNow();
+    return () => {
+      if (refreshTimeout !== null) {
+        window.clearTimeout(refreshTimeout);
+      }
+    };
+  }, [mode, reminderMode]);
 
   const handleReminderModeChange = (nextMode: ReminderMode) => {
     setReminderMode(nextMode);
@@ -438,27 +461,28 @@ export default function ReminderToolPanel({
       setAbsoluteDate(toDateInputValue(now));
       setAbsoluteTime(toTimeInputValue(now));
     }
-    setValidationMessage(null);
+    setNowMs(Date.now());
     setMode(nextMode);
     rememberToolsReminderFormMode(nextMode);
   };
 
   const resolveScheduledAt = () => {
     if (mode === "relative") {
-      return Date.now() + Math.max(1, relativeMinutes) * 60_000;
+      const minutes = parseBoundedMinuteInput(relativeMinutes, 1, 1440);
+      return minutes === null ? null : Date.now() + minutes * 60_000;
     }
     return parseLocalDateTime(absoluteDate, absoluteTime);
   };
+  const scheduledAt = resolveScheduledAt();
+  const canCreateReminder = scheduledAt !== null && scheduledAt > nowMs;
 
   const handleCreate = async () => {
-    const scheduledAt = resolveScheduledAt();
-    if (scheduledAt === null || scheduledAt <= Date.now()) {
-      setValidationMessage(UI_TEXT.tools.reminderTimeInvalid);
+    const nextScheduledAt = resolveScheduledAt();
+    if (nextScheduledAt === null || nextScheduledAt <= Date.now()) {
       return;
     }
 
-    setValidationMessage(null);
-    await onCreateReminder(label.trim() || UI_TEXT.tools.defaultReminderLabel, scheduledAt);
+    await onCreateReminder(label.trim() || UI_TEXT.tools.defaultReminderLabel, nextScheduledAt);
     setLabel("");
   };
 
@@ -516,7 +540,7 @@ export default function ReminderToolPanel({
                       min={1}
                       max={1440}
                       value={relativeMinutes}
-                      onChange={(event) => setRelativeMinutes(Math.max(1, Number(event.target.value)))}
+                      onChange={(event) => setRelativeMinutes(event.target.value)}
                       className="qp-input tools-small-number-input"
                     />
                   </div>
@@ -544,7 +568,7 @@ export default function ReminderToolPanel({
                 <div className="tools-form-actions">
                   <button
                     type="button"
-                    disabled={creating}
+                    disabled={creating || !canCreateReminder}
                     onClick={() => void handleCreate()}
                     aria-label={UI_TEXT.accessibility.tools.createReminder}
                     className="qp-button-primary tools-action-button"
@@ -553,10 +577,6 @@ export default function ReminderToolPanel({
                     {UI_TEXT.tools.createReminder}
                   </button>
                 </div>
-
-                {validationMessage ? (
-                  <p className="tools-validation-message">{validationMessage}</p>
-                ) : null}
               </div>
             </div>
 

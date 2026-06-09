@@ -1164,7 +1164,10 @@ async fn fetch_active_software_reminder_rules_tx(
     .await
     .map_err(|error| format!("failed to load active software reminder rules: {error}"))?;
 
-    Ok(rows.into_iter().map(map_software_reminder_rule_row).collect())
+    Ok(rows
+        .into_iter()
+        .map(map_software_reminder_rule_row)
+        .collect())
 }
 
 async fn fetch_active_software_reminder_rules(
@@ -1181,7 +1184,10 @@ async fn fetch_active_software_reminder_rules(
     .await
     .map_err(|error| format!("failed to load active software reminder rules: {error}"))?;
 
-    Ok(rows.into_iter().map(map_software_reminder_rule_row).collect())
+    Ok(rows
+        .into_iter()
+        .map(map_software_reminder_rule_row)
+        .collect())
 }
 
 async fn fetch_software_usage_ms_today_tx(

@@ -1,7 +1,25 @@
 import { ClassificationService } from "../../classification/services/classificationService.ts";
+import type { ClassificationBootstrapData } from "../../classification/services/classificationService.ts";
 import type { ObservedAppCandidate } from "../../classification/types.ts";
 import { AppClassification } from "../../../shared/classification/appClassification.ts";
+import { getUiTextLanguage } from "../../../shared/copy/uiText.ts";
 import type { ToolSoftwareReminderAppCandidate } from "../../../shared/types/tools.ts";
+
+export interface SoftwareReminderAppCandidateDeps {
+  applyBootstrapToProcessMapper: (bootstrap: ClassificationBootstrapData) => void;
+  getBootstrapCache: () => ClassificationBootstrapData | null;
+  loadClassificationBootstrap: () => Promise<ClassificationBootstrapData>;
+}
+
+const defaultSoftwareReminderAppCandidateDeps: SoftwareReminderAppCandidateDeps = {
+  applyBootstrapToProcessMapper: (bootstrap) => ClassificationService.applyBootstrapToProcessMapper(bootstrap),
+  getBootstrapCache: () => ClassificationService.getBootstrapCache(),
+  loadClassificationBootstrap: () => ClassificationService.loadClassificationBootstrap(),
+};
+
+let cachedBootstrap: ClassificationBootstrapData | null = null;
+let cachedCandidates: ToolSoftwareReminderAppCandidate[] = [];
+let cachedLanguage = "";
 
 function resolveCandidateDisplayName(candidate: ObservedAppCandidate, exeName: string) {
   const mapped = AppClassification.mapApp(exeName, { appName: candidate.appName });
@@ -47,8 +65,39 @@ export function buildSoftwareReminderAppCandidates(
     ));
 }
 
+function cloneCandidates(candidates: readonly ToolSoftwareReminderAppCandidate[]): ToolSoftwareReminderAppCandidate[] {
+  return candidates.map((candidate) => ({ ...candidate }));
+}
+
+function buildCandidatesForBootstrap(bootstrap: ClassificationBootstrapData): ToolSoftwareReminderAppCandidate[] {
+  const language = getUiTextLanguage();
+  if (bootstrap !== cachedBootstrap || language !== cachedLanguage) {
+    cachedBootstrap = bootstrap;
+    cachedLanguage = language;
+    cachedCandidates = buildSoftwareReminderAppCandidates(bootstrap.observed);
+  }
+
+  return cloneCandidates(cachedCandidates);
+}
+
+export async function loadSoftwareReminderAppCandidatesWithDeps(
+  deps: SoftwareReminderAppCandidateDeps,
+): Promise<ToolSoftwareReminderAppCandidate[]> {
+  const bootstrap = deps.getBootstrapCache() ?? await deps.loadClassificationBootstrap();
+  deps.applyBootstrapToProcessMapper(bootstrap);
+  return buildCandidatesForBootstrap(bootstrap);
+}
+
 export async function loadSoftwareReminderAppCandidates(): Promise<ToolSoftwareReminderAppCandidate[]> {
-  const bootstrap = await ClassificationService.loadClassificationBootstrap();
-  ClassificationService.applyBootstrapToProcessMapper(bootstrap);
-  return buildSoftwareReminderAppCandidates(bootstrap.observed);
+  return loadSoftwareReminderAppCandidatesWithDeps(defaultSoftwareReminderAppCandidateDeps);
+}
+
+export function clearSoftwareReminderAppCandidateCache(): void {
+  cachedBootstrap = null;
+  cachedCandidates = [];
+  cachedLanguage = "";
+}
+
+export function resetSoftwareReminderAppCandidatesCacheForTests(): void {
+  clearSoftwareReminderAppCandidateCache();
 }

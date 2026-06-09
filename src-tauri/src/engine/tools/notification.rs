@@ -5,7 +5,9 @@ pub fn send<R: Runtime>(app: &AppHandle<R>, title: &str, body: &str) -> Result<(
     #[cfg(windows)]
     if should_use_dev_windows_toast_identity() {
         if let Err(error) = send_windows_toast(app, title, body) {
-            eprintln!("[tools] failed to send Windows app-owned notification, falling back: {error}");
+            eprintln!(
+                "[tools] failed to send Windows app-owned notification, falling back: {error}"
+            );
         } else {
             return Ok(());
         }
@@ -20,7 +22,11 @@ pub fn send<R: Runtime>(app: &AppHandle<R>, title: &str, body: &str) -> Result<(
 }
 
 #[cfg(windows)]
-fn send_windows_toast<R: Runtime>(app: &AppHandle<R>, title: &str, body: &str) -> Result<(), String> {
+fn send_windows_toast<R: Runtime>(
+    app: &AppHandle<R>,
+    title: &str,
+    body: &str,
+) -> Result<(), String> {
     let config = app.config();
     let app_name = config.product_name.as_deref().unwrap_or("Time Tracker");
     crate::platform::windows::notifications::send(

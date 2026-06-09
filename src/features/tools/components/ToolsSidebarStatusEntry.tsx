@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlarmClock, BellRing, Timer } from "lucide-react";
 import type { ToolsRuntimeSnapshot } from "../../../shared/types/tools.ts";
+import { UI_TEXT, type UiText } from "../../../shared/copy/uiText.ts";
 import { buildToolsViewModelLabels } from "../services/toolsLabels.ts";
-import { ToolsRuntimeService } from "../services/toolsRuntimeService.ts";
+import { toolsRuntimeSnapshotStore } from "../services/toolsRuntimeSnapshotStore.ts";
 import { buildToolsStatusChipViewModels } from "../services/toolsViewModel.ts";
 import type { ToolStatusChipViewModel, ToolsOpenTarget } from "../types.ts";
 import ToolsStatusChip from "./ToolsStatusChip.tsx";
 
 interface ToolsSidebarStatusEntryProps {
   onOpenSection: (target: ToolsOpenTarget) => void;
+  uiText?: UiText;
 }
 
 function resolveStatusIcon(statusChip: ToolStatusChipViewModel) {
@@ -17,58 +19,59 @@ function resolveStatusIcon(statusChip: ToolStatusChipViewModel) {
   return BellRing;
 }
 
+function hasToolsStatusChip(snapshot: ToolsRuntimeSnapshot | null) {
+  return Boolean(
+    snapshot
+    && (
+      snapshot.currentPomodoro?.status === "running"
+      || snapshot.currentTimer?.status === "running"
+      || snapshot.nextReminderAt !== null
+    ),
+  );
+}
+
 export default function ToolsSidebarStatusEntry({
   onOpenSection,
+  uiText = UI_TEXT,
 }: ToolsSidebarStatusEntryProps) {
   const [snapshot, setSnapshot] = useState<ToolsRuntimeSnapshot | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const labels = useMemo(() => buildToolsViewModelLabels(uiText), [uiText]);
+  const shouldRefreshClock = hasToolsStatusChip(snapshot);
 
   useEffect(() => {
+    if (!shouldRefreshClock) {
+      return undefined;
+    }
+
     const timer = window.setInterval(() => setNowMs(Date.now()), 1_000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [shouldRefreshClock]);
 
   useEffect(() => {
     let cancelled = false;
-    let unlisten: (() => void) | null = null;
+    const unsubscribe = toolsRuntimeSnapshotStore.subscribe((nextSnapshot) => {
+      if (!cancelled) {
+        setSnapshot(nextSnapshot);
+      }
+    });
 
-    void ToolsRuntimeService.getToolsSnapshot()
-      .then((nextSnapshot) => {
-        if (!cancelled) {
-          setSnapshot(nextSnapshot);
-        }
-      })
+    void toolsRuntimeSnapshotStore.refreshSnapshot()
       .catch((error) => {
         console.warn("load tools runtime snapshot failed", error);
       });
 
-    void ToolsRuntimeService.onToolsRuntimeChanged((nextSnapshot) => {
-      if (!cancelled) {
-        setSnapshot(nextSnapshot);
-      }
-    })
-      .then((dispose) => {
-        if (cancelled) {
-          dispose();
-          return;
-        }
-        unlisten = dispose;
-      })
-      .catch((error) => {
-        console.warn("listen tools runtime snapshot failed", error);
-      });
-
     return () => {
       cancelled = true;
-      unlisten?.();
+      unsubscribe();
     };
   }, []);
 
   const statusChips = useMemo(() => (
     snapshot
-      ? buildToolsStatusChipViewModels(snapshot, nowMs, buildToolsViewModelLabels())
+      ? buildToolsStatusChipViewModels(snapshot, nowMs, labels)
       : []
-  ), [nowMs, snapshot]);
+  ), [labels, nowMs, snapshot]);
 
   if (statusChips.length === 0) {
     return null;

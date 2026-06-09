@@ -1,9 +1,10 @@
 import { AlarmClock, BellRing, TimerReset } from "lucide-react";
-import type { ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import QuietDialog from "../../../shared/components/QuietDialog.tsx";
 import { UI_TEXT } from "../../../shared/copy/uiText.ts";
 import type { ToolAlert } from "../../../shared/types/tools.ts";
 import { useToolAlerts } from "../hooks/useToolAlerts.ts";
+import { ToolsRuntimeService } from "../services/toolsRuntimeService.ts";
 
 function formatAlertTime(timestampMs: number) {
   return new Date(timestampMs).toLocaleString(undefined, {
@@ -22,11 +23,26 @@ function alertIcon(alert: ToolAlert): ReactNode {
 
 export default function ToolAlertDialog() {
   const { activeAlert, dismissActiveAlert } = useToolAlerts();
+  const [pausingPomodoro, setPausingPomodoro] = useState(false);
   const title = activeAlert?.title.trim() || UI_TEXT.tools.notificationStatus;
   const message = activeAlert?.body.trim() || UI_TEXT.tools.defaultReminderLabel;
   const occurredAtLabel = activeAlert
     ? UI_TEXT.tools.alertOccurredAt(formatAlertTime(activeAlert.occurredAt))
     : "";
+  const canPausePomodoro = activeAlert?.kind === "pomodoro";
+  const handlePausePomodoro = useCallback(async () => {
+    if (activeAlert?.kind !== "pomodoro" || pausingPomodoro) return;
+
+    setPausingPomodoro(true);
+    try {
+      await ToolsRuntimeService.pausePomodoro();
+      dismissActiveAlert();
+    } catch (error) {
+      console.warn("pause pomodoro from alert failed", error);
+    } finally {
+      setPausingPomodoro(false);
+    }
+  }, [activeAlert?.kind, dismissActiveAlert, pausingPomodoro]);
 
   return (
     <QuietDialog
@@ -36,13 +52,25 @@ export default function ToolAlertDialog() {
       onClose={dismissActiveAlert}
       surfaceClassName="tools-alert-dialog-surface"
       actions={(
-        <button
-          type="button"
-          className="qp-button-primary qp-dialog-action"
-          onClick={dismissActiveAlert}
-        >
-          {UI_TEXT.tools.alertDismiss}
-        </button>
+        <>
+          {canPausePomodoro && (
+            <button
+              type="button"
+              className="qp-button-secondary qp-dialog-action disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => void handlePausePomodoro()}
+              disabled={pausingPomodoro}
+            >
+              {pausingPomodoro ? UI_TEXT.tools.alertPausingPomodoro : UI_TEXT.tools.alertPausePomodoro}
+            </button>
+          )}
+          <button
+            type="button"
+            className="qp-button-primary qp-dialog-action"
+            onClick={dismissActiveAlert}
+          >
+            {UI_TEXT.tools.alertDismiss}
+          </button>
+        </>
       )}
     >
       {activeAlert && (

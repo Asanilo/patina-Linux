@@ -697,6 +697,56 @@ try {
 
     assert.equal(
       await evaluate(client!, sessionId, `
+        (async () => {
+          const input = document.querySelector('.tools-reminder-form input[type="number"][max="1440"]');
+          if (!input) return false;
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+          setter?.call(input, '');
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          return input.value === '';
+        })()
+      `),
+      true,
+      "relative reminder minutes should be clearable while editing",
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (async () => {
+          const input = document.querySelector('.tools-reminder-form input[type="number"][max="1440"]');
+          const create = document.querySelector('.tools-reminder-form .tools-action-button');
+          if (!input || !create) return false;
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+          setter?.call(input, '0');
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          return Boolean(create.disabled)
+            && !document.body.innerText.includes(${jsonString(TOOLS_TEXT.reminderTimeInvalid)});
+        })()
+      `),
+      true,
+      "relative reminder should disable create for zero minutes",
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (async () => {
+          const absolute = Array.from(document.querySelectorAll('button'))
+            .find((node) => node.textContent?.trim() === ${jsonString(TOOLS_TEXT.reminderModeAbsolute)});
+          if (!absolute) return false;
+          absolute.click();
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          const create = document.querySelector('.tools-reminder-form .tools-action-button');
+          return Boolean(create?.disabled)
+            && !document.body.innerText.includes(${jsonString(TOOLS_TEXT.reminderTimeInvalid)});
+        })()
+      `),
+      true,
+      "absolute reminder should disable create for the current minute",
+    );
+
+    assert.equal(
+      await evaluate(client!, sessionId, `
         (() => {
           const software = Array.from(document.querySelectorAll('button'))
             .find((node) => node.textContent?.trim() === ${jsonString(TOOLS_TEXT.reminderModeSoftware)});
@@ -729,6 +779,42 @@ try {
       sessionId,
       `document.body.innerText.includes(${jsonString(TOOLS_TEXT.timerModeStopwatch)})`,
     );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (async () => {
+          const countdown = Array.from(document.querySelectorAll('button'))
+            .find((node) => node.textContent?.trim() === ${jsonString(TOOLS_TEXT.timerModeCountdown)});
+          if (!countdown) return false;
+          countdown.click();
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          const input = document.querySelector('#tools-countdown-duration');
+          if (!input) return false;
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+          setter?.call(input, '');
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          return input.value === '';
+        })()
+      `),
+      true,
+      "countdown duration should be clearable while editing",
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (async () => {
+          const input = document.querySelector('#tools-countdown-duration');
+          if (!input) return false;
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+          setter?.call(input, '0');
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          const start = document.querySelector('[data-tools-section="timer"] .tools-action-row .qp-button-primary');
+          return Boolean(start?.disabled);
+        })()
+      `),
+      true,
+      "countdown duration should reject zero minutes",
+    );
 
     assert.equal(
       await evaluate(client!, sessionId, `
@@ -745,6 +831,74 @@ try {
       client!,
       sessionId,
       `document.body.innerText.includes(${jsonString(TOOLS_TEXT.pomodoroTitle)})`,
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (async () => {
+          const input = document.querySelector('#tools-pomodoro-focus');
+          if (!input) return false;
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+          setter?.call(input, '');
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          return input.value === '';
+        })()
+      `),
+      true,
+      "pomodoro duration should be clearable while editing",
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (async () => {
+          const input = document.querySelector('#tools-pomodoro-focus');
+          if (!input) return false;
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+          setter?.call(input, '0');
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          const start = document.querySelector('[data-tools-section="pomodoro"] .tools-action-row .qp-button-primary');
+          return Boolean(start?.disabled);
+        })()
+      `),
+      true,
+      "pomodoro duration should reject zero minutes",
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (async () => {
+          const fields = [
+            ['#tools-pomodoro-focus', '25'],
+            ['#tools-pomodoro-short-break', '5'],
+            ['#tools-pomodoro-long-break', '15'],
+            ['#tools-pomodoro-long-break-every', '4'],
+          ];
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+          for (const [selector, value] of fields) {
+            const input = document.querySelector(selector);
+            if (!input) return false;
+            setter?.call(input, value === '25' ? '0' : '');
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          const restore = document.querySelector(
+            '[aria-label=' + ${jsonString(JSON.stringify(COPY["zh-CN"].accessibility.tools.restorePomodoroDefaults))} + ']'
+          );
+          if (!restore || restore.textContent?.trim() || restore.hasAttribute('title')) return false;
+          const titleGroup = restore.closest('.tools-subpanel-title-action');
+          const title = titleGroup?.querySelector('h3');
+          if (!title || title.textContent?.trim() !== ${jsonString(TOOLS_TEXT.pomodoroSettings)}) return false;
+          const titleRect = title.getBoundingClientRect();
+          const restoreRect = restore.getBoundingClientRect();
+          if (restoreRect.left < titleRect.right || restoreRect.left - titleRect.right > 12) return false;
+          restore.click();
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          const start = document.querySelector('[data-tools-section="pomodoro"] .tools-action-row .qp-button-primary');
+          return fields.every(([selector, value]) => document.querySelector(selector)?.value === value)
+            && !start?.disabled;
+        })()
+      `),
+      true,
+      "pomodoro default icon restores editable durations",
     );
     assert.equal(
       await evaluate(client!, sessionId, "document.querySelectorAll('.tools-section-tab-copy').length"),

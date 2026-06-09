@@ -2,6 +2,7 @@ import type {
   PomodoroPhase,
   ToolSoftwareReminderRule,
   ToolPomodoroRun,
+  ToolReminder,
   ToolsRuntimeSnapshot,
   ToolTimer,
 } from "../../../shared/types/tools.ts";
@@ -186,18 +187,60 @@ export function buildToolsStatusChipViewModel(
   return buildToolsStatusChipViewModels(snapshot, nowMs, labels)[0] ?? null;
 }
 
+type SortableToolStatusChipViewModel = ToolStatusChipViewModel & {
+  sortIndex: number;
+  sortStartedAtMs: number;
+};
+
+function resolveNextReminderSortStartedAt(
+  reminders: readonly ToolReminder[],
+  nextReminderAt: number,
+): number {
+  let matchingReminder: ToolReminder | null = null;
+
+  for (const reminder of reminders) {
+    if (reminder.status !== "scheduled" || reminder.scheduledAt !== nextReminderAt) {
+      continue;
+    }
+
+    if (
+      !matchingReminder
+      || reminder.createdAt < matchingReminder.createdAt
+      || (reminder.createdAt === matchingReminder.createdAt && reminder.id < matchingReminder.id)
+    ) {
+      matchingReminder = reminder;
+    }
+  }
+
+  return matchingReminder?.createdAt ?? nextReminderAt;
+}
+
+function sortStatusChipsByArrival(
+  chips: SortableToolStatusChipViewModel[],
+): ToolStatusChipViewModel[] {
+  return chips
+    .sort((left, right) => (
+      left.sortStartedAtMs - right.sortStartedAtMs
+      || left.sortIndex - right.sortIndex
+    ))
+    .map(({ sortStartedAtMs: _sortStartedAtMs, sortIndex: _sortIndex, ...chip }) => chip);
+}
+
 export function buildToolsStatusChipViewModels(
   snapshot: ToolsRuntimeSnapshot,
   nowMs: number,
   labels: ToolsViewModelLabels,
 ): ToolStatusChipViewModel[] {
-  const chips: ToolStatusChipViewModel[] = [];
+  const chips: SortableToolStatusChipViewModel[] = [];
+  let sortIndex = 0;
   const pomodoro = snapshot.currentPomodoro;
   if (pomodoro?.status === "running") {
     const phaseLabel = pomodoro.phase === "focus" ? labels.chipFocus : labels.chipBreak;
     chips.push({
       label: `${phaseLabel} ${formatCompactDuration(getPomodoroRemainingMs(pomodoro, nowMs))}`,
       targetSection: "pomodoro",
+      sortIndex: sortIndex++,
+      sortStartedAtMs: pomodoro.phaseStartedAt ?? pomodoro.createdAt,
     });
   }
 
@@ -208,12 +251,16 @@ export function buildToolsStatusChipViewModels(
         label: `${labels.chipCountdown} ${formatCompactDuration(getTimerRemainingMs(timer, nowMs))}`,
         targetSection: "timer",
         targetTimerMode: "countdown",
+        sortIndex: sortIndex++,
+        sortStartedAtMs: timer.startedAt ?? timer.createdAt,
       });
     } else {
       chips.push({
         label: `${labels.chipStopwatch} ${formatCompactDuration(getTimerElapsedMs(timer, nowMs))}`,
         targetSection: "timer",
         targetTimerMode: "stopwatch",
+        sortIndex: sortIndex++,
+        sortStartedAtMs: timer.startedAt ?? timer.createdAt,
       });
     }
   }
@@ -222,8 +269,10 @@ export function buildToolsStatusChipViewModels(
     chips.push({
       label: `${labels.chipReminder} ${formatReminderClock(snapshot.nextReminderAt)}`,
       targetSection: "reminders",
+      sortIndex: sortIndex++,
+      sortStartedAtMs: resolveNextReminderSortStartedAt(snapshot.reminders, snapshot.nextReminderAt),
     });
   }
 
-  return chips;
+  return sortStatusChipsByArrival(chips);
 }

@@ -1,6 +1,4 @@
-use super::super::runtime_snapshot::{
-    TrackingRuntimeProbeDiagnostics, TrackingRuntimeProbeStatus,
-};
+use super::super::runtime_snapshot::{TrackingRuntimeProbeDiagnostics, TrackingRuntimeProbeStatus};
 use crate::platform::windows::foreground as tracker;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -114,12 +112,8 @@ where
 
     match timeout(timeout_duration, query).await {
         Ok(Ok(window)) => {
-            let probe_diagnostics = remember_successful_window(
-                &state,
-                probe_start.generation,
-                &window,
-                sampled_at_ms,
-            );
+            let probe_diagnostics =
+                remember_successful_window(&state, probe_start.generation, &window, sampled_at_ms);
             WindowPollOutcome {
                 window,
                 probe_status: TrackingRuntimeProbeStatus::Ok,
@@ -227,10 +221,7 @@ fn should_mark_hard_degraded(inner: &ForegroundProbeInner, sampled_at_ms: i64) -
     should_mark_hard_degraded_by_duration(inner, sampled_at_ms)
 }
 
-fn should_mark_hard_degraded_by_duration(
-    inner: &ForegroundProbeInner,
-    sampled_at_ms: i64,
-) -> bool {
+fn should_mark_hard_degraded_by_duration(inner: &ForegroundProbeInner, sampled_at_ms: i64) -> bool {
     match inner.fallback_started_at_ms {
         Some(fallback_started_at_ms) => {
             sampled_at_ms - fallback_started_at_ms >= FOREGROUND_PROBE_HARD_DEGRADED_AFTER_MS
@@ -382,19 +373,18 @@ mod tests {
             let state = Arc::new(ForegroundProbeState::default());
             remember_successful_window(&state, 0, &make_window("Code.exe"), 500);
 
-            let outcome = poll_active_window_with_state(
-                state,
-                Duration::from_millis(10),
-                1_000,
-                || {
+            let outcome =
+                poll_active_window_with_state(state, Duration::from_millis(10), 1_000, || {
                     thread::sleep(Duration::from_millis(80));
                     make_window("Late.exe")
-                },
-            )
-            .await;
+                })
+                .await;
 
             assert_eq!(outcome.window.exe_name, "Code.exe");
-            assert_eq!(outcome.probe_status, TrackingRuntimeProbeStatus::TimeoutFallback);
+            assert_eq!(
+                outcome.probe_status,
+                TrackingRuntimeProbeStatus::TimeoutFallback
+            );
             assert_eq!(
                 outcome.probe_diagnostics.fallback_started_at_ms,
                 Some(1_000)
@@ -409,19 +399,18 @@ mod tests {
         tauri::async_runtime::block_on(async {
             let state = Arc::new(ForegroundProbeState::default());
 
-            let outcome = poll_active_window_with_state(
-                state,
-                Duration::from_millis(10),
-                1_000,
-                || {
+            let outcome =
+                poll_active_window_with_state(state, Duration::from_millis(10), 1_000, || {
                     thread::sleep(Duration::from_millis(80));
                     make_window("Late.exe")
-                },
-            )
-            .await;
+                })
+                .await;
 
             assert_eq!(outcome.window.exe_name, "");
-            assert_eq!(outcome.probe_status, TrackingRuntimeProbeStatus::TimeoutInactive);
+            assert_eq!(
+                outcome.probe_status,
+                TrackingRuntimeProbeStatus::TimeoutInactive
+            );
             assert!(!outcome.is_successful_sample());
         });
     }
@@ -588,13 +577,11 @@ mod tests {
             );
             tokio::time::sleep(Duration::from_millis(25)).await;
 
-            let hard_degraded = poll_active_window_with_state(
-                state,
-                Duration::from_millis(10),
-                44_000,
-                || make_window("ShouldNotRun.exe"),
-            )
-            .await;
+            let hard_degraded =
+                poll_active_window_with_state(state, Duration::from_millis(10), 44_000, || {
+                    make_window("ShouldNotRun.exe")
+                })
+                .await;
 
             assert_eq!(
                 hard_degraded.probe_status,

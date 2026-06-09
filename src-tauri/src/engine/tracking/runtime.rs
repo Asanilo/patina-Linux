@@ -1,3 +1,4 @@
+use super::runtime_snapshot::{TrackingRuntimeSnapshot, TrackingRuntimeSnapshotState};
 use super::session_timeout::{
     seal_active_sessions_for_continuity_timeout,
     seal_active_sessions_for_passive_participation_timeout,
@@ -5,7 +6,6 @@ use super::session_timeout::{
     should_suspend_active_tracking,
 };
 use super::sustained_participation::SustainedParticipationRuntimeState;
-use super::runtime_snapshot::{TrackingRuntimeSnapshot, TrackingRuntimeSnapshotState};
 use super::{active_session, continuity, startup, transition, watchdog};
 #[cfg(test)]
 use crate::data::repositories::{sessions, tracker_settings};

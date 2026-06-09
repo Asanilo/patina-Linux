@@ -7,7 +7,14 @@ import {
   buildToolsStatusChipViewModel,
   buildToolsStatusChipViewModels,
 } from "../src/features/tools/services/toolsViewModel.ts";
-import { buildSoftwareReminderAppCandidates } from "../src/features/tools/services/softwareReminderAppCandidates.ts";
+import {
+  buildSoftwareReminderAppCandidates,
+  clearSoftwareReminderAppCandidateCache,
+  loadSoftwareReminderAppCandidatesWithDeps,
+  resetSoftwareReminderAppCandidatesCacheForTests,
+} from "../src/features/tools/services/softwareReminderAppCandidates.ts";
+import { clearToolsPageCaches } from "../src/features/tools/services/toolsCacheLifecycle.ts";
+import type { ClassificationBootstrapData } from "../src/features/classification/services/classificationService.ts";
 import {
   parseToolAlert,
   parseToolAlerts,
@@ -17,6 +24,7 @@ import { createToolsRuntimeGateway } from "../src/platform/runtime/toolsRuntimeG
 import type { ToolsRuntimeSnapshot } from "../src/shared/types/tools.ts";
 import type { ToolsViewModelLabels } from "../src/features/tools/types.ts";
 import { ProcessMapper } from "../src/shared/classification/processMapper.ts";
+import type { ObservedAppCandidate } from "../src/features/classification/types.ts";
 import {
   readToolsReminderFormMode,
   readToolsReminderMode,
@@ -25,6 +33,7 @@ import {
   rememberToolsReminderMode,
   rememberToolsTimerMode,
 } from "../src/features/tools/services/toolsLayoutPreferenceStorage.ts";
+import { createToolsRuntimeSnapshotStore } from "../src/features/tools/services/toolsRuntimeSnapshotStore.ts";
 
 const labels: ToolsViewModelLabels = {
   timerIdle: "Not started",
@@ -106,6 +115,18 @@ function snapshot(overrides: Partial<ToolsRuntimeSnapshot> = {}): ToolsRuntimeSn
     nextReminderAt: null,
     sampledAtMs: 1_000_000,
     ...overrides,
+  };
+}
+
+function classificationBootstrap(
+  observed: ObservedAppCandidate[],
+): ClassificationBootstrapData {
+  return {
+    observed,
+    loadedOverrides: {},
+    loadedCategoryColorOverrides: {},
+    loadedCustomCategories: [],
+    loadedDeletedCategories: [],
   };
 }
 
@@ -311,6 +332,158 @@ await runTest("software reminder app candidates merge canonical executable alias
   assert.equal(candidates[0].lastSeenAt, 2_000_000);
 });
 
+await runTest("software reminder app candidates reuse cached classification bootstrap", async () => {
+  resetSoftwareReminderAppCandidatesCacheForTests();
+  const cachedBootstrap = classificationBootstrap([
+    {
+      appName: "Chrome Raw",
+      exeName: "chrome.exe",
+      totalDuration: 120_000,
+      lastSeenMs: 1_000_000,
+    },
+  ]);
+  let loadCalls = 0;
+  let appliedBootstrap: ClassificationBootstrapData | null = null;
+
+  const candidates = await loadSoftwareReminderAppCandidatesWithDeps({
+    applyBootstrapToProcessMapper(bootstrap) {
+      appliedBootstrap = bootstrap;
+    },
+    getBootstrapCache: () => cachedBootstrap,
+    async loadClassificationBootstrap() {
+      loadCalls += 1;
+      return classificationBootstrap([]);
+    },
+  });
+
+  assert.equal(loadCalls, 0);
+  assert.equal(appliedBootstrap, cachedBootstrap);
+  assert.deepEqual(candidates.map((candidate) => candidate.exeName), ["chrome.exe"]);
+
+  candidates[0].appName = "Mutated";
+  const nextCandidates = await loadSoftwareReminderAppCandidatesWithDeps({
+    applyBootstrapToProcessMapper() {},
+    getBootstrapCache: () => cachedBootstrap,
+    async loadClassificationBootstrap() {
+      loadCalls += 1;
+      return classificationBootstrap([]);
+    },
+  });
+
+  assert.notEqual(nextCandidates[0].appName, "Mutated");
+});
+
+await runTest("software reminder app candidates load bootstrap when cache is missing", async () => {
+  resetSoftwareReminderAppCandidatesCacheForTests();
+  const loadedBootstrap = classificationBootstrap([
+    {
+      appName: "Cursor",
+      exeName: "cursor.exe",
+      totalDuration: 120_000,
+      lastSeenMs: 2_000_000,
+    },
+  ]);
+  let loadCalls = 0;
+
+  const candidates = await loadSoftwareReminderAppCandidatesWithDeps({
+    applyBootstrapToProcessMapper() {},
+    getBootstrapCache: () => null,
+    async loadClassificationBootstrap() {
+      loadCalls += 1;
+      return loadedBootstrap;
+    },
+  });
+
+  assert.equal(loadCalls, 1);
+  assert.deepEqual(candidates.map((candidate) => candidate.exeName), ["cursor.exe"]);
+});
+
+await runTest("software reminder app candidates rebuild when cached bootstrap changes", async () => {
+  resetSoftwareReminderAppCandidatesCacheForTests();
+  const firstBootstrap = classificationBootstrap([
+    {
+      appName: "Chrome Raw",
+      exeName: "chrome.exe",
+      totalDuration: 120_000,
+      lastSeenMs: 1_000_000,
+    },
+  ]);
+  const secondBootstrap = classificationBootstrap([
+    {
+      appName: "Cursor Raw",
+      exeName: "cursor.exe",
+      totalDuration: 120_000,
+      lastSeenMs: 2_000_000,
+    },
+  ]);
+  let currentBootstrap = firstBootstrap;
+
+  const deps = {
+    applyBootstrapToProcessMapper() {},
+    getBootstrapCache: () => currentBootstrap,
+    async loadClassificationBootstrap() {
+      return currentBootstrap;
+    },
+  };
+
+  const firstCandidates = await loadSoftwareReminderAppCandidatesWithDeps(deps);
+  currentBootstrap = secondBootstrap;
+  const secondCandidates = await loadSoftwareReminderAppCandidatesWithDeps(deps);
+
+  assert.deepEqual(firstCandidates.map((candidate) => candidate.exeName), ["chrome.exe"]);
+  assert.deepEqual(secondCandidates.map((candidate) => candidate.exeName), ["cursor.exe"]);
+});
+
+await runTest("software reminder app candidate caches clear and rebuild derived candidates", async () => {
+  resetSoftwareReminderAppCandidatesCacheForTests();
+  const bootstrap = classificationBootstrap([
+    {
+      appName: "Chrome Raw",
+      exeName: "chrome.exe",
+      totalDuration: 120_000,
+      lastSeenMs: 1_000_000,
+    },
+  ]);
+  const deps = {
+    applyBootstrapToProcessMapper() {},
+    getBootstrapCache: () => bootstrap,
+    async loadClassificationBootstrap() {
+      return bootstrap;
+    },
+  };
+
+  const firstCandidates = await loadSoftwareReminderAppCandidatesWithDeps(deps);
+  bootstrap.observed.splice(0, bootstrap.observed.length, {
+    appName: "Cursor Raw",
+    exeName: "cursor.exe",
+    totalDuration: 120_000,
+    lastSeenMs: 2_000_000,
+  });
+  const cachedCandidates = await loadSoftwareReminderAppCandidatesWithDeps(deps);
+  clearSoftwareReminderAppCandidateCache();
+  const rebuiltCandidates = await loadSoftwareReminderAppCandidatesWithDeps(deps);
+
+  assert.deepEqual(firstCandidates.map((candidate) => candidate.exeName), ["chrome.exe"]);
+  assert.deepEqual(cachedCandidates.map((candidate) => candidate.exeName), ["chrome.exe"]);
+  assert.deepEqual(rebuiltCandidates.map((candidate) => candidate.exeName), ["cursor.exe"]);
+
+  rebuiltCandidates[0].appName = "Mutated";
+  const clonedCandidates = await loadSoftwareReminderAppCandidatesWithDeps(deps);
+  assert.notEqual(clonedCandidates[0].appName, "Mutated");
+
+  bootstrap.observed.splice(0, bootstrap.observed.length, {
+    appName: "Editor Raw",
+    exeName: "code.exe",
+    totalDuration: 120_000,
+    lastSeenMs: 3_000_000,
+  });
+  clearToolsPageCaches();
+  const lifecycleCandidates = await loadSoftwareReminderAppCandidatesWithDeps(deps);
+  assert.deepEqual(lifecycleCandidates.map((candidate) => candidate.exeName), ["code.exe"]);
+
+  resetSoftwareReminderAppCandidatesCacheForTests();
+});
+
 await runTest("raw tools snapshot rejects missing fields and illegal status values", () => {
   assert.throws(() => parseToolsRuntimeSnapshot({ reminders: [] }), /invalid tools runtime snapshot/);
   assert.throws(
@@ -446,7 +619,7 @@ await runTest("pomodoro view model formats phase and daily count", () => {
   assert.equal(viewModel.todayCompletedLabel, "3 completed today");
 });
 
-await runTest("tools status chip priority prefers pomodoro then timer then reminder", () => {
+await runTest("tools status chip primary entry follows the first active status arrival", () => {
   const reminderOnly = buildToolsStatusChipViewModel(snapshot({ nextReminderAt: 2_000_000 }), 1_000_000, labels);
   const countdown = buildToolsStatusChipViewModel(snapshot({
     nextReminderAt: 2_000_000,
@@ -464,7 +637,7 @@ await runTest("tools status chip priority prefers pomodoro then timer then remin
       updatedAt: 1_000_000,
     },
   }), 1_010_000, labels);
-  const pomodoro = buildToolsStatusChipViewModel(snapshot({
+  const timerBeforePomodoro = buildToolsStatusChipViewModel(snapshot({
     currentTimer: countdown ? {
       id: 1,
       mode: "stopwatch",
@@ -487,12 +660,12 @@ await runTest("tools status chip priority prefers pomodoro then timer then remin
       shortBreakMs: 5 * 60_000,
       longBreakMs: 15 * 60_000,
       longBreakEvery: 4,
-      phaseStartedAt: 1_000_000,
+      phaseStartedAt: 1_200_000,
       phasePausedAt: null,
       phaseRemainingMs: 25 * 60_000,
       completedFocusCount: 0,
-      createdAt: 1_000_000,
-      updatedAt: 1_000_000,
+      createdAt: 1_200_000,
+      updatedAt: 1_200_000,
     },
     nextReminderAt: 2_000_000,
   }), 1_010_000, labels);
@@ -502,13 +675,24 @@ await runTest("tools status chip priority prefers pomodoro then timer then remin
   assert.match(countdown?.label ?? "", /^Countdown/);
   assert.equal(countdown?.targetSection, "timer");
   assert.equal(countdown?.targetTimerMode, "countdown");
-  assert.equal(pomodoro?.targetSection, "pomodoro");
-  assert.equal(pomodoro?.targetTimerMode, undefined);
-  assert.match(pomodoro?.label ?? "", /^Focus/);
+  assert.equal(timerBeforePomodoro?.targetSection, "timer");
+  assert.equal(timerBeforePomodoro?.targetTimerMode, "stopwatch");
+  assert.match(timerBeforePomodoro?.label ?? "", /^Timer/);
 });
 
-await runTest("tools status chip list keeps pomodoro timer and reminder visible together", () => {
+await runTest("tools status chip list keeps active statuses in arrival order", () => {
   const chips = buildToolsStatusChipViewModels(snapshot({
+    reminders: [
+      {
+        id: 9,
+        label: "Check in",
+        scheduledAt: 2_000_000,
+        createdAt: 900_000,
+        status: "scheduled",
+        firedAt: null,
+        cancelledAt: null,
+      },
+    ],
     currentTimer: {
       id: 1,
       mode: "stopwatch",
@@ -531,19 +715,19 @@ await runTest("tools status chip list keeps pomodoro timer and reminder visible 
       shortBreakMs: 5 * 60_000,
       longBreakMs: 15 * 60_000,
       longBreakEvery: 4,
-      phaseStartedAt: 1_000_000,
+      phaseStartedAt: 1_200_000,
       phasePausedAt: null,
       phaseRemainingMs: 25 * 60_000,
       completedFocusCount: 0,
-      createdAt: 1_000_000,
-      updatedAt: 1_000_000,
+      createdAt: 1_200_000,
+      updatedAt: 1_200_000,
     },
     nextReminderAt: 2_000_000,
   }), 1_010_000, labels);
 
   assert.deepEqual(
     chips.map((chip) => chip.targetSection),
-    ["pomodoro", "timer", "reminders"],
+    ["reminders", "timer", "pomodoro"],
   );
 });
 
@@ -573,6 +757,78 @@ await runTest("tools segmented mode preferences persist locally", () => {
     assert.equal(readToolsTimerMode(), "stopwatch");
     assert.equal(readToolsReminderFormMode(), "relative");
   });
+});
+
+await runTest("tools runtime snapshot store shares one runtime listener across subscribers", async () => {
+  const notificationsA: number[] = [];
+  const notificationsB: number[] = [];
+  let listenCount = 0;
+  let disposeCount = 0;
+  let emitSnapshot: ((snapshot: ToolsRuntimeSnapshot) => void) | null = null;
+
+  const store = createToolsRuntimeSnapshotStore({
+    getSnapshot: async () => snapshot({ sampledAtMs: 1_000 }),
+    onChanged: async (listener) => {
+      listenCount += 1;
+      emitSnapshot = listener;
+      return () => {
+        disposeCount += 1;
+      };
+    },
+    warn: () => {},
+  });
+
+  const unsubscribeA = store.subscribe((nextSnapshot) => {
+    notificationsA.push(nextSnapshot.sampledAtMs);
+  });
+  const unsubscribeB = store.subscribe((nextSnapshot) => {
+    notificationsB.push(nextSnapshot.sampledAtMs);
+  });
+  await Promise.resolve();
+
+  assert.equal(listenCount, 1);
+  emitSnapshot?.(snapshot({ sampledAtMs: 2_000 }));
+  assert.deepEqual(notificationsA, [2_000]);
+  assert.deepEqual(notificationsB, [2_000]);
+
+  unsubscribeA();
+  assert.equal(disposeCount, 0);
+  unsubscribeB();
+  assert.equal(disposeCount, 1);
+});
+
+await runTest("tools runtime snapshot store dedupes pending refreshes and publishes action snapshots", async () => {
+  let loadCount = 0;
+  let resolveLoad: ((snapshot: ToolsRuntimeSnapshot) => void) | null = null;
+  const notifications: number[] = [];
+
+  const store = createToolsRuntimeSnapshotStore({
+    getSnapshot: () => {
+      loadCount += 1;
+      return new Promise<ToolsRuntimeSnapshot>((resolve) => {
+        resolveLoad = resolve;
+      });
+    },
+    onChanged: async () => () => {},
+    warn: () => {},
+  });
+
+  const unsubscribe = store.subscribe((nextSnapshot) => {
+    notifications.push(nextSnapshot.sampledAtMs);
+  });
+  const firstRefresh = store.refreshSnapshot();
+  const secondRefresh = store.refreshSnapshot();
+  assert.equal(loadCount, 1);
+  assert.equal(firstRefresh, secondRefresh);
+
+  resolveLoad?.(snapshot({ sampledAtMs: 3_000 }));
+  assert.equal((await firstRefresh).sampledAtMs, 3_000);
+  assert.deepEqual(notifications, [3_000]);
+
+  store.publishSnapshot(snapshot({ sampledAtMs: 4_000 }));
+  assert.equal(store.getCurrentSnapshot()?.sampledAtMs, 4_000);
+  assert.deepEqual(notifications, [3_000, 4_000]);
+  unsubscribe();
 });
 
 await runTest("gateway invokes commands, parses event payloads, and disposes listeners", async () => {
@@ -622,6 +878,7 @@ await runTest("gateway invokes commands, parses event payloads, and disposes lis
 
   const firstSnapshot = await gateway.getToolsSnapshot();
   const alerts = await gateway.getToolAlerts();
+  await gateway.pausePomodoro();
   const dispose = await gateway.onToolsRuntimeChanged((nextSnapshot) => {
     received = nextSnapshot;
   });
@@ -635,6 +892,7 @@ await runTest("gateway invokes commands, parses event payloads, and disposes lis
   disposeAlert();
 
   assert.equal(calls[0].command, "cmd_get_tools_snapshot");
+  assert.equal(calls[2].command, "cmd_pause_pomodoro");
   assert.equal(firstSnapshot.nextReminderAt, 2_000_000);
   assert.equal(alerts[0].body, "Stand up");
   assert.deepEqual(calls[calls.length - 1], {

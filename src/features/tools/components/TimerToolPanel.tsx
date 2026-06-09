@@ -5,6 +5,10 @@ import { UI_TEXT } from "../../../shared/copy/uiText.ts";
 import type { TimerMode, ToolsRuntimeSnapshot } from "../../../shared/types/tools.ts";
 import { formatHms } from "../services/toolsViewModel.ts";
 import type { TimerViewModel } from "../types.ts";
+import {
+  formatMinuteInput,
+  parseBoundedMinuteInput,
+} from "../services/toolsNumberInput.ts";
 
 interface TimerToolPanelProps {
   snapshot: ToolsRuntimeSnapshot;
@@ -31,13 +35,17 @@ export default function TimerToolPanel({
   onResetTimer,
   onAddTimerLap,
 }: TimerToolPanelProps) {
-  const [countdownMinutes, setCountdownMinutes] = useState(snapshot.settings.defaultCountdownMinutes);
+  const [countdownMinutes, setCountdownMinutes] = useState(() => (
+    formatMinuteInput(snapshot.settings.defaultCountdownMinutes)
+  ));
   const [label, setLabel] = useState("");
   const activeTimer = snapshot.currentTimer;
   const timerLocksMode = activeTimer?.status === "running" || activeTimer?.status === "paused";
   const effectiveMode = timerLocksMode && activeTimer ? activeTimer.mode : mode;
   const hasActiveTimer = timerLocksMode;
   const starting = busyAction === "start-timer";
+  const parsedCountdownMinutes = parseBoundedMinuteInput(countdownMinutes, 1, 180);
+  const canStartTimer = effectiveMode !== "countdown" || parsedCountdownMinutes !== null;
   const modeOptions = [
     {
       value: "stopwatch" as const,
@@ -53,7 +61,7 @@ export default function TimerToolPanel({
 
   useEffect(() => {
     if (!activeTimer) {
-      setCountdownMinutes(snapshot.settings.defaultCountdownMinutes);
+      setCountdownMinutes(formatMinuteInput(snapshot.settings.defaultCountdownMinutes));
     }
   }, [activeTimer, snapshot.settings.defaultCountdownMinutes]);
 
@@ -115,7 +123,7 @@ export default function TimerToolPanel({
                   max={180}
                   value={countdownMinutes}
                   disabled={hasActiveTimer}
-                  onChange={(event) => setCountdownMinutes(Math.min(180, Math.max(1, Number(event.target.value))))}
+                  onChange={(event) => setCountdownMinutes(event.target.value)}
                   className="qp-input tools-small-number-input"
                 />
               </div>
@@ -126,8 +134,15 @@ export default function TimerToolPanel({
             {viewModel.status === "idle" || viewModel.status === "completed" ? (
               <button
                 type="button"
-                disabled={starting}
-                onClick={() => void onStartTimer(effectiveMode, countdownMinutes, label.trim() || undefined)}
+                disabled={starting || !canStartTimer}
+                onClick={() => {
+                  const durationMinutes = effectiveMode === "countdown"
+                    ? parsedCountdownMinutes
+                    : 1;
+                  if (durationMinutes === null) return;
+
+                  void onStartTimer(effectiveMode, durationMinutes, label.trim() || undefined);
+                }}
                 aria-label={UI_TEXT.accessibility.tools.startTimer}
                 className="qp-button-primary tools-action-button"
               >

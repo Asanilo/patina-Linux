@@ -118,6 +118,10 @@ function createWarmupDeps(events: string[], options: {
       events.push("settings-bootstrap");
       maybeFail("settings-bootstrap");
     },
+    prewarmToolsRuntimeSnapshot: async () => {
+      events.push("tools-snapshot");
+      maybeFail("tools-runtime-snapshot");
+    },
     nowMs: () => {
       nowMs += options.nowStepMs ?? 5;
       return nowMs;
@@ -179,10 +183,38 @@ await runTest("startup warmup runs default tasks in a stable order", async () =>
     "data-bootstrap-snapshot-cache",
     "dashboard-snapshot",
     "history-snapshot",
+    "tools-snapshot",
     "settings-bootstrap",
   ]);
   assert.deepEqual(warnings, []);
   assert.equal(controller.snapshot().tasks["history-today-snapshot"].status, "fulfilled");
+});
+
+await runTest("startup warmup preloads Tools chunk and runtime snapshot by default", async () => {
+  const events: string[] = [];
+  const warnings: string[] = [];
+  const controller = startStartupWarmup({
+    initialDelayMs: 0,
+    taskGapMs: 0,
+    runtimeReady: Promise.resolve(),
+  }, {
+    ...createWarmupDeps(events),
+    warn: (message, error) => warnings.push(`${message}:${error instanceof Error ? error.message : String(error)}`),
+  });
+
+  await controller.ready;
+
+  assert.deepEqual(events.slice(0, 6), [
+    "chunk:history",
+    "chunk:data",
+    "chunk:tools",
+    "chunk:mapping",
+    "chunk:settings",
+    "chunk:about",
+  ]);
+  assert.ok(events.includes("tools-snapshot"));
+  assert.equal(controller.snapshot().tasks["tools-runtime-snapshot"].status, "fulfilled");
+  assert.deepEqual(warnings, []);
 });
 
 await runTest("startup warmup keeps later tasks running after a failure", async () => {

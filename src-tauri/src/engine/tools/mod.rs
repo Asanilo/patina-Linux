@@ -16,6 +16,27 @@ pub const TOOLS_RUNTIME_CHANGED_EVENT: &str = "tools-runtime-changed";
 pub const TOOLS_ALERT_EVENT: &str = "tools-alert";
 const TOOLS_RUNTIME_TICK_MS: u64 = 1_000;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct ToolsTickOutcome {
+    state_changed: bool,
+}
+
+impl ToolsTickOutcome {
+    fn changed() -> Self {
+        Self {
+            state_changed: true,
+        }
+    }
+
+    fn mark_changed(&mut self) {
+        self.state_changed = true;
+    }
+
+    fn merge(&mut self, next: Self) {
+        self.state_changed |= next.state_changed;
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct ToolsRuntimeState {
     inner: Mutex<ToolsRuntimeSnapshot>,
@@ -99,7 +120,7 @@ pub async fn run<R: Runtime + 'static>(app: AppHandle<R>) -> Result<(), String> 
     recover_after_startup(&app).await?;
 
     loop {
-        if let Err(error) = tick_and_refresh(&app).await {
+        if let Err(error) = tick_and_refresh_if_changed(&app).await {
             eprintln!("[tools] runtime tick failed: {error}");
         }
         sleep(Duration::from_millis(TOOLS_RUNTIME_TICK_MS)).await;
@@ -107,7 +128,7 @@ pub async fn run<R: Runtime + 'static>(app: AppHandle<R>) -> Result<(), String> 
 }
 
 pub async fn get_snapshot<R: Runtime>(app: &AppHandle<R>) -> Result<ToolsRuntimeSnapshot, String> {
-    refresh_snapshot(app).await
+    load_snapshot(app).await
 }
 
 pub fn get_alerts<R: Runtime>(app: &AppHandle<R>) -> Vec<ToolAlert> {
@@ -269,20 +290,28 @@ async fn recover_after_startup<R: Runtime + 'static>(app: &AppHandle<R>) -> Resu
     Ok(())
 }
 
-async fn tick_and_refresh<R: Runtime + 'static>(
+async fn tick_and_refresh_if_changed<R: Runtime + 'static>(
     app: &AppHandle<R>,
-) -> Result<ToolsRuntimeSnapshot, String> {
+) -> Result<(), String> {
     let pool = wait_for_sqlite_pool(app).await?;
-    tick_and_notify(app, &pool, now_ms()).await?;
-    refresh_snapshot(app).await
+    let outcome = tick_and_notify(app, &pool, now_ms()).await?;
+    if outcome.state_changed {
+        refresh_snapshot(app).await?;
+    }
+    Ok(())
 }
 
 async fn tick_and_notify<R: Runtime + 'static>(
     app: &AppHandle<R>,
     pool: &sqlx::Pool<sqlx::Sqlite>,
     now: i64,
-) -> Result<(), String> {
+) -> Result<ToolsTickOutcome, String> {
+    let mut outcome = ToolsTickOutcome::default();
+
     let fired_reminders = repositories::tools::fire_due_reminders(pool, now).await?;
+    if !fired_reminders.is_empty() {
+        outcome.merge(ToolsTickOutcome::changed());
+    }
     for reminder in fired_reminders {
         send_tool_alert(
             app,
@@ -308,6 +337,9 @@ async fn tick_and_notify<R: Runtime + 'static>(
         now,
     )
     .await?;
+    if !fired_software_reminders.is_empty() {
+        outcome.mark_changed();
+    }
     for reminder in fired_software_reminders {
         let limit_minutes = (reminder.limit_ms / 60_000).max(1);
         let usage_minutes = (reminder.usage_ms / 60_000).max(limit_minutes);
@@ -322,7 +354,10 @@ async fn tick_and_notify<R: Runtime + 'static>(
         send_tool_alert(
             app,
             ToolAlert {
-                id: format!("software-reminder:{}:{}", reminder.rule_id, current_date_key),
+                id: format!(
+                    "software-reminder:{}:{}",
+                    reminder.rule_id, current_date_key
+                ),
                 kind: ToolAlertKind::SoftwareReminder,
                 title: "软件提醒".to_string(),
                 body,
@@ -332,6 +367,7 @@ async fn tick_and_notify<R: Runtime + 'static>(
     }
 
     if let Some(completed_timer) = repositories::tools::complete_due_countdown(pool, now).await? {
+        outcome.mark_changed();
         send_tool_alert(
             app,
             ToolAlert {
@@ -349,6 +385,7 @@ async fn tick_and_notify<R: Runtime + 'static>(
     if let Some(completed_phase) =
         repositories::tools::complete_due_pomodoro_phase(pool, &date_key(), now).await?
     {
+        outcome.mark_changed();
         let title = match completed_phase.completed_phase {
             PomodoroPhase::Focus => "专注结束",
             PomodoroPhase::ShortBreak | PomodoroPhase::LongBreak => "休息结束",
@@ -375,16 +412,23 @@ async fn tick_and_notify<R: Runtime + 'static>(
         );
     }
 
-    Ok(())
+    Ok(outcome)
 }
 
-async fn refresh_snapshot<R: Runtime>(app: &AppHandle<R>) -> Result<ToolsRuntimeSnapshot, String> {
+async fn load_snapshot<R: Runtime>(app: &AppHandle<R>) -> Result<ToolsRuntimeSnapshot, String> {
     let pool = wait_for_sqlite_pool(app).await?;
     let snapshot = repositories::tools::fetch_tools_snapshot(&pool, now_ms(), &date_key()).await?;
 
     if let Some(state) = app.try_state::<ToolsRuntimeState>() {
         state.replace(snapshot.clone());
     }
+
+    Ok(snapshot)
+}
+
+async fn refresh_snapshot<R: Runtime>(app: &AppHandle<R>) -> Result<ToolsRuntimeSnapshot, String> {
+    let snapshot = load_snapshot(app).await?;
+
     if let Err(error) = app.emit(TOOLS_RUNTIME_CHANGED_EVENT, &snapshot) {
         eprintln!("[tools] failed to emit tools snapshot: {error}");
     }
@@ -400,7 +444,9 @@ fn send_tool_alert<R: Runtime + 'static>(app: &AppHandle<R>, alert: ToolAlert) {
     crate::app::main_window::show_main_window(app);
 
     if let Err(error) = app.emit(TOOLS_ALERT_EVENT, &alert) {
-        eprintln!("[tools] failed to emit tool alert, falling back to system notification: {error}");
+        eprintln!(
+            "[tools] failed to emit tool alert, falling back to system notification: {error}"
+        );
         if let Err(error) = notification::send(app, &alert.title, &alert.body) {
             eprintln!("[tools] failed to send fallback notification: {error}");
         }
@@ -449,6 +495,21 @@ fn day_start_ms() -> i64 {
 mod tests {
     use super::*;
     use crate::domain::tools::{ToolPomodoroRun, ToolReminder, ToolTimer};
+
+    #[test]
+    fn tools_tick_outcome_merges_state_changes() {
+        let mut outcome = ToolsTickOutcome::default();
+        assert!(!outcome.state_changed);
+
+        outcome.merge(ToolsTickOutcome::default());
+        assert!(!outcome.state_changed);
+
+        outcome.merge(ToolsTickOutcome::changed());
+        assert!(outcome.state_changed);
+
+        outcome.mark_changed();
+        assert!(outcome.state_changed);
+    }
 
     #[test]
     fn active_snapshot_detects_running_timer_and_pending_reminder() {

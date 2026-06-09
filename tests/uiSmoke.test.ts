@@ -372,13 +372,162 @@ await runTest("app shell uses feature-owned page cache lifecycle exits", () => {
 
   assert.match(shell, /clearDashboardSnapshotCache/);
   assert.match(shell, /clearHistorySnapshotCache/);
+  assert.match(shell, /clearToolsPageCaches/);
   assert.match(shell, /includeDashboard: isDashboardRefreshEnabled/);
   assert.match(shell, /includeHistory: isHistoryRefreshEnabled/);
   assert.doesNotMatch(cleanupEffect, /clearDashboardSnapshotCache/);
   assert.match(cleanupEffect, /clearHistorySnapshotCache/);
   assert.match(cleanupEffect, /clearDataHeavyCaches/);
+  assert.match(cleanupEffect, /clearToolsPageCaches/);
   assert.doesNotMatch(shell, /DASHBOARD_SNAPSHOT_CACHE/);
   assert.doesNotMatch(shell, /HISTORY_SNAPSHOT_CACHE/);
+});
+
+await runTest("app shell invalidates Tools page caches after app mapping changes", () => {
+  const shell = readUtf8("src/app/AppShell.tsx");
+  const mappingChangedHandler = shell.slice(
+    shell.indexOf("onOverridesChanged={() => {"),
+    shell.indexOf("onSessionsDeleted={() => {"),
+  );
+
+  assert.match(mappingChangedHandler, /clearDashboardSnapshotCache/);
+  assert.match(mappingChangedHandler, /clearHistorySnapshotCache/);
+  assert.match(mappingChangedHandler, /clearToolsPageCaches/);
+  assert.match(mappingChangedHandler, /clearDataBootstrapCache/);
+});
+
+await runTest("Tools participates in startup warmup and renders from cached runtime snapshot", () => {
+  const warmup = readUtf8("src/app/services/startupWarmupService.ts");
+  const chunkPreload = readUtf8("src/app/services/viewChunkPreloadService.ts");
+  const toolsState = readUtf8("src/features/tools/hooks/useToolsPageState.ts");
+  const toolsStore = readUtf8("src/features/tools/services/toolsRuntimeSnapshotStore.ts");
+
+  assert.match(warmup, /"tools-runtime-snapshot"/);
+  assert.match(warmup, /prewarmToolsRuntimeSnapshot/);
+  assert.match(warmup, /"history",\s*"data",\s*"tools",\s*"mapping"/);
+  assert.match(chunkPreload, /"history", "data", "tools", "mapping"/);
+  assert.match(toolsStore, /export function prewarmToolsRuntimeSnapshot/);
+  assert.match(toolsState, /toolsRuntimeSnapshotStore\.getCurrentSnapshot\(\)/);
+  assert.match(toolsState, /initialSnapshot === null/);
+  assert.match(toolsState, /initialSnapshot \?\? DEFAULT_SNAPSHOT/);
+});
+
+await runTest("Tools time inputs keep editable empty drafts until submit", () => {
+  const reminder = readUtf8("src/features/tools/components/ReminderToolPanel.tsx");
+  const timer = readUtf8("src/features/tools/components/TimerToolPanel.tsx");
+  const pomodoro = readUtf8("src/features/tools/components/PomodoroToolPanel.tsx");
+  const toolsStyles = readUtf8("src/styles/features/tools.css");
+  const durationInput = readUtf8("src/features/tools/components/ToolDurationInput.tsx");
+  const numberInput = readUtf8("src/features/tools/services/toolsNumberInput.ts");
+  const eventReminderPanel = reminder.slice(
+    reminder.indexOf("export default function ReminderToolPanel"),
+    reminder.indexOf("<SoftwareReminderPanel"),
+  );
+
+  assert.match(reminder, /setRelativeMinutes\(event\.target\.value\)/);
+  assert.doesNotMatch(reminder, /setRelativeMinutes\(Math\.max/);
+  assert.match(reminder, /parseBoundedMinuteInput\(relativeMinutes, 1, 1440\)/);
+  assert.match(eventReminderPanel, /const canCreateReminder = scheduledAt !== null && scheduledAt > nowMs/);
+  assert.match(eventReminderPanel, /disabled=\{creating \|\| !canCreateReminder\}/);
+  assert.doesNotMatch(eventReminderPanel, /UI_TEXT\.tools\.reminderTimeInvalid/);
+  assert.doesNotMatch(eventReminderPanel, /tools-validation-message/);
+
+  assert.match(timer, /setCountdownMinutes\(event\.target\.value\)/);
+  assert.doesNotMatch(timer, /setCountdownMinutes\(Math\.min/);
+  assert.match(timer, /disabled=\{starting \|\| !canStartTimer\}/);
+
+  assert.match(pomodoro, /formatMinuteInput\(snapshot\.settings\.pomodoroFocusMinutes\)/);
+  assert.match(pomodoro, /const restoreDefaultDurations = useCallback/);
+  assert.match(pomodoro, /className="tools-subpanel-title-action"/);
+  assert.match(pomodoro, /aria-label=\{UI_TEXT\.accessibility\.tools\.restorePomodoroDefaults\}/);
+  assert.match(pomodoro, /className="tools-ghost-icon-button"/);
+  assert.doesNotMatch(pomodoro, /tools-pomodoro-default-actions/);
+  assert.doesNotMatch(pomodoro, /title=\{UI_TEXT\.accessibility\.tools\.restorePomodoroDefaults\}/);
+  assert.match(toolsStyles, /\.tools-ghost-icon-button \{\s*display: inline-flex;[\s\S]*color: color-mix\(in srgb, var\(--qp-text-tertiary\) 78%, var\(--qp-bg-panel\)\)/);
+  assert.match(toolsStyles, /\.tools-ghost-icon-button:hover \{\s*color: var\(--qp-text-primary\);/);
+  assert.match(pomodoro, /parseBoundedMinuteInput\(focusMinutes, 1, 180\)/);
+  assert.match(pomodoro, /disabled=\{controlsDisabled \|\| !startInput\}/);
+
+  assert.match(durationInput, /minutes: string/);
+  assert.match(durationInput, /onMinutesChange: \(nextMinutes: string\) => void/);
+  assert.match(durationInput, /onMinutesChange\(event\.target\.value\)/);
+  assert.match(numberInput, /if \(!trimmed\) return null/);
+  assert.match(numberInput, /if \(rounded < minMinutes \|\| rounded > maxMinutes\) return null/);
+  assert.doesNotMatch(numberInput, /Math\.min\(maxMinutes, Math\.max\(minMinutes/);
+});
+
+await runTest("tools runtime avoids per-second snapshot broadcasts without state changes", () => {
+  const runtime = readUtf8("src-tauri/src/engine/tools/mod.rs");
+  const getSnapshot = runtime.slice(
+    runtime.indexOf("pub async fn get_snapshot"),
+    runtime.indexOf("pub fn get_alerts"),
+  );
+  const refreshIfChanged = runtime.slice(
+    runtime.indexOf("async fn tick_and_refresh_if_changed"),
+    runtime.indexOf("async fn tick_and_notify"),
+  );
+  const loadSnapshot = runtime.slice(
+    runtime.indexOf("async fn load_snapshot"),
+    runtime.indexOf("async fn refresh_snapshot"),
+  );
+  const refreshSnapshot = runtime.slice(
+    runtime.indexOf("async fn refresh_snapshot"),
+    runtime.indexOf("fn send_tool_alert"),
+  );
+
+  assert.match(runtime, /ToolsTickOutcome/);
+  assert.match(refreshIfChanged, /if outcome\.state_changed/);
+  assert.match(refreshIfChanged, /refresh_snapshot\(app\)\.await/);
+  assert.match(getSnapshot, /load_snapshot\(app\)\.await/);
+  assert.doesNotMatch(getSnapshot, /refresh_snapshot/);
+  assert.doesNotMatch(loadSnapshot, /TOOLS_RUNTIME_CHANGED_EVENT/);
+  assert.match(refreshSnapshot, /app\.emit\(TOOLS_RUNTIME_CHANGED_EVENT/);
+});
+
+await runTest("tools status surfaces share the feature-owned runtime snapshot store", () => {
+  const pageState = readUtf8("src/features/tools/hooks/useToolsPageState.ts");
+  const sidebarEntry = readUtf8("src/features/tools/components/ToolsSidebarStatusEntry.tsx");
+  const store = readUtf8("src/features/tools/services/toolsRuntimeSnapshotStore.ts");
+
+  assert.match(pageState, /toolsRuntimeSnapshotStore\.subscribe/);
+  assert.match(pageState, /toolsRuntimeSnapshotStore\.publishSnapshot/);
+  assert.match(sidebarEntry, /toolsRuntimeSnapshotStore\.subscribe/);
+  assert.doesNotMatch(pageState, /ToolsRuntimeService\.onToolsRuntimeChanged/);
+  assert.doesNotMatch(sidebarEntry, /ToolsRuntimeService\.onToolsRuntimeChanged/);
+  assert.match(store, /createToolsRuntimeSnapshotStore/);
+  assert.match(store, /pendingRefresh/);
+  assert.doesNotMatch(store, /buildToolsStatusChipViewModels/);
+  assert.doesNotMatch(store, /buildTimerViewModel/);
+});
+
+await runTest("tracker health polling is foreground gated without resubscribing runtime events", () => {
+  const shell = readUtf8("src/app/AppShell.tsx");
+  const hook = readUtf8("src/app/hooks/useWindowTracking.ts");
+  const service = readUtf8("src/app/services/trackerHealthPollingService.ts");
+  const initEffect = hook.slice(
+    hook.indexOf("const init = async"),
+    hook.indexOf("if (!trackerHealthPollingEnabled) return undefined;"),
+  );
+  const pollingEffect = hook.slice(
+    hook.indexOf("if (!trackerHealthPollingEnabled) return undefined;"),
+    hook.indexOf("return {"),
+  );
+
+  assert.match(shell, /useWindowTracking\(\{ trackerHealthPollingEnabled: isForegroundReady \}\)/);
+  assert.match(hook, /trackerHealthPollingEnabled = options\.trackerHealthPollingEnabled \?\? true/);
+  assert.doesNotMatch(initEffect, /startTrackerHealthPolling/);
+  assert.match(pollingEffect, /startTrackerHealthPolling/);
+  assert.match(service, /refreshImmediately/);
+  assert.match(service, /disposed/);
+});
+
+await runTest("pomodoro alert dialog offers a pause action without changing other alerts", () => {
+  const dialog = readUtf8("src/features/tools/components/ToolAlertDialog.tsx");
+
+  assert.match(dialog, /activeAlert\?\.kind === "pomodoro"/);
+  assert.match(dialog, /ToolsRuntimeService\.pausePomodoro/);
+  assert.match(dialog, /UI_TEXT\.tools\.alertPausePomodoro/);
+  assert.match(dialog, /UI_TEXT\.tools\.alertDismiss/);
 });
 
 await runTest("app shell uses one five minute threshold for long background behavior", () => {

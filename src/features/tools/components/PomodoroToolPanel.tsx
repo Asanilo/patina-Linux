@@ -1,9 +1,13 @@
 import { AlarmClock, FastForward, Pause, Play, RotateCcw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { UI_TEXT } from "../../../shared/copy/uiText.ts";
 import type { StartPomodoroInput, ToolsRuntimeSnapshot } from "../../../shared/types/tools.ts";
 import type { PomodoroViewModel } from "../types.ts";
 import ToolDurationInput from "./ToolDurationInput.tsx";
+import {
+  formatMinuteInput,
+  parseBoundedMinuteInput,
+} from "../services/toolsNumberInput.ts";
 
 interface PomodoroToolPanelProps {
   snapshot: ToolsRuntimeSnapshot;
@@ -26,42 +30,61 @@ export default function PomodoroToolPanel({
   onSkipPomodoroPhase,
   onResetPomodoro,
 }: PomodoroToolPanelProps) {
-  const [focusMinutes, setFocusMinutes] = useState(snapshot.settings.pomodoroFocusMinutes);
-  const [shortBreakMinutes, setShortBreakMinutes] = useState(snapshot.settings.pomodoroShortBreakMinutes);
-  const [longBreakMinutes, setLongBreakMinutes] = useState(snapshot.settings.pomodoroLongBreakMinutes);
-  const [longBreakEvery, setLongBreakEvery] = useState(snapshot.settings.pomodoroLongBreakEvery);
+  const [focusMinutes, setFocusMinutes] = useState(() => formatMinuteInput(snapshot.settings.pomodoroFocusMinutes));
+  const [shortBreakMinutes, setShortBreakMinutes] = useState(() => formatMinuteInput(snapshot.settings.pomodoroShortBreakMinutes));
+  const [longBreakMinutes, setLongBreakMinutes] = useState(() => formatMinuteInput(snapshot.settings.pomodoroLongBreakMinutes));
+  const [longBreakEvery, setLongBreakEvery] = useState(() => formatMinuteInput(snapshot.settings.pomodoroLongBreakEvery));
+  const restoreDefaultDurations = useCallback(() => {
+    setFocusMinutes(formatMinuteInput(snapshot.settings.pomodoroFocusMinutes));
+    setShortBreakMinutes(formatMinuteInput(snapshot.settings.pomodoroShortBreakMinutes));
+    setLongBreakMinutes(formatMinuteInput(snapshot.settings.pomodoroLongBreakMinutes));
+    setLongBreakEvery(formatMinuteInput(snapshot.settings.pomodoroLongBreakEvery));
+  }, [
+    snapshot.settings.pomodoroFocusMinutes,
+    snapshot.settings.pomodoroLongBreakEvery,
+    snapshot.settings.pomodoroLongBreakMinutes,
+    snapshot.settings.pomodoroShortBreakMinutes,
+  ]);
   const run = snapshot.currentPomodoro;
   const status = run?.status ?? "idle";
   const isRunning = status === "running";
   const isPaused = status === "paused";
   const hasStarted = Boolean(run) && status !== "idle";
   const controlsDisabled = busyAction !== null;
-  const cycleTotal = Math.max(1, Math.min(12, run?.longBreakEvery ?? longBreakEvery));
+  const parsedFocusMinutes = parseBoundedMinuteInput(focusMinutes, 1, 180);
+  const parsedShortBreakMinutes = parseBoundedMinuteInput(shortBreakMinutes, 1, 60);
+  const parsedLongBreakMinutes = parseBoundedMinuteInput(longBreakMinutes, 1, 120);
+  const parsedLongBreakEvery = parseBoundedMinuteInput(longBreakEvery, 2, 12);
+  const cycleTotal = Math.max(1, Math.min(
+    12,
+    run?.longBreakEvery ?? parsedLongBreakEvery ?? snapshot.settings.pomodoroLongBreakEvery,
+  ));
   const cycleIndex = Math.max(1, Math.min(cycleTotal, run?.cycleIndex ?? 1));
   const cycleMarkers = Array.from({ length: cycleTotal }, (_, index) => index + 1);
 
   useEffect(() => {
     if (!run || run.status === "idle") {
-      setFocusMinutes(snapshot.settings.pomodoroFocusMinutes);
-      setShortBreakMinutes(snapshot.settings.pomodoroShortBreakMinutes);
-      setLongBreakMinutes(snapshot.settings.pomodoroLongBreakMinutes);
-      setLongBreakEvery(snapshot.settings.pomodoroLongBreakEvery);
+      restoreDefaultDurations();
     }
   }, [
     run?.id,
     run?.status,
-    snapshot.settings.pomodoroFocusMinutes,
-    snapshot.settings.pomodoroLongBreakEvery,
-    snapshot.settings.pomodoroLongBreakMinutes,
-    snapshot.settings.pomodoroShortBreakMinutes,
+    restoreDefaultDurations,
   ]);
 
-  const startInput: StartPomodoroInput = {
-    focusMs: focusMinutes * 60_000,
-    shortBreakMs: shortBreakMinutes * 60_000,
-    longBreakMs: longBreakMinutes * 60_000,
-    longBreakEvery,
-  };
+  const startInput: StartPomodoroInput | null = (
+    parsedFocusMinutes === null
+    || parsedShortBreakMinutes === null
+    || parsedLongBreakMinutes === null
+    || parsedLongBreakEvery === null
+  )
+    ? null
+    : {
+        focusMs: parsedFocusMinutes * 60_000,
+        shortBreakMs: parsedShortBreakMinutes * 60_000,
+        longBreakMs: parsedLongBreakMinutes * 60_000,
+        longBreakEvery: parsedLongBreakEvery,
+      };
 
   return (
     <section className="tools-panel qp-panel">
@@ -104,8 +127,11 @@ export default function PomodoroToolPanel({
           {!hasStarted || run?.status === "idle" || run?.status === "completed" ? (
             <button
               type="button"
-              disabled={controlsDisabled}
-              onClick={() => void onStartPomodoro(startInput)}
+              disabled={controlsDisabled || !startInput}
+              onClick={() => {
+                if (!startInput) return;
+                void onStartPomodoro(startInput);
+              }}
               aria-label={UI_TEXT.accessibility.tools.startPomodoro}
               className="qp-button-primary tools-action-button"
             >
@@ -166,7 +192,18 @@ export default function PomodoroToolPanel({
 
       <div className="tools-subpanel tools-pomodoro-rules">
         <div className="tools-subpanel-header">
-          <h3>{UI_TEXT.tools.pomodoroSettings}</h3>
+          <div className="tools-subpanel-title-action">
+            <h3>{UI_TEXT.tools.pomodoroSettings}</h3>
+            <button
+              type="button"
+              disabled={hasStarted}
+              onClick={restoreDefaultDurations}
+              aria-label={UI_TEXT.accessibility.tools.restorePomodoroDefaults}
+              className="tools-ghost-icon-button"
+            >
+              <RotateCcw size={14} />
+            </button>
+          </div>
         </div>
         <div className="tools-pomodoro-settings-grid">
           <ToolDurationInput

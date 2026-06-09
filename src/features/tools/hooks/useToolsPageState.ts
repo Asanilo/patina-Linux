@@ -1,12 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { UI_TEXT } from "../../../shared/copy/uiText.ts";
+import { UI_TEXT, type UiText } from "../../../shared/copy/uiText.ts";
 import type {
   StartPomodoroInput,
   TimerMode,
   ToolSoftwareReminderAppCandidate,
   ToolsRuntimeSnapshot,
 } from "../../../shared/types/tools.ts";
+import type {
+  PomodoroViewModel,
+  ReminderRowViewModel,
+  SoftwareReminderRuleRowViewModel,
+  TimerViewModel,
+  ToolsSection,
+} from "../types.ts";
 import { ToolsRuntimeService } from "../services/toolsRuntimeService.ts";
+import { toolsRuntimeSnapshotStore } from "../services/toolsRuntimeSnapshotStore.ts";
 import { loadSoftwareReminderAppCandidates } from "../services/softwareReminderAppCandidates.ts";
 import { buildToolsViewModelLabels } from "../services/toolsLabels.ts";
 import {
@@ -34,18 +42,27 @@ const DEFAULT_SNAPSHOT: ToolsRuntimeSnapshot = {
   sampledAtMs: Date.now(),
 };
 
+const EMPTY_REMINDER_ROWS: ReminderRowViewModel[] = [];
+const EMPTY_SOFTWARE_REMINDER_RULE_ROWS: SoftwareReminderRuleRowViewModel[] = [];
+
 export interface UseToolsPageStateOptions {
+  activeSection?: ToolsSection;
   onError?: (message: string) => void;
+  uiText?: UiText;
 }
 
 export function useToolsPageState({
+  activeSection = "reminders",
   onError,
+  uiText = UI_TEXT,
 }: UseToolsPageStateOptions = {}) {
-  const [snapshot, setSnapshot] = useState<ToolsRuntimeSnapshot>(DEFAULT_SNAPSHOT);
-  const [loading, setLoading] = useState(true);
+  const [initialSnapshot] = useState(() => toolsRuntimeSnapshotStore.getCurrentSnapshot());
+  const [snapshot, setSnapshot] = useState<ToolsRuntimeSnapshot>(() => initialSnapshot ?? DEFAULT_SNAPSHOT);
+  const [loading, setLoading] = useState(() => initialSnapshot === null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [softwareReminderAppCandidates, setSoftwareReminderAppCandidates] = useState<ToolSoftwareReminderAppCandidate[]>([]);
+  const [softwareReminderAppCandidatesLoaded, setSoftwareReminderAppCandidatesLoaded] = useState(false);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), 1_000);
@@ -54,14 +71,13 @@ export function useToolsPageState({
 
   useEffect(() => {
     let cancelled = false;
-    let unlisten: (() => void) | null = null;
+    const unsubscribe = toolsRuntimeSnapshotStore.subscribe((nextSnapshot) => {
+      if (!cancelled) {
+        setSnapshot(nextSnapshot);
+      }
+    });
 
-    void ToolsRuntimeService.getToolsSnapshot()
-      .then((nextSnapshot) => {
-        if (!cancelled) {
-          setSnapshot(nextSnapshot);
-        }
-      })
+    void toolsRuntimeSnapshotStore.refreshSnapshot()
       .catch((error) => {
         console.warn("load tools snapshot failed", error);
         onError?.(UI_TEXT.tools.loadFailed);
@@ -72,52 +88,64 @@ export function useToolsPageState({
         }
       });
 
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [onError]);
+
+  useEffect(() => {
+    if (activeSection !== "reminders" || softwareReminderAppCandidatesLoaded) {
+      return undefined;
+    }
+
+    let cancelled = false;
     void loadSoftwareReminderAppCandidates()
       .then((candidates) => {
         if (!cancelled) {
           setSoftwareReminderAppCandidates(candidates);
+          setSoftwareReminderAppCandidatesLoaded(true);
         }
       })
       .catch((error) => {
         console.warn("load software reminder app candidates failed", error);
       });
 
-    void ToolsRuntimeService.onToolsRuntimeChanged((nextSnapshot) => {
-      if (!cancelled) {
-        setSnapshot(nextSnapshot);
-      }
-    }).then((dispose) => {
-      if (cancelled) {
-        dispose();
-        return;
-      }
-      unlisten = dispose;
-    }).catch((error) => {
-      console.warn("listen tools runtime failed", error);
-    });
-
     return () => {
       cancelled = true;
-      unlisten?.();
     };
-  }, [onError]);
+  }, [activeSection, softwareReminderAppCandidatesLoaded]);
 
-  const labels = buildToolsViewModelLabels();
+  const labels = useMemo(() => buildToolsViewModelLabels(uiText), [uiText]);
+  const inactiveTimerViewModel = useMemo<TimerViewModel>(
+    () => buildTimerViewModel(DEFAULT_SNAPSHOT, DEFAULT_SNAPSHOT.sampledAtMs, labels),
+    [labels],
+  );
+  const inactivePomodoroViewModel = useMemo<PomodoroViewModel>(
+    () => buildPomodoroViewModel(DEFAULT_SNAPSHOT, DEFAULT_SNAPSHOT.sampledAtMs, labels),
+    [labels],
+  );
   const reminderRows = useMemo(
-    () => buildReminderRows(snapshot, nowMs, labels),
-    [labels, nowMs, snapshot],
+    () => activeSection === "reminders" ? buildReminderRows(snapshot, nowMs, labels) : EMPTY_REMINDER_ROWS,
+    [activeSection, labels, nowMs, snapshot],
   );
   const softwareReminderRuleRows = useMemo(
-    () => buildSoftwareReminderRuleRows(snapshot, labels),
-    [labels, snapshot],
+    () => activeSection === "reminders"
+      ? buildSoftwareReminderRuleRows(snapshot, labels)
+      : EMPTY_SOFTWARE_REMINDER_RULE_ROWS,
+    [activeSection, labels, snapshot],
   );
   const timerViewModel = useMemo(
-    () => buildTimerViewModel(snapshot, nowMs, labels),
-    [labels, nowMs, snapshot],
+    () => activeSection === "timer"
+      ? buildTimerViewModel(snapshot, nowMs, labels)
+      : inactiveTimerViewModel,
+    [activeSection, inactiveTimerViewModel, labels, nowMs, snapshot],
   );
   const pomodoroViewModel = useMemo(
-    () => buildPomodoroViewModel(snapshot, nowMs, labels),
-    [labels, nowMs, snapshot],
+    () => activeSection === "pomodoro"
+      ? buildPomodoroViewModel(snapshot, nowMs, labels)
+      : inactivePomodoroViewModel,
+    [activeSection, inactivePomodoroViewModel, labels, nowMs, snapshot],
   );
 
   const runAction = useCallback(async (
@@ -128,7 +156,7 @@ export function useToolsPageState({
     setBusyAction(actionKey);
     try {
       const nextSnapshot = await action();
-      setSnapshot(nextSnapshot);
+      toolsRuntimeSnapshotStore.publishSnapshot(nextSnapshot);
     } catch (error) {
       console.warn(`tools action failed: ${actionKey}`, error);
       onError?.(UI_TEXT.tools.actionFailed);

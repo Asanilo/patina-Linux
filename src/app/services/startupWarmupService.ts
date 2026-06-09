@@ -14,6 +14,9 @@ import {
   prewarmSettingsBootstrapCache,
 } from "../../features/settings/services/settingsBootstrapService.ts";
 import {
+  prewarmToolsRuntimeSnapshot,
+} from "../../features/tools/services/toolsRuntimeSnapshotStore.ts";
+import {
   loadDashboardRuntimeSnapshot,
   loadDataTrendRuntimeSnapshot,
   loadHistoryRuntimeSnapshot,
@@ -30,6 +33,7 @@ export type StartupWarmupTaskId =
   | "data-bootstrap-snapshot-cache"
   | "dashboard-snapshot"
   | "history-today-snapshot"
+  | "tools-runtime-snapshot"
   | "about-bootstrap";
 
 export type StartupWarmupTaskStatus =
@@ -82,6 +86,7 @@ interface StartupWarmupDeps {
   preloadLazyViewChunk: (view: PreloadableView) => Promise<unknown>;
   prewarmClassificationBootstrapCache: () => Promise<unknown>;
   prewarmSettingsBootstrapCache: () => Promise<unknown>;
+  prewarmToolsRuntimeSnapshot: () => Promise<unknown>;
   scheduler: StartupWarmupScheduler;
   nowMs: () => number;
   warn: (message: string, error: unknown) => void;
@@ -100,12 +105,14 @@ const STARTUP_WARMUP_TASKS: StartupWarmupTaskId[] = [
   "data-bootstrap-snapshot-cache",
   "dashboard-snapshot",
   "history-today-snapshot",
+  "tools-runtime-snapshot",
   "about-bootstrap",
 ];
 
 const DEFAULT_STARTUP_WARMUP_VIEWS: PreloadableView[] = [
   "history",
   "data",
+  "tools",
   "mapping",
   "settings",
   "about",
@@ -125,6 +132,7 @@ const defaultStartupWarmupDeps: StartupWarmupDeps = {
   preloadLazyViewChunk,
   prewarmClassificationBootstrapCache,
   prewarmSettingsBootstrapCache,
+  prewarmToolsRuntimeSnapshot,
   scheduler: (callback, delayMs) => {
     const handle = globalThis.setTimeout(callback, delayMs);
     return () => globalThis.clearTimeout(handle);
@@ -314,6 +322,10 @@ export function startStartupWarmup(
       }
 
       await resolvedDeps.loadHistoryRuntimeSnapshot(date, 7);
+    });
+
+    await runTask("tools-runtime-snapshot", async () => {
+      await resolvedDeps.prewarmToolsRuntimeSnapshot();
     });
 
     await runTask("about-bootstrap", async () => {
