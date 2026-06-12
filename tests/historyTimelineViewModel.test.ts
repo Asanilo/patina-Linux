@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import {
   readHistoryDayDistributionMode,
+  readHistoryTimelineMode,
   rememberHistoryDayDistributionMode,
+  rememberHistoryTimelineMode,
 } from "../src/features/history/services/historyLayoutPreferenceStorage.ts";
 import { buildHistoryTimelineViewModel } from "../src/features/history/services/historyTimelineViewModel.ts";
 import { ProcessMapper } from "../src/shared/classification/processMapper.ts";
@@ -125,6 +127,28 @@ runTest("day distribution mode persists locally", () => {
 
     window.localStorage.setItem("patina:history-day-distribution-mode", "timeline");
     assert.equal(readHistoryDayDistributionMode(), "app");
+  });
+});
+
+runTest("timeline display mode persists locally", () => {
+  assert.equal(readHistoryTimelineMode(), "app");
+
+  withWindowStorage(new MemoryStorage(), () => {
+    assert.equal(readHistoryTimelineMode(), "app");
+
+    rememberHistoryTimelineMode("category");
+    assert.equal(readHistoryTimelineMode(), "category");
+    assert.equal(window.localStorage.getItem("patina:history-timeline-mode"), "category");
+
+    window.localStorage.removeItem("patina:history-timeline-mode");
+    window.localStorage.setItem("time-tracker:history-timeline-mode", "category");
+
+    assert.equal(readHistoryTimelineMode(), "category");
+    assert.equal(window.localStorage.getItem("patina:history-timeline-mode"), "category");
+    assert.equal(window.localStorage.getItem("time-tracker:history-timeline-mode"), null);
+
+    window.localStorage.setItem("patina:history-timeline-mode", "timeline");
+    assert.equal(readHistoryTimelineMode(), "app");
   });
 });
 
@@ -412,7 +436,7 @@ runTest("timeline assigns each minute to the longest app and records short switc
   );
 });
 
-runTest("timeline does not merge the same app across an empty minute", () => {
+runTest("timeline merges the same app across a short empty gap", () => {
   const dayStart = new Date(2026, 0, 2, 0, 0, 0, 0).getTime();
   const firstMinuteStart = dayStart + 9 * 60 * 60_000 + 33 * 60_000;
   const secondMinuteStart = dayStart + 9 * 60 * 60_000 + 35 * 60_000;
@@ -443,6 +467,152 @@ runTest("timeline does not merge the same app across an empty minute", () => {
     nowMs: new Date(2026, 0, 3).getTime(),
     mode: "app",
     mergeThresholdSecs: 180,
+  });
+
+  assert.equal(viewModel.segments.length, 1);
+  assert.deepEqual(
+    viewModel.segments.map((segment) => [segment.startTime, segment.endTime]),
+    [
+      [firstMinuteStart, secondMinuteStart + 60_000],
+    ],
+  );
+});
+
+runTest("category timeline merges the same category across a short empty gap", () => {
+  const dayStart = new Date(2026, 0, 2, 0, 0, 0, 0).getTime();
+  const firstMinuteStart = dayStart + 15 * 60 * 60_000 + 15 * 60_000;
+  const secondMinuteStart = dayStart + 15 * 60 * 60_000 + 23 * 60_000;
+  ProcessMapper.setUserOverrides({
+    "cursor.exe": { category: "development", enabled: true },
+    "vscodium.exe": { category: "development", enabled: true },
+  });
+
+  try {
+    const viewModel = buildHistoryTimelineViewModel({
+      sessions: [
+        makeCompiledSession({
+          id: 1,
+          appKey: "cursor.exe",
+          exeName: "cursor.exe",
+          displayName: "Cursor",
+          appName: "Cursor",
+          startTime: firstMinuteStart,
+          endTime: firstMinuteStart + 7 * 60_000,
+          duration: 7 * 60_000,
+        }),
+        makeCompiledSession({
+          id: 2,
+          appKey: "vscodium.exe",
+          exeName: "vscodium.exe",
+          displayName: "VSCodium",
+          appName: "VSCodium",
+          startTime: secondMinuteStart,
+          endTime: secondMinuteStart + 2 * 60_000,
+          duration: 2 * 60_000,
+        }),
+      ],
+      selectedDate: new Date(2026, 0, 2),
+      nowMs: new Date(2026, 0, 3).getTime(),
+      mode: "category",
+      mergeThresholdSecs: 180,
+    });
+
+    assert.equal(viewModel.segments.length, 1);
+    assert.equal(viewModel.segments[0]?.category, "development");
+    assert.deepEqual(
+      viewModel.segments.map((segment) => [segment.startTime, segment.endTime]),
+      [
+        [firstMinuteStart, secondMinuteStart + 2 * 60_000],
+      ],
+    );
+  } finally {
+    ProcessMapper.clearUserOverrides();
+  }
+});
+
+runTest("category timeline merges adjacent dominant minute buckets", () => {
+  const dayStart = new Date(2026, 0, 2, 0, 0, 0, 0).getTime();
+  const firstSegmentStart = dayStart + 15 * 60 * 60_000 + 15 * 60_000;
+  const secondSegmentStart = dayStart + 15 * 60 * 60_000 + 23 * 60_000;
+  ProcessMapper.setUserOverrides({
+    "cursor.exe": { category: "development", enabled: true },
+    "vscodium.exe": { category: "development", enabled: true },
+  });
+
+  try {
+    const viewModel = buildHistoryTimelineViewModel({
+      sessions: [
+        makeCompiledSession({
+          id: 1,
+          appKey: "cursor.exe",
+          exeName: "cursor.exe",
+          displayName: "Cursor",
+          appName: "Cursor",
+          startTime: firstSegmentStart,
+          endTime: secondSegmentStart - 1,
+          duration: secondSegmentStart - 1 - firstSegmentStart,
+        }),
+        makeCompiledSession({
+          id: 2,
+          appKey: "vscodium.exe",
+          exeName: "vscodium.exe",
+          displayName: "VSCodium",
+          appName: "VSCodium",
+          startTime: secondSegmentStart,
+          endTime: secondSegmentStart + 2 * 60_000,
+          duration: 2 * 60_000,
+        }),
+      ],
+      selectedDate: new Date(2026, 0, 2),
+      nowMs: new Date(2026, 0, 3).getTime(),
+      mode: "category",
+      mergeThresholdSecs: 0,
+    });
+
+    assert.equal(viewModel.segments.length, 1);
+    assert.equal(viewModel.segments[0]?.category, "development");
+    assert.deepEqual(
+      viewModel.segments.map((segment) => [segment.startTime, segment.endTime]),
+      [
+        [firstSegmentStart, secondSegmentStart + 2 * 60_000],
+      ],
+    );
+  } finally {
+    ProcessMapper.clearUserOverrides();
+  }
+});
+
+runTest("timeline keeps the same app split when the empty gap exceeds the merge threshold", () => {
+  const dayStart = new Date(2026, 0, 2, 0, 0, 0, 0).getTime();
+  const firstMinuteStart = dayStart + 9 * 60 * 60_000 + 33 * 60_000;
+  const secondMinuteStart = dayStart + 9 * 60 * 60_000 + 35 * 60_000;
+  const viewModel = buildHistoryTimelineViewModel({
+    sessions: [
+      makeCompiledSession({
+        id: 1,
+        appKey: "vscodium.exe",
+        exeName: "vscodium.exe",
+        displayName: "VSCodium",
+        appName: "VSCodium",
+        startTime: firstMinuteStart + 10_000,
+        endTime: firstMinuteStart + 50_000,
+        duration: 40_000,
+      }),
+      makeCompiledSession({
+        id: 2,
+        appKey: "vscodium.exe",
+        exeName: "vscodium.exe",
+        displayName: "VSCodium",
+        appName: "VSCodium",
+        startTime: secondMinuteStart + 10_000,
+        endTime: secondMinuteStart + 50_000,
+        duration: 40_000,
+      }),
+    ],
+    selectedDate: new Date(2026, 0, 2),
+    nowMs: new Date(2026, 0, 3).getTime(),
+    mode: "app",
+    mergeThresholdSecs: 30,
   });
 
   assert.equal(viewModel.segments.length, 2);

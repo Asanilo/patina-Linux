@@ -1001,6 +1001,12 @@
   padding-right: 2px;
 }
 
+.data-app-trend-list {
+  align-content: start;
+  grid-auto-rows: min-content;
+  min-height: 244px;
+}
+
 .data-app-empty {
   display: flex;
   min-height: 86px;
@@ -1152,7 +1158,7 @@
 }
 
 .data-app-chart {
-  height: 172px;
+  height: 210px;
   min-width: 0;
 }
 
@@ -1173,6 +1179,10 @@
 
   .data-app-list {
     max-height: 190px;
+  }
+
+  .data-app-trend-list {
+    min-height: 190px;
   }
 
   .data-app-chart-column {
@@ -1205,7 +1215,7 @@
 
   .data-app-chart {
     grid-column: 1 / -1;
-    height: 150px;
+    height: 200px;
   }
 }
 
@@ -1474,6 +1484,10 @@
     max-height: 188px;
   }
 
+  .data-app-trend-list {
+    min-height: 188px;
+  }
+
   .data-app-metric-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     row-gap: 12px;
@@ -1482,6 +1496,10 @@
   .data-app-metric:nth-child(3) {
     border-left: 0;
     padding-left: 0;
+  }
+
+  .data-app-chart {
+    height: 172px;
   }
 
   .data-heatmap-content {

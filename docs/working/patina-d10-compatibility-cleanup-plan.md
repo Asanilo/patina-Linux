@@ -69,6 +69,8 @@
 - [ ] 旧 credential target：`com.timetracker.backup.webdav.default`。
 - [ ] 旧本地备份 manifest identity：`TimeTrackerBackup`。
 - [ ] 旧远程备份产品路径或 metadata：`Time Tracker`。
+- [ ] 旧远程备份设置目录规范化：`/TimeTracker` 自动归一到 `/Patina`。
+- [ ] 旧前端本地偏好 key：`time-tracker:*`。
 - [ ] 旧 Time Tracker uninstall/autostart 清理 hook。
 - [ ] 短暂中间实现的 WebView 清理入口：`%LOCALAPPDATA%\Patina\WebView\EBWebView`。
 
@@ -153,6 +155,18 @@ rg -n "TimeTrackerBackup|Time Tracker Backup|TimeTracker" src-tauri src tests sc
 
 ```bash
 rg -n "\"Time Tracker\"|time-tracker|timetracker" src-tauri src tests scripts
+```
+
+- [ ] 搜索旧前端远程备份设置目录：
+
+```bash
+rg -n "LEGACY_WEBDAV_REMOTE_DIR|/TimeTracker" src tests
+```
+
+- [ ] 搜索旧前端本地偏好 key：
+
+```bash
+rg -n "time-tracker:" src tests
 ```
 
 ### 3.3 旧 credential 与安装清理搜索
@@ -268,10 +282,12 @@ rg -n "EBWebView|WebView compat|cleanup_webview|Patina[\\\\/]WebView" src-tauri 
 ### 4.6 远程备份路径与 metadata
 
 - [ ] 打开 `src-tauri/src/data/remote_backup.rs`。
+- [ ] 打开 `src/platform/persistence/remoteBackupSettingsStore.ts`。
 - [ ] 移除旧远程备份产品名或目录名 `Time Tracker`。
 - [ ] 移除旧 metadata 读取兼容。
 - [ ] 移除新旧远程备份 index merge 逻辑中只服务旧路径的部分。
 - [ ] 移除旧远程备份路径发现逻辑。
+- [ ] 移除前端把 `/TimeTracker` 自动规范化到 `/Patina` 的兼容分支。
 - [ ] 保留新 Patina 远程备份路径。
 - [ ] 保留新 Patina metadata 写入和读取。
 - [ ] 保留新远程备份同步、恢复、清理当前临时目录的逻辑。
@@ -279,6 +295,7 @@ rg -n "EBWebView|WebView compat|cleanup_webview|Patina[\\\\/]WebView" src-tauri 
   - [ ] 新远程备份路径写入正确。
   - [ ] 新远程备份 metadata 读取正确。
   - [ ] 旧远程备份路径不会被读取。
+  - [ ] 保存过的旧 `/TimeTracker` 设置不再被自动改写成 `/Patina`。
   - [ ] 旧远程备份数据不会被自动删除。
 - [ ] 确认清理后没有运行时代码引用旧远程备份路径。
 
@@ -320,6 +337,21 @@ rg -n "EBWebView|WebView compat|cleanup_webview|Patina[\\\\/]WebView" src-tauri 
 - [ ] 保留新身份路径、新数据库、新备份和新远程备份测试。
 - [ ] 确认 `src-tauri/src/lib.rs` 不重新承载厚迁移逻辑。
 - [ ] 确认 `src-tauri/src/commands/*` 不承载迁移业务逻辑。
+
+### 4.10 前端本地偏好 key 清理
+
+- [ ] 打开 `src/app/services/updateRelaunchViewStorage.ts`。
+- [ ] 移除 `time-tracker:last-active-view`。
+- [ ] 移除 `time-tracker:pending-update-relaunch-view`。
+- [ ] 打开 `src/features/history/services/historyLayoutPreferenceStorage.ts`。
+- [ ] 移除 `time-tracker:history-day-distribution-mode`。
+- [ ] 打开 `src/features/tools/services/toolsLayoutPreferenceStorage.ts`。
+- [ ] 移除 `time-tracker:tools-section`。
+- [ ] 移除 `time-tracker:tools-timer-mode`。
+- [ ] 移除 `time-tracker:tools-reminder-mode`。
+- [ ] 移除 `time-tracker:tools-reminder-form-mode`。
+- [ ] 更新对应前端测试，只保留 `patina:*` 当前 key 的读写与非法值 fallback。
+- [ ] 确认清理后运行时代码不再引用 `time-tracker:*`。
 
 ## 5. 文档与发布说明清理
 
@@ -380,6 +412,12 @@ npm run release:validate-changelog -- 1.6.0
 
 ```bash
 rg -n "com\.timetracker|timetracker\.db|TimeTrackerBackup|com\.timetracker\.backup\.webdav\.default" src-tauri src tests scripts
+```
+
+- [ ] 运行旧前端偏好 key 搜索，确认运行时代码无旧 key 残留：
+
+```bash
+rg -n "time-tracker:" src tests
 ```
 
 - [ ] 对搜索结果逐条确认：

@@ -225,6 +225,7 @@ export function useAppMappingState({
       searchQuery,
       resolveMappedCategory,
       resolveEffectiveDisplayName: resolveSortDisplayName,
+      resolveCategoryLabel: (category) => AppClassification.getCategoryLabel(category),
     }),
     [candidates, filter, searchQuery, resolveMappedCategory, resolveSortDisplayName],
   );

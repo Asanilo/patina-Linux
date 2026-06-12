@@ -511,6 +511,30 @@ await runTest("filterAndSortCandidates searches display names and executable nam
   assert.deepEqual(byExecutable.map((candidate) => candidate.exeName), ["notes.exe"]);
 });
 
+await runTest("filterAndSortCandidates searches category labels", () => {
+  const candidates = [
+    buildCandidate("code.exe", "Code"),
+    buildCandidate("vlc.exe", "VLC"),
+    buildCandidate("notes.exe", "Notes"),
+  ];
+  const categories: Record<string, UserAssignableAppCategory> = {
+    "code.exe": "development",
+    "vlc.exe": "video",
+    "notes.exe": "office",
+  };
+
+  const filtered = filterAndSortCandidates({
+    candidates,
+    filter: "all",
+    searchQuery: "media",
+    resolveMappedCategory: (candidate) => categories[candidate.exeName] ?? "other",
+    resolveEffectiveDisplayName: (candidate) => candidate.appName,
+    resolveCategoryLabel: (category) => (category === "video" ? "Media" : category),
+  });
+
+  assert.deepEqual(filtered.map((candidate) => candidate.exeName), ["vlc.exe"]);
+});
+
 await runTest("commitDraftChangesWithDeps persists before syncing process mapper state", async () => {
   const events: string[] = [];
   const saved = buildDraftState();

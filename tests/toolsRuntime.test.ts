@@ -13,6 +13,10 @@ import {
   loadSoftwareReminderAppCandidatesWithDeps,
   resetSoftwareReminderAppCandidatesCacheForTests,
 } from "../src/features/tools/services/softwareReminderAppCandidates.ts";
+import {
+  filterSoftwareReminderAppCandidates,
+  resolveSoftwareReminderSelectedCandidate,
+} from "../src/features/tools/services/softwareReminderRuleForm.ts";
 import { clearToolsPageCaches } from "../src/features/tools/services/toolsCacheLifecycle.ts";
 import type { ClassificationBootstrapData } from "../src/features/classification/services/classificationService.ts";
 import {
@@ -277,6 +281,29 @@ await runTest("software reminder app candidates reuse app mapping display names 
   } finally {
     ProcessMapper.clearUserOverrides();
   }
+});
+
+await runTest("software reminder app selection rejects free text", () => {
+  const candidates = [
+    {
+      appName: "VSCodium",
+      exeName: "vscodium.exe",
+      lastSeenAt: 2_000_000,
+    },
+    {
+      appName: "Google Chrome",
+      exeName: "chrome.exe",
+      lastSeenAt: 1_000_000,
+    },
+  ];
+
+  const visibleCandidates = filterSoftwareReminderAppCandidates("vscod", candidates);
+  assert.deepEqual(visibleCandidates.map((candidate) => candidate.exeName), ["vscodium.exe"]);
+  assert.equal(resolveSoftwareReminderSelectedCandidate("工具", candidates, null), null);
+  assert.equal(
+    resolveSoftwareReminderSelectedCandidate("vscodium.exe", candidates, null)?.exeName,
+    "vscodium.exe",
+  );
 });
 
 await runTest("software reminder rule rows use mapped display names for saved executables", () => {

@@ -34,7 +34,9 @@ import {
 } from "../services/historyTimelineViewModel.ts";
 import {
   readHistoryDayDistributionMode,
+  readHistoryTimelineMode,
   rememberHistoryDayDistributionMode,
+  rememberHistoryTimelineMode,
   type DayDistributionMode,
 } from "../services/historyLayoutPreferenceStorage.ts";
 
@@ -265,7 +267,9 @@ export default function History({
     initialCachedSnapshot ? formatHistoryDateCacheKey(initialDate) : null
   ));
   const [timelineDialogOpen, setTimelineDialogOpen] = useState(false);
-  const [historyTimelineMode, setHistoryTimelineMode] = useState<HistoryTimelineDisplayMode>("app");
+  const [historyTimelineMode, setHistoryTimelineMode] = useState<HistoryTimelineDisplayMode>(
+    readHistoryTimelineMode,
+  );
   const [dayDistributionMode, setDayDistributionMode] = useState<DayDistributionMode>(
     readHistoryDayDistributionMode,
   );
@@ -708,7 +712,11 @@ export default function History({
     onMinSessionSecsChange?.(clampedMinutes * 60);
   };
   const toggleHistoryTimelineMode = () => {
-    setHistoryTimelineMode((mode) => (mode === "category" ? "app" : "category"));
+    setHistoryTimelineMode((mode) => {
+      const nextMode = mode === "category" ? "app" : "category";
+      rememberHistoryTimelineMode(nextMode);
+      return nextMode;
+    });
   };
   const openTimelineDialog = () => {
     timelineDetailsTriggerRef.current = null;

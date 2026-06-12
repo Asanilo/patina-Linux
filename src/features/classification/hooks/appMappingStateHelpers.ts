@@ -29,6 +29,7 @@ type FilterAndSortCandidatesParams = {
   searchQuery?: string;
   resolveMappedCategory: (candidate: ObservedAppCandidate) => UserAssignableAppCategory;
   resolveEffectiveDisplayName: (candidate: ObservedAppCandidate) => string;
+  resolveCategoryLabel?: (category: UserAssignableAppCategory) => string;
 };
 
 type ClassificationBootstrapSnapshot = {
@@ -106,6 +107,7 @@ export function filterAndSortCandidates({
   searchQuery,
   resolveMappedCategory,
   resolveEffectiveDisplayName,
+  resolveCategoryLabel,
 }: FilterAndSortCandidatesParams): ObservedAppCandidate[] {
   const collator = createAppMappingCollator();
   const normalizedQuery = searchQuery?.trim().toLocaleLowerCase(getUiLocale()) ?? "";
@@ -119,10 +121,14 @@ export function filterAndSortCandidates({
     })
     .filter((candidate) => {
       if (!normalizedQuery) return true;
+      const category = resolveMappedCategory(candidate);
+      const categoryLabel = resolveCategoryLabel?.(category) ?? category;
       const haystack = [
         resolveEffectiveDisplayName(candidate),
         candidate.appName,
         candidate.exeName,
+        categoryLabel,
+        category,
       ].join(" ").toLocaleLowerCase(getUiLocale());
       return haystack.includes(normalizedQuery);
     })

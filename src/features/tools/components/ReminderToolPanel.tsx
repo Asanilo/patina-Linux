@@ -28,6 +28,11 @@ import {
   formatMinuteInput,
   parseBoundedMinuteInput,
 } from "../services/toolsNumberInput.ts";
+import {
+  filterSoftwareReminderAppCandidates,
+  resolveSoftwareReminderSelectedCandidate,
+  softwareReminderCandidateInputValue,
+} from "../services/softwareReminderRuleForm.ts";
 
 interface ReminderToolPanelProps {
   reminderRows: ReminderRowViewModel[];
@@ -100,45 +105,6 @@ function appInitial(appName: string) {
   return appName.trim().slice(0, 1).toUpperCase() || "?";
 }
 
-function softwareCandidateLabel(candidate: ToolSoftwareReminderAppCandidate) {
-  return `${candidate.appName} (${candidate.exeName})`;
-}
-
-function softwareCandidateInputValue(candidate: ToolSoftwareReminderAppCandidate) {
-  return candidate.appName;
-}
-
-function findSoftwareCandidate(
-  value: string,
-  candidates: ToolSoftwareReminderAppCandidate[],
-) {
-  const normalized = value.trim().toLocaleLowerCase();
-  if (!normalized) return null;
-
-  return candidates.find((candidate) => (
-    softwareCandidateLabel(candidate).toLocaleLowerCase() === normalized
-    || candidate.appName.toLocaleLowerCase() === normalized
-    || candidate.exeName.toLocaleLowerCase() === normalized
-  )) ?? null;
-}
-
-function filterSoftwareCandidates(
-  value: string,
-  candidates: ToolSoftwareReminderAppCandidate[],
-) {
-  const normalized = value.trim().toLocaleLowerCase();
-  const visibleCandidates = normalized
-    ? candidates.filter((candidate) => {
-        const label = softwareCandidateLabel(candidate).toLocaleLowerCase();
-        return label.includes(normalized)
-          || candidate.appName.toLocaleLowerCase().includes(normalized)
-          || candidate.exeName.toLocaleLowerCase().includes(normalized);
-      })
-    : candidates;
-
-  return visibleCandidates;
-}
-
 function resolveSoftwareIcon(icons: Record<string, string>, exeName: string | null) {
   if (!exeName) return null;
   return icons[exeName] ?? icons[exeName.toLocaleLowerCase()] ?? null;
@@ -163,7 +129,7 @@ function SoftwareReminderPanel({
   const [selectedSoftwareCandidate, setSelectedSoftwareCandidate] = useState<ToolSoftwareReminderAppCandidate | null>(null);
   const [candidateListStyle, setCandidateListStyle] = useState<CSSProperties | null>(null);
   const creating = busyAction === "create-software-reminder";
-  const visibleCandidates = filterSoftwareCandidates(softwareName, candidates);
+  const visibleCandidates = filterSoftwareReminderAppCandidates(softwareName, candidates);
 
   const updateCandidateListPosition = useCallback(() => {
     const field = searchFieldRef.current;
@@ -214,21 +180,22 @@ function SoftwareReminderPanel({
 
   const handleSoftwareNameChange = (value: string) => {
     setSoftwareName(value);
+    setValidationMessage(null);
     setSelectedSoftwareCandidate((current) => (
-      current && value.trim() === softwareCandidateInputValue(current).trim()
+      current && value.trim() === softwareReminderCandidateInputValue(current).trim()
         ? current
         : null
     ));
   };
 
   const handleCreateRule = async () => {
-    const selectedCandidate = selectedSoftwareCandidate
-      && softwareName.trim() === softwareCandidateInputValue(selectedSoftwareCandidate).trim()
-      ? selectedSoftwareCandidate
-      : findSoftwareCandidate(softwareName, candidates);
-    const appName = selectedCandidate?.appName ?? softwareName.trim();
+    const selectedCandidate = resolveSoftwareReminderSelectedCandidate(
+      softwareName,
+      candidates,
+      selectedSoftwareCandidate,
+    );
     const limitMinutes = Number(durationMinutes);
-    if (!appName) {
+    if (!selectedCandidate) {
       setValidationMessage(UI_TEXT.tools.softwareReminderAppRequired);
       return;
     }
@@ -239,8 +206,8 @@ function SoftwareReminderPanel({
 
     setValidationMessage(null);
     await onCreateRule(
-      appName,
-      selectedCandidate?.exeName ?? null,
+      selectedCandidate.appName,
+      selectedCandidate.exeName,
       Math.min(1440, Math.max(1, Math.round(limitMinutes))),
       message.trim(),
     );
@@ -283,8 +250,9 @@ function SoftwareReminderPanel({
                     className="data-app-option"
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => {
-                      setSoftwareName(softwareCandidateInputValue(candidate));
+                      setSoftwareName(softwareReminderCandidateInputValue(candidate));
                       setSelectedSoftwareCandidate(candidate);
+                      setValidationMessage(null);
                       setSearchFocused(false);
                     }}
                   >

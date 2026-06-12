@@ -411,7 +411,10 @@ function buildMinuteSegment(
   } satisfies HistoryTimelineSegment;
 }
 
-function mergeContiguousDominantMinuteSegments(segments: HistoryTimelineSegment[]) {
+function mergeContiguousDominantMinuteSegments(
+  segments: HistoryTimelineSegment[],
+  mergeThresholdMs: number,
+) {
   const merged: HistoryTimelineSegment[] = [];
 
   for (const segment of segments) {
@@ -421,7 +424,8 @@ function mergeContiguousDominantMinuteSegments(segments: HistoryTimelineSegment[
       continue;
     }
 
-    if (segment.timelineKey === current.timelineKey && segment.startTime === current.endTime) {
+    const gapMs = segment.startTime - current.endTime;
+    if (segment.timelineKey === current.timelineKey && gapMs >= 0 && gapMs <= mergeThresholdMs) {
       merged[merged.length - 1] = mergeAdjacentTimelineSegments(current, segment);
       continue;
     }
@@ -437,12 +441,13 @@ function buildDominantMinuteSegments(
   dayStartMs: number,
   visibleEndMs: number,
   mode: HistoryTimelineDisplayMode,
+  mergeThresholdMs: number,
 ) {
   const minuteSegments = buildMinuteBuckets(segments, dayStartMs, visibleEndMs, mode)
     .map((bucket) => buildMinuteSegment(bucket, dayStartMs, mode))
     .filter((segment): segment is HistoryTimelineSegment => Boolean(segment));
 
-  return mergeContiguousDominantMinuteSegments(minuteSegments);
+  return mergeContiguousDominantMinuteSegments(minuteSegments, mergeThresholdMs);
 }
 
 function buildLegendItems(
@@ -484,14 +489,22 @@ export function buildHistoryTimelineViewModel({
   selectedDate,
   nowMs,
   mode,
+  mergeThresholdSecs = 0,
 }: BuildHistoryTimelineViewModelParams): HistoryTimelineViewModel {
   const { dayStartMs, dayEndMs } = getFullDayRange(selectedDate);
   const visibleEndMs = resolveVisibleEndMs(selectedDate, nowMs, dayStartMs, dayEndMs);
+  const mergeThresholdMs = Math.max(0, mergeThresholdSecs) * 1000;
   const rawSegments = sessions
     .map((session) => buildSegment(session, dayStartMs, dayEndMs, visibleEndMs))
     .filter((segment): segment is HistoryTimelineSegment => Boolean(segment))
     .sort((a, b) => a.startTime - b.startTime || a.endTime - b.endTime);
-  const segments = buildDominantMinuteSegments(rawSegments, dayStartMs, visibleEndMs, mode);
+  const segments = buildDominantMinuteSegments(
+    rawSegments,
+    dayStartMs,
+    visibleEndMs,
+    mode,
+    mergeThresholdMs,
+  );
 
   return {
     segments,

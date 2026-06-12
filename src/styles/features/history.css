@@ -43,7 +43,7 @@
 .history-day-summary-value {
   overflow: hidden;
   color: var(--qp-text-primary);
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 750;
   line-height: 1.05;
   text-overflow: ellipsis;
