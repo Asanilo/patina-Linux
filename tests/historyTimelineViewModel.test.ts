@@ -118,13 +118,6 @@ runTest("day distribution mode persists locally", () => {
     assert.equal(readHistoryDayDistributionMode(), "category");
     assert.equal(window.localStorage.getItem("patina:history-day-distribution-mode"), "category");
 
-    window.localStorage.removeItem("patina:history-day-distribution-mode");
-    window.localStorage.setItem("time-tracker:history-day-distribution-mode", "category");
-
-    assert.equal(readHistoryDayDistributionMode(), "category");
-    assert.equal(window.localStorage.getItem("patina:history-day-distribution-mode"), "category");
-    assert.equal(window.localStorage.getItem("time-tracker:history-day-distribution-mode"), null);
-
     window.localStorage.setItem("patina:history-day-distribution-mode", "timeline");
     assert.equal(readHistoryDayDistributionMode(), "app");
   });
@@ -139,13 +132,6 @@ runTest("timeline display mode persists locally", () => {
     rememberHistoryTimelineMode("category");
     assert.equal(readHistoryTimelineMode(), "category");
     assert.equal(window.localStorage.getItem("patina:history-timeline-mode"), "category");
-
-    window.localStorage.removeItem("patina:history-timeline-mode");
-    window.localStorage.setItem("time-tracker:history-timeline-mode", "category");
-
-    assert.equal(readHistoryTimelineMode(), "category");
-    assert.equal(window.localStorage.getItem("patina:history-timeline-mode"), "category");
-    assert.equal(window.localStorage.getItem("time-tracker:history-timeline-mode"), null);
 
     window.localStorage.setItem("patina:history-timeline-mode", "timeline");
     assert.equal(readHistoryTimelineMode(), "app");

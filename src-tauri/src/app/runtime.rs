@@ -53,16 +53,11 @@ pub fn setup(
     power::start(app.handle().clone());
     audio::start_signal_source();
     media::start_signal_source();
-    #[cfg(target_os = "windows")]
-    crate::platform::windows::legacy_install::cleanup_legacy_time_tracker_autostart_entries();
     crate::app::local_api::start(app.handle().clone());
 
     let app_handle = app.handle().clone();
     main_window::ensure_main_window_with_initial_visibility(&app_handle, !launched_by_autostart)
         .map_err(std::io::Error::other)?;
-    if let Err(error) = crate::data::sqlite_pool::cleanup_webview_compat_dirs(&app_handle) {
-        eprintln!("[webview] failed to cleanup WebView compat dirs: {error}");
-    }
     setup_tray(&app_handle)?;
     let desktop_behavior = app_handle.state::<DesktopBehaviorState>().snapshot();
     apply_tray_visibility(&app_handle, desktop_behavior);

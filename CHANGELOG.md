@@ -22,11 +22,39 @@ App note en: TBD.
 
 ### Changed
 
+- 暂无。
+
+### Fixed
+
+- 暂无。
+
+### Removed
+
+- 暂无。
+
+### Internal
+
+- 暂无。
+
+## [1.6.0] - 2026-06-13
+
+Release: 结束旧 Time Tracker 兼容窗口，并改进历史回看与搜索。
+App note: 1.5.2前版本请先装1.5.2完成迁移；本版升级历史回看与应用搜索。
+App note en: Pre-1.5.2 users: install 1.5.2 first to migrate local data. Includes History review and app search upgrades.
+
+### Added
+
+- 暂无。
+
+### Changed
+
 - 历史页新增当日摘要，将当天总活跃时长作为主信息，帮助在历史页直接理解当天整体使用量。Refs [#8](https://github.com/Ceceliaee/patina/issues/8)
 - 当日摘要补充活跃跨度和高峰时段，方便快速判断当天记录覆盖和使用峰值。
 - 历史页时间轴的“应用 / 分类”显示模式现在会在本地记住，重启或返回页面后沿用上次选择。
 - 应用页搜索框现在可同时搜索应用和分类名称，方便筛出某个分类下记录过的软件并继续整理或改名。Refs [#6](https://github.com/Ceceliaee/patina/issues/6)
 - 历史页调整为上方横向时间轴、弹窗时间线列表、左侧当日活动和右侧当日分布的回看结构；当日分布支持在“应用 / 分类”之间切换，并与时间轴、当日活动柱图的显示模式保持独立。Refs [#6](https://github.com/Ceceliaee/patina/issues/6)
+- 清理版本只使用 Patina 当前身份、`%APPDATA%\Patina` 和 `patina.db`；已经升级到 `1.5.2` 并成功启动过的用户，本地计时数据无需额外操作。
+- WebDAV 远程备份现在只使用当前 Patina credential target 和当前 Patina index 格式；已保存的 `/TimeTracker` 会被当作普通显式远端目录值，不再自动改写成 `/Patina`。
 
 ### Fixed
 
@@ -37,11 +65,13 @@ App note en: TBD.
 
 ### Removed
 
-- 暂无。
+- 移除旧 `com.timetracker*` identifier 识别、旧 `%APPDATA%\com.timetracker\timetracker.db` 自动迁移、旧迁移状态文件写入和旧目录/WebView 兼容清理入口；清理版本不再从迁移前版本直接自动迁移本地数据库。
+- 移除旧 WebDAV credential target fallback、旧 `TimeTrackerBackup` 本地备份恢复兼容、旧 `Time Tracker` 远程备份 index 合并和 `/TimeTracker` 自动归一到 `/Patina` 的兼容逻辑。
+- 移除旧 Time Tracker 安装器 hook、旧 autostart 清理入口，以及前端 `time-tracker:*` 本地偏好 key 迁移逻辑。
 
 ### Internal
 
-- 暂无。
+- 完成旧身份兼容清理版本的版本号、发布说明和长期版本文档同步。
 
 ## [1.5.2] - 2026-06-10
 

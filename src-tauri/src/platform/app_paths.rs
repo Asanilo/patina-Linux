@@ -9,10 +9,6 @@ pub const IDENTIFIER_PROD: &str = "com.ceceliaee.patina";
 pub const IDENTIFIER_LOCAL: &str = "com.ceceliaee.patina.local";
 pub const IDENTIFIER_DEV: &str = "com.ceceliaee.patina.dev";
 
-pub const LEGACY_IDENTIFIER_PROD: &str = "com.timetracker";
-pub const LEGACY_IDENTIFIER_LOCAL: &str = "com.timetracker.local";
-pub const LEGACY_IDENTIFIER_DEV: &str = "com.timetracker.dev";
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AppProfile {
     Production,
@@ -23,9 +19,9 @@ pub enum AppProfile {
 impl AppProfile {
     pub fn from_identifier(identifier: &str) -> Self {
         match identifier {
-            IDENTIFIER_PROD | LEGACY_IDENTIFIER_PROD => Self::Production,
-            IDENTIFIER_LOCAL | LEGACY_IDENTIFIER_LOCAL => Self::Local,
-            IDENTIFIER_DEV | LEGACY_IDENTIFIER_DEV => Self::Dev,
+            IDENTIFIER_PROD => Self::Production,
+            IDENTIFIER_LOCAL => Self::Local,
+            IDENTIFIER_DEV => Self::Dev,
             _ => Self::Production,
         }
     }
@@ -35,14 +31,6 @@ impl AppProfile {
             Self::Production => PRODUCT_FOLDER,
             Self::Local => PRODUCT_FOLDER_LOCAL,
             Self::Dev => PRODUCT_FOLDER_DEV,
-        }
-    }
-
-    pub fn legacy_identifier(self) -> &'static str {
-        match self {
-            Self::Production => LEGACY_IDENTIFIER_PROD,
-            Self::Local => LEGACY_IDENTIFIER_LOCAL,
-            Self::Dev => LEGACY_IDENTIFIER_DEV,
         }
     }
 }
@@ -61,14 +49,6 @@ pub fn product_local_data_dir<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf,
 
 pub fn product_webview_data_dir<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     product_local_data_dir(app)
-}
-
-pub fn legacy_roaming_data_dir<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    Ok(roaming_root(app)?.join(app_profile(app).legacy_identifier()))
-}
-
-pub fn legacy_local_data_dir<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    Ok(local_root(app)?.join(app_profile(app).legacy_identifier()))
 }
 
 fn roaming_root<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
@@ -104,7 +84,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn resolves_profile_from_current_and_legacy_identifiers() {
+    fn resolves_profile_from_current_identifiers() {
         assert_eq!(
             AppProfile::from_identifier("com.ceceliaee.patina"),
             AppProfile::Production
@@ -115,14 +95,6 @@ mod tests {
         );
         assert_eq!(
             AppProfile::from_identifier("com.ceceliaee.patina.dev"),
-            AppProfile::Dev
-        );
-        assert_eq!(
-            AppProfile::from_identifier("com.timetracker.local"),
-            AppProfile::Local
-        );
-        assert_eq!(
-            AppProfile::from_identifier("com.timetracker.dev"),
             AppProfile::Dev
         );
     }
@@ -140,7 +112,6 @@ mod tests {
             let folder = profile.product_folder();
             assert!(!folder.contains("com.ceceliaee.patina"));
             assert!(!folder.contains("io.github"));
-            assert!(!folder.contains("com.timetracker"));
         }
     }
 }

@@ -18,7 +18,6 @@ use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 const BACKUP_FILE_EXT: &str = "zip";
 const BACKUP_FORMAT: &str = "PatinaBackup";
-const LEGACY_BACKUP_FORMAT: &str = "TimeTrackerBackup";
 const BACKUP_MANIFEST_ENTRY_NAME: &str = "manifest.json";
 const BACKUP_CHECKSUMS_ENTRY_NAME: &str = "checksums.json";
 const BACKUP_SESSIONS_ENTRY_NAME: &str = "data/sessions.json";
@@ -518,7 +517,7 @@ fn decode_structured_backup_archive(
     let checksums =
         parse_json::<BackupArchiveChecksums>(&checksums_json, backup_path, "checksums")?;
     let manifest = parse_json::<BackupArchiveManifest>(&manifest_json, backup_path, "manifest")?;
-    if manifest.format != BACKUP_FORMAT && manifest.format != LEGACY_BACKUP_FORMAT {
+    if manifest.format != BACKUP_FORMAT {
         return Err(format!(
             "backup archive `{}` has unsupported format `{}`",
             backup_path.display(),
@@ -923,7 +922,7 @@ mod tests {
     #[test]
     fn structured_backup_archive_without_title_samples_still_decodes() {
         let manifest = BackupArchiveManifest {
-            format: "TimeTrackerBackup".to_string(),
+            format: BACKUP_FORMAT.to_string(),
             backup_version: CURRENT_BACKUP_VERSION,
             exported_at_ms: 1_714_000_000_000,
             schema_version: CURRENT_BACKUP_SCHEMA_VERSION - 1,
@@ -1005,9 +1004,94 @@ mod tests {
     }
 
     #[test]
-    fn structured_backup_archive_declaring_title_samples_requires_the_file() {
+    fn structured_backup_archive_rejects_time_tracker_format() {
         let manifest = BackupArchiveManifest {
             format: "TimeTrackerBackup".to_string(),
+            backup_version: CURRENT_BACKUP_VERSION,
+            exported_at_ms: 1_714_000_000_000,
+            schema_version: CURRENT_BACKUP_SCHEMA_VERSION,
+            app_version: "test".to_string(),
+            files: BackupArchiveFiles {
+                sessions: BACKUP_SESSIONS_ENTRY_NAME.to_string(),
+                title_samples: String::new(),
+                settings: BACKUP_SETTINGS_ENTRY_NAME.to_string(),
+                icon_cache: BACKUP_ICON_CACHE_ENTRY_NAME.to_string(),
+                tool_reminders: String::new(),
+                tool_timers: String::new(),
+                tool_timer_laps: String::new(),
+                tool_pomodoro_runs: String::new(),
+                tool_daily_stats: String::new(),
+            },
+            counts: BackupArchiveCounts {
+                sessions: 0,
+                title_samples: 0,
+                settings: 0,
+                icon_cache: 0,
+                tool_reminders: 0,
+                tool_timers: 0,
+                tool_timer_laps: 0,
+                tool_pomodoro_runs: 0,
+                tool_daily_stats: 0,
+            },
+        };
+        let manifest_json = serialize_pretty(&manifest, "manifest").unwrap();
+        let sessions = "[]";
+        let settings = "[]";
+        let icon_cache = "[]";
+        let checksums = BackupArchiveChecksums {
+            algorithm: "crc32".to_string(),
+            files: BTreeMap::from([
+                (
+                    BACKUP_MANIFEST_ENTRY_NAME.to_string(),
+                    checksum(&manifest_json),
+                ),
+                (BACKUP_SESSIONS_ENTRY_NAME.to_string(), checksum(sessions)),
+                (BACKUP_SETTINGS_ENTRY_NAME.to_string(), checksum(settings)),
+                (
+                    BACKUP_ICON_CACHE_ENTRY_NAME.to_string(),
+                    checksum(icon_cache),
+                ),
+            ]),
+        };
+        let checksums_json = serialize_pretty(&checksums, "checksums").unwrap();
+        let mut archive = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        zip_write_file(
+            &mut archive,
+            BACKUP_MANIFEST_ENTRY_NAME,
+            &manifest_json,
+            options,
+        )
+        .unwrap();
+        zip_write_file(&mut archive, BACKUP_SESSIONS_ENTRY_NAME, sessions, options).unwrap();
+        zip_write_file(&mut archive, BACKUP_SETTINGS_ENTRY_NAME, settings, options).unwrap();
+        zip_write_file(
+            &mut archive,
+            BACKUP_ICON_CACHE_ENTRY_NAME,
+            icon_cache,
+            options,
+        )
+        .unwrap();
+        zip_write_file(
+            &mut archive,
+            BACKUP_CHECKSUMS_ENTRY_NAME,
+            &checksums_json,
+            options,
+        )
+        .unwrap();
+
+        let archive_bytes = archive.finish().unwrap().into_inner();
+        let mut zip = ZipArchive::new(Cursor::new(archive_bytes)).unwrap();
+        let error =
+            decode_structured_backup_archive(&mut zip, Path::new("backup.zip")).unwrap_err();
+
+        assert!(error.contains("unsupported format `TimeTrackerBackup`"));
+    }
+
+    #[test]
+    fn structured_backup_archive_declaring_title_samples_requires_the_file() {
+        let manifest = BackupArchiveManifest {
+            format: BACKUP_FORMAT.to_string(),
             backup_version: CURRENT_BACKUP_VERSION,
             exported_at_ms: 1_714_000_000_000,
             schema_version: CURRENT_BACKUP_SCHEMA_VERSION,

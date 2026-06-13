@@ -1,9 +1,8 @@
 const WEBDAV_BACKUP_CREDENTIAL_TARGET: &str = "com.ceceliaee.patina.backup.webdav.default";
-const LEGACY_WEBDAV_BACKUP_CREDENTIAL_TARGET: &str = "com.timetracker.backup.webdav.default";
 
 #[cfg(target_os = "windows")]
 mod windows_credentials {
-    use super::{LEGACY_WEBDAV_BACKUP_CREDENTIAL_TARGET, WEBDAV_BACKUP_CREDENTIAL_TARGET};
+    use super::WEBDAV_BACKUP_CREDENTIAL_TARGET;
     use std::ptr;
     use windows::core::PWSTR;
     use windows::Win32::Foundation::ERROR_NOT_FOUND;
@@ -20,12 +19,8 @@ mod windows_credentials {
         error.code() == ERROR_NOT_FOUND.to_hresult()
     }
 
-    fn save_password_to_target(
-        target_name: &str,
-        username: &str,
-        password: &str,
-    ) -> Result<(), String> {
-        let mut target = wide_null(target_name);
+    pub fn save_webdav_password(username: &str, password: &str) -> Result<(), String> {
+        let mut target = wide_null(WEBDAV_BACKUP_CREDENTIAL_TARGET);
         let mut comment = wide_null("Patina WebDAV backup credential");
         let mut username = wide_null(username);
         let mut password_bytes = password.as_bytes().to_vec();
@@ -50,12 +45,8 @@ mod windows_credentials {
         }
     }
 
-    pub fn save_webdav_password(username: &str, password: &str) -> Result<(), String> {
-        save_password_to_target(WEBDAV_BACKUP_CREDENTIAL_TARGET, username, password)
-    }
-
-    fn read_password_from_target(target_name: &str) -> Result<Option<String>, String> {
-        let target = wide_null(target_name);
+    pub fn read_webdav_password() -> Result<Option<String>, String> {
+        let target = wide_null(WEBDAV_BACKUP_CREDENTIAL_TARGET);
         let mut credential: *mut CREDENTIALW = ptr::null_mut();
 
         let result = unsafe {
@@ -91,29 +82,8 @@ mod windows_credentials {
         }
     }
 
-    pub fn read_webdav_password() -> Result<Option<String>, String> {
-        if let Some(password) = read_password_from_target(WEBDAV_BACKUP_CREDENTIAL_TARGET)? {
-            return Ok(Some(password));
-        }
-
-        let Some(password) = read_password_from_target(LEGACY_WEBDAV_BACKUP_CREDENTIAL_TARGET)?
-        else {
-            return Ok(None);
-        };
-
-        if let Err(error) = save_password_to_target(
-            WEBDAV_BACKUP_CREDENTIAL_TARGET,
-            "Patina WebDAV backup",
-            &password,
-        ) {
-            eprintln!("[credentials] failed to migrate legacy WebDAV credential: {error}");
-        }
-
-        Ok(Some(password))
-    }
-
-    fn delete_password_from_target(target_name: &str) -> Result<(), String> {
-        let target = wide_null(target_name);
+    pub fn delete_webdav_password() -> Result<(), String> {
+        let target = wide_null(WEBDAV_BACKUP_CREDENTIAL_TARGET);
         let result = unsafe {
             CredDeleteW(
                 windows::core::PCWSTR(target.as_ptr()),
@@ -127,11 +97,6 @@ mod windows_credentials {
             Err(error) if is_not_found(&error) => Ok(()),
             Err(error) => Err(format!("failed to delete WebDAV credential: {error}")),
         }
-    }
-
-    pub fn delete_webdav_password() -> Result<(), String> {
-        delete_password_from_target(WEBDAV_BACKUP_CREDENTIAL_TARGET)?;
-        delete_password_from_target(LEGACY_WEBDAV_BACKUP_CREDENTIAL_TARGET)
     }
 }
 

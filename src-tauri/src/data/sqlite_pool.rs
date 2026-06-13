@@ -1,13 +1,11 @@
 use crate::data::schema;
 use crate::platform::app_paths;
 use futures_util::future::BoxFuture;
-use serde::Serialize;
 use sqlx::error::BoxDynError;
 use sqlx::migrate::{Migration as SqlxMigration, MigrationSource, MigrationType, Migrator};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Pool, Row, Sqlite};
-use std::collections::BTreeMap;
-use std::fs::{self, create_dir_all};
+use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_sql::{DbInstances, DbPool, MigrationKind};
@@ -15,8 +13,6 @@ use tokio::time::{sleep, Duration};
 
 pub const SQLITE_DB_NAME: &str = "sqlite:patina.db";
 const SQLITE_DB_FILE_NAME: &str = "patina.db";
-const LEGACY_SQLITE_DB_FILE_NAME: &str = "timetracker.db";
-const MIGRATION_STATE_FILE_NAME: &str = "migration-state.json";
 
 #[derive(Debug)]
 struct InlineMigrationList(Vec<tauri_plugin_sql::Migration>);
@@ -38,36 +34,6 @@ impl MigrationSource<'static> for InlineMigrationList {
             }
             Ok(migrations)
         })
-    }
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MigrationState<'a> {
-    from_identifier: &'a str,
-    from_path: String,
-    to_path: String,
-    migrated_at: u64,
-    app_version: String,
-    source_size: u64,
-    source_modified_time: Option<u64>,
-    integrity_check_result: String,
-    legacy_source_cleanup: &'a str,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum LegacyCleanupOutcome {
-    NoLegacyDir,
-    RemovedLegacyDir,
-    KeptUnknownFiles,
-}
-
-impl LegacyCleanupOutcome {
-    fn marker_value(self) -> &'static str {
-        match self {
-            Self::NoLegacyDir | Self::RemovedLegacyDir => "completed",
-            Self::KeptUnknownFiles => "known-files-removed-unknown-files-kept",
-        }
     }
 }
 
@@ -166,17 +132,6 @@ async fn register_sqlite_pool<R: Runtime>(
 
 pub async fn initialize_app_sqlite<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let db_path = resolve_product_db_path(app)?;
-    let target_existed_before = db_path.exists();
-    let legacy_dir = app_paths::legacy_roaming_data_dir(app)?;
-    let legacy_db_path = legacy_dir.join(LEGACY_SQLITE_DB_FILE_NAME);
-    let migration_state_path = migration_state_path(&db_path)?;
-    let mut migrated_this_start = false;
-
-    if !target_existed_before && legacy_db_path.exists() {
-        migrate_legacy_database(app, &legacy_db_path, &db_path).await?;
-        migrated_this_start = true;
-    }
-
     let pool = open_single_connection_sqlite_pool(&db_path, true).await?;
 
     if repair_legacy_schema_before_baseline_normalization(&pool).await? {
@@ -201,27 +156,6 @@ pub async fn initialize_app_sqlite<R: Runtime>(app: &AppHandle<R>) -> Result<(),
     }
 
     register_sqlite_pool(app, pool).await?;
-    if migrated_this_start || migration_state_path.exists() {
-        let target_dir = db_path
-            .parent()
-            .ok_or_else(|| format!("failed to resolve sqlite db parent `{}`", db_path.display()))?;
-        match cleanup_legacy_roaming_data_dir(&legacy_dir, target_dir) {
-            Ok(outcome) => {
-                if let Err(error) =
-                    update_migration_cleanup_state(&migration_state_path, outcome.marker_value())
-                {
-                    eprintln!("[sql] failed to update sqlite migration cleanup state: {error}");
-                }
-            }
-            Err(error) => {
-                eprintln!("[sql] failed to cleanup legacy app data dir: {error}");
-            }
-        }
-    } else if target_existed_before && legacy_db_path.exists() {
-        eprintln!(
-            "[sql] legacy sqlite db also exists, but no migration marker was found; keeping legacy data untouched"
-        );
-    }
 
     Ok(())
 }
@@ -234,358 +168,6 @@ async fn run_current_migrations(pool: &Pool<Sqlite>) -> Result<(), String> {
         .run(pool)
         .await
         .map_err(|error| format!("failed to run sqlite migrations: {error}"))
-}
-
-async fn migrate_legacy_database<R: Runtime>(
-    app: &AppHandle<R>,
-    legacy_db_path: &Path,
-    db_path: &Path,
-) -> Result<(), String> {
-    let source_metadata = fs::metadata(legacy_db_path).map_err(|error| {
-        format!(
-            "failed to inspect legacy sqlite db `{}`: {error}",
-            legacy_db_path.display()
-        )
-    })?;
-
-    let source_pool = open_single_connection_sqlite_pool(legacy_db_path, false).await?;
-    let integrity_check_result = sqlite_integrity_check(&source_pool).await?;
-    if integrity_check_result != "ok" {
-        source_pool.close().await;
-        return Err(format!(
-            "legacy sqlite integrity check failed for `{}`: {integrity_check_result}",
-            legacy_db_path.display()
-        ));
-    }
-
-    let _ = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
-        .execute(&source_pool)
-        .await
-        .map_err(|error| {
-            format!(
-                "failed to checkpoint legacy sqlite WAL `{}`: {error}",
-                legacy_db_path.display()
-            )
-        })?;
-    let source_core_counts = core_table_row_counts(&source_pool).await?;
-    source_pool.close().await;
-
-    let temp_path = db_path.with_extension("db.migrating");
-    if temp_path.exists() {
-        fs::remove_file(&temp_path).map_err(|error| {
-            format!(
-                "failed to remove stale sqlite migration temp file `{}`: {error}",
-                temp_path.display()
-            )
-        })?;
-    }
-
-    fs::copy(legacy_db_path, &temp_path).map_err(|error| {
-        format!(
-            "failed to copy legacy sqlite db `{}` to `{}`: {error}",
-            legacy_db_path.display(),
-            temp_path.display()
-        )
-    })?;
-
-    let target_pool = open_single_connection_sqlite_pool(&temp_path, false).await?;
-    let target_integrity = sqlite_integrity_check(&target_pool).await?;
-    let target_core_counts = core_table_row_counts(&target_pool).await?;
-    target_pool.close().await;
-    if target_integrity != "ok" {
-        let _ = fs::remove_file(&temp_path);
-        return Err(format!(
-            "migrated sqlite integrity check failed for `{}`: {target_integrity}",
-            temp_path.display()
-        ));
-    }
-    if target_core_counts != source_core_counts {
-        let _ = fs::remove_file(&temp_path);
-        return Err(format!(
-            "migrated sqlite row count comparison failed for `{}`",
-            temp_path.display()
-        ));
-    }
-
-    fs::rename(&temp_path, db_path).map_err(|error| {
-        format!(
-            "failed to promote migrated sqlite db `{}` to `{}`: {error}",
-            temp_path.display(),
-            db_path.display()
-        )
-    })?;
-
-    write_migration_state(
-        app,
-        legacy_db_path,
-        db_path,
-        &source_metadata,
-        &integrity_check_result,
-    )?;
-
-    Ok(())
-}
-
-async fn sqlite_integrity_check(pool: &Pool<Sqlite>) -> Result<String, String> {
-    sqlx::query_scalar::<_, String>("PRAGMA integrity_check")
-        .fetch_one(pool)
-        .await
-        .map_err(|error| format!("failed to run sqlite integrity check: {error}"))
-}
-
-async fn core_table_row_counts(pool: &Pool<Sqlite>) -> Result<BTreeMap<&'static str, i64>, String> {
-    let mut counts = BTreeMap::new();
-    for (table_name, query) in [
-        ("sessions", "SELECT COUNT(*) FROM sessions"),
-        (
-            "session_title_samples",
-            "SELECT COUNT(*) FROM session_title_samples",
-        ),
-        ("settings", "SELECT COUNT(*) FROM settings"),
-        ("icon_cache", "SELECT COUNT(*) FROM icon_cache"),
-    ] {
-        if table_exists(pool, table_name).await? {
-            let count = sqlx::query_scalar::<_, i64>(query)
-                .fetch_one(pool)
-                .await
-                .map_err(|error| {
-                    format!("failed to count sqlite table `{table_name}` rows: {error}")
-                })?;
-            counts.insert(table_name, count);
-        }
-    }
-    Ok(counts)
-}
-
-fn write_migration_state<R: Runtime>(
-    app: &AppHandle<R>,
-    legacy_db_path: &Path,
-    db_path: &Path,
-    source_metadata: &fs::Metadata,
-    integrity_check_result: &str,
-) -> Result<(), String> {
-    let marker_path = migration_state_path(db_path)?;
-    let source_modified_time = source_metadata
-        .modified()
-        .ok()
-        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|duration| duration.as_millis() as u64);
-    let state = MigrationState {
-        from_identifier: app_paths::app_profile(app).legacy_identifier(),
-        from_path: legacy_db_path.display().to_string(),
-        to_path: db_path.display().to_string(),
-        migrated_at: crate::app::runtime::now_ms(),
-        app_version: app.package_info().version.to_string(),
-        source_size: source_metadata.len(),
-        source_modified_time,
-        integrity_check_result: integrity_check_result.to_string(),
-        legacy_source_cleanup: "pending",
-    };
-    let json = serde_json::to_string_pretty(&state)
-        .map_err(|error| format!("failed to serialize sqlite migration state: {error}"))?;
-    fs::write(&marker_path, json).map_err(|error| {
-        format!(
-            "failed to write sqlite migration state `{}`: {error}",
-            marker_path.display()
-        )
-    })
-}
-
-fn migration_state_path(db_path: &Path) -> Result<PathBuf, String> {
-    Ok(db_path
-        .parent()
-        .ok_or_else(|| {
-            format!(
-                "failed to resolve migrated sqlite parent for `{}`",
-                db_path.display()
-            )
-        })?
-        .join(MIGRATION_STATE_FILE_NAME))
-}
-
-fn update_migration_cleanup_state(marker_path: &Path, cleanup_state: &str) -> Result<(), String> {
-    if !marker_path.exists() {
-        return Ok(());
-    }
-
-    let raw = fs::read_to_string(marker_path).map_err(|error| {
-        format!(
-            "failed to read sqlite migration state `{}`: {error}",
-            marker_path.display()
-        )
-    })?;
-    let mut value = serde_json::from_str::<serde_json::Value>(&raw).map_err(|error| {
-        format!(
-            "failed to parse sqlite migration state `{}`: {error}",
-            marker_path.display()
-        )
-    })?;
-    if let Some(object) = value.as_object_mut() {
-        object.insert(
-            "legacySourceCleanup".to_string(),
-            serde_json::Value::String(cleanup_state.to_string()),
-        );
-        object.insert(
-            "legacySourceCleanupUpdatedAt".to_string(),
-            serde_json::Value::Number(crate::app::runtime::now_ms().into()),
-        );
-    }
-
-    let json = serde_json::to_string_pretty(&value).map_err(|error| {
-        format!(
-            "failed to serialize sqlite migration state `{}`: {error}",
-            marker_path.display()
-        )
-    })?;
-    fs::write(marker_path, json).map_err(|error| {
-        format!(
-            "failed to update sqlite migration state `{}`: {error}",
-            marker_path.display()
-        )
-    })
-}
-
-fn cleanup_legacy_roaming_data_dir(
-    legacy_dir: &Path,
-    target_dir: &Path,
-) -> Result<LegacyCleanupOutcome, String> {
-    if !legacy_dir.exists() {
-        return Ok(LegacyCleanupOutcome::NoLegacyDir);
-    }
-
-    move_legacy_backup_dir(legacy_dir, target_dir)?;
-
-    for file_name in [
-        LEGACY_SQLITE_DB_FILE_NAME,
-        "timetracker.db-wal",
-        "timetracker.db-shm",
-    ] {
-        let path = legacy_dir.join(file_name);
-        if path.exists() {
-            fs::remove_file(&path).map_err(|error| {
-                format!(
-                    "failed to remove legacy sqlite file `{}`: {error}",
-                    path.display()
-                )
-            })?;
-        }
-    }
-
-    let remote_temp_dir = legacy_dir.join("remote-backup-temp");
-    if remote_temp_dir.exists() {
-        fs::remove_dir_all(&remote_temp_dir).map_err(|error| {
-            format!(
-                "failed to remove legacy remote backup temp dir `{}`: {error}",
-                remote_temp_dir.display()
-            )
-        })?;
-    }
-
-    match fs::remove_dir(legacy_dir) {
-        Ok(()) => Ok(LegacyCleanupOutcome::RemovedLegacyDir),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            Ok(LegacyCleanupOutcome::RemovedLegacyDir)
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::DirectoryNotEmpty => {
-            Ok(LegacyCleanupOutcome::KeptUnknownFiles)
-        }
-        Err(error) => Err(format!(
-            "failed to remove empty legacy app data dir `{}`: {error}",
-            legacy_dir.display()
-        )),
-    }
-}
-
-fn move_legacy_backup_dir(legacy_dir: &Path, target_dir: &Path) -> Result<(), String> {
-    let legacy_backup_dir = legacy_dir.join("backups");
-    if !legacy_backup_dir.exists() {
-        return Ok(());
-    }
-
-    let target_backup_dir = target_dir.join("backups");
-    create_dir_all(&target_backup_dir).map_err(|error| {
-        format!(
-            "failed to create migrated backup dir `{}`: {error}",
-            target_backup_dir.display()
-        )
-    })?;
-
-    for entry in fs::read_dir(&legacy_backup_dir).map_err(|error| {
-        format!(
-            "failed to read legacy backup dir `{}`: {error}",
-            legacy_backup_dir.display()
-        )
-    })? {
-        let entry = entry.map_err(|error| {
-            format!(
-                "failed to inspect legacy backup dir `{}` entry: {error}",
-                legacy_backup_dir.display()
-            )
-        })?;
-        let source_path = entry.path();
-        let target_path = target_backup_dir.join(entry.file_name());
-        if target_path.exists() {
-            continue;
-        }
-        fs::rename(&source_path, &target_path).map_err(|error| {
-            format!(
-                "failed to move legacy backup `{}` to `{}`: {error}",
-                source_path.display(),
-                target_path.display()
-            )
-        })?;
-    }
-
-    match fs::remove_dir(&legacy_backup_dir) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::DirectoryNotEmpty => Ok(()),
-        Err(error) => Err(format!(
-            "failed to remove empty legacy backup dir `{}`: {error}",
-            legacy_backup_dir.display()
-        )),
-    }
-}
-
-pub fn cleanup_webview_compat_dirs<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
-    let legacy_local_dir = app_paths::legacy_local_data_dir(app)?;
-    remove_dir_all_if_exists(
-        &legacy_local_dir.join("EBWebView"),
-        "legacy WebView data dir",
-    )?;
-
-    remove_empty_dir_if_exists(&legacy_local_dir, "legacy local app data dir")?;
-
-    let obsolete_product_webview_root = app_paths::product_local_data_dir(app)?.join("WebView");
-    remove_dir_all_if_exists(
-        &obsolete_product_webview_root.join("EBWebView"),
-        "obsolete pre-release WebView data dir",
-    )?;
-    remove_empty_dir_if_exists(
-        &obsolete_product_webview_root,
-        "obsolete pre-release WebView root",
-    )
-}
-
-fn remove_dir_all_if_exists(path: &Path, label: &str) -> Result<(), String> {
-    if !path.exists() {
-        return Ok(());
-    }
-
-    fs::remove_dir_all(path)
-        .map_err(|error| format!("failed to remove {label} `{}`: {error}", path.display()))
-}
-
-fn remove_empty_dir_if_exists(path: &Path, label: &str) -> Result<(), String> {
-    match fs::remove_dir(path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::DirectoryNotEmpty => Ok(()),
-        Err(error) => Err(format!(
-            "failed to remove empty {label} `{}`: {error}",
-            path.display()
-        )),
-    }
 }
 
 async fn table_exists(pool: &Pool<Sqlite>, table_name: &str) -> Result<bool, String> {
@@ -1159,16 +741,6 @@ pub async fn wait_for_sqlite_pool<R: Runtime>(app: &AppHandle<R>) -> Result<Pool
 mod tests {
     use super::*;
     use sqlx::{Executor, SqlitePool};
-    use std::path::PathBuf;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn unique_temp_root(label: &str) -> PathBuf {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!("patina-{label}-{}-{nonce}", std::process::id()))
-    }
 
     async fn create_sqlx_migrations_table(pool: &SqlitePool) {
         pool.execute(
@@ -1183,122 +755,6 @@ mod tests {
         )
         .await
         .unwrap();
-    }
-
-    #[test]
-    fn legacy_roaming_cleanup_removes_known_files_and_empty_parent() {
-        let root = unique_temp_root("legacy-cleanup-known");
-        let legacy_dir = root.join("com.timetracker");
-        let target_dir = root.join("Patina");
-        std::fs::create_dir_all(legacy_dir.join("remote-backup-temp")).unwrap();
-        std::fs::create_dir_all(&target_dir).unwrap();
-        std::fs::write(legacy_dir.join("timetracker.db"), b"legacy").unwrap();
-        std::fs::write(legacy_dir.join("timetracker.db-wal"), b"wal").unwrap();
-        std::fs::write(legacy_dir.join("timetracker.db-shm"), b"shm").unwrap();
-        std::fs::write(
-            legacy_dir.join("remote-backup-temp").join("temp.zip"),
-            b"temp",
-        )
-        .unwrap();
-
-        let outcome = cleanup_legacy_roaming_data_dir(&legacy_dir, &target_dir).unwrap();
-
-        assert_eq!(outcome, LegacyCleanupOutcome::RemovedLegacyDir);
-        assert!(!legacy_dir.exists());
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn legacy_roaming_cleanup_preserves_unknown_files() {
-        let root = unique_temp_root("legacy-cleanup-unknown");
-        let legacy_dir = root.join("com.timetracker");
-        let target_dir = root.join("Patina");
-        std::fs::create_dir_all(&legacy_dir).unwrap();
-        std::fs::create_dir_all(&target_dir).unwrap();
-        std::fs::write(legacy_dir.join("timetracker.db"), b"legacy").unwrap();
-        std::fs::write(legacy_dir.join("notes.txt"), b"keep").unwrap();
-
-        let outcome = cleanup_legacy_roaming_data_dir(&legacy_dir, &target_dir).unwrap();
-
-        assert_eq!(outcome, LegacyCleanupOutcome::KeptUnknownFiles);
-        assert!(legacy_dir.exists());
-        assert!(!legacy_dir.join("timetracker.db").exists());
-        assert_eq!(
-            std::fs::read(legacy_dir.join("notes.txt")).unwrap(),
-            b"keep"
-        );
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn legacy_roaming_cleanup_moves_backups_without_overwriting_current_files() {
-        let root = unique_temp_root("legacy-cleanup-backups");
-        let legacy_dir = root.join("com.timetracker");
-        let target_dir = root.join("Patina");
-        let legacy_backup_dir = legacy_dir.join("backups");
-        let target_backup_dir = target_dir.join("backups");
-        std::fs::create_dir_all(&legacy_backup_dir).unwrap();
-        std::fs::create_dir_all(&target_backup_dir).unwrap();
-        std::fs::write(legacy_backup_dir.join("same.zip"), b"legacy").unwrap();
-        std::fs::write(legacy_backup_dir.join("only-legacy.zip"), b"move").unwrap();
-        std::fs::write(target_backup_dir.join("same.zip"), b"current").unwrap();
-
-        let outcome = cleanup_legacy_roaming_data_dir(&legacy_dir, &target_dir).unwrap();
-
-        assert_eq!(outcome, LegacyCleanupOutcome::KeptUnknownFiles);
-        assert_eq!(
-            std::fs::read(target_backup_dir.join("same.zip")).unwrap(),
-            b"current"
-        );
-        assert_eq!(
-            std::fs::read(target_backup_dir.join("only-legacy.zip")).unwrap(),
-            b"move"
-        );
-        assert_eq!(
-            std::fs::read(legacy_backup_dir.join("same.zip")).unwrap(),
-            b"legacy"
-        );
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn webview_cache_cleanup_removes_empty_pre_release_root() {
-        let root = unique_temp_root("webview-cleanup-empty-root");
-        let webview_root = root.join("Patina").join("WebView");
-        std::fs::create_dir_all(webview_root.join("EBWebView")).unwrap();
-
-        remove_dir_all_if_exists(
-            &webview_root.join("EBWebView"),
-            "obsolete pre-release WebView data dir",
-        )
-        .unwrap();
-        remove_empty_dir_if_exists(&webview_root, "obsolete pre-release WebView root").unwrap();
-
-        assert!(!webview_root.exists());
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn webview_cache_cleanup_preserves_unknown_pre_release_files() {
-        let root = unique_temp_root("webview-cleanup-unknown");
-        let webview_root = root.join("Patina").join("WebView");
-        std::fs::create_dir_all(webview_root.join("EBWebView")).unwrap();
-        std::fs::write(webview_root.join("notes.txt"), b"keep").unwrap();
-
-        remove_dir_all_if_exists(
-            &webview_root.join("EBWebView"),
-            "obsolete pre-release WebView data dir",
-        )
-        .unwrap();
-        remove_empty_dir_if_exists(&webview_root, "obsolete pre-release WebView root").unwrap();
-
-        assert!(webview_root.exists());
-        assert!(!webview_root.join("EBWebView").exists());
-        assert_eq!(
-            std::fs::read(webview_root.join("notes.txt")).unwrap(),
-            b"keep"
-        );
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

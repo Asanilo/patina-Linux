@@ -18,6 +18,9 @@ const VERSION_PATTERN =
 const VERSION_POLICY_CURRENT_CODE_VERSION_PATTERN = /(- 代码版本为 `)([^`]+)(`)/;
 const GITHUB_UPDATER_ENDPOINT =
   "https://github.com/Ceceliaee/patina/releases/latest/download/latest.json";
+const MAX_RELEASE_NOTE_LENGTH = 100;
+const MAX_APP_NOTE_LENGTH = 60;
+const MAX_APP_NOTE_EN_LENGTH = 120;
 
 function fail(message) {
   console.error(`release: ${message}`);
@@ -266,15 +269,15 @@ async function validateChangelog(version) {
   assertFinalField("App note", parsed.appNote, parsed.version);
   await validateVersionPolicyCurrentCodeVersion(parsed.version);
 
-  if (parsed.release.length > 100) {
+  if (parsed.release.length > MAX_RELEASE_NOTE_LENGTH) {
     fail(`CHANGELOG.md ${parsed.version} Release is too long; keep it short`);
   }
 
-  if (parsed.appNote.length > 40) {
+  if (parsed.appNote.length > MAX_APP_NOTE_LENGTH) {
     fail(`CHANGELOG.md ${parsed.version} App note is too long; keep it lighter`);
   }
 
-  if (parsed.appNoteEn && parsed.appNoteEn.length > 80) {
+  if (parsed.appNoteEn && parsed.appNoteEn.length > MAX_APP_NOTE_EN_LENGTH) {
     fail(`CHANGELOG.md ${parsed.version} App note en is too long; keep it lighter`);
   }
 }

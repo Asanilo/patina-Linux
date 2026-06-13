@@ -274,20 +274,15 @@ runTest("install error keeps retry install as primary action", () => {
   assert.equal(shouldShowSidebarUpdateEntry(snapshot), false);
 });
 
-runTest("update relaunch view storage migrates legacy keys", () => {
+runTest("update relaunch view storage persists current keys", () => {
   withWindowStorage(new MemoryStorage(), () => {
-    window.localStorage.setItem("time-tracker:last-active-view", "data");
-    window.localStorage.setItem("time-tracker:pending-update-relaunch-view", "1");
-
-    assert.equal(consumePendingUpdateRelaunchView(), "data");
-    assert.equal(window.localStorage.getItem("patina:last-active-view"), "data");
-    assert.equal(window.localStorage.getItem("time-tracker:last-active-view"), null);
-    assert.equal(window.localStorage.getItem("patina:pending-update-relaunch-view"), null);
-    assert.equal(window.localStorage.getItem("time-tracker:pending-update-relaunch-view"), null);
-
     rememberLastActiveView("settings");
     markPendingUpdateRelaunchViewRestore();
+    assert.equal(consumePendingUpdateRelaunchView(), "settings");
     assert.equal(window.localStorage.getItem("patina:last-active-view"), "settings");
+    assert.equal(window.localStorage.getItem("patina:pending-update-relaunch-view"), null);
+
+    markPendingUpdateRelaunchViewRestore();
     assert.equal(window.localStorage.getItem("patina:pending-update-relaunch-view"), "1");
 
     clearPendingUpdateRelaunchViewRestore();

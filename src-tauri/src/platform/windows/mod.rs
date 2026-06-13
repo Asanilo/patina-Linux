@@ -3,7 +3,6 @@ pub mod foreground;
 pub mod handles;
 pub mod icon;
 pub mod input;
-pub mod legacy_install;
 pub mod media;
 pub mod notifications;
 pub mod power;

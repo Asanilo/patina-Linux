@@ -2,7 +2,6 @@ import { loadAllSettingRows } from "./settingsPersistence.ts";
 import { executeWriteBatch, type SqlWriteOperation } from "./sqlite.ts";
 
 export const DEFAULT_WEBDAV_REMOTE_DIR = "/Patina";
-const LEGACY_WEBDAV_REMOTE_DIR = "/TimeTracker";
 
 const WEBDAV_BACKUP_URL_KEY = "webdav_backup_url";
 const WEBDAV_BACKUP_USERNAME_KEY = "webdav_backup_username";
@@ -27,10 +26,9 @@ function normalizeRemoteDir(value: string | undefined): string {
   const trimmed = value?.trim();
   if (!trimmed) return DEFAULT_WEBDAV_REMOTE_DIR;
   const withLeadingSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
-  const normalized = withLeadingSlash.length > 1 && withLeadingSlash.endsWith("/")
+  return withLeadingSlash.length > 1 && withLeadingSlash.endsWith("/")
     ? withLeadingSlash.slice(0, -1)
     : withLeadingSlash;
-  return normalized === LEGACY_WEBDAV_REMOTE_DIR ? DEFAULT_WEBDAV_REMOTE_DIR : normalized;
 }
 
 function parseTimestamp(value: string | undefined): number | null {

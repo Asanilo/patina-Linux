@@ -6,11 +6,6 @@ const TOOLS_TIMER_MODE_KEY = "patina:tools-timer-mode";
 const TOOLS_REMINDER_MODE_KEY = "patina:tools-reminder-mode";
 const TOOLS_REMINDER_FORM_MODE_KEY = "patina:tools-reminder-form-mode";
 
-const LEGACY_TOOLS_SECTION_KEY = "time-tracker:tools-section";
-const LEGACY_TOOLS_TIMER_MODE_KEY = "time-tracker:tools-timer-mode";
-const LEGACY_TOOLS_REMINDER_MODE_KEY = "time-tracker:tools-reminder-mode";
-const LEGACY_TOOLS_REMINDER_FORM_MODE_KEY = "time-tracker:tools-reminder-form-mode";
-
 function getStorage(): Storage | null {
   if (typeof window === "undefined") return null;
   return window.localStorage;
@@ -18,7 +13,6 @@ function getStorage(): Storage | null {
 
 function readStoredValue<T extends string>(
   key: string,
-  legacyKey: string,
   fallback: T,
   isValid: (value: string | null) => value is T,
 ): T {
@@ -27,26 +21,18 @@ function readStoredValue<T extends string>(
 
   try {
     const value = storage.getItem(key);
-    if (isValid(value)) return value;
-
-    const legacyValue = storage.getItem(legacyKey);
-    if (!isValid(legacyValue)) return fallback;
-
-    storage.setItem(key, legacyValue);
-    storage.removeItem(legacyKey);
-    return legacyValue;
+    return isValid(value) ? value : fallback;
   } catch {
     return fallback;
   }
 }
 
-function rememberStoredValue(key: string, legacyKey: string, value: string) {
+function rememberStoredValue(key: string, value: string) {
   const storage = getStorage();
   if (!storage) return;
 
   try {
     storage.setItem(key, value);
-    storage.removeItem(legacyKey);
   } catch {
     // Tool UI preferences are best-effort; never block the interaction.
   }
@@ -69,38 +55,37 @@ function isReminderFormMode(value: string | null): value is ReminderFormMode {
 }
 
 export function readToolsSection(): ToolsSection {
-  return readStoredValue(TOOLS_SECTION_KEY, LEGACY_TOOLS_SECTION_KEY, "reminders", isToolsSection);
+  return readStoredValue(TOOLS_SECTION_KEY, "reminders", isToolsSection);
 }
 
 export function rememberToolsSection(section: ToolsSection) {
-  rememberStoredValue(TOOLS_SECTION_KEY, LEGACY_TOOLS_SECTION_KEY, section);
+  rememberStoredValue(TOOLS_SECTION_KEY, section);
 }
 
 export function readToolsTimerMode(): TimerMode {
-  return readStoredValue(TOOLS_TIMER_MODE_KEY, LEGACY_TOOLS_TIMER_MODE_KEY, "stopwatch", isTimerMode);
+  return readStoredValue(TOOLS_TIMER_MODE_KEY, "stopwatch", isTimerMode);
 }
 
 export function rememberToolsTimerMode(mode: TimerMode) {
-  rememberStoredValue(TOOLS_TIMER_MODE_KEY, LEGACY_TOOLS_TIMER_MODE_KEY, mode);
+  rememberStoredValue(TOOLS_TIMER_MODE_KEY, mode);
 }
 
 export function readToolsReminderMode(): ReminderMode {
-  return readStoredValue(TOOLS_REMINDER_MODE_KEY, LEGACY_TOOLS_REMINDER_MODE_KEY, "event", isReminderMode);
+  return readStoredValue(TOOLS_REMINDER_MODE_KEY, "event", isReminderMode);
 }
 
 export function rememberToolsReminderMode(mode: ReminderMode) {
-  rememberStoredValue(TOOLS_REMINDER_MODE_KEY, LEGACY_TOOLS_REMINDER_MODE_KEY, mode);
+  rememberStoredValue(TOOLS_REMINDER_MODE_KEY, mode);
 }
 
 export function readToolsReminderFormMode(): ReminderFormMode {
   return readStoredValue(
     TOOLS_REMINDER_FORM_MODE_KEY,
-    LEGACY_TOOLS_REMINDER_FORM_MODE_KEY,
     "relative",
     isReminderFormMode,
   );
 }
 
 export function rememberToolsReminderFormMode(mode: ReminderFormMode) {
-  rememberStoredValue(TOOLS_REMINDER_FORM_MODE_KEY, LEGACY_TOOLS_REMINDER_FORM_MODE_KEY, mode);
+  rememberStoredValue(TOOLS_REMINDER_FORM_MODE_KEY, mode);
 }
