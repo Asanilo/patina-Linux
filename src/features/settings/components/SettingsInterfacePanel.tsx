@@ -1,14 +1,10 @@
-import { Cable, Dices, Eye, EyeOff, KeyRound, Link2 } from "lucide-react";
+import { Dices, EthernetPort, Eye, EyeOff, KeyRound, Link2, Server } from "lucide-react";
 import type { ReactNode, SyntheticEvent } from "react";
 import { useEffect, useState } from "react";
 import QuietActionRow from "../../../shared/components/QuietActionRow";
 import QuietSubpanel from "../../../shared/components/QuietSubpanel";
 import QuietSwitch from "../../../shared/components/QuietSwitch";
 import { UI_TEXT } from "../../../shared/copy/uiText.ts";
-import {
-  getWebActivityBridgeSnapshot,
-  type WebActivityBridgeSnapshot,
-} from "../../../platform/runtime/webActivityBridgeGateway.ts";
 import { buildLocalApiEnabledChange, createLocalApiToken } from "../services/localApiTokenService.ts";
 
 type SettingsInterfacePanelProps = {
@@ -53,11 +49,10 @@ type PortFieldProps = {
   onCommit: () => void;
 };
 
-type InterfaceConfigRowProps = {
+type InterfaceInlineFieldProps = {
   htmlFor: string;
   icon: ReactNode;
   title: string;
-  hint: string;
   children: ReactNode;
 };
 
@@ -65,22 +60,13 @@ const LOCAL_API_PORT_MIN = 1024;
 const LOCAL_API_PORT_MAX = 65535;
 const LOCAL_API_ENDPOINT_PREFIX = "ws://127.0.0.1:";
 const PORT_DRAFT_PATTERN = /^\d{0,5}$/;
+const INTERFACE_FIELD_GRID_CLASS = "mt-4 grid grid-cols-1 gap-x-4 gap-y-3 lg:grid-cols-[minmax(0,4fr)_minmax(0,6fr)]";
 
 function normalizePort(value: string) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed)) return "";
   if (parsed < LOCAL_API_PORT_MIN || parsed > LOCAL_API_PORT_MAX) return "";
   return String(parsed);
-}
-
-function formatBridgeStatus(snapshot: WebActivityBridgeSnapshot | null, enabled: boolean) {
-  if (!enabled) return UI_TEXT.settings.webActivityStatusDisabled;
-  if (snapshot?.connected) {
-    const browser = snapshot.browserKind ? ` · ${snapshot.browserKind}` : "";
-    const version = snapshot.extensionVersion ? ` ${snapshot.extensionVersion}` : "";
-    return `${UI_TEXT.settings.webActivityStatusConnected}${browser}${version}`;
-  }
-  return UI_TEXT.settings.webActivityStatusWaiting;
 }
 
 function TokenField({
@@ -187,27 +173,21 @@ function PortField({
   );
 }
 
-function InterfaceConfigRow({
+function InterfaceInlineField({
   htmlFor,
   icon,
   title,
-  hint,
   children,
-}: InterfaceConfigRowProps) {
+}: InterfaceInlineFieldProps) {
   return (
-    <QuietActionRow className="flex min-h-[112px] flex-col justify-between gap-3">
-      <div className="min-w-0">
-        <label
-          htmlFor={htmlFor}
-          className="flex items-center gap-1.5 text-sm font-semibold text-[var(--qp-text-primary)]"
-        >
-          {icon}
-          <span>{title}</span>
-        </label>
-        <p className="mt-1 text-xs leading-relaxed text-[var(--qp-text-tertiary)]">
-          {hint}
-        </p>
-      </div>
+    <QuietActionRow className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5 gap-y-2">
+      <label
+        htmlFor={htmlFor}
+        className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-semibold text-[var(--qp-text-primary)]"
+      >
+        {icon}
+        <span>{title}</span>
+      </label>
       {children}
     </QuietActionRow>
   );
@@ -229,31 +209,12 @@ export default function SettingsInterfacePanel({
   const [webActivityPortDraft, setWebActivityPortDraft] = useState(String(port));
   const [localApiTokenVisible, setLocalApiTokenVisible] = useState(false);
   const [webActivityTokenVisible, setWebActivityTokenVisible] = useState(false);
-  const [bridgeSnapshot, setBridgeSnapshot] = useState<WebActivityBridgeSnapshot | null>(null);
   const localApiEndpointDraft = `${LOCAL_API_ENDPOINT_PREFIX}${localApiPortDraft}`;
 
   useEffect(() => {
     setLocalApiPortDraft(String(port));
     setWebActivityPortDraft(String(port));
   }, [port]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const snapshot = await getWebActivityBridgeSnapshot();
-        if (!cancelled) setBridgeSnapshot(snapshot);
-      } catch {
-        if (!cancelled) setBridgeSnapshot(null);
-      }
-    };
-    void load();
-    const timer = window.setInterval(() => void load(), 5000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, []);
 
   const handleLocalApiEnabledChange = (nextChecked: boolean) => {
     const change = buildLocalApiEnabledChange(nextChecked, localApiToken);
@@ -287,7 +248,7 @@ export default function SettingsInterfacePanel({
   return (
     <section className="qp-panel p-5 md:p-6">
       <div className="mb-5 flex items-center gap-2.5 border-b border-[var(--qp-border-subtle)] pb-2">
-        <Cable size={16} className="text-[var(--qp-accent-default)]" />
+        <Server size={16} className="text-[var(--qp-accent-default)]" />
         <h2 className="text-sm font-semibold text-[var(--qp-text-primary)]">{UI_TEXT.settings.localApiTitle}</h2>
       </div>
 
@@ -295,14 +256,9 @@ export default function SettingsInterfacePanel({
         <QuietSubpanel>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-sm font-semibold text-[var(--qp-text-primary)]">
-                  {UI_TEXT.settings.webActivityTitle}
-                </p>
-                <span className="qp-status px-2.5 py-1 text-[11px]">
-                  {formatBridgeStatus(bridgeSnapshot, webActivityEnabled)}
-                </span>
-              </div>
+              <p className="text-sm font-semibold text-[var(--qp-text-primary)]">
+                {UI_TEXT.settings.webActivityTitle}
+              </p>
               <p className="mt-1 text-sm leading-relaxed text-[var(--qp-text-secondary)]">
                 {UI_TEXT.settings.webActivityEnabledHint}
               </p>
@@ -314,12 +270,11 @@ export default function SettingsInterfacePanel({
             />
           </div>
 
-          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <InterfaceConfigRow
+          <div className={INTERFACE_FIELD_GRID_CLASS}>
+            <InterfaceInlineField
               htmlFor="settings-web-activity-address"
-              icon={<Cable size={14} className="text-[var(--qp-text-tertiary)]" />}
+              icon={<EthernetPort size={14} className="text-[var(--qp-text-tertiary)]" />}
               title={UI_TEXT.settings.webActivityAddressLabel}
-              hint={UI_TEXT.settings.webActivityAddressHint}
             >
               <PortField
                 id="settings-web-activity-address"
@@ -330,13 +285,12 @@ export default function SettingsInterfacePanel({
                 }}
                 onCommit={() => commitPortDraft(webActivityPortDraft, setWebActivityPortDraft)}
               />
-            </InterfaceConfigRow>
+            </InterfaceInlineField>
 
-            <InterfaceConfigRow
+            <InterfaceInlineField
               htmlFor="settings-web-activity-token"
               icon={<KeyRound size={14} className="text-[var(--qp-text-tertiary)]" />}
               title={UI_TEXT.settings.webActivityTokenLabel}
-              hint={UI_TEXT.settings.webActivityTokenHint}
             >
               <TokenField
                 id="settings-web-activity-token"
@@ -352,7 +306,7 @@ export default function SettingsInterfacePanel({
                 showLabel={UI_TEXT.accessibility.settings.showLocalApiToken}
                 hideLabel={UI_TEXT.accessibility.settings.hideLocalApiToken}
               />
-            </InterfaceConfigRow>
+            </InterfaceInlineField>
           </div>
         </QuietSubpanel>
 
@@ -373,12 +327,11 @@ export default function SettingsInterfacePanel({
             />
           </div>
 
-          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <InterfaceConfigRow
+          <div className={INTERFACE_FIELD_GRID_CLASS}>
+            <InterfaceInlineField
               htmlFor="settings-local-api-address"
               icon={<Link2 size={14} className="text-[var(--qp-text-tertiary)]" />}
               title={UI_TEXT.settings.localApiPortLabel}
-              hint={UI_TEXT.settings.localApiPortHint}
             >
               <EndpointField
                 id="settings-local-api-address"
@@ -391,13 +344,12 @@ export default function SettingsInterfacePanel({
                 }}
                 onCommit={() => commitPortDraft(localApiPortDraft, setLocalApiPortDraft)}
               />
-            </InterfaceConfigRow>
+            </InterfaceInlineField>
 
-            <InterfaceConfigRow
+            <InterfaceInlineField
               htmlFor="settings-local-api-token"
               icon={<KeyRound size={14} className="text-[var(--qp-text-tertiary)]" />}
               title={UI_TEXT.settings.localApiTokenLabel}
-              hint={UI_TEXT.settings.localApiTokenHint}
             >
               <TokenField
                 id="settings-local-api-token"
@@ -413,7 +365,7 @@ export default function SettingsInterfacePanel({
                 showLabel={UI_TEXT.accessibility.settings.showLocalApiToken}
                 hideLabel={UI_TEXT.accessibility.settings.hideLocalApiToken}
               />
-            </InterfaceConfigRow>
+            </InterfaceInlineField>
           </div>
         </QuietSubpanel>
       </div>

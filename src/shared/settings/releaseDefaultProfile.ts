@@ -83,7 +83,7 @@ export const RELEASE_DEFAULT_SETTINGS: ReleaseDefaultSettingsProfile = {
   backgroundOptimization: false,
   onboardingCompleted: true,
   localApiEnabled: false,
-  localApiPort: 17321,
+  localApiPort: 12345,
   localApiToken: "",
   webActivityEnabled: false,
   webActivityToken: "",

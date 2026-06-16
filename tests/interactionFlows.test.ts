@@ -51,7 +51,7 @@ const BASE_SETTINGS: AppSettings = {
   backgroundOptimization: false,
   onboardingCompleted: false,
   localApiEnabled: false,
-  localApiPort: 17321,
+  localApiPort: 12345,
   localApiToken: "",
   webActivityEnabled: false,
   webActivityToken: "",

@@ -1,6 +1,6 @@
 const PROTOCOL_VERSION = 1;
 const EXTENSION_VERSION = chrome.runtime.getManifest().version;
-const DEFAULT_PORT = "17321";
+const DEFAULT_PORT = "12345";
 const PORT_PATTERN = /^\d{1,5}$/;
 const FAVICON_DATA_URL_MAX_CHARS = 8192;
 const FAVICON_DATA_URL_MAX_BYTES = 6144;

@@ -365,8 +365,23 @@ await runTest("operation-oriented pages keep explicit busy feedback", () => {
   assert.match(updateDialog, /UI_TEXT\.update\.processing/);
 });
 
+await runTest("settings leaves web activity connection status to the extension", () => {
+  const extensionBackground = readUtf8("extensions/chrome/background.js");
+  const webActivityDomain = readUtf8("src-tauri/src/domain/web_activity.rs");
+  const bridgeGateway = readUtf8("src/platform/runtime/webActivityBridgeGateway.ts");
+  const settingsInterface = readUtf8("src/features/settings/components/SettingsInterfacePanel.tsx");
+  const extensionPopup = readUtf8("extensions/chrome/popup.js");
+
+  assert.doesNotMatch(extensionBackground, /statusLabel|extensionStatusLabel/);
+  assert.doesNotMatch(webActivityDomain, /status_label|sanitize_status_label/);
+  assert.doesNotMatch(bridgeGateway, /statusLabel/);
+  assert.doesNotMatch(settingsInterface, /bridgeSnapshot|formatBridgeStatus|webActivityStatus/);
+  assert.match(extensionPopup, /function statusLabel\(settings\)/);
+});
+
 await runTest("classification web domain colors prefer favicon theme colors", () => {
   const mappingState = readUtf8("src/features/classification/hooks/useAppMappingState.ts");
+  const iconThemeColors = readUtf8("src/shared/hooks/useIconThemeColors.ts");
   const webActivityRepository = readUtf8("src/platform/persistence/webActivityRepository.ts");
   const colorResolver = mappingState.slice(
     mappingState.indexOf("const resolveWebDomainColor = useCallback"),
@@ -375,9 +390,13 @@ await runTest("classification web domain colors prefer favicon theme colors", ()
 
   assert.match(mappingState, /const webDomainIcons = useMemo/);
   assert.match(mappingState, /candidate\.faviconUrl\?\.trim\(\)/);
+  assert.match(mappingState, /const iconThemeColors = useIconThemeColors\(icons\)/);
   assert.match(mappingState, /const webDomainIconThemeColors = useIconThemeColors\(webDomainIcons\)/);
   assert.match(colorResolver, /const iconColor = webDomainIconThemeColors\[candidate\.normalizedDomain\]/);
   assert.match(colorResolver, /if \(iconColor\) return iconColor;/);
+  assert.doesNotMatch(iconThemeColors, /darkPixelMode/);
+  assert.match(iconThemeColors, /brightness > 245/);
+  assert.doesNotMatch(iconThemeColors, /brightness\s*<\s*\d+/);
   assert.match(webActivityRepository, /ORDER BY CASE WHEN icon\.favicon_url LIKE 'data:%' THEN 0 ELSE 1 END/);
 });
 

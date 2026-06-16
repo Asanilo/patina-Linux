@@ -1,4 +1,4 @@
-const DEFAULT_PORT = "17321";
+const DEFAULT_PORT = "12345";
 const PORT_PATTERN = /^\d{1,5}$/;
 
 const DEFAULTS = {

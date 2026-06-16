@@ -666,7 +666,7 @@ mod tests {
         let previous = LocalApiSettings {
             enabled: true,
             local_api_enabled: true,
-            port: 17_321,
+            port: 12_345,
             token: "old-token".to_string(),
             web_activity_enabled: false,
             web_activity_token: String::new(),
@@ -684,7 +684,7 @@ mod tests {
         let previous = LocalApiSettings {
             enabled: true,
             local_api_enabled: false,
-            port: 17_321,
+            port: 12_345,
             token: String::new(),
             web_activity_enabled: true,
             web_activity_token: "old-token".to_string(),

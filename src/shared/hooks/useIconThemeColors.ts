@@ -23,6 +23,43 @@ function toBucketKey(r: number, g: number, b: number) {
   return `${bucket(r)}-${bucket(g)}-${bucket(b)}`;
 }
 
+function chooseDominantColor(data: Uint8ClampedArray) {
+  const buckets = new Map<string, { count: number; r: number; g: number; b: number }>();
+  for (let index = 0; index < data.length; index += 4) {
+    const r = data[index];
+    const g = data[index + 1];
+    const b = data[index + 2];
+    const a = data[index + 3];
+    if (a < 48) continue;
+
+    const brightness = (r + g + b) / 3;
+    if (brightness > 245) continue;
+
+    const key = toBucketKey(r, g, b);
+    const existing = buckets.get(key) ?? { count: 0, r: 0, g: 0, b: 0 };
+    existing.count += 1;
+    existing.r += r;
+    existing.g += g;
+    existing.b += b;
+    buckets.set(key, existing);
+  }
+
+  let selected: { count: number; r: number; g: number; b: number } | null = null;
+  for (const bucket of buckets.values()) {
+    if (!selected || bucket.count > selected.count) {
+      selected = bucket;
+    }
+  }
+
+  if (!selected) return null;
+
+  return rgbToHex(
+    Math.round(selected.r / selected.count),
+    Math.round(selected.g / selected.count),
+    Math.round(selected.b / selected.count),
+  );
+}
+
 async function extractDominantColor(iconData: string): Promise<string | null> {
   const imageSource = toImageSource(iconData);
   if (!imageSource) return null;
@@ -57,40 +94,9 @@ async function extractDominantColor(iconData: string): Promise<string | null> {
     return null;
   }
 
-  const buckets = new Map<string, { count: number; r: number; g: number; b: number }>();
-  for (let index = 0; index < data.length; index += 4) {
-    const r = data[index];
-    const g = data[index + 1];
-    const b = data[index + 2];
-    const a = data[index + 3];
-    if (a < 48) continue;
+  const color = chooseDominantColor(data);
+  if (!color) return null;
 
-    const brightness = (r + g + b) / 3;
-    if (brightness > 245 || brightness < 10) continue;
-
-    const key = toBucketKey(r, g, b);
-    const existing = buckets.get(key) ?? { count: 0, r: 0, g: 0, b: 0 };
-    existing.count += 1;
-    existing.r += r;
-    existing.g += g;
-    existing.b += b;
-    buckets.set(key, existing);
-  }
-
-  let selected: { count: number; r: number; g: number; b: number } | null = null;
-  for (const bucket of buckets.values()) {
-    if (!selected || bucket.count > selected.count) {
-      selected = bucket;
-    }
-  }
-
-  if (!selected) return null;
-
-  const color = rgbToHex(
-    Math.round(selected.r / selected.count),
-    Math.round(selected.g / selected.count),
-    Math.round(selected.b / selected.count),
-  );
   ICON_THEME_CACHE.set(imageSource, color);
   return color;
 }

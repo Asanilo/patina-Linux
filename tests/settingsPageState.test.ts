@@ -124,7 +124,7 @@ const BASE_SETTINGS: AppSettings = {
   backgroundOptimization: false,
   onboardingCompleted: false,
   localApiEnabled: false,
-  localApiPort: 17321,
+  localApiPort: 12345,
   localApiToken: "",
   webActivityEnabled: false,
   webActivityToken: "",
@@ -356,7 +356,7 @@ await runTest("normalizeSettingsRecord accepts current minimize behavior values"
   assert.equal(defaultSettings.colorSchemeDark, "default");
   assert.equal(defaultSettings.minSessionSecs, 300);
   assert.equal(defaultSettings.localApiEnabled, false);
-  assert.equal(defaultSettings.localApiPort, 17321);
+  assert.equal(defaultSettings.localApiPort, 12345);
   assert.equal(defaultSettings.localApiToken, "");
   const localApiSettings = normalizeSettingsRecord({
     local_api_enabled: "1",
@@ -372,7 +372,7 @@ await runTest("normalizeSettingsRecord accepts current minimize behavior values"
     local_api_port: "80",
   });
   assert.equal(invalidLocalApiSettings.localApiEnabled, false);
-  assert.equal(invalidLocalApiSettings.localApiPort, 17321);
+  assert.equal(invalidLocalApiSettings.localApiPort, 12345);
 
   const missingTokenSettings = normalizeSettingsRecord({
     local_api_enabled: "1",
