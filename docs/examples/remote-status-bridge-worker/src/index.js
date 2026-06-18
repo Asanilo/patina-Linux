@@ -1,83 +1,117 @@
+import { DurableObject } from "cloudflare:workers";
+
+const BRIDGE_OBJECT_NAME = "default";
 const HEARTBEAT_OFFLINE_AFTER_MS = 180_000;
+const MACHINES_STORAGE_KEY = "machines";
 
-const machines = new Map();
+export class RemoteStatusBridge extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.machines = new Map();
+    ctx.blockConcurrencyWhile(async () => {
+      const storedMachines = await this.ctx.storage.get(MACHINES_STORAGE_KEY);
+      if (storedMachines && typeof storedMachines === "object") {
+        this.machines = new Map(Object.entries(storedMachines));
+      }
+    });
+  }
 
-export default {
-  async fetch(request, env) {
+  async fetch(request) {
     const url = new URL(request.url);
 
     if (url.pathname === "/ws") {
-      return handleWebSocket(request, env);
+      return this.handleWebSocket(request);
     }
 
     if (url.pathname === "/state") {
-      return jsonResponse(buildState());
+      return jsonResponse(this.buildState());
     }
 
     return new Response("Not found", { status: 404 });
-  },
-};
-
-function handleWebSocket(request, env) {
-  if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
-    return new Response("Expected WebSocket", { status: 426 });
   }
 
-  const pair = new WebSocketPair();
-  const [client, server] = Object.values(pair);
-  const session = {
-    authenticated: false,
-    token: env.REMOTE_STATUS_BRIDGE_TOKEN ?? "",
-  };
+  handleWebSocket(request) {
+    if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+      return new Response("Expected WebSocket", { status: 426 });
+    }
 
-  server.accept();
-  server.addEventListener("message", (event) => {
-    handleSocketMessage(server, session, event.data);
-  });
-  server.addEventListener("close", () => {
-    // The bridge keeps the last received snapshot until it ages out as offline.
-  });
-  server.addEventListener("error", () => {
-    tryClose(server, 1011, "socket error");
-  });
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair);
+    const session = {
+      authenticated: false,
+      token: this.env.REMOTE_STATUS_BRIDGE_TOKEN ?? "",
+    };
 
-  return new Response(null, {
-    status: 101,
-    webSocket: client,
-  });
-}
+    server.accept();
+    server.addEventListener("message", (event) => {
+      this.ctx.waitUntil(this.handleSocketMessage(server, session, event.data));
+    });
+    server.addEventListener("error", () => {
+      tryClose(server, 1011, "socket error");
+    });
 
-function handleSocketMessage(socket, session, rawData) {
-  const message = parseJson(rawData);
-  if (!message || typeof message.type !== "string") {
-    tryClose(socket, 1003, "invalid json");
-    return;
+    return new Response(null, {
+      status: 101,
+      webSocket: client,
+    });
   }
 
-  if (!session.authenticated) {
-    handleAuthMessage(socket, session, message);
-    return;
-  }
-
-  if (message.type === "snapshot") {
-    const snapshot = normalizeSnapshot(message);
-    if (!snapshot) {
-      tryClose(socket, 1003, "invalid snapshot");
+  async handleSocketMessage(socket, session, rawData) {
+    const message = parseJson(rawData);
+    if (!message || typeof message.type !== "string") {
+      tryClose(socket, 1003, "invalid json");
       return;
     }
 
-    const previous = machines.get(snapshot.machineId);
-    machines.set(snapshot.machineId, {
+    if (!session.authenticated) {
+      handleAuthMessage(socket, session, message);
+      return;
+    }
+
+    if (message.type === "snapshot") {
+      const snapshot = normalizeSnapshot(message);
+      if (!snapshot) {
+        tryClose(socket, 1003, "invalid snapshot");
+        return;
+      }
+
+      await this.saveSnapshot(snapshot);
+      return;
+    }
+
+    if (message.type === "ping") {
+      socket.send(JSON.stringify({ type: "pong" }));
+    }
+  }
+
+  async saveSnapshot(snapshot) {
+    const previous = this.machines.get(snapshot.machineId);
+    const next = {
       ...previous,
       ...snapshot,
       iconData: snapshot.iconData ?? previous?.iconData ?? null,
       lastReceivedAtMs: Date.now(),
-    });
-    return;
+    };
+    const nextMachines = new Map(this.machines);
+    nextMachines.set(snapshot.machineId, next);
+
+    await this.ctx.storage.put(MACHINES_STORAGE_KEY, Object.fromEntries(nextMachines));
+    this.machines = nextMachines;
   }
 
-  if (message.type === "ping") {
-    socket.send(JSON.stringify({ type: "pong" }));
+  buildState() {
+    const now = Date.now();
+    return {
+      updatedAtMs: now,
+      machines: Array.from(this.machines.values())
+        .map((machine) => ({
+          ...machine,
+          presence: now - machine.lastReceivedAtMs > HEARTBEAT_OFFLINE_AFTER_MS
+            ? "offline"
+            : machine.presence,
+        }))
+        .sort((left, right) => left.machineId.localeCompare(right.machineId)),
+    };
   }
 }
 
@@ -118,21 +152,6 @@ function normalizeSnapshot(message) {
     appName: message.appName,
     iconHash: message.iconHash,
     iconData: message.iconData ?? null,
-  };
-}
-
-function buildState() {
-  const now = Date.now();
-  return {
-    updatedAtMs: now,
-    machines: Array.from(machines.values())
-      .map((machine) => ({
-        ...machine,
-        presence: now - machine.lastReceivedAtMs > HEARTBEAT_OFFLINE_AFTER_MS
-          ? "offline"
-          : machine.presence,
-      }))
-      .sort((left, right) => left.machineId.localeCompare(right.machineId)),
   };
 }
 

@@ -3,6 +3,22 @@
   "name": "patina-remote-status-bridge",
   "main": "src/index.js",
   "compatibility_date": "2026-06-17",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "REMOTE_STATUS_BRIDGE",
+        "class_name": "RemoteStatusBridge"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "RemoteStatusBridge"
+      ]
+    }
+  ],
   "observability": {
     "enabled": true
   }

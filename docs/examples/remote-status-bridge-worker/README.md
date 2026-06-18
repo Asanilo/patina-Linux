@@ -1,30 +1,23 @@
-# Patina Remote Status Bridge Worker
+# Patina 远程推送 Worker
 
-Minimal Cloudflare Worker for Patina remote status bridge.
+这是 Patina 远程推送的最小 Cloudflare Worker 示例。
 
-It receives Patina `snapshot` messages over WebSocket and keeps the latest state in memory.
+它通过 `WebSocket` 接收 Patina 的 `snapshot` 消息，并用内存保存每台机器的最新状态。
 
-## Routes
+## 路由
 
-- `/ws`: WebSocket endpoint for Patina.
-- `/state`: Current state as JSON.
+- `/ws`：Patina 使用的 `WebSocket` 接收端。
+- `/state`：读取最新状态的 JSON 接口。
 
-## Setup
+## 部署
 
-1. Deploy this Worker.
-2. Set the `REMOTE_STATUS_BRIDGE_TOKEN` secret to a random value.
-3. In Patina, set the Endpoint URL to `wss://<your-worker-host>/ws`.
-4. In Patina, set the access token to the same value.
+1. 点击文档里的 `Deploy to Cloudflare`。
+2. 在部署页填写 `REMOTE_STATUS_BRIDGE_TOKEN`。
+3. 部署完成后，记下 Worker 域名。
+4. 在 Patina 里把接收地址设成 `wss://<your-worker-host>/ws`。
+5. 把 Patina 的 `Token` 设成和 `REMOTE_STATUS_BRIDGE_TOKEN` 相同的值。
 
-## Local Development
-
-```bash
-npm install
-cp .dev.vars.example .dev.vars
-npm run dev
-```
-
-## Deploy
+也可以手动部署：
 
 ```bash
 npm install
@@ -32,4 +25,16 @@ wrangler secret put REMOTE_STATUS_BRIDGE_TOKEN
 npm run deploy
 ```
 
-This sample uses in-memory state only. It does not use D1, KV, Durable Objects, or Grafana Live.
+## 本地开发
+
+```bash
+npm install
+cp .dev.vars.example .dev.vars
+npm run dev
+```
+
+`.dev.vars` 里的 `REMOTE_STATUS_BRIDGE_TOKEN` 要和本地测试客户端发送的 `Token` 一致。
+
+## 说明
+
+这个示例只保留当前状态，不保留历史记录。它不使用 `D1`、`KV`、`Durable Objects` 或 `Grafana Live`。
