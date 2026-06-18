@@ -1,26 +1,22 @@
 import { Dices, EthernetPort, Eye, EyeOff, Fingerprint, KeyRound, Link2, Server } from "lucide-react";
-import type { ReactNode, SyntheticEvent } from "react";
+import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import QuietActionRow from "../../../shared/components/QuietActionRow";
 import QuietSubpanel from "../../../shared/components/QuietSubpanel";
 import QuietSwitch from "../../../shared/components/QuietSwitch";
 import { UI_TEXT } from "../../../shared/copy/uiText.ts";
-import { buildLocalApiEnabledChange, createLocalApiToken } from "../services/localApiTokenService.ts";
+import { createSettingsToken } from "../services/settingsTokenService.ts";
 
 type SettingsInterfacePanelProps = {
-  localApiEnabled: boolean;
   webActivityEnabled: boolean;
   port: number;
-  localApiToken: string;
   webActivityToken: string;
   remoteStatusBridgeEnabled: boolean;
   remoteStatusBridgeUrl: string;
   remoteStatusBridgeToken: string;
   remoteStatusBridgeMachineId: string;
-  onLocalApiEnabledChange: (nextChecked: boolean) => void;
   onWebActivityEnabledChange: (nextChecked: boolean) => void;
   onPortChange: (nextPort: number) => void;
-  onLocalApiTokenChange: (nextToken: string) => void;
   onWebActivityTokenChange: (nextToken: string) => void;
   onRemoteStatusBridgeEnabledChange: (nextChecked: boolean) => void;
   onRemoteStatusBridgeUrlChange: (nextUrl: string) => void;
@@ -41,15 +37,6 @@ type TokenFieldProps = {
 
 type PortFieldProps = {
   id: string;
-  value: string;
-  disabled: boolean;
-  onChange: (nextValue: string) => void;
-  onCommit: () => void;
-};
-
-type EndpointFieldProps = {
-  id: string;
-  prefix: string;
   value: string;
   disabled: boolean;
   onChange: (nextValue: string) => void;
@@ -85,16 +72,15 @@ type InterfaceInlineFieldProps = {
   className?: string;
 };
 
-const LOCAL_API_PORT_MIN = 1024;
-const LOCAL_API_PORT_MAX = 65535;
-const LOCAL_API_ENDPOINT_PREFIX = "ws://127.0.0.1:";
+const WEB_ACTIVITY_PORT_MIN = 1024;
+const WEB_ACTIVITY_PORT_MAX = 65535;
 const PORT_DRAFT_PATTERN = /^\d{0,5}$/;
 const INTERFACE_FIELD_GRID_CLASS = "mt-4 grid grid-cols-1 gap-x-4 gap-y-3 lg:grid-cols-[minmax(0,4fr)_minmax(0,6fr)]";
 
 function normalizePort(value: string) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed)) return "";
-  if (parsed < LOCAL_API_PORT_MIN || parsed > LOCAL_API_PORT_MAX) return "";
+  if (parsed < WEB_ACTIVITY_PORT_MIN || parsed > WEB_ACTIVITY_PORT_MAX) return "";
   return String(parsed);
 }
 
@@ -124,7 +110,7 @@ function TokenField({
         type="button"
         className="settings-token-action-button settings-token-random-button"
         disabled={disabled}
-        aria-label={UI_TEXT.accessibility.settings.generateLocalApiToken}
+        aria-label={UI_TEXT.accessibility.settings.generateServiceToken}
         onClick={onGenerate}
       >
         <Dices size={14} />
@@ -139,41 +125,6 @@ function TokenField({
         {visible ? <EyeOff size={14} /> : <Eye size={14} />}
       </button>
     </div>
-  );
-}
-
-function EndpointField({
-  id,
-  prefix,
-  value,
-  disabled,
-  onChange,
-  onCommit,
-}: EndpointFieldProps) {
-  return (
-    <input
-      id={id}
-      type="text"
-      value={value}
-      onBeforeInput={(event) => keepEndpointPrefixLocked(event, prefix)}
-      onKeyDown={(event) => {
-        const input = event.currentTarget;
-        const start = input.selectionStart ?? input.value.length;
-        const end = input.selectionEnd ?? input.value.length;
-        const editsPrefix = start < prefix.length
-          || (event.key === "Backspace" && start <= prefix.length && start === end);
-        if (editsPrefix) {
-          event.preventDefault();
-          input.setSelectionRange(prefix.length, input.value.length);
-        }
-      }}
-      onChange={(event) => onChange(event.target.value)}
-      onBlur={onCommit}
-      className="qp-input h-[34px] w-full"
-      disabled={disabled}
-      autoComplete="off"
-      spellCheck={false}
-    />
   );
 }
 
@@ -287,61 +238,40 @@ function InterfaceInlineField({
 }
 
 export default function SettingsInterfacePanel({
-  localApiEnabled,
   webActivityEnabled,
   port,
-  localApiToken,
   webActivityToken,
   remoteStatusBridgeEnabled,
   remoteStatusBridgeUrl,
   remoteStatusBridgeToken,
   remoteStatusBridgeMachineId,
-  onLocalApiEnabledChange,
   onWebActivityEnabledChange,
   onPortChange,
-  onLocalApiTokenChange,
   onWebActivityTokenChange,
   onRemoteStatusBridgeEnabledChange,
   onRemoteStatusBridgeUrlChange,
   onRemoteStatusBridgeTokenChange,
 }: SettingsInterfacePanelProps) {
-  const [localApiPortDraft, setLocalApiPortDraft] = useState(String(port));
   const [webActivityPortDraft, setWebActivityPortDraft] = useState(String(port));
-  const [localApiTokenVisible, setLocalApiTokenVisible] = useState(false);
   const [webActivityTokenVisible, setWebActivityTokenVisible] = useState(false);
   const [remoteStatusBridgeTokenVisible, setRemoteStatusBridgeTokenVisible] = useState(false);
   const [remoteStatusBridgeMachineIdVisible, setRemoteStatusBridgeMachineIdVisible] = useState(false);
-  const localApiEndpointDraft = `${LOCAL_API_ENDPOINT_PREFIX}${localApiPortDraft}`;
 
   useEffect(() => {
-    setLocalApiPortDraft(String(port));
     setWebActivityPortDraft(String(port));
   }, [port]);
 
-  const handleLocalApiEnabledChange = (nextChecked: boolean) => {
-    const change = buildLocalApiEnabledChange(nextChecked, localApiToken);
-    if (change.token !== null && change.token !== localApiToken) {
-      onLocalApiTokenChange(change.token);
-    }
-    onLocalApiEnabledChange(change.enabled);
-  };
   const handleWebActivityEnabledChange = (nextChecked: boolean) => {
     if (nextChecked && webActivityToken.trim().length === 0) {
-      onWebActivityTokenChange(createLocalApiToken());
+      onWebActivityTokenChange(createSettingsToken());
     }
     onWebActivityEnabledChange(nextChecked);
   };
   const handleRemoteStatusBridgeEnabledChange = (nextChecked: boolean) => {
     if (nextChecked && remoteStatusBridgeToken.trim().length === 0) {
-      onRemoteStatusBridgeTokenChange(createLocalApiToken());
+      onRemoteStatusBridgeTokenChange(createSettingsToken());
     }
     onRemoteStatusBridgeEnabledChange(nextChecked);
-  };
-  const handleEndpointChange = (nextValue: string, prefix: string) => {
-    if (!nextValue.startsWith(prefix)) return;
-    const nextDraft = nextValue.slice(prefix.length);
-    if (!PORT_DRAFT_PATTERN.test(nextDraft)) return;
-    return nextDraft;
   };
   const commitPortDraft = (draft: string, setDraft: (nextDraft: string) => void) => {
     const normalized = normalizePort(draft);
@@ -357,7 +287,7 @@ export default function SettingsInterfacePanel({
     <section className="qp-panel p-5 md:p-6">
       <div className="mb-5 flex items-center gap-2.5 border-b border-[var(--qp-border-subtle)] pb-2">
         <Server size={16} className="text-[var(--qp-accent-default)]" />
-        <h2 className="text-sm font-semibold text-[var(--qp-text-primary)]">{UI_TEXT.settings.localApiTitle}</h2>
+        <h2 className="text-sm font-semibold text-[var(--qp-text-primary)]">{UI_TEXT.settings.servicesTitle}</h2>
       </div>
 
       <div className="space-y-5">
@@ -408,73 +338,12 @@ export default function SettingsInterfacePanel({
                   disabled={!webActivityEnabled}
                   onChange={onWebActivityTokenChange}
                   onGenerate={() => {
-                    onWebActivityTokenChange(createLocalApiToken());
+                    onWebActivityTokenChange(createSettingsToken());
                     setWebActivityTokenVisible(true);
                   }}
                   onToggleVisible={() => setWebActivityTokenVisible((current) => !current)}
-                  showLabel={UI_TEXT.accessibility.settings.showLocalApiToken}
-                  hideLabel={UI_TEXT.accessibility.settings.hideLocalApiToken}
-                />
-              </InterfaceInlineField>
-            </div>
-          ) : null}
-        </QuietSubpanel>
-
-        <QuietSubpanel>
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-[var(--qp-text-primary)]">
-                {UI_TEXT.settings.localApiGeneralTitle}
-              </p>
-              <p className="mt-1 text-sm leading-relaxed text-[var(--qp-text-secondary)]">
-                {UI_TEXT.settings.localApiEnabledHint}
-              </p>
-            </div>
-            <QuietSwitch
-              checked={localApiEnabled}
-              onChange={handleLocalApiEnabledChange}
-              ariaLabel={UI_TEXT.accessibility.settings.toggleLocalApi}
-            />
-          </div>
-
-          {localApiEnabled ? (
-            <div className={INTERFACE_FIELD_GRID_CLASS}>
-              <InterfaceInlineField
-                htmlFor="settings-local-api-address"
-                icon={<Link2 size={14} className="text-[var(--qp-text-tertiary)]" />}
-                title={UI_TEXT.settings.localApiPortLabel}
-              >
-                <EndpointField
-                  id="settings-local-api-address"
-                  prefix={LOCAL_API_ENDPOINT_PREFIX}
-                  value={localApiEndpointDraft}
-                  disabled={!localApiEnabled}
-                  onChange={(nextValue) => {
-                    const nextDraft = handleEndpointChange(nextValue, LOCAL_API_ENDPOINT_PREFIX);
-                    if (nextDraft !== undefined) setLocalApiPortDraft(nextDraft);
-                  }}
-                  onCommit={() => commitPortDraft(localApiPortDraft, setLocalApiPortDraft)}
-                />
-              </InterfaceInlineField>
-
-              <InterfaceInlineField
-                htmlFor="settings-local-api-token"
-                icon={<KeyRound size={14} className="text-[var(--qp-text-tertiary)]" />}
-                title={UI_TEXT.settings.localApiTokenLabel}
-              >
-                <TokenField
-                  id="settings-local-api-token"
-                  value={localApiToken}
-                  visible={localApiTokenVisible}
-                  disabled={!localApiEnabled}
-                  onChange={onLocalApiTokenChange}
-                  onGenerate={() => {
-                    onLocalApiTokenChange(createLocalApiToken());
-                    setLocalApiTokenVisible(true);
-                  }}
-                  onToggleVisible={() => setLocalApiTokenVisible((current) => !current)}
-                  showLabel={UI_TEXT.accessibility.settings.showLocalApiToken}
-                  hideLabel={UI_TEXT.accessibility.settings.hideLocalApiToken}
+                  showLabel={UI_TEXT.accessibility.settings.showServiceToken}
+                  hideLabel={UI_TEXT.accessibility.settings.hideServiceToken}
                 />
               </InterfaceInlineField>
             </div>
@@ -544,12 +413,12 @@ export default function SettingsInterfacePanel({
                   disabled={!remoteStatusBridgeEnabled}
                   onChange={onRemoteStatusBridgeTokenChange}
                   onGenerate={() => {
-                    onRemoteStatusBridgeTokenChange(createLocalApiToken());
+                    onRemoteStatusBridgeTokenChange(createSettingsToken());
                     setRemoteStatusBridgeTokenVisible(true);
                   }}
                   onToggleVisible={() => setRemoteStatusBridgeTokenVisible((current) => !current)}
-                  showLabel={UI_TEXT.accessibility.settings.showLocalApiToken}
-                  hideLabel={UI_TEXT.accessibility.settings.hideLocalApiToken}
+                  showLabel={UI_TEXT.accessibility.settings.showServiceToken}
+                  hideLabel={UI_TEXT.accessibility.settings.hideServiceToken}
                 />
               </InterfaceInlineField>
             </div>
@@ -558,13 +427,4 @@ export default function SettingsInterfacePanel({
       </div>
     </section>
   );
-}
-
-function keepEndpointPrefixLocked(event: SyntheticEvent<HTMLInputElement>, prefix: string) {
-  const input = event.currentTarget;
-  const start = input.selectionStart ?? input.value.length;
-  const end = input.selectionEnd ?? input.value.length;
-  if (start >= prefix.length && end >= prefix.length) return;
-  event.preventDefault();
-  input.setSelectionRange(prefix.length, input.value.length);
 }

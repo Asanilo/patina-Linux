@@ -1,115 +1,20 @@
 use crate::data::repositories::app_settings;
 use crate::data::sqlite_pool::wait_for_sqlite_pool;
 use crate::domain::tracking::TrackingDataChangedPayload;
-use crate::domain::web_activity::{
-    BrowserActiveTabPayload, BrowserClientHeartbeatPayload, BrowserClientHelloPayload,
-    LocalApiClientRole, WEB_ACTIVITY_CHANGED_REASON,
-};
+use crate::domain::web_activity::{BrowserActiveTabPayload, WEB_ACTIVITY_CHANGED_REASON};
 use crate::engine::web_activity::{
-    bridge_disabled_message, bridge_error_message, bridge_ok_message, record_active_tab,
-    seal_active_segment, seal_if_tracking_inactive, WebActivityRuntimeState,
+    record_active_tab, seal_active_segment, seal_if_tracking_inactive, WebActivityRuntimeState,
 };
-use crate::platform::local_api::{LocalApiHttpRequest, LocalApiHttpResponse};
-use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager, Runtime, State};
-
-pub async fn handle_local_api_message<R: Runtime>(
-    app: AppHandle<R>,
-    role: LocalApiClientRole,
-    raw_message: String,
-) -> Option<String> {
-    if role != LocalApiClientRole::BrowserBridge {
-        return None;
-    }
-
-    let parsed = match serde_json::from_str::<Value>(&raw_message) {
-        Ok(value) => value,
-        Err(error) => return Some(bridge_error_message(&format!("invalid json: {error}"))),
-    };
-    let message_type = parsed
-        .get("type")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let data = parsed.get("data").cloned().unwrap_or(Value::Null);
-    let now_ms = crate::app::runtime::now_ms() as i64;
-    let pool = match wait_for_sqlite_pool(&app).await {
-        Ok(pool) => pool,
-        Err(error) => return Some(bridge_error_message(&error)),
-    };
-    let settings = match app_settings::load_web_activity_settings(&pool).await {
-        Ok(settings) => settings,
-        Err(error) => {
-            return Some(bridge_error_message(&format!(
-                "failed to load web activity settings: {error}"
-            )))
-        }
-    };
-
-    match message_type {
-        "browser-client-hello" => {
-            let payload = match serde_json::from_value::<BrowserClientHelloPayload>(data) {
-                Ok(payload) => payload,
-                Err(error) => {
-                    return Some(bridge_error_message(&format!("invalid hello: {error}")))
-                }
-            };
-            if let Some(state) = app.try_state::<WebActivityRuntimeState>() {
-                state.observe_client_hello(&payload, now_ms);
-            }
-            if settings.enabled {
-                Some(bridge_ok_message(&settings, now_ms))
-            } else {
-                Some(bridge_disabled_message(now_ms))
-            }
-        }
-        "browser-client-heartbeat" => {
-            let payload = match serde_json::from_value::<BrowserClientHeartbeatPayload>(data) {
-                Ok(payload) => payload,
-                Err(error) => {
-                    return Some(bridge_error_message(&format!("invalid heartbeat: {error}")))
-                }
-            };
-            if let Some(state) = app.try_state::<WebActivityRuntimeState>() {
-                state.observe_heartbeat(&payload, now_ms);
-            }
-            if settings.enabled {
-                Some(bridge_ok_message(&settings, now_ms))
-            } else {
-                let _ = seal_active_segment(&pool, now_ms).await;
-                Some(bridge_disabled_message(now_ms))
-            }
-        }
-        "web-active-tab" => {
-            let payload = match serde_json::from_value::<BrowserActiveTabPayload>(data) {
-                Ok(payload) => payload,
-                Err(error) => {
-                    return Some(bridge_error_message(&format!(
-                        "invalid active tab: {error}"
-                    )))
-                }
-            };
-            match record_active_tab(&app, &pool, &settings, payload, now_ms).await {
-                Ok(changed) => {
-                    if changed {
-                        emit_web_activity_changed(&app, now_ms);
-                    }
-                    if settings.enabled {
-                        Some(bridge_ok_message(&settings, now_ms))
-                    } else {
-                        Some(bridge_disabled_message(now_ms))
-                    }
-                }
-                Err(error) => Some(bridge_error_message(&error)),
-            }
-        }
-        _ => Some(bridge_error_message("unsupported browser bridge message")),
-    }
-}
+use crate::platform::web_activity_bridge::{
+    WebActivityBridgeHttpRequest, WebActivityBridgeHttpResponse,
+};
+use serde_json::json;
+use tauri::{AppHandle, Emitter, Runtime, State};
 
 pub async fn handle_http_request<R: Runtime>(
     app: AppHandle<R>,
-    request: LocalApiHttpRequest,
-) -> LocalApiHttpResponse {
+    request: WebActivityBridgeHttpRequest,
+) -> WebActivityBridgeHttpResponse {
     if !request.method.eq_ignore_ascii_case("POST") {
         return web_activity_http_response(
             405,
@@ -158,7 +63,7 @@ pub async fn handle_http_request<R: Runtime>(
 
     if !settings.enabled {
         let _ = seal_active_segment(&pool, now_ms).await;
-        return LocalApiHttpResponse::json(
+        return WebActivityBridgeHttpResponse::json(
             409,
             json!({
                 "ok": false,
@@ -187,7 +92,7 @@ pub async fn handle_http_request<R: Runtime>(
             if changed {
                 emit_web_activity_changed(&app, now_ms);
             }
-            LocalApiHttpResponse::json(
+            WebActivityBridgeHttpResponse::json(
                 200,
                 json!({
                     "ok": true,
@@ -274,8 +179,8 @@ fn web_activity_http_response(
     ok: bool,
     code: &str,
     message: &str,
-) -> LocalApiHttpResponse {
-    LocalApiHttpResponse::json(
+) -> WebActivityBridgeHttpResponse {
+    WebActivityBridgeHttpResponse::json(
         status,
         json!({
             "ok": ok,

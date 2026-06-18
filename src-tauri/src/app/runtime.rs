@@ -57,7 +57,7 @@ pub fn setup(
     power::start(app.handle().clone());
     audio::start_signal_source();
     media::start_signal_source();
-    crate::app::local_api::start(app.handle().clone());
+    crate::app::web_activity_bridge::start(app.handle().clone());
     crate::engine::remote_status_bridge::start(app.handle().clone());
     crate::app::web_activity::spawn_startup_repair(app.handle().clone());
 

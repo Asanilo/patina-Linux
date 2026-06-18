@@ -29,9 +29,13 @@ const BASE_SETTINGS: AppSettings = {
   startMinimized: true,
   backgroundOptimization: false,
   onboardingCompleted: true,
-  localApiEnabled: false,
-  localApiPort: 12345,
-  localApiToken: "",
+  webActivityEnabled: false,
+  webActivityPort: 12345,
+  webActivityToken: "",
+  remoteStatusBridgeEnabled: false,
+  remoteStatusBridgeUrl: "",
+  remoteStatusBridgeToken: "",
+  remoteStatusBridgeMachineId: "",
 };
 
 const BASE_TRACKING_STATUS: TrackingStatusSnapshot = {

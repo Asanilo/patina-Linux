@@ -1,5 +1,6 @@
 use crate::domain::settings::{
-    DesktopBehaviorSettings, LocalApiSettings, RemoteStatusBridgeSettings, WebActivitySettings,
+    DesktopBehaviorSettings, RemoteStatusBridgeSettings, WebActivityBridgeSettings,
+    WebActivitySettings,
 };
 use sqlx::{Pool, Row, Sqlite};
 
@@ -8,10 +9,8 @@ const MINIMIZE_BEHAVIOR_KEY: &str = "minimize_behavior";
 const LAUNCH_AT_LOGIN_KEY: &str = "launch_at_login";
 const START_MINIMIZED_KEY: &str = "start_minimized";
 const BACKGROUND_OPTIMIZATION_KEY: &str = "background_optimization";
-const LOCAL_API_ENABLED_KEY: &str = "local_api_enabled";
-const LOCAL_API_PORT_KEY: &str = "local_api_port";
-const LOCAL_API_TOKEN_KEY: &str = "local_api_token";
 const WEB_ACTIVITY_ENABLED_KEY: &str = "web_activity_enabled";
+const WEB_ACTIVITY_PORT_KEY: &str = "web_activity_port";
 const WEB_ACTIVITY_TOKEN_KEY: &str = "web_activity_token";
 const REMOTE_STATUS_BRIDGE_ENABLED_KEY: &str = "remote_status_bridge_enabled";
 const REMOTE_STATUS_BRIDGE_URL_KEY: &str = "remote_status_bridge_url";
@@ -141,10 +140,8 @@ fn is_allowed_app_setting_key(key: &str) -> bool {
             | "start_minimized"
             | "background_optimization"
             | "onboarding_completed"
-            | "local_api_enabled"
-            | "local_api_port"
-            | "local_api_token"
             | "web_activity_enabled"
+            | "web_activity_port"
             | "web_activity_token"
             | "remote_status_bridge_enabled"
             | "remote_status_bridge_url"
@@ -153,19 +150,17 @@ fn is_allowed_app_setting_key(key: &str) -> bool {
     )
 }
 
-pub async fn load_local_api_settings(pool: &Pool<Sqlite>) -> Result<LocalApiSettings, sqlx::Error> {
-    let rows = sqlx::query("SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?, ?)")
-        .bind(LOCAL_API_ENABLED_KEY)
-        .bind(LOCAL_API_PORT_KEY)
-        .bind(LOCAL_API_TOKEN_KEY)
+pub async fn load_web_activity_bridge_settings(
+    pool: &Pool<Sqlite>,
+) -> Result<WebActivityBridgeSettings, sqlx::Error> {
+    let rows = sqlx::query("SELECT key, value FROM settings WHERE key IN (?, ?, ?)")
+        .bind(WEB_ACTIVITY_PORT_KEY)
         .bind(WEB_ACTIVITY_ENABLED_KEY)
         .bind(WEB_ACTIVITY_TOKEN_KEY)
         .fetch_all(pool)
         .await?;
 
-    let mut enabled: Option<String> = None;
     let mut port: Option<String> = None;
-    let mut token: Option<String> = None;
     let mut web_activity_enabled: Option<String> = None;
     let mut web_activity_token: Option<String> = None;
 
@@ -174,19 +169,15 @@ pub async fn load_local_api_settings(pool: &Pool<Sqlite>) -> Result<LocalApiSett
         let value: String = row.get("value");
 
         match key.as_str() {
-            LOCAL_API_ENABLED_KEY => enabled = Some(value),
-            LOCAL_API_PORT_KEY => port = Some(value),
-            LOCAL_API_TOKEN_KEY => token = Some(value),
+            WEB_ACTIVITY_PORT_KEY => port = Some(value),
             WEB_ACTIVITY_ENABLED_KEY => web_activity_enabled = Some(value),
             WEB_ACTIVITY_TOKEN_KEY => web_activity_token = Some(value),
             _ => {}
         }
     }
 
-    Ok(LocalApiSettings::from_storage_values(
-        enabled.as_deref(),
+    Ok(WebActivityBridgeSettings::from_storage_values(
         port.as_deref(),
-        token.as_deref(),
         web_activity_enabled.as_deref(),
         web_activity_token.as_deref(),
     ))

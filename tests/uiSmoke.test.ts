@@ -379,26 +379,40 @@ await runTest("settings leaves web activity connection status to the extension",
   assert.match(extensionPopup, /function statusView\(settings,\s*text\)/);
 });
 
-await runTest("settings exposes local status access controls", () => {
+await runTest("settings services only expose web sync and remote push controls", () => {
   const settings = readUtf8("src/features/settings/components/Settings.tsx");
   const settingsInterface = readUtf8("src/features/settings/components/SettingsInterfacePanel.tsx");
+  const appSettings = readUtf8("src/shared/settings/appSettings.ts");
+  const appSettingsStore = readUtf8("src/platform/persistence/appSettingsStore.ts");
+  const bridgeRuntime = readUtf8("src-tauri/src/platform/web_activity_bridge.rs");
+  const combined = [
+    settings,
+    settingsInterface,
+    appSettings,
+    appSettingsStore,
+    bridgeRuntime,
+  ].join("\n");
+  const retiredNames = [
+    ["local", "Api"].join(""),
+    ["Local", "Api"].join(""),
+    ["local", "_api"].join(""),
+    ["LOCAL", "_API"].join(""),
+  ];
 
-  assert.match(settings, /localApiEnabled=\{draftSettings\.localApiEnabled\}/);
-  assert.match(settings, /localApiToken=\{draftSettings\.localApiToken\}/);
-  assert.match(settingsInterface, /UI_TEXT\.settings\.localApiGeneralTitle/);
-  assert.match(settingsInterface, /UI_TEXT\.accessibility\.settings\.toggleLocalApi/);
-  assert.match(settingsInterface, /buildLocalApiEnabledChange/);
-  assert.match(settingsInterface, /LOCAL_API_ENDPOINT_PREFIX = "ws:\/\/127\.0\.0\.1:"/);
+  for (const name of retiredNames) {
+    assert.ok(!combined.includes(name), `unexpected retired setting name: ${name}`);
+  }
+  assert.match(settingsInterface, /UI_TEXT\.settings\.servicesTitle/);
+  assert.match(settings, /draftSettings\.webActivityPort/);
+  assert.match(appSettingsStore, /webActivityPort: "web_activity_port"/);
+  assert.doesNotMatch(bridgeRuntime, /tungstenite|accept_async|Message::Text|browser-bridge/);
 
   const webActivityIndex = settingsInterface.indexOf("UI_TEXT.settings.webActivityTitle");
-  const localApiIndex = settingsInterface.indexOf("UI_TEXT.settings.localApiGeneralTitle");
   const remoteBridgeIndex = settingsInterface.indexOf("UI_TEXT.settings.remoteStatusBridgeTitle");
 
   assert.ok(webActivityIndex >= 0);
-  assert.ok(localApiIndex >= 0);
   assert.ok(remoteBridgeIndex >= 0);
-  assert.ok(webActivityIndex < localApiIndex);
-  assert.ok(localApiIndex < remoteBridgeIndex);
+  assert.ok(webActivityIndex < remoteBridgeIndex);
 });
 
 await runTest("web activity views are gated by saved web sync setting", () => {

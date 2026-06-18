@@ -6,15 +6,13 @@ use crate::domain::settings::WebActivitySettings;
 use crate::domain::web_activity::{
     is_supported_browser_exe, sanitize_active_tab_payload, sanitize_browser_client_id,
     sanitize_browser_kind, sanitize_extension_version, BrowserActiveTabPayload,
-    BrowserClientHeartbeatPayload, BrowserClientHelloPayload, WebActivityBridgeSnapshot,
+    WebActivityBridgeSnapshot,
 };
 use crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState;
-use serde_json::json;
 use sqlx::{Pool, Sqlite};
 use std::sync::Mutex;
 use tauri::{Manager, Runtime};
 
-const BROWSER_BRIDGE_PROTOCOL_VERSION: u32 = 1;
 const BROWSER_BRIDGE_CONNECTED_WINDOW_MS: i64 = 30_000;
 
 #[derive(Clone, Debug, Default)]
@@ -31,28 +29,6 @@ pub struct WebActivityRuntimeState {
 }
 
 impl WebActivityRuntimeState {
-    pub fn observe_client_hello(&self, payload: &BrowserClientHelloPayload, now_ms: i64) {
-        self.update_client(
-            Some(sanitize_browser_client_id(
-                payload.browser_client_id.as_deref(),
-            )),
-            Some(sanitize_browser_kind(payload.browser_kind.as_deref())),
-            sanitize_extension_version(payload.extension_version.as_deref()),
-            now_ms,
-        );
-    }
-
-    pub fn observe_heartbeat(&self, payload: &BrowserClientHeartbeatPayload, now_ms: i64) {
-        self.update_client(
-            Some(sanitize_browser_client_id(
-                payload.browser_client_id.as_deref(),
-            )),
-            Some(sanitize_browser_kind(payload.browser_kind.as_deref())),
-            None,
-            now_ms,
-        );
-    }
-
     pub fn observe_active_tab(&self, payload: &BrowserActiveTabPayload, now_ms: i64) {
         self.update_client(
             Some(sanitize_browser_client_id(
@@ -187,37 +163,6 @@ pub async fn seal_active_segment(pool: &Pool<Sqlite>, now_ms: i64) -> Result<boo
         .map_err(|error| format!("failed to seal web activity: {error}"))
 }
 
-pub fn bridge_ok_message(settings: &WebActivitySettings, now_ms: i64) -> String {
-    crate::platform::local_api::message_json(
-        "browser-bridge-ok",
-        json!({
-            "protocolVersion": BROWSER_BRIDGE_PROTOCOL_VERSION,
-            "enabled": settings.enabled,
-            "serverTimeMs": now_ms,
-        }),
-    )
-}
-
-pub fn bridge_disabled_message(now_ms: i64) -> String {
-    crate::platform::local_api::message_json(
-        "browser-bridge-disabled",
-        json!({
-            "protocolVersion": BROWSER_BRIDGE_PROTOCOL_VERSION,
-            "enabled": false,
-            "serverTimeMs": now_ms,
-        }),
-    )
-}
-
-pub fn bridge_error_message(message: &str) -> String {
-    crate::platform::local_api::message_json(
-        "browser-bridge-error",
-        json!({
-            "message": message,
-        }),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -264,12 +209,19 @@ mod tests {
     #[test]
     fn bridge_snapshot_marks_recent_client_connected() {
         let state = WebActivityRuntimeState::default();
-        state.observe_client_hello(
-            &BrowserClientHelloPayload {
-                protocol_version: Some(1),
+        state.observe_active_tab(
+            &BrowserActiveTabPayload {
                 browser_client_id: Some("client".into()),
                 browser_kind: Some("chrome".into()),
                 extension_version: Some("0.1.0".into()),
+                tab_id: Some(1),
+                window_id: Some(1),
+                url: Some("https://example.com".into()),
+                title: Some("Example".into()),
+                fav_icon_url: None,
+                incognito: Some(false),
+                captured_at_ms: Some(1_000),
+                event_reason: Some("activated".into()),
             },
             1_000,
         );

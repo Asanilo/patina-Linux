@@ -60,7 +60,7 @@ fn register_managed_state_and_plugins(
         .manage(TrackingRuntimeSnapshotState::default())
         .manage(runtime_health)
         .manage(ToolsRuntimeState::default())
-        .manage(crate::platform::local_api::LocalApiRuntimeState::default())
+        .manage(crate::platform::web_activity_bridge::WebActivityBridgeRuntimeState::default())
         .manage(crate::engine::remote_status_bridge::RemoteStatusBridgeRuntimeState::default())
         .manage(WebActivityRuntimeState::default())
         .manage(UpdaterRuntimeState::new(app_version.to_string()))

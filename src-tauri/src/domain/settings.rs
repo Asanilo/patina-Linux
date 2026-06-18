@@ -3,16 +3,14 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_LAUNCH_AT_LOGIN: bool = true;
 pub const DEFAULT_START_MINIMIZED: bool = true;
 pub const DEFAULT_BACKGROUND_OPTIMIZATION: bool = false;
-pub const DEFAULT_LOCAL_API_ENABLED: bool = false;
-pub const DEFAULT_LOCAL_API_PORT: u16 = 12_345;
-pub const DEFAULT_LOCAL_API_TOKEN: &str = "";
 pub const DEFAULT_WEB_ACTIVITY_ENABLED: bool = false;
+pub const DEFAULT_WEB_ACTIVITY_PORT: u16 = 12_345;
 pub const DEFAULT_WEB_ACTIVITY_TOKEN: &str = "";
 pub const DEFAULT_REMOTE_STATUS_BRIDGE_ENABLED: bool = false;
 pub const DEFAULT_REMOTE_STATUS_BRIDGE_URL: &str = "";
 pub const DEFAULT_REMOTE_STATUS_BRIDGE_TOKEN: &str = "";
 pub const DEFAULT_REMOTE_STATUS_BRIDGE_MACHINE_ID: &str = "";
-pub const LOCAL_API_PORT_MIN: u16 = 1024;
+pub const WEB_ACTIVITY_PORT_MIN: u16 = 1024;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -40,13 +38,10 @@ pub struct DesktopBehaviorSettings {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct LocalApiSettings {
+pub struct WebActivityBridgeSettings {
     pub enabled: bool,
-    pub local_api_enabled: bool,
     pub port: u16,
     pub token: String,
-    pub web_activity_enabled: bool,
-    pub web_activity_token: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -63,15 +58,12 @@ pub struct RemoteStatusBridgeSettings {
     pub machine_id: String,
 }
 
-impl Default for LocalApiSettings {
+impl Default for WebActivityBridgeSettings {
     fn default() -> Self {
         Self {
-            enabled: DEFAULT_LOCAL_API_ENABLED,
-            local_api_enabled: DEFAULT_LOCAL_API_ENABLED,
-            port: DEFAULT_LOCAL_API_PORT,
-            token: DEFAULT_LOCAL_API_TOKEN.to_string(),
-            web_activity_enabled: DEFAULT_WEB_ACTIVITY_ENABLED,
-            web_activity_token: DEFAULT_WEB_ACTIVITY_TOKEN.to_string(),
+            enabled: DEFAULT_WEB_ACTIVITY_ENABLED,
+            port: DEFAULT_WEB_ACTIVITY_PORT,
+            token: DEFAULT_WEB_ACTIVITY_TOKEN.to_string(),
         }
     }
 }
@@ -96,37 +88,27 @@ impl Default for RemoteStatusBridgeSettings {
     }
 }
 
-impl LocalApiSettings {
+impl WebActivityBridgeSettings {
     pub fn from_storage_values(
-        enabled: Option<&str>,
         port: Option<&str>,
-        token: Option<&str>,
         web_activity_enabled: Option<&str>,
         web_activity_token: Option<&str>,
     ) -> Self {
-        let token = token.unwrap_or(DEFAULT_LOCAL_API_TOKEN).trim().to_string();
-        let local_api_enabled = enabled
-            .map(|raw| parse_boolean_setting(raw, DEFAULT_LOCAL_API_ENABLED))
-            .unwrap_or(DEFAULT_LOCAL_API_ENABLED)
-            && !token.is_empty();
-        let web_activity_token = web_activity_token
+        let token = web_activity_token
             .unwrap_or(DEFAULT_WEB_ACTIVITY_TOKEN)
             .trim()
             .to_string();
-        let web_activity_enabled = web_activity_enabled
+        let enabled = web_activity_enabled
             .map(|raw| parse_boolean_setting(raw, DEFAULT_WEB_ACTIVITY_ENABLED))
             .unwrap_or(DEFAULT_WEB_ACTIVITY_ENABLED)
-            && !web_activity_token.is_empty();
+            && !token.is_empty();
 
         Self {
-            enabled: local_api_enabled || web_activity_enabled,
-            local_api_enabled,
+            enabled,
             port: port
-                .and_then(parse_local_api_port)
-                .unwrap_or(DEFAULT_LOCAL_API_PORT),
+                .and_then(parse_web_activity_port)
+                .unwrap_or(DEFAULT_WEB_ACTIVITY_PORT),
             token,
-            web_activity_enabled,
-            web_activity_token,
         }
     }
 }
@@ -291,9 +273,9 @@ pub fn parse_boolean_setting(raw: &str, fallback: bool) -> bool {
     }
 }
 
-pub fn parse_local_api_port(raw: &str) -> Option<u16> {
+pub fn parse_web_activity_port(raw: &str) -> Option<u16> {
     let port = raw.trim().parse::<u16>().ok()?;
-    (LOCAL_API_PORT_MIN..=u16::MAX)
+    (WEB_ACTIVITY_PORT_MIN..=u16::MAX)
         .contains(&port)
         .then_some(port)
 }
@@ -301,10 +283,11 @@ pub fn parse_local_api_port(raw: &str) -> Option<u16> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_boolean_setting, parse_close_behavior, parse_local_api_port, parse_minimize_behavior,
-        CloseBehavior, DesktopBehaviorSettings, LocalApiSettings, MinimizeBehavior,
-        RemoteStatusBridgeSettings, WebActivitySettings, DEFAULT_BACKGROUND_OPTIMIZATION,
-        DEFAULT_LAUNCH_AT_LOGIN, DEFAULT_LOCAL_API_PORT, DEFAULT_START_MINIMIZED,
+        parse_boolean_setting, parse_close_behavior, parse_minimize_behavior,
+        parse_web_activity_port, CloseBehavior, DesktopBehaviorSettings, MinimizeBehavior,
+        RemoteStatusBridgeSettings, WebActivityBridgeSettings, WebActivitySettings,
+        DEFAULT_BACKGROUND_OPTIMIZATION, DEFAULT_LAUNCH_AT_LOGIN, DEFAULT_START_MINIMIZED,
+        DEFAULT_WEB_ACTIVITY_PORT,
     };
 
     #[test]
@@ -333,64 +316,37 @@ mod tests {
     }
 
     #[test]
-    fn local_api_settings_parse_defaults_and_invalid_port() {
+    fn web_activity_bridge_settings_parse_defaults_and_invalid_port() {
         assert_eq!(
-            LocalApiSettings::from_storage_values(None, None, None, None, None),
-            LocalApiSettings::default()
+            WebActivityBridgeSettings::from_storage_values(None, None, None),
+            WebActivityBridgeSettings::default()
         );
         assert_eq!(
-            LocalApiSettings::from_storage_values(
-                Some("1"),
-                Some("80"),
-                Some("secret"),
-                None,
-                None
-            ),
-            LocalApiSettings {
-                enabled: true,
-                local_api_enabled: true,
-                port: DEFAULT_LOCAL_API_PORT,
-                token: "secret".to_string(),
-                web_activity_enabled: false,
-                web_activity_token: String::new(),
-            }
-        );
-        assert_eq!(
-            LocalApiSettings::from_storage_values(
-                Some("1"),
-                Some("18080"),
-                Some("   "),
-                None,
-                None
-            ),
-            LocalApiSettings {
+            WebActivityBridgeSettings::from_storage_values(Some("80"), None, None),
+            WebActivityBridgeSettings {
                 enabled: false,
-                local_api_enabled: false,
-                port: 18_080,
+                port: DEFAULT_WEB_ACTIVITY_PORT,
                 token: String::new(),
-                web_activity_enabled: false,
-                web_activity_token: String::new(),
             }
         );
         assert_eq!(
-            LocalApiSettings::from_storage_values(
-                None,
-                Some("18080"),
-                None,
-                Some("1"),
-                Some("web")
-            ),
-            LocalApiSettings {
-                enabled: true,
-                local_api_enabled: false,
+            WebActivityBridgeSettings::from_storage_values(Some("18080"), Some("1"), Some("   "),),
+            WebActivityBridgeSettings {
+                enabled: false,
                 port: 18_080,
                 token: String::new(),
-                web_activity_enabled: true,
-                web_activity_token: "web".to_string(),
             }
         );
-        assert_eq!(parse_local_api_port("65535"), Some(65_535));
-        assert_eq!(parse_local_api_port("1023"), None);
+        assert_eq!(
+            WebActivityBridgeSettings::from_storage_values(Some("18080"), Some("1"), Some("web")),
+            WebActivityBridgeSettings {
+                enabled: true,
+                port: 18_080,
+                token: "web".to_string(),
+            }
+        );
+        assert_eq!(parse_web_activity_port("65535"), Some(65_535));
+        assert_eq!(parse_web_activity_port("1023"), None);
     }
 
     #[test]

@@ -52,10 +52,8 @@ export interface AppSettings {
   startMinimized: boolean;
   backgroundOptimization: boolean;
   onboardingCompleted: boolean;
-  localApiEnabled: boolean;
-  localApiPort: number;
-  localApiToken: string;
   webActivityEnabled: boolean;
+  webActivityPort: number;
   webActivityToken: string;
   remoteStatusBridgeEnabled: boolean;
   remoteStatusBridgeUrl: string;

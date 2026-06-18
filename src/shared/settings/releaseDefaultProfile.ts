@@ -58,10 +58,8 @@ export interface ReleaseDefaultSettingsProfile {
   startMinimized: boolean;
   backgroundOptimization: boolean;
   onboardingCompleted: boolean;
-  localApiEnabled: boolean;
-  localApiPort: number;
-  localApiToken: string;
   webActivityEnabled: boolean;
+  webActivityPort: number;
   webActivityToken: string;
   remoteStatusBridgeEnabled: boolean;
   remoteStatusBridgeUrl: string;
@@ -86,10 +84,8 @@ export const RELEASE_DEFAULT_SETTINGS: ReleaseDefaultSettingsProfile = {
   startMinimized: true,
   backgroundOptimization: false,
   onboardingCompleted: true,
-  localApiEnabled: false,
-  localApiPort: 12345,
-  localApiToken: "",
   webActivityEnabled: false,
+  webActivityPort: 12345,
   webActivityToken: "",
   remoteStatusBridgeEnabled: false,
   remoteStatusBridgeUrl: "",

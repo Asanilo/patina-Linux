@@ -20,9 +20,8 @@ import {
   remoteBackupSettingsInternals,
 } from "../src/platform/persistence/remoteBackupSettingsStore.ts";
 import {
-  buildLocalApiEnabledChange,
-  createLocalApiToken,
-} from "../src/features/settings/services/localApiTokenService.ts";
+  createSettingsToken,
+} from "../src/features/settings/services/settingsTokenService.ts";
 
 interface AppSettings {
   idleTimeoutSecs: number;
@@ -97,10 +96,8 @@ interface AppSettings {
   startMinimized: boolean;
   backgroundOptimization: boolean;
   onboardingCompleted: boolean;
-  localApiEnabled: boolean;
-  localApiPort: number;
-  localApiToken: string;
   webActivityEnabled: boolean;
+  webActivityPort: number;
   webActivityToken: string;
   remoteStatusBridgeEnabled: boolean;
   remoteStatusBridgeUrl: string;
@@ -127,10 +124,8 @@ const BASE_SETTINGS: AppSettings = {
   startMinimized: false,
   backgroundOptimization: false,
   onboardingCompleted: false,
-  localApiEnabled: false,
-  localApiPort: 12345,
-  localApiToken: "",
   webActivityEnabled: false,
+  webActivityPort: 12345,
   webActivityToken: "",
   remoteStatusBridgeEnabled: false,
   remoteStatusBridgeUrl: "",
@@ -186,9 +181,9 @@ await runTest("buildSettingsPatch only keeps changed keys", () => {
     language: "en-US",
     colorSchemeLight: "linear",
     colorSchemeDark: "github",
-    localApiEnabled: true,
-    localApiPort: 18080,
-    localApiToken: "secret",
+    webActivityEnabled: true,
+    webActivityPort: 18080,
+    webActivityToken: "secret",
     backgroundOptimization: true,
   });
 
@@ -199,9 +194,9 @@ await runTest("buildSettingsPatch only keeps changed keys", () => {
     language: "en-US",
     colorSchemeLight: "linear",
     colorSchemeDark: "github",
-    localApiEnabled: true,
-    localApiPort: 18080,
-    localApiToken: "secret",
+    webActivityEnabled: true,
+    webActivityPort: 18080,
+    webActivityToken: "secret",
     backgroundOptimization: true,
   });
 });
@@ -313,15 +308,16 @@ await runTest("commitSettingsPatchWithDeps does not attempt runtime sync when pe
   assert.deepEqual(events, ["persist"]);
 });
 
-await runTest("saveSettingsPageStateWithDeps disables local API when token is empty", async () => {
+await runTest("saveSettingsPageStateWithDeps normalizes service settings", async () => {
   let committedPatch: Partial<AppSettings> | null = null;
-  const savedSettings = buildSettings({
-    localApiEnabled: true,
-    localApiToken: "existing-token",
-  });
+  const savedSettings = buildSettings();
   const draftSettings = buildSettings({
-    localApiEnabled: true,
-    localApiToken: "   ",
+    webActivityEnabled: true,
+    webActivityToken: "  web-token  ",
+    remoteStatusBridgeEnabled: true,
+    remoteStatusBridgeUrl: "  wss://worker.example/ws  ",
+    remoteStatusBridgeToken: "  remote-token  ",
+    remoteStatusBridgeMachineId: "  machine-1  ",
   });
 
   const result = await saveSettingsPageStateWithDeps({
@@ -343,13 +339,57 @@ await runTest("saveSettingsPageStateWithDeps disables local API when token is em
   });
 
   assert.equal(result.accepted, true);
-  assert.equal(result.nextSavedSettings?.localApiEnabled, false);
-  assert.equal(result.nextSavedSettings?.localApiToken, "");
-  assert.equal(result.nextDraftSettings?.localApiEnabled, false);
-  assert.equal(result.nextBootstrap?.settings.localApiEnabled, false);
+  assert.equal(result.nextSavedSettings?.webActivityEnabled, true);
+  assert.equal(result.nextSavedSettings?.webActivityToken, "web-token");
+  assert.equal(result.nextSavedSettings?.remoteStatusBridgeEnabled, true);
+  assert.equal(result.nextSavedSettings?.remoteStatusBridgeUrl, "wss://worker.example/ws");
+  assert.equal(result.nextSavedSettings?.remoteStatusBridgeToken, "remote-token");
+  assert.equal(result.nextSavedSettings?.remoteStatusBridgeMachineId, "machine-1");
+  assert.equal(result.nextDraftSettings?.webActivityToken, "web-token");
+  assert.equal(result.nextBootstrap?.settings.webActivityToken, "web-token");
   assert.deepEqual(committedPatch, {
-    localApiEnabled: false,
-    localApiToken: "",
+    webActivityEnabled: true,
+    webActivityToken: "web-token",
+    remoteStatusBridgeEnabled: true,
+    remoteStatusBridgeUrl: "wss://worker.example/ws",
+    remoteStatusBridgeToken: "remote-token",
+    remoteStatusBridgeMachineId: "machine-1",
+  });
+});
+
+await runTest("saveSettingsPageStateWithDeps preserves remote push switch while endpoint is empty", async () => {
+  let committedPatch: Partial<AppSettings> | null = null;
+  const savedSettings = buildSettings();
+  const draftSettings = buildSettings({
+    remoteStatusBridgeEnabled: true,
+    remoteStatusBridgeUrl: "",
+    remoteStatusBridgeToken: "  remote-token  ",
+  });
+
+  const result = await saveSettingsPageStateWithDeps({
+    savedSettings,
+    draftSettings,
+    appVersion: "1.2.0",
+    hasUnsavedChanges: true,
+    saveStatus: "idle",
+  }, {
+    buildPatch: SettingsRuntimeAdapterService.buildSettingsPatch,
+    commitPatch: async (patch) => {
+      committedPatch = patch;
+      return {
+        persisted: true,
+        runtimeSync: "not-needed",
+        runtimeSyncErrors: [],
+      };
+    },
+  });
+
+  assert.equal(result.accepted, true);
+  assert.equal(result.nextSavedSettings?.remoteStatusBridgeEnabled, true);
+  assert.equal(result.nextDraftSettings?.remoteStatusBridgeEnabled, true);
+  assert.deepEqual(committedPatch, {
+    remoteStatusBridgeEnabled: true,
+    remoteStatusBridgeToken: "remote-token",
   });
 });
 
@@ -363,35 +403,36 @@ await runTest("normalizeSettingsRecord accepts current minimize behavior values"
   assert.equal(defaultSettings.colorSchemeLight, "default");
   assert.equal(defaultSettings.colorSchemeDark, "default");
   assert.equal(defaultSettings.minSessionSecs, 300);
-  assert.equal(defaultSettings.localApiEnabled, false);
-  assert.equal(defaultSettings.localApiPort, 12345);
-  assert.equal(defaultSettings.localApiToken, "");
+  assert.equal(defaultSettings.webActivityEnabled, false);
+  assert.equal(defaultSettings.webActivityPort, 12345);
+  assert.equal(defaultSettings.webActivityToken, "");
   assert.equal(defaultSettings.remoteStatusBridgeEnabled, false);
   assert.equal(defaultSettings.remoteStatusBridgeUrl, "");
   assert.equal(defaultSettings.remoteStatusBridgeToken, "");
   assert.equal(defaultSettings.remoteStatusBridgeMachineId, "");
-  const localApiSettings = normalizeSettingsRecord({
-    local_api_enabled: "1",
-    local_api_port: "18080",
-    local_api_token: "secret",
+  const webActivitySettings = normalizeSettingsRecord({
+    web_activity_enabled: "1",
+    web_activity_port: "18080",
+    web_activity_token: "secret",
   });
-  assert.equal(localApiSettings.localApiEnabled, true);
-  assert.equal(localApiSettings.localApiPort, 18080);
-  assert.equal(localApiSettings.localApiToken, "secret");
+  assert.equal(webActivitySettings.webActivityEnabled, true);
+  assert.equal(webActivitySettings.webActivityPort, 18080);
+  assert.equal(webActivitySettings.webActivityToken, "secret");
 
-  const invalidLocalApiSettings = normalizeSettingsRecord({
-    local_api_enabled: "no",
-    local_api_port: "80",
+  const invalidWebActivitySettings = normalizeSettingsRecord({
+    web_activity_enabled: "1",
+    web_activity_port: "80",
+    web_activity_token: "secret",
   });
-  assert.equal(invalidLocalApiSettings.localApiEnabled, false);
-  assert.equal(invalidLocalApiSettings.localApiPort, 12345);
+  assert.equal(invalidWebActivitySettings.webActivityEnabled, true);
+  assert.equal(invalidWebActivitySettings.webActivityPort, 12345);
 
   const missingTokenSettings = normalizeSettingsRecord({
-    local_api_enabled: "1",
-    local_api_token: "   ",
+    web_activity_enabled: "1",
+    web_activity_token: "   ",
   });
-  assert.equal(missingTokenSettings.localApiEnabled, false);
-  assert.equal(missingTokenSettings.localApiToken, "");
+  assert.equal(missingTokenSettings.webActivityEnabled, false);
+  assert.equal(missingTokenSettings.webActivityToken, "");
 
   const remoteBridgeSettings = normalizeSettingsRecord({
     remote_status_bridge_enabled: "1",
@@ -409,7 +450,14 @@ await runTest("normalizeSettingsRecord accepts current minimize behavior values"
     remote_status_bridge_url: "wss://worker.example/ws",
     remote_status_bridge_token: "   ",
   });
-  assert.equal(remoteBridgeMissingToken.remoteStatusBridgeEnabled, false);
+  assert.equal(remoteBridgeMissingToken.remoteStatusBridgeEnabled, true);
+
+  const remoteBridgeMissingUrl = normalizeSettingsRecord({
+    remote_status_bridge_enabled: "1",
+    remote_status_bridge_url: "",
+    remote_status_bridge_token: "secret",
+  });
+  assert.equal(remoteBridgeMissingUrl.remoteStatusBridgeEnabled, true);
 
   const widgetSettings = normalizeSettingsRecord({
     minimize_behavior: "widget",
@@ -515,25 +563,12 @@ await runTest("normalizeSettingsRecord accepts color schemes and falls back to d
   assert.equal(normalizeSettingsRecord({ color_scheme: "github" }).colorSchemeDark, "default");
 });
 
-await runTest("local API token is generated before enabling", () => {
-  const token = createLocalApiToken((bytes) => {
+await runTest("settings token generation creates hex tokens", () => {
+  const token = createSettingsToken((bytes) => {
     bytes.fill(10);
     return bytes;
   });
   assert.equal(token, "0a".repeat(24));
-
-  assert.deepEqual(buildLocalApiEnabledChange(true, "", () => "generated-token"), {
-    enabled: true,
-    token: "generated-token",
-  });
-  assert.deepEqual(buildLocalApiEnabledChange(true, " existing-token "), {
-    enabled: true,
-    token: "existing-token",
-  });
-  assert.deepEqual(buildLocalApiEnabledChange(false, "existing-token"), {
-    enabled: false,
-    token: null,
-  });
 });
 
 await runTest("runSettingsCleanupFlow executes confirmed cleanup and reloads", async () => {

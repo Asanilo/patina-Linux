@@ -46,10 +46,8 @@ type RawAppSettingsKey =
   | "start_minimized"
   | "background_optimization"
   | "onboarding_completed"
-  | "local_api_enabled"
-  | "local_api_port"
-  | "local_api_token"
   | "web_activity_enabled"
+  | "web_activity_port"
   | "web_activity_token"
   | "remote_status_bridge_enabled"
   | "remote_status_bridge_url"
@@ -73,10 +71,8 @@ const APP_SETTINGS_RAW_KEYS: Record<keyof AppSettings, RawAppSettingsKey> = {
   startMinimized: "start_minimized",
   backgroundOptimization: "background_optimization",
   onboardingCompleted: "onboarding_completed",
-  localApiEnabled: "local_api_enabled",
-  localApiPort: "local_api_port",
-  localApiToken: "local_api_token",
   webActivityEnabled: "web_activity_enabled",
+  webActivityPort: "web_activity_port",
   webActivityToken: "web_activity_token",
   remoteStatusBridgeEnabled: "remote_status_bridge_enabled",
   remoteStatusBridgeUrl: "remote_status_bridge_url",
@@ -88,7 +84,7 @@ const IDLE_TIMEOUT_SECONDS_RANGE = { min: 300, max: 1800, step: 60 } as const;
 const TIMELINE_MERGE_GAP_SECONDS_RANGE = { min: 60, max: 300, step: 60 } as const;
 const REFRESH_INTERVAL_OPTIONS = [1, 3];
 const MIN_SESSION_SECONDS_RANGE = { min: 60, max: 600, step: 60 } as const;
-const LOCAL_API_PORT_RANGE = { min: 1024, max: 65535 } as const;
+const WEB_ACTIVITY_PORT_RANGE = { min: 1024, max: 65535 } as const;
 function parseNumberSetting(value: string | undefined, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -118,10 +114,6 @@ function normalizeIntegerRangeValue(
   if (!Number.isInteger(parsed)) return fallback;
   if (parsed < range.min || parsed > range.max) return fallback;
   return parsed;
-}
-
-function normalizeLocalApiToken(value: string | undefined) {
-  return value?.trim() ?? DEFAULT_SETTINGS.localApiToken;
 }
 
 function normalizeWebActivityToken(value: string | undefined) {
@@ -241,7 +233,6 @@ function serializeSettingValue(value: PersistedSettingValue) {
 }
 
 export function normalizeSettingsRecord(record: Record<string, string | undefined>): AppSettings {
-  const localApiToken = normalizeLocalApiToken(record.local_api_token);
   const webActivityToken = normalizeWebActivityToken(record.web_activity_token);
   const remoteStatusBridgeToken = normalizeRemoteStatusBridgeToken(
     record.remote_status_bridge_token,
@@ -298,23 +289,20 @@ export function normalizeSettingsRecord(record: Record<string, string | undefine
       record.onboarding_completed,
       DEFAULT_SETTINGS.onboardingCompleted,
     ),
-    localApiEnabled: parseBooleanSetting(record.local_api_enabled, DEFAULT_SETTINGS.localApiEnabled)
-      && localApiToken.length > 0,
-    localApiPort: normalizeIntegerRangeValue(
-      record.local_api_port,
-      DEFAULT_SETTINGS.localApiPort,
-      LOCAL_API_PORT_RANGE,
-    ),
-    localApiToken,
     webActivityEnabled: parseBooleanSetting(
       record.web_activity_enabled,
       DEFAULT_SETTINGS.webActivityEnabled,
     ) && webActivityToken.length > 0,
+    webActivityPort: normalizeIntegerRangeValue(
+      record.web_activity_port,
+      DEFAULT_SETTINGS.webActivityPort,
+      WEB_ACTIVITY_PORT_RANGE,
+    ),
     webActivityToken,
     remoteStatusBridgeEnabled: parseBooleanSetting(
       record.remote_status_bridge_enabled,
       DEFAULT_SETTINGS.remoteStatusBridgeEnabled,
-    ) && remoteStatusBridgeToken.length > 0 && remoteStatusBridgeUrl.length > 0,
+    ),
     remoteStatusBridgeUrl,
     remoteStatusBridgeToken,
     remoteStatusBridgeMachineId,

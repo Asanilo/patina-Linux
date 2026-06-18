@@ -11,30 +11,6 @@ const MAX_EXTENSION_VERSION_CHARS: usize = 64;
 const MAX_TITLE_CHARS: usize = 512;
 const MAX_FAVICON_URL_CHARS: usize = 8192;
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-pub enum LocalApiClientRole {
-    General,
-    BrowserBridge,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BrowserClientHelloPayload {
-    pub protocol_version: Option<u32>,
-    pub browser_client_id: Option<String>,
-    pub browser_kind: Option<String>,
-    pub extension_version: Option<String>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BrowserClientHeartbeatPayload {
-    pub browser_client_id: Option<String>,
-    pub browser_kind: Option<String>,
-    pub captured_at_ms: Option<i64>,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowserActiveTabPayload {

@@ -154,12 +154,6 @@
   color: var(--qp-text-primary);
 }
 
-.settings-local-api-address-input {
-  width: 24ch;
-  max-width: 100%;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-}
-
 .settings-interface-field {
   padding: 10px;
 }
