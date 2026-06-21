@@ -100,6 +100,7 @@ pub enum AudioProbeStatus {
     Ok,
     Timeout,
     WindowsApiFailed,
+    LinuxApiFailed,
     BackingOff,
     Disabled,
 }
@@ -191,6 +192,7 @@ impl AudioSnapshot {
             AudioProbeStatus::Disabled
             | AudioProbeStatus::Timeout
             | AudioProbeStatus::WindowsApiFailed
+            | AudioProbeStatus::LinuxApiFailed
             | AudioProbeStatus::BackingOff => AudioSignalState::ProbeUnavailable,
         }
     }

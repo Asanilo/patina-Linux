@@ -3,6 +3,10 @@ use crate::engine::tracking::runtime_snapshot::{
     TrackingRuntimeProbeDiagnostics, TrackingRuntimeProbeStatus, TrackingRuntimeSnapshotState,
 };
 use crate::engine::tracking::watchdog::{RuntimeHealthSnapshot, RuntimeHealthState};
+#[cfg(target_os = "linux")]
+use crate::platform::linux::foreground::WindowInfo;
+use crate::platform::tracking_diagnostics::PlatformTrackingDiagnostics;
+#[cfg(target_os = "windows")]
 use crate::platform::windows::foreground::WindowInfo;
 use serde::Serialize;
 use std::sync::Arc;
@@ -23,6 +27,7 @@ pub struct TrackerHealthRuntimeSnapshot {
     pub last_heartbeat_ms: Option<i64>,
     pub last_successful_sample_ms: Option<i64>,
     pub last_watchdog_seal_sample_ms: Option<i64>,
+    pub platform_diagnostics: PlatformTrackingDiagnostics,
 }
 
 impl From<RuntimeHealthSnapshot> for TrackerHealthRuntimeSnapshot {
@@ -31,6 +36,7 @@ impl From<RuntimeHealthSnapshot> for TrackerHealthRuntimeSnapshot {
             last_heartbeat_ms: snapshot.last_heartbeat_ms,
             last_successful_sample_ms: snapshot.last_successful_sample_ms,
             last_watchdog_seal_sample_ms: snapshot.last_watchdog_seal_sample_ms,
+            platform_diagnostics: crate::platform::tracking_diagnostics::current(),
         }
     }
 }
@@ -72,5 +78,8 @@ pub fn cmd_get_tracker_health_snapshot(
 
 #[tauri::command]
 pub fn cmd_set_afk_threshold(threshold_secs: u64) {
+    #[cfg(target_os = "windows")]
     crate::platform::windows::foreground::cmd_set_afk_threshold(threshold_secs);
+    #[cfg(target_os = "linux")]
+    crate::platform::linux::foreground::cmd_set_afk_threshold(threshold_secs);
 }

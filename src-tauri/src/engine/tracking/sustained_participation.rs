@@ -7,6 +7,9 @@ use crate::domain::tracking::{
     SustainedParticipationSignalSnapshot, SustainedParticipationSignalSource,
     SustainedParticipationState, SustainedParticipationStatusReason, TrackingStatusSnapshot,
 };
+#[cfg(target_os = "linux")]
+use crate::platform::linux::{audio, foreground as tracker, media};
+#[cfg(target_os = "windows")]
 use crate::platform::windows::{audio, foreground as tracker, media};
 
 const SUSTAINED_PARTICIPATION_TRANSIENT_MISS_THRESHOLD: u8 = 3;

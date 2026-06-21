@@ -1,17 +1,18 @@
 use crate::data::tracking_runtime::{TrackingRuntimeDataError, TrackingRuntimeDataStore};
 use crate::domain::tracking::{TrackingDataChangedPayload, TRACKING_REASON_STARTUP_SEALED};
+#[cfg(target_os = "linux")]
+use crate::platform::linux::foreground as tracker;
+#[cfg(target_os = "windows")]
 use crate::platform::windows::foreground as tracker;
 use tauri::{AppHandle, Emitter, Runtime};
 
-const DEFAULT_AFK_THRESHOLD_SECS: u64 = 180;
+const DEFAULT_AFK_THRESHOLD_SECS: u64 = 900;
 
 pub async fn initialize_tracker<R: Runtime>(
     app: &AppHandle<R>,
     data: &TrackingRuntimeDataStore,
 ) -> Result<(), TrackingRuntimeDataError> {
-    let afk_threshold_secs = data
-        .load_timeline_merge_gap_secs(DEFAULT_AFK_THRESHOLD_SECS)
-        .await?;
+    let afk_threshold_secs = load_startup_afk_threshold_secs(data).await?;
     tracker::cmd_set_afk_threshold(afk_threshold_secs);
 
     let mut repair_notes: Vec<String> = Vec::new();
@@ -21,6 +22,13 @@ pub async fn initialize_tracker<R: Runtime>(
     persist_startup_self_heal_if_needed(data, &repair_notes).await?;
 
     Ok(())
+}
+
+async fn load_startup_afk_threshold_secs(
+    data: &TrackingRuntimeDataStore,
+) -> Result<u64, TrackingRuntimeDataError> {
+    data.load_idle_timeout_secs(DEFAULT_AFK_THRESHOLD_SECS)
+        .await
 }
 
 async fn record_normalized_closed_duration(
@@ -174,6 +182,26 @@ mod tests {
 
             assert_eq!(end_time, Some(8_000));
             assert_eq!(ended, Some((8_000, 7_000)));
+        });
+    }
+
+    #[test]
+    fn startup_afk_threshold_uses_idle_timeout_not_timeline_merge_gap() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            tracker_settings::save_setting_value(&pool, "idle_timeout_secs", "900")
+                .await
+                .unwrap();
+            tracker_settings::save_setting_value(&pool, "timeline_merge_gap_secs", "180")
+                .await
+                .unwrap();
+
+            let data = data_store(&pool);
+
+            assert_eq!(
+                super::load_startup_afk_threshold_secs(&data).await.unwrap(),
+                900
+            );
         });
     }
 

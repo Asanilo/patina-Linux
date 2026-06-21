@@ -1,4 +1,7 @@
 use crate::domain::tracking::TrackingStatusSnapshot;
+#[cfg(target_os = "linux")]
+use crate::platform::linux::foreground::WindowInfo;
+#[cfg(target_os = "windows")]
 use crate::platform::windows::foreground::WindowInfo;
 use serde::Serialize;
 use std::sync::Mutex;

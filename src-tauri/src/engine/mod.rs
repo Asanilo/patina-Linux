@@ -1,3 +1,4 @@
+pub mod api;
 pub mod remote_status_bridge;
 pub mod tools;
 pub mod tracking;

@@ -16,6 +16,9 @@ use crate::domain::tracking::TrackingDataChangedPayload;
 #[cfg(test)]
 use crate::domain::tracking::TRACKING_REASON_TRACKING_PAUSED_SEALED;
 use crate::domain::tracking::{TrackingStatusSnapshot, TRACKING_REASON_STATUS_CHANGED};
+#[cfg(target_os = "linux")]
+use crate::platform::linux::foreground as tracker;
+#[cfg(target_os = "windows")]
 use crate::platform::windows::foreground as tracker;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, Runtime};

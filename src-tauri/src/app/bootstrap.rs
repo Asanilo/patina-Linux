@@ -135,6 +135,7 @@ fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Build
         commands::backup::cmd_list_webdav_backups,
         commands::backup::cmd_download_webdav_backup,
         commands::persistence::cmd_reopen_sqlite_pool,
+        commands::diagnostics::cmd_get_local_api_diagnostics,
         commands::diagnostics::cmd_get_resource_diagnostics
     ])
 }

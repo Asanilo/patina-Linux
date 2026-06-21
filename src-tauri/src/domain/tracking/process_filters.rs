@@ -38,6 +38,10 @@ pub fn should_track(exe_name: &str) -> bool {
         return false;
     }
 
+    if is_linux_system_process(&lower_name) {
+        return false;
+    }
+
     if is_likely_system_process(&lower_name) {
         return false;
     }
@@ -295,6 +299,61 @@ fn has_lifecycle_metadata_signal(value: &str) -> bool {
                     | "maintenancetool"
             )
         })
+}
+
+fn is_linux_system_process(lower_name: &str) -> bool {
+    matches!(
+        lower_name,
+        "gnome-shell"
+            | "kwin_wayland"
+            | "kwin_x11"
+            | "xorg"
+            | "xwayland"
+            | "dbus-daemon"
+            | "dbus-launch"
+            | "systemd"
+            | "systemd-journal"
+            | "systemd-logind"
+            | "systemd-udevd"
+            | "pipewire"
+            | "pipewire-pulse"
+            | "wireplumber"
+            | "pulseaudio"
+            | "xdg-desktop-portal"
+            | "xdg-desktop-portal-gnome"
+            | "xdg-desktop-portal-gtk"
+            | "xdg-desktop-portal-kde"
+            | "at-spi-bus-launcher"
+            | "at-spi2-registryd"
+            | "gcr-prompter"
+            | "gnome-keyring-daemon"
+            | "gsd-a11y-settings"
+            | "gsd-clipboard"
+            | "gsd-color"
+            | "gsd-datetime"
+            | "gsd-housekeeping"
+            | "gsd-keyboard"
+            | "gsd-media-keys"
+            | "gsd-mouse"
+            | "gsd-power"
+            | "gsd-print-notifications"
+            | "gsd-rfkill"
+            | "gsd-screensaver-proxy"
+            | "gsd-sharing"
+            | "gsd-smartcard"
+            | "gsd-sound"
+            | "gsd-usb-protection"
+            | "gsd-wacom"
+            | "gsd-xsettings"
+            | "ibus-daemon"
+            | "ibus-x11"
+            | "xdg-permission-store"
+            | "xdg-document-portal"
+            | "xdg-settings"
+            | "snapd"
+            | "snap-store"
+            | "update-notifier"
+    )
 }
 
 fn is_likely_system_process(lower_name: &str) -> bool {

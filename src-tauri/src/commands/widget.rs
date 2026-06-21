@@ -2,6 +2,9 @@ use crate::app::{tray, widget};
 use crate::data::icon_cache_service;
 use crate::domain::widget::{WidgetPlacement, WidgetSide};
 use crate::engine::widget as widget_engine;
+#[cfg(target_os = "linux")]
+use crate::platform::linux::input;
+#[cfg(target_os = "windows")]
 use crate::platform::windows::input;
 use std::collections::HashMap;
 use tauri::AppHandle;

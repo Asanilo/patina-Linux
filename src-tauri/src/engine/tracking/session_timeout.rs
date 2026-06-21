@@ -5,6 +5,9 @@ use crate::domain::tracking::{
     TRACKING_REASON_CONTINUITY_WINDOW_SEALED, TRACKING_REASON_PASSIVE_PARTICIPATION_SEALED,
     TRACKING_REASON_TRACKING_PAUSED_SEALED,
 };
+#[cfg(target_os = "linux")]
+use crate::platform::linux::foreground as tracker;
+#[cfg(target_os = "windows")]
 use crate::platform::windows::foreground as tracker;
 
 pub(super) async fn seal_active_sessions_for_tracking_pause(

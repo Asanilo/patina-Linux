@@ -4,6 +4,9 @@ use crate::app::runtime_tasks;
 use crate::app::state::DesktopBehaviorState;
 use crate::app::tray::{apply_tray_visibility, setup_tray, MAIN_WINDOW_LABEL};
 use crate::engine::tracking::watchdog::RuntimeHealthState;
+#[cfg(target_os = "linux")]
+use crate::platform::linux::{audio, media, power};
+#[cfg(target_os = "windows")]
 use crate::platform::windows::{audio, media, power};
 #[cfg(any(test, all(not(debug_assertions), not(patina_local_build))))]
 use std::path::Path;
@@ -28,8 +31,9 @@ pub fn should_use_local_build_context() -> bool {
 #[cfg(any(test, all(not(debug_assertions), not(patina_local_build))))]
 fn is_workspace_target_binary(path: &Path) -> bool {
     let components = path
-        .components()
-        .filter_map(|component| component.as_os_str().to_str())
+        .to_string_lossy()
+        .split(['/', '\\'])
+        .filter(|component| !component.is_empty())
         .map(|component| component.to_ascii_lowercase())
         .collect::<Vec<_>>();
 
@@ -60,6 +64,11 @@ pub fn setup(
     crate::app::web_activity_bridge::start(app.handle().clone());
     crate::engine::remote_status_bridge::start(app.handle().clone());
     crate::app::web_activity::spawn_startup_repair(app.handle().clone());
+
+    // Start HTTP API server for AI agent integration
+    let api_server = crate::engine::api::server::ApiServerState::new();
+    api_server.start(app.handle().clone(), None);
+    app.manage(api_server);
 
     let app_handle = app.handle().clone();
     main_window::ensure_main_window_with_initial_visibility(&app_handle, !launched_by_autostart)

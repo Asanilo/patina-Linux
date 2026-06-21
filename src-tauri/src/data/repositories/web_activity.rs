@@ -1,9 +1,9 @@
 use crate::domain::backup::BackupWebActivitySegment;
 use crate::domain::web_activity::{
-    parse_domain_override_enabled, SanitizedWebActivityInput,
+    normalize_domain, parse_domain_override_enabled, SanitizedWebActivityInput,
     WEB_ACTIVITY_SOURCE_BROWSER_EXTENSION, WEB_DOMAIN_OVERRIDE_KEY_PREFIX,
 };
-use sqlx::{Pool, Row, Sqlite, Transaction};
+use sqlx::{Pool, QueryBuilder, Row, Sqlite, Transaction};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WebActivitySegmentInput {
@@ -15,6 +15,31 @@ pub struct WebActivitySegmentInput {
     pub url: Option<String>,
     pub title: Option<String>,
     pub favicon_url: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct WebActivitySegmentQuery {
+    pub from: Option<i64>,
+    pub to: Option<i64>,
+    pub domain: Option<String>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WebActivitySegmentRecord {
+    pub id: i64,
+    pub browser_client_id: String,
+    pub browser_kind: String,
+    pub browser_exe_name: String,
+    pub domain: String,
+    pub normalized_domain: String,
+    pub url: Option<String>,
+    pub title: Option<String>,
+    pub favicon_url: Option<String>,
+    pub start_time: i64,
+    pub end_time: Option<i64>,
+    pub duration: i64,
+    pub source: String,
 }
 
 #[derive(Clone, Debug)]
@@ -141,6 +166,80 @@ pub async fn end_active_segment(
     finish_segment_tx(&mut tx, active.id, active.start_time, timestamp_ms).await?;
     tx.commit().await?;
     Ok(true)
+}
+
+pub async fn query_segments(
+    pool: &Pool<Sqlite>,
+    query: &WebActivitySegmentQuery,
+    now_ms: i64,
+) -> Result<Vec<WebActivitySegmentRecord>, sqlx::Error> {
+    let mut builder = QueryBuilder::<Sqlite>::new(
+        "SELECT id,
+                browser_client_id,
+                browser_kind,
+                browser_exe_name,
+                domain,
+                normalized_domain,
+                url,
+                title,
+                favicon_url,
+                start_time,
+                end_time,
+                duration,
+                source
+         FROM web_activity_segments
+         WHERE 1 = 1",
+    );
+
+    if let Some(from) = query.from {
+        builder.push(" AND COALESCE(end_time, ");
+        builder.push_bind(now_ms);
+        builder.push(") >= ");
+        builder.push_bind(from);
+    }
+
+    if let Some(to) = query.to {
+        builder.push(" AND start_time <= ");
+        builder.push_bind(to);
+    }
+
+    if let Some(domain) = query.domain.as_deref().and_then(normalize_domain) {
+        builder.push(" AND normalized_domain = ");
+        builder.push_bind(domain);
+    }
+
+    builder.push(" ORDER BY start_time DESC, id DESC LIMIT ");
+    builder.push_bind(normalize_query_limit(query.limit));
+
+    let rows = builder.build().fetch_all(pool).await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let start_time = row.try_get::<i64, _>("start_time").unwrap_or(0);
+            let end_time = row.try_get::<Option<i64>, _>("end_time").unwrap_or(None);
+            let stored_duration = row.try_get::<Option<i64>, _>("duration").unwrap_or(None);
+            let duration = stored_duration
+                .unwrap_or_else(|| now_ms.saturating_sub(start_time))
+                .max(0);
+
+            WebActivitySegmentRecord {
+                id: row.try_get("id").unwrap_or(0),
+                browser_client_id: row.try_get("browser_client_id").unwrap_or_default(),
+                browser_kind: row.try_get("browser_kind").unwrap_or_default(),
+                browser_exe_name: row.try_get("browser_exe_name").unwrap_or_default(),
+                domain: row.try_get("domain").unwrap_or_default(),
+                normalized_domain: row.try_get("normalized_domain").unwrap_or_default(),
+                url: row.try_get("url").unwrap_or(None),
+                title: row.try_get("title").unwrap_or(None),
+                favicon_url: row.try_get("favicon_url").unwrap_or(None),
+                start_time,
+                end_time,
+                duration,
+                source: row.try_get("source").unwrap_or_default(),
+            }
+        })
+        .collect())
 }
 
 pub async fn fetch_all_for_backup(
@@ -341,6 +440,10 @@ fn is_same_segment_identity(
         && active.title == input.title
 }
 
+fn normalize_query_limit(limit: Option<i64>) -> i64 {
+    limit.unwrap_or(100).clamp(1, 1000)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -407,6 +510,53 @@ mod tests {
             assert_eq!(rows[0].get::<Option<i64>, _>("duration"), Some(2_000));
             assert_eq!(rows[1].get::<String, _>("normalized_domain"), "docs.rs");
             assert_eq!(rows[1].get::<Option<i64>, _>("end_time"), None);
+        });
+    }
+
+    #[test]
+    fn query_segments_filters_by_range_and_domain_with_realtime_active_duration() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            sqlx::query(
+                "INSERT INTO web_activity_segments (
+                    browser_client_id, browser_kind, browser_exe_name, domain,
+                    normalized_domain, url, title, favicon_url, start_time, end_time,
+                    duration, source, created_at, updated_at
+                 ) VALUES
+                    ('client', 'chrome', 'chrome.exe', 'github.com', 'github.com',
+                     'https://github.com/Ceceliaee/patina', 'Patina', NULL,
+                     1000, 2000, 1000, 'browser-extension', 1000, 2000),
+                    ('client', 'chrome', 'chrome.exe', 'example.com', 'example.com',
+                     'https://example.com', 'Example', NULL,
+                     2100, 2500, 400, 'browser-extension', 2100, 2500),
+                    ('client', 'chrome', 'chrome.exe', 'github.com', 'github.com',
+                     'https://github.com/issues', 'Issues', NULL,
+                     3000, NULL, NULL, 'browser-extension', 3000, 3000)",
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+
+            let rows = query_segments(
+                &pool,
+                &WebActivitySegmentQuery {
+                    from: Some(1500),
+                    to: Some(4000),
+                    domain: Some("github.com".to_string()),
+                    limit: Some(10),
+                },
+                4500,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(rows.len(), 2);
+            assert_eq!(rows[0].title.as_deref(), Some("Issues"));
+            assert_eq!(rows[0].end_time, None);
+            assert_eq!(rows[0].duration, 1500);
+            assert_eq!(rows[0].url.as_deref(), Some("https://github.com/issues"));
+            assert_eq!(rows[1].title.as_deref(), Some("Patina"));
+            assert_eq!(rows[1].duration, 1000);
         });
     }
 

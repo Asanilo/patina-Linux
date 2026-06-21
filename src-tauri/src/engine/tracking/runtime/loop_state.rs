@@ -9,6 +9,9 @@ use crate::data::repositories::tracker_settings::{
 };
 use crate::data::tracking_runtime::TrackingRuntimeDataStore;
 use crate::domain::tracking::TrackingStatusSnapshot;
+#[cfg(target_os = "linux")]
+use crate::platform::linux::foreground as tracker;
+#[cfg(target_os = "windows")]
 use crate::platform::windows::foreground as tracker;
 use std::collections::HashMap;
 

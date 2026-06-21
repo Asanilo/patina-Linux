@@ -2,6 +2,9 @@ use crate::app::state::{DesktopBehaviorState, MainWindowLifecycleState};
 use crate::app::widget;
 use crate::domain::settings::MinimizeBehavior;
 use crate::platform::app_paths;
+#[cfg(target_os = "linux")]
+use crate::platform::linux::window_activation;
+#[cfg(target_os = "windows")]
 use crate::platform::windows::window_activation;
 use std::time::Duration;
 use tauri::{AppHandle, Manager, Runtime, WebviewUrl, WebviewWindow, WebviewWindowBuilder, Window};

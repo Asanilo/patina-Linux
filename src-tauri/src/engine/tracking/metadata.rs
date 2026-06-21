@@ -1,20 +1,29 @@
 use crate::data::tracking_runtime::{TrackingRuntimeDataError, TrackingRuntimeDataStore};
+#[cfg(target_os = "linux")]
+use crate::platform::linux::icon as icon_extractor;
+#[cfg(target_os = "windows")]
 use crate::platform::windows::icon as icon_extractor;
 use std::collections::{HashMap, HashSet};
+#[cfg(target_os = "windows")]
 use std::ffi::OsStr;
+#[cfg(target_os = "windows")]
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use tokio::sync::Semaphore;
+#[cfg(target_os = "windows")]
 use windows::core::PCWSTR;
+#[cfg(target_os = "windows")]
 use windows::Win32::Storage::FileSystem::{
     GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW,
 };
 
+#[cfg(target_os = "windows")]
 const VERSION_INFO_NAME_KEYS: [&str; 3] = ["FileDescription", "ProductName", "CompanyName"];
 const ICON_NEGATIVE_CACHE_TTL_MS: i64 = 60 * 60 * 1000;
 const ICON_CACHE_CONCURRENCY_LIMIT: usize = 2;
 
+#[cfg(target_os = "windows")]
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct LangAndCodePage {
@@ -168,6 +177,7 @@ fn icon_negative_cache() -> &'static Mutex<HashMap<String, i64>> {
     ICON_NEGATIVE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+#[cfg(target_os = "windows")]
 fn resolve_icon_source_path(process_path: &str, exe_name: &str) -> Option<String> {
     let trimmed_path = process_path.trim();
     if !trimmed_path.is_empty() {
@@ -179,10 +189,6 @@ fn resolve_icon_source_path(process_path: &str, exe_name: &str) -> Option<String
         return None;
     }
 
-    // Fallback order when tracker cannot resolve process_path:
-    // 1) App execution aliases (WindowsApps, common for Photos and Store apps)
-    // 2) System paths
-    // 3) Raw exe name as last attempt
     let mut candidates: Vec<PathBuf> = Vec::new();
 
     if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
@@ -208,6 +214,36 @@ fn resolve_icon_source_path(process_path: &str, exe_name: &str) -> Option<String
     Some(exe.to_string())
 }
 
+#[cfg(target_os = "linux")]
+fn resolve_icon_source_path(process_path: &str, exe_name: &str) -> Option<String> {
+    let trimmed_path = process_path.trim();
+    if !trimmed_path.is_empty() {
+        return Some(trimmed_path.to_string());
+    }
+
+    let exe = exe_name.trim();
+    if exe.is_empty() {
+        return None;
+    }
+
+    // On Linux, try /usr/bin and common paths
+    let candidates = [
+        format!("/usr/bin/{exe}"),
+        format!("/usr/local/bin/{exe}"),
+        format!("/usr/sbin/{exe}"),
+        format!("/snap/bin/{exe}"),
+    ];
+
+    for path in &candidates {
+        if std::path::Path::new(path).is_file() {
+            return Some(path.to_string());
+        }
+    }
+
+    Some(exe.to_string())
+}
+
+#[cfg(target_os = "windows")]
 fn resolve_process_display_name(process_path: &str) -> Option<String> {
     if process_path.trim().is_empty() {
         return None;
@@ -248,6 +284,62 @@ fn resolve_process_display_name(process_path: &str) -> Option<String> {
     None
 }
 
+#[cfg(target_os = "linux")]
+fn resolve_process_display_name(process_path: &str) -> Option<String> {
+    if process_path.trim().is_empty() {
+        return None;
+    }
+
+    let exe_name = std::path::Path::new(process_path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())?;
+
+    // Look up .desktop files for display name
+    let desktop_paths = ["/usr/share/applications", "/usr/local/share/applications"];
+
+    let lower_exe = exe_name.to_lowercase();
+    let stem = lower_exe.strip_suffix(".exe").unwrap_or(&lower_exe);
+
+    for dir_path in &desktop_paths {
+        let dir = std::path::Path::new(dir_path);
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().map_or(true, |ext| ext != "desktop") {
+                continue;
+            }
+
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+
+            // Check if Exec= contains our exe
+            let matches = content.lines().any(|line| {
+                line.strip_prefix("Exec=")
+                    .map_or(false, |exec| exec.to_lowercase().contains(stem))
+            });
+
+            if matches {
+                // Extract Name= field
+                for line in content.lines() {
+                    if let Some(name) = line.strip_prefix("Name=") {
+                        let trimmed = name.trim();
+                        if !trimmed.is_empty() {
+                            return Some(trimmed.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(target_os = "windows")]
 fn iter_version_translations(version_data: &[u8]) -> Vec<(u16, u16)> {
     let mut translations = Vec::new();
     let translation_key: Vec<u16> = "\\VarFileInfo\\Translation"
@@ -292,6 +384,7 @@ fn iter_version_translations(version_data: &[u8]) -> Vec<(u16, u16)> {
     translations
 }
 
+#[cfg(target_os = "windows")]
 fn query_version_string(
     version_data: &[u8],
     language: u16,

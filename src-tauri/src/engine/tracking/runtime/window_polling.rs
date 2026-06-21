@@ -1,4 +1,7 @@
 use super::super::runtime_snapshot::{TrackingRuntimeProbeDiagnostics, TrackingRuntimeProbeStatus};
+#[cfg(target_os = "linux")]
+use crate::platform::linux::foreground as tracker;
+#[cfg(target_os = "windows")]
 use crate::platform::windows::foreground as tracker;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};

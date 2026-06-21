@@ -2,6 +2,9 @@ use crate::data::tracking_runtime::{TrackingRuntimeDataError, TrackingRuntimeDat
 use crate::domain::tracking::{
     self, WindowSessionIdentity, WindowTrackingCandidate, WindowTransitionDecision,
 };
+#[cfg(target_os = "linux")]
+use crate::platform::linux::foreground as tracker;
+#[cfg(target_os = "windows")]
 use crate::platform::windows::foreground as tracker;
 use std::future::Future;
 use std::pin::Pin;

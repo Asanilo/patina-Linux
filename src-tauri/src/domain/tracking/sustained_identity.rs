@@ -19,38 +19,52 @@ pub fn sustained_participation_app_identity(
         return None;
     }
 
-    if matches!(normalized_exe.as_str(), "chrome.exe" | "chrome")
-        || normalized_path.ends_with("\\chrome.exe")
+    if matches!(
+        normalized_exe.as_str(),
+        "chrome.exe" | "chrome" | "google-chrome" | "google-chrome-stable"
+    ) || normalized_path.ends_with("\\chrome.exe")
+        || normalized_path.contains("/chrome")
     {
         return Some(SustainedParticipationAppIdentity::Chrome);
     }
 
-    if matches!(normalized_exe.as_str(), "msedge.exe" | "msedge")
-        || normalized_path.ends_with("\\msedge.exe")
+    if matches!(
+        normalized_exe.as_str(),
+        "msedge.exe" | "msedge" | "microsoft-edge" | "microsoft-edge-stable"
+    ) || normalized_path.ends_with("\\msedge.exe")
     {
         return Some(SustainedParticipationAppIdentity::Edge);
     }
 
-    if matches!(normalized_exe.as_str(), "firefox.exe" | "firefox")
-        || normalized_path.ends_with("\\firefox.exe")
+    if matches!(
+        normalized_exe.as_str(),
+        "firefox.exe" | "firefox" | "firefox-esr"
+    ) || normalized_path.ends_with("\\firefox.exe")
+        || normalized_path.contains("/firefox")
     {
         return Some(SustainedParticipationAppIdentity::Firefox);
     }
 
-    if matches!(normalized_exe.as_str(), "brave.exe" | "brave")
-        || normalized_path.ends_with("\\brave.exe")
+    if matches!(
+        normalized_exe.as_str(),
+        "brave.exe" | "brave" | "brave-browser" | "brave-browser-stable"
+    ) || normalized_path.ends_with("\\brave.exe")
     {
         return Some(SustainedParticipationAppIdentity::Brave);
     }
 
-    if matches!(normalized_exe.as_str(), "zoom.exe" | "zoom")
-        || normalized_path.ends_with("\\zoom.exe")
+    if matches!(
+        normalized_exe.as_str(),
+        "zoom.exe" | "zoom" | "zoomlauncher"
+    ) || normalized_path.ends_with("\\zoom.exe")
     {
         return Some(SustainedParticipationAppIdentity::Zoom);
     }
 
-    if matches!(normalized_exe.as_str(), "teams.exe" | "teams")
-        || normalized_path.ends_with("\\teams.exe")
+    if matches!(
+        normalized_exe.as_str(),
+        "teams.exe" | "teams" | "teams-for-linux"
+    ) || normalized_path.ends_with("\\teams.exe")
     {
         return Some(SustainedParticipationAppIdentity::Teams);
     }
@@ -66,6 +80,7 @@ pub fn sustained_participation_app_identity(
         "bilibili.exe" | "哔哩哔哩.exe" | "哔哩哔哩" | "鍝斿摡鍝斿摡.exe" | "鍝斿摡鍝斿摡"
     ) || normalized_exe_stem.starts_with("bilibili")
         || normalized_path.contains("\\bilibili\\")
+        || normalized_path.contains("/bilibili/")
     {
         return Some(SustainedParticipationAppIdentity::Bilibili);
     }
@@ -74,6 +89,7 @@ pub fn sustained_participation_app_identity(
         || normalized_exe_stem.starts_with("douyin")
         || normalized_path.contains("\\douyin\\")
         || normalized_path.contains("\\bytedance\\douyin\\")
+        || normalized_path.contains("/douyin/")
     {
         return Some(SustainedParticipationAppIdentity::Douyin);
     }
@@ -83,6 +99,7 @@ pub fn sustained_participation_app_identity(
         "wemeetapp.exe" | "tencentmeeting.exe" | "wemeetapp" | "tencentmeeting"
     ) || normalized_path.ends_with("\\wemeetapp.exe")
         || normalized_path.ends_with("\\tencentmeeting.exe")
+        || normalized_path.contains("/tencent-meeting/")
     {
         return Some(SustainedParticipationAppIdentity::WeMeet);
     }

@@ -110,7 +110,7 @@ pub fn sanitize_active_tab_payload(
         browser_kind: sanitize_browser_kind(payload.browser_kind.as_deref()),
         domain,
         normalized_domain,
-        url: None,
+        url: Some(raw_url.to_string()),
         title: sanitize_optional_text(payload.title.as_deref(), MAX_TITLE_CHARS),
         favicon_url: sanitize_optional_text(payload.fav_icon_url.as_deref(), MAX_FAVICON_URL_CHARS),
     }))
@@ -128,13 +128,25 @@ pub fn is_supported_browser_exe(exe_name: &str) -> bool {
     matches!(
         exe_name.trim().to_ascii_lowercase().as_str(),
         "chrome.exe"
+            | "chrome"
+            | "google-chrome"
+            | "google-chrome-stable"
             | "msedge.exe"
+            | "microsoft-edge"
+            | "microsoft-edge-stable"
             | "brave.exe"
+            | "brave-browser"
+            | "brave-browser-stable"
             | "opera.exe"
+            | "opera"
             | "opera_gx.exe"
             | "vivaldi.exe"
+            | "vivaldi"
             | "arc.exe"
             | "chromium.exe"
+            | "chromium"
+            | "chromium-browser"
+            | "firefox"
     )
 }
 
@@ -161,7 +173,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn active_tab_sanitizer_extracts_domain_without_full_url_by_default() {
+    fn active_tab_sanitizer_preserves_full_url_for_local_api() {
         let sanitized = sanitize_active_tab_payload(BrowserActiveTabPayload {
             browser_client_id: Some("client-1".into()),
             browser_kind: Some("Chrome".into()),
@@ -180,7 +192,10 @@ mod tests {
 
         assert_eq!(sanitized.normalized_domain, "github.com");
         assert_eq!(sanitized.browser_kind, "chrome");
-        assert_eq!(sanitized.url, None);
+        assert_eq!(
+            sanitized.url.as_deref(),
+            Some("https://GitHub.com/Ceceliaee/patina/issues/6")
+        );
         assert_eq!(sanitized.title.as_deref(), Some("Issue #6"));
     }
 
@@ -206,6 +221,25 @@ mod tests {
         payload.url = Some("https://example.com".into());
         payload.incognito = Some(true);
         assert!(sanitize_active_tab_payload(payload).unwrap().is_none());
+    }
+
+    #[test]
+    fn supported_browser_exe_covers_linux_browser_process_names() {
+        for exe_name in [
+            "chrome",
+            "google-chrome",
+            "google-chrome-stable",
+            "chromium",
+            "chromium-browser",
+            "brave-browser",
+            "brave-browser-stable",
+            "microsoft-edge",
+            "firefox",
+        ] {
+            assert!(is_supported_browser_exe(exe_name), "{exe_name}");
+        }
+
+        assert!(!is_supported_browser_exe("ghostty"));
     }
 
     #[test]
