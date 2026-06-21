@@ -1,5 +1,7 @@
 use crate::engine::api::{auth, handlers, types::ApiError, types::RouteResponse};
+use futures_util::FutureExt;
 use serde::Serialize;
+use std::panic::AssertUnwindSafe;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 
@@ -84,7 +86,20 @@ pub async fn handle_connection(mut stream: TcpStream, app: tauri::AppHandle) {
         return;
     }
 
-    let response = route_request(method, path, query, &body, &app).await;
+    let response = match AssertUnwindSafe(route_request(method, path, query, &body, &app))
+        .catch_unwind()
+        .await
+    {
+        Ok(response) => response,
+        Err(_) => {
+            eprintln!("[api] handler panicked while serving {method} {path}");
+            RouteResponse {
+                status: 500,
+                body: serde_json::to_value(ApiError::internal("handler panicked"))
+                    .unwrap_or_default(),
+            }
+        }
+    };
     write_json_response(&mut writer, response.status, &response.body).await;
 }
 

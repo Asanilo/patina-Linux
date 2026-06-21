@@ -21,6 +21,21 @@ pub fn current() -> PlatformTrackingDiagnostics {
     }
 }
 
+#[cfg(target_os = "linux")]
+pub fn unavailable(reason: &str) -> PlatformTrackingDiagnostics {
+    PlatformTrackingDiagnostics {
+        window_tracking: WindowTrackingDiagnostics {
+            status: "unavailable".to_string(),
+            reason: Some(reason.to_string()),
+            provider: "none".to_string(),
+            session_type: std::env::var("XDG_SESSION_TYPE").ok(),
+            desktop: std::env::var("XDG_CURRENT_DESKTOP")
+                .or_else(|_| std::env::var("DESKTOP_SESSION"))
+                .ok(),
+        },
+    }
+}
+
 #[cfg(target_os = "windows")]
 pub fn current() -> PlatformTrackingDiagnostics {
     PlatformTrackingDiagnostics {
