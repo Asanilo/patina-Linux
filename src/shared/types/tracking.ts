@@ -121,18 +121,33 @@ export interface TrackingDataChangedPayload {
 }
 
 export type TrackerHealthStatus = "healthy" | "stale";
+export type PlatformWindowTrackingStatus = "available" | "unavailable" | "unsupported";
+
+export interface PlatformWindowTrackingDiagnostics {
+  status: PlatformWindowTrackingStatus;
+  reason: string | null;
+  provider: string;
+  sessionType: string | null;
+  desktop: string | null;
+}
+
+export interface PlatformTrackingDiagnostics {
+  windowTracking: PlatformWindowTrackingDiagnostics;
+}
 
 export interface TrackerHealthSnapshot {
   status: TrackerHealthStatus;
   lastHeartbeatMs: number | null;
   checkedAtMs: number;
   staleAfterMs: number;
+  platformDiagnostics?: PlatformTrackingDiagnostics;
 }
 
 export interface TrackerHealthRuntimeSnapshot {
   lastHeartbeatMs: number | null;
   lastSuccessfulSampleMs: number | null;
   lastWatchdogSealSampleMs: number | null;
+  platformDiagnostics?: PlatformTrackingDiagnostics;
 }
 
 export const DEFAULT_TRACKING_STATUS: TrackingStatusSnapshot = {
@@ -179,6 +194,7 @@ export function resolveTrackerHealth(
   lastHeartbeatMs: number | null,
   checkedAtMs: number,
   staleAfterMs: number,
+  platformDiagnostics?: PlatformTrackingDiagnostics,
 ): TrackerHealthSnapshot {
   const isHealthy = lastHeartbeatMs !== null && (checkedAtMs - lastHeartbeatMs) <= staleAfterMs;
 
@@ -187,6 +203,7 @@ export function resolveTrackerHealth(
     lastHeartbeatMs,
     checkedAtMs,
     staleAfterMs,
+    platformDiagnostics,
   };
 }
 

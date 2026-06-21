@@ -1,4 +1,5 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { AlertTriangle } from "lucide-react";
 import { getUiText, setUiTextLanguage } from "../shared/copy/uiText.ts";
 import AppSidebar from "./components/AppSidebar";
 import AppTitleBar from "./components/AppTitleBar";
@@ -58,6 +59,7 @@ import { watchCurrentWindowForegroundState, watchCurrentWindowMaximized } from "
 import ToolsSidebarStatusEntry from "../features/tools/components/ToolsSidebarStatusEntry.tsx";
 import ToolAlertDialog from "../features/tools/components/ToolAlertDialog.tsx";
 import type { ToolsOpenTarget } from "../features/tools/types.ts";
+import { resolvePlatformTrackingDiagnosticMessage } from "./services/platformTrackingDiagnosticsService.ts";
 
 const DATA_FOREGROUND_PREWARM_DELAY_MS = 1_200;
 const BACKGROUND_CACHE_RELEASE_DELAY_MS = LONG_BACKGROUND_DELAY_MS;
@@ -189,6 +191,9 @@ function AppShellContent() {
     && trackingStatus.isTrackingActive
     ? mappedActiveApp
     : null;
+  const platformTrackingDiagnosticMessage = resolvePlatformTrackingDiagnosticMessage(
+    trackerHealth.platformDiagnostics,
+  );
   const handleToolsStatusChipOpen = useCallback((target: ToolsOpenTarget) => {
     setHistoryDateRequest(null);
     setToolsInitialTarget(target);
@@ -417,6 +422,12 @@ function AppShellContent() {
         />
 
         <main className="qp-canvas flex-1 min-h-0 flex flex-col gap-4 md:gap-5 p-4 md:p-5 relative overflow-hidden">
+          {platformTrackingDiagnosticMessage && (
+            <div className="qp-platform-diagnostic" role="status">
+              <AlertTriangle size={15} />
+              <span>{platformTrackingDiagnosticMessage}</span>
+            </div>
+          )}
           <Suspense
             fallback={
               <div className="flex-1 min-h-0 flex items-center justify-center text-[var(--qp-text-tertiary)] text-sm">
@@ -481,6 +492,7 @@ function AppShellContent() {
               {currentView === "settings" && (
                 <Settings
                   key="settings"
+                  trackerHealth={trackerHealth}
                   onSettingsChanged={(nextSettings: AppSettings) => {
                     if (nextSettings.language !== appSettings.language) {
                       void clearDataBootstrapCache();

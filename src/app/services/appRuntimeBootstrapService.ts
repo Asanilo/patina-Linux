@@ -71,6 +71,7 @@ export async function loadTrackerHealthSnapshotWithDeps(
       runtimeSnapshot.lastHeartbeatMs,
       nowMs,
       TRACKER_HEARTBEAT_STALE_AFTER_MS,
+      runtimeSnapshot.platformDiagnostics,
     );
   }
 
@@ -97,7 +98,7 @@ export async function loadAppRuntimeBootstrapSnapshotWithDeps(
 ): Promise<AppRuntimeBootstrapSnapshot> {
   const settings = await deps.loadCurrentAppSettings();
   const reportWarning = deps.reportWarning ?? console.warn;
-  await deps.setAfkThreshold(settings.timelineMergeGapSecs).catch((error) => {
+  await deps.setAfkThreshold(settings.idleTimeoutSecs).catch((error) => {
     reportWarning("Failed to sync AFK threshold during app bootstrap", error);
   });
 

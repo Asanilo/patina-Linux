@@ -208,7 +208,7 @@ await runTest("commitSettingsPatchWithDeps returns not-needed for empty patches"
     persistPatch: async () => {
       events.push("persist");
     },
-    syncTimelineMergeGap: async () => {
+    syncIdleTimeout: async () => {
       events.push("sync");
     },
     notifySettingsChanged: async () => {
@@ -224,18 +224,19 @@ await runTest("commitSettingsPatchWithDeps returns not-needed for empty patches"
   assert.deepEqual(events, []);
 });
 
-await runTest("commitSettingsPatchWithDeps persists before runtime sync", async () => {
+await runTest("commitSettingsPatchWithDeps syncs idle timeout after persistence", async () => {
   const events: string[] = [];
 
   const result = await commitSettingsPatchWithDeps({
     trackingPaused: true,
+    idleTimeoutSecs: 900,
     timelineMergeGapSecs: 180,
   }, {
     persistPatch: async (patch) => {
       events.push(`persist:${Object.keys(patch).length}`);
     },
-    syncTimelineMergeGap: async (seconds) => {
-      events.push(`sync:${seconds}`);
+    syncIdleTimeout: async (seconds) => {
+      events.push(`sync-idle:${seconds}`);
     },
     notifySettingsChanged: async (patch) => {
       events.push(`notify:${Object.keys(patch).length}`);
@@ -248,9 +249,9 @@ await runTest("commitSettingsPatchWithDeps persists before runtime sync", async 
     runtimeSyncErrors: [],
   });
   assert.deepEqual(events, [
-    "persist:2",
-    "notify:2",
-    "sync:180",
+    "persist:3",
+    "notify:3",
+    "sync-idle:900",
   ]);
 });
 
@@ -258,12 +259,12 @@ await runTest("commitSettingsPatchWithDeps keeps persisted success when runtime 
   const events: string[] = [];
 
   const result = await commitSettingsPatchWithDeps({
-    timelineMergeGapSecs: 120,
+    idleTimeoutSecs: 120,
   }, {
     persistPatch: async () => {
       events.push("persist");
     },
-    syncTimelineMergeGap: async () => {
+    syncIdleTimeout: async () => {
       events.push("sync");
       throw new Error("runtime unavailable");
     },
@@ -295,7 +296,7 @@ await runTest("commitSettingsPatchWithDeps does not attempt runtime sync when pe
         events.push("persist");
         throw new Error("disk full");
       },
-      syncTimelineMergeGap: async () => {
+      syncIdleTimeout: async () => {
         events.push("sync");
       },
       notifySettingsChanged: async () => {

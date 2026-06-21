@@ -43,7 +43,7 @@ export interface SettingsCommitResult {
 
 interface SettingsCommitDeps {
   persistPatch: (patch: SettingsPatch) => Promise<void>;
-  syncTimelineMergeGap: (seconds: number) => Promise<void>;
+  syncIdleTimeout: (seconds: number) => Promise<void>;
   notifySettingsChanged: (patch: SettingsPatch) => Promise<void>;
 }
 type ExportBackupDeps = {
@@ -83,7 +83,7 @@ const prepareBackupRestoreDeps: PrepareBackupRestoreDeps = {
 
 const defaultSettingsCommitDeps: SettingsCommitDeps = {
   persistPatch: saveAppSettingsPatch,
-  syncTimelineMergeGap: setAfkThreshold,
+  syncIdleTimeout: setAfkThreshold,
   notifySettingsChanged: emitAppSettingsChanged,
 };
 
@@ -131,7 +131,7 @@ export class SettingsRuntimeAdapterService {
   static async updateSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
     await saveAppSetting(key, value);
 
-    if (key === "timelineMergeGapSecs") {
+    if (key === "idleTimeoutSecs") {
       await setAfkThreshold(value as number);
     }
   }
@@ -213,11 +213,11 @@ export async function commitSettingsPatchWithDeps(
     runtimeSyncErrors.push(error instanceof Error ? error.message : String(error));
   }
 
-  const timelineMergeGapSecs = patch.timelineMergeGapSecs;
-  const needsRuntimeSync = typeof timelineMergeGapSecs === "number";
+  const idleTimeoutSecs = patch.idleTimeoutSecs;
+  const needsRuntimeSync = typeof idleTimeoutSecs === "number";
   if (needsRuntimeSync) {
     try {
-      await deps.syncTimelineMergeGap(timelineMergeGapSecs);
+      await deps.syncIdleTimeout(idleTimeoutSecs);
     } catch (error) {
       runtimeSyncErrors.push(error instanceof Error ? error.message : String(error));
     }

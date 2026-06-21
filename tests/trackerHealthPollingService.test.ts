@@ -241,10 +241,28 @@ await runTest("tracker health runtime raw snapshot parser maps valid payloads", 
     last_heartbeat_ms: 11_000,
     last_successful_sample_ms: 10_500,
     last_watchdog_seal_sample_ms: null,
+    platform_diagnostics: {
+      window_tracking: {
+        status: "unavailable",
+        reason: "gnome-extension-dbus-unavailable",
+        provider: "gnome-shell-extension",
+        session_type: "wayland",
+        desktop: "GNOME",
+      },
+    },
   }), {
     lastHeartbeatMs: 11_000,
     lastSuccessfulSampleMs: 10_500,
     lastWatchdogSealSampleMs: null,
+    platformDiagnostics: {
+      windowTracking: {
+        status: "unavailable",
+        reason: "gnome-extension-dbus-unavailable",
+        provider: "gnome-shell-extension",
+        sessionType: "wayland",
+        desktop: "GNOME",
+      },
+    },
   });
 
   assert.equal(parseTrackerHealthRuntimeSnapshot({
@@ -262,6 +280,15 @@ await runTest("tracker health snapshot prefers Rust runtime health over stored h
       lastHeartbeatMs: 11_000,
       lastSuccessfulSampleMs: 11_000,
       lastWatchdogSealSampleMs: null,
+      platformDiagnostics: {
+        windowTracking: {
+          status: "unavailable",
+          reason: "gnome-extension-dbus-unavailable",
+          provider: "gnome-shell-extension",
+          sessionType: "wayland",
+          desktop: "GNOME",
+        },
+      },
     }),
     loadTrackerHealthTimestampMs: async () => {
       throw new Error("stored heartbeat should not be read");
@@ -273,6 +300,7 @@ await runTest("tracker health snapshot prefers Rust runtime health over stored h
 
   assert.equal(snapshot.status, "healthy");
   assert.equal(snapshot.lastHeartbeatMs, 11_000);
+  assert.equal(snapshot.platformDiagnostics?.windowTracking.reason, "gnome-extension-dbus-unavailable");
   assert.deepEqual(warnings, []);
 });
 

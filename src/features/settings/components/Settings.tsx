@@ -10,12 +10,14 @@ import QuietPageHeader from "../../../shared/components/QuietPageHeader";
 import SettingsAppearancePanel from "./SettingsAppearancePanel";
 import SettingsDataSafetyPanel from "./SettingsDataSafetyPanel";
 import SettingsInterfacePanel from "./SettingsInterfacePanel";
+import SettingsDiagnosticsPanel from "./SettingsDiagnosticsPanel";
 import SettingsResidentPanel from "./SettingsResidentPanel";
 import SettingsTrackingPanel from "./SettingsTrackingPanel";
 import { useSettingsPageState } from "../hooks/useSettingsPageState";
 
 export default function Settings({
   onSettingsChanged,
+  trackerHealth,
   onColorSchemeSaved,
   onDirtyChange,
   onToast,
@@ -225,6 +227,13 @@ export default function Settings({
             onRemoteStatusBridgeEnabledChange={(nextChecked) => handleChange("remoteStatusBridgeEnabled", nextChecked)}
             onRemoteStatusBridgeUrlChange={(nextUrl) => handleChange("remoteStatusBridgeUrl", nextUrl)}
             onRemoteStatusBridgeTokenChange={(nextToken) => handleChange("remoteStatusBridgeToken", nextToken)}
+          />
+
+          <SettingsDiagnosticsPanel
+            trackerHealth={trackerHealth}
+            webActivityEnabled={draftSettings.webActivityEnabled}
+            webActivityPort={draftSettings.webActivityPort}
+            webActivityToken={draftSettings.webActivityToken}
           />
 
           <SettingsDataSafetyPanel

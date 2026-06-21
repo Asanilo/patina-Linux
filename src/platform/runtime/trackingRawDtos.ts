@@ -1,5 +1,7 @@
 import type {
   CurrentTrackingSnapshot,
+  PlatformTrackingDiagnostics,
+  PlatformWindowTrackingDiagnostics,
   SustainedParticipationAppIdentity,
   SustainedParticipationDiagnosticsSnapshot,
   SustainedParticipationKind,
@@ -92,6 +94,19 @@ export interface RawTrackerHealthRuntimeSnapshot {
   last_heartbeat_ms: number | null;
   last_successful_sample_ms: number | null;
   last_watchdog_seal_sample_ms: number | null;
+  platform_diagnostics?: RawPlatformTrackingDiagnostics;
+}
+
+export interface RawPlatformTrackingDiagnostics {
+  window_tracking: RawPlatformWindowTrackingDiagnostics;
+}
+
+export interface RawPlatformWindowTrackingDiagnostics {
+  status: "available" | "unavailable" | "unsupported";
+  reason: string | null;
+  provider: string;
+  session_type: string | null;
+  desktop: string | null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -337,7 +352,29 @@ export function isRawTrackerHealthRuntimeSnapshot(
     && (
       value.last_watchdog_seal_sample_ms === null
       || typeof value.last_watchdog_seal_sample_ms === "number"
+    )
+    && (
+      value.platform_diagnostics === undefined
+      || isRawPlatformTrackingDiagnostics(value.platform_diagnostics)
     );
+}
+
+function isRawPlatformTrackingDiagnostics(
+  value: unknown,
+): value is RawPlatformTrackingDiagnostics {
+  return isRecord(value)
+    && isRawPlatformWindowTrackingDiagnostics(value.window_tracking);
+}
+
+function isRawPlatformWindowTrackingDiagnostics(
+  value: unknown,
+): value is RawPlatformWindowTrackingDiagnostics {
+  return isRecord(value)
+    && isEnumValue(value.status, ["available", "unavailable", "unsupported"] as const)
+    && (value.reason === null || typeof value.reason === "string")
+    && typeof value.provider === "string"
+    && (value.session_type === null || typeof value.session_type === "string")
+    && (value.desktop === null || typeof value.desktop === "string");
 }
 
 export function mapRawTrackingWindowSnapshot(
@@ -454,6 +491,29 @@ export function mapRawTrackerHealthRuntimeSnapshot(
     lastHeartbeatMs: raw.last_heartbeat_ms,
     lastSuccessfulSampleMs: raw.last_successful_sample_ms,
     lastWatchdogSealSampleMs: raw.last_watchdog_seal_sample_ms,
+    platformDiagnostics: raw.platform_diagnostics
+      ? mapRawPlatformTrackingDiagnostics(raw.platform_diagnostics)
+      : undefined,
+  };
+}
+
+function mapRawPlatformTrackingDiagnostics(
+  raw: RawPlatformTrackingDiagnostics,
+): PlatformTrackingDiagnostics {
+  return {
+    windowTracking: mapRawPlatformWindowTrackingDiagnostics(raw.window_tracking),
+  };
+}
+
+function mapRawPlatformWindowTrackingDiagnostics(
+  raw: RawPlatformWindowTrackingDiagnostics,
+): PlatformWindowTrackingDiagnostics {
+  return {
+    status: raw.status,
+    reason: raw.reason,
+    provider: raw.provider,
+    sessionType: raw.session_type,
+    desktop: raw.desktop,
   };
 }
 

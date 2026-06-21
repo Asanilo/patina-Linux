@@ -1,5 +1,6 @@
 import type { AppLanguage, AppSettings, ColorScheme, ThemeMode } from "../../shared/settings/appSettings";
 import type { QuietToastTone } from "../../shared/components/QuietToast";
+import type { TrackerHealthSnapshot } from "../../shared/types/tracking";
 import type { UpdateSnapshot } from "../../shared/types/update";
 
 export interface ColorSchemePreview {
@@ -9,6 +10,7 @@ export interface ColorSchemePreview {
 
 export interface SettingsPageProps {
   onSettingsChanged: (settings: AppSettings) => void;
+  trackerHealth: TrackerHealthSnapshot;
   onColorSchemeSaved?: (settings: AppSettings) => void;
   onCheckForUpdates?: () => Promise<void>;
   onOpenUpdateDialog?: () => void;

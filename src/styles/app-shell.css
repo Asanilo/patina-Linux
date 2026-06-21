@@ -143,6 +143,26 @@
   color: var(--qp-text-secondary);
 }
 
+.qp-platform-diagnostic {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--qp-warning) 28%, var(--qp-border-subtle));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--qp-warning) 8%, var(--qp-bg-panel));
+  padding: 9px 12px;
+  color: var(--qp-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.qp-platform-diagnostic svg {
+  flex: 0 0 auto;
+  color: var(--qp-warning);
+}
+
 .qp-danger-action {
   display: inline-flex;
   align-items: center;
