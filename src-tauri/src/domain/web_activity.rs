@@ -147,6 +147,9 @@ pub fn is_supported_browser_exe(exe_name: &str) -> bool {
             | "chromium"
             | "chromium-browser"
             | "firefox"
+            | "zen"
+            | "zen-bin"
+            | "zen-browser"
     )
 }
 
@@ -235,6 +238,9 @@ mod tests {
             "brave-browser-stable",
             "microsoft-edge",
             "firefox",
+            "zen",
+            "zen-bin",
+            "zen-browser",
         ] {
             assert!(is_supported_browser_exe(exe_name), "{exe_name}");
         }

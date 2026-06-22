@@ -1,4 +1,4 @@
-import { Dices, EthernetPort, Eye, EyeOff, Fingerprint, KeyRound, Link2, Server } from "lucide-react";
+import { Copy, Dices, EthernetPort, ExternalLink, Eye, EyeOff, Fingerprint, KeyRound, Link2, Puzzle, Server } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import QuietActionRow from "../../../shared/components/QuietActionRow";
@@ -76,6 +76,20 @@ const WEB_ACTIVITY_PORT_MIN = 1024;
 const WEB_ACTIVITY_PORT_MAX = 65535;
 const PORT_DRAFT_PATTERN = /^\d{0,5}$/;
 const INTERFACE_FIELD_GRID_CLASS = "mt-4 grid grid-cols-1 gap-x-4 gap-y-3 lg:grid-cols-[minmax(0,4fr)_minmax(0,6fr)]";
+const BROWSER_EXTENSION_GUIDES = [
+  {
+    id: "firefox",
+    label: "Firefox / Zen",
+    path: "extensions/firefox",
+    setupUrl: "about:debugging#/runtime/this-firefox",
+  },
+  {
+    id: "chromium",
+    label: "Chromium / Chrome / Edge",
+    path: "extensions/chromium",
+    setupUrl: "chrome://extensions",
+  },
+] as const;
 
 function normalizePort(value: string) {
   const parsed = Number(value);
@@ -237,6 +251,64 @@ function InterfaceInlineField({
   );
 }
 
+function BrowserExtensionInstallGuide() {
+  const copyText = async (value: string) => {
+    await navigator.clipboard.writeText(value);
+  };
+
+  return (
+    <div className="mt-4 border-t border-[var(--qp-border-subtle)] pt-4">
+      <div className="flex items-start gap-2.5">
+        <Puzzle size={14} className="mt-0.5 shrink-0 text-[var(--qp-text-tertiary)]" />
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-[var(--qp-text-primary)]">
+            {UI_TEXT.settings.browserExtensionInstallTitle}
+          </p>
+          <p className="mt-1 text-sm leading-relaxed text-[var(--qp-text-secondary)]">
+            {UI_TEXT.settings.browserExtensionInstallHint}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
+        {BROWSER_EXTENSION_GUIDES.map((guide) => (
+          <div
+            key={guide.id}
+            className="rounded-[6px] border border-[var(--qp-border-subtle)] px-3 py-3"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-[var(--qp-text-primary)]">{guide.label}</p>
+                <p className="mt-1 break-all font-mono text-[11px] text-[var(--qp-text-tertiary)]">{guide.path}</p>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="qp-button-secondary inline-flex h-8 items-center gap-2 px-3 text-xs font-semibold"
+                onClick={() => void copyText(guide.path)}
+                aria-label={UI_TEXT.accessibility.settings.copyBrowserExtensionPath(guide.label)}
+              >
+                <Copy size={13} />
+                <span>{UI_TEXT.settings.copyPathLabel}</span>
+              </button>
+              <button
+                type="button"
+                className="qp-button-secondary inline-flex h-8 items-center gap-2 px-3 text-xs font-semibold"
+                onClick={() => void copyText(guide.setupUrl)}
+                aria-label={UI_TEXT.accessibility.settings.copyBrowserExtensionSetupUrl(guide.label)}
+              >
+                <ExternalLink size={13} />
+                <span>{UI_TEXT.settings.copySetupUrlLabel}</span>
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsInterfacePanel({
   webActivityEnabled,
   port,
@@ -309,44 +381,47 @@ export default function SettingsInterfacePanel({
           </div>
 
           {webActivityEnabled ? (
-            <div className={INTERFACE_FIELD_GRID_CLASS}>
-              <InterfaceInlineField
-                htmlFor="settings-web-activity-address"
-                icon={<EthernetPort size={14} className="text-[var(--qp-text-tertiary)]" />}
-                title={UI_TEXT.settings.webActivityAddressLabel}
-              >
-                <PortField
-                  id="settings-web-activity-address"
-                  value={webActivityPortDraft}
-                  disabled={!webActivityEnabled}
-                  onChange={(nextValue) => {
-                    if (PORT_DRAFT_PATTERN.test(nextValue)) setWebActivityPortDraft(nextValue);
-                  }}
-                  onCommit={() => commitPortDraft(webActivityPortDraft, setWebActivityPortDraft)}
-                />
-              </InterfaceInlineField>
+            <>
+              <div className={INTERFACE_FIELD_GRID_CLASS}>
+                <InterfaceInlineField
+                  htmlFor="settings-web-activity-address"
+                  icon={<EthernetPort size={14} className="text-[var(--qp-text-tertiary)]" />}
+                  title={UI_TEXT.settings.webActivityAddressLabel}
+                >
+                  <PortField
+                    id="settings-web-activity-address"
+                    value={webActivityPortDraft}
+                    disabled={!webActivityEnabled}
+                    onChange={(nextValue) => {
+                      if (PORT_DRAFT_PATTERN.test(nextValue)) setWebActivityPortDraft(nextValue);
+                    }}
+                    onCommit={() => commitPortDraft(webActivityPortDraft, setWebActivityPortDraft)}
+                  />
+                </InterfaceInlineField>
 
-              <InterfaceInlineField
-                htmlFor="settings-web-activity-token"
-                icon={<KeyRound size={14} className="text-[var(--qp-text-tertiary)]" />}
-                title={UI_TEXT.settings.webActivityTokenLabel}
-              >
-                <TokenField
-                  id="settings-web-activity-token"
-                  value={webActivityToken}
-                  visible={webActivityTokenVisible}
-                  disabled={!webActivityEnabled}
-                  onChange={onWebActivityTokenChange}
-                  onGenerate={() => {
-                    onWebActivityTokenChange(createSettingsToken());
-                    setWebActivityTokenVisible(true);
-                  }}
-                  onToggleVisible={() => setWebActivityTokenVisible((current) => !current)}
-                  showLabel={UI_TEXT.accessibility.settings.showServiceToken}
-                  hideLabel={UI_TEXT.accessibility.settings.hideServiceToken}
-                />
-              </InterfaceInlineField>
-            </div>
+                <InterfaceInlineField
+                  htmlFor="settings-web-activity-token"
+                  icon={<KeyRound size={14} className="text-[var(--qp-text-tertiary)]" />}
+                  title={UI_TEXT.settings.webActivityTokenLabel}
+                >
+                  <TokenField
+                    id="settings-web-activity-token"
+                    value={webActivityToken}
+                    visible={webActivityTokenVisible}
+                    disabled={!webActivityEnabled}
+                    onChange={onWebActivityTokenChange}
+                    onGenerate={() => {
+                      onWebActivityTokenChange(createSettingsToken());
+                      setWebActivityTokenVisible(true);
+                    }}
+                    onToggleVisible={() => setWebActivityTokenVisible((current) => !current)}
+                    showLabel={UI_TEXT.accessibility.settings.showServiceToken}
+                    hideLabel={UI_TEXT.accessibility.settings.hideServiceToken}
+                  />
+                </InterfaceInlineField>
+              </div>
+              <BrowserExtensionInstallGuide />
+            </>
           ) : null}
         </QuietSubpanel>
 
