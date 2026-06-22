@@ -18,11 +18,11 @@ App note en: TBD.
 
 ### Added
 
-- 暂无。
+- 历史页新增独立时间轴缩放弹窗，首装默认 `24h`，之后记住上次选择的缩放倍率，并支持 `24h / 12h / 8h / 4h / 1h` 离散缩放、同一时段展开和时间窗口平移，便于细看短会话与高频切换。Refs [#6](https://github.com/Ceceliaee/patina/issues/6)
 
 ### Changed
 
-- 暂无。
+- 时间轴缩放弹窗的空态文案改为时间段语义，避免缩放窗口没有记录时误提示整天没有记录。Refs [#6](https://github.com/Ceceliaee/patina/issues/6)
 
 ### Fixed
 

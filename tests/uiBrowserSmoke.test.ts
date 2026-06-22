@@ -2055,6 +2055,7 @@ try {
             && dialogDurationControls
             && compactTrack
             && !document.querySelector(".history-timeline-dialog-body .history-horizontal-timeline-track")
+            && !document.querySelector(".history-timeline-dialog-body .history-timeline-zoom-switch")
           );
         })()
       `),
@@ -2111,6 +2112,164 @@ try {
       client!,
       sessionId,
       `!document.querySelector(".history-activity-popover")`,
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const button = document.querySelector(".history-timeline-zoom-open");
+          if (!button) return false;
+          button.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(
+      client!,
+      sessionId,
+      `Boolean(document.querySelector(".history-timeline-zoom-dialog-surface"))`,
+    );
+    const initialZoomDialogState = JSON.parse(await evaluate(client!, sessionId, `
+      (() => {
+        const dialog = document.querySelector(".history-timeline-zoom-dialog-surface");
+        const timeline = document.querySelector(".history-timeline-zoom-dialog-timeline .history-horizontal-timeline");
+        return JSON.stringify({
+          hasDialog: Boolean(
+            dialog
+            && dialog.getAttribute("role") === "dialog"
+            && dialog.getAttribute("aria-label") === "时间轴缩放"
+            && timeline
+          ),
+          zoomHours: timeline?.getAttribute("data-history-timeline-zoom-hours") ?? null,
+          hasTrack: Boolean(document.querySelector(".history-timeline-zoom-dialog-timeline .history-horizontal-timeline-track")),
+          hasZoomSwitch: Boolean(document.querySelector(".history-timeline-zoom-dialog-surface .history-timeline-zoom-switch")),
+          hasList: Boolean(document.querySelector(".history-timeline-zoom-dialog-surface .history-timeline-list")),
+        });
+      })()
+    `));
+    assert.equal(initialZoomDialogState.hasDialog, true);
+    assert.equal(initialZoomDialogState.zoomHours, "24");
+    assert.equal(initialZoomDialogState.hasTrack, true);
+    assert.equal(initialZoomDialogState.hasZoomSwitch, true);
+    assert.equal(initialZoomDialogState.hasList, false);
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const button = Array.from(document.querySelectorAll(".history-timeline-zoom-dialog-surface .history-timeline-zoom-switch button"))
+            .find((candidate) => candidate.textContent?.trim() === "4h");
+          if (!(button instanceof HTMLButtonElement)) return false;
+          button.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(
+      client!,
+      sessionId,
+      `document.querySelector(".history-timeline-zoom-dialog-timeline .history-horizontal-timeline")
+        ?.getAttribute("data-history-timeline-zoom-hours") === "4"`,
+    );
+    const zoomedTimelineState = JSON.parse(await evaluate(client!, sessionId, `
+      (() => {
+        const timeline = document.querySelector(".history-timeline-zoom-dialog-timeline .history-horizontal-timeline");
+        const axisLabels = Array.from(document.querySelectorAll(
+          ".history-timeline-zoom-dialog-timeline .history-horizontal-timeline-axis span"
+        )).map((label) => label.textContent?.trim() ?? "");
+        return JSON.stringify({
+          zoomHours: timeline?.getAttribute("data-history-timeline-zoom-hours") ?? null,
+          windowStart: timeline?.getAttribute("data-history-timeline-window-start") ?? null,
+          windowEnd: timeline?.getAttribute("data-history-timeline-window-end") ?? null,
+          axisLabels,
+        });
+      })()
+    `));
+    assert.equal(zoomedTimelineState.zoomHours, "4");
+    assert.equal(zoomedTimelineState.axisLabels.length, 5);
+    assert.equal(
+      (zoomedTimelineState.axisLabels as string[]).every((label) => (
+        label === "24:00" || /:(00|30)$/.test(label)
+      )),
+      true,
+    );
+    assert.ok(zoomedTimelineState.windowStart);
+    assert.ok(zoomedTimelineState.windowEnd);
+    const panStartBefore = zoomedTimelineState.windowStart;
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const target = document.querySelector(".history-timeline-zoom-dialog-timeline");
+          if (!target) return false;
+          target.dispatchEvent(new WheelEvent("wheel", {
+            deltaY: 120,
+            bubbles: true,
+            cancelable: true,
+          }));
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(
+      client!,
+      sessionId,
+      `document.querySelector(".history-timeline-zoom-dialog-timeline .history-horizontal-timeline")
+        ?.getAttribute("data-history-timeline-window-start") !== ${jsonString(panStartBefore)}`,
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1
+      `),
+      true,
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const closeButton = document.querySelector(".history-timeline-zoom-dialog-surface .history-timeline-dialog-close");
+          if (!closeButton) return false;
+          closeButton.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(
+      client!,
+      sessionId,
+      `!document.querySelector(".history-timeline-zoom-dialog-surface")`,
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const button = document.querySelector(".history-timeline-zoom-open");
+          if (!button) return false;
+          button.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(
+      client!,
+      sessionId,
+      `document.querySelector(".history-timeline-zoom-dialog-timeline .history-horizontal-timeline")
+        ?.getAttribute("data-history-timeline-zoom-hours") === "4"`,
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const closeButton = document.querySelector(".history-timeline-zoom-dialog-surface .history-timeline-dialog-close");
+          if (!closeButton) return false;
+          closeButton.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(
+      client!,
+      sessionId,
+      `!document.querySelector(".history-timeline-zoom-dialog-surface")`,
     );
   });
 

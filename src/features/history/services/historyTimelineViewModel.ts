@@ -2,12 +2,23 @@ import { AppClassification } from "../../../shared/classification/appClassificat
 import type { AppCategory } from "../../../shared/classification/categoryTokens.ts";
 import type { CompiledSession } from "../../../shared/lib/sessionReadCompiler.ts";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+const HALF_HOUR_MS = 30 * MINUTE_MS;
 const MINUTE_BOUNDARY_SNAP_MS = 1_000;
 const MIN_VISIBLE_TIMELINE_SEGMENT_MS = 30_000;
 
 export type HistoryTimelineDisplayMode = "app" | "category";
+export const HISTORY_TIMELINE_ZOOM_OPTIONS = [24, 12, 8, 4, 1] as const;
+export type HistoryTimelineZoomHours = typeof HISTORY_TIMELINE_ZOOM_OPTIONS[number];
+export const DEFAULT_HISTORY_TIMELINE_ZOOM_HOURS: HistoryTimelineZoomHours = 24;
+
+export interface HistoryTimelineViewport {
+  startMs: number;
+  endMs: number;
+  zoomHours: HistoryTimelineZoomHours;
+}
 
 export interface HistoryTimelineAxisTick {
   label: string;
@@ -55,6 +66,10 @@ export interface HistoryTimelineViewModel {
   axisTicks: HistoryTimelineAxisTick[];
   dayStartMs: number;
   dayEndMs: number;
+  viewportStartMs: number;
+  viewportEndMs: number;
+  viewportDurationMs: number;
+  zoomHours: HistoryTimelineZoomHours;
   visibleEndMs: number;
   visibleEndRatio: number;
 }
@@ -65,6 +80,7 @@ interface BuildHistoryTimelineViewModelParams {
   nowMs: number;
   mode: HistoryTimelineDisplayMode;
   mergeThresholdSecs?: number;
+  viewport?: HistoryTimelineViewport;
 }
 
 function getFullDayRange(date: Date) {
@@ -82,15 +98,136 @@ function clampRatio(value: number) {
   return Math.min(1, Math.max(0, value));
 }
 
-function formatAxisLabel(hour: number) {
-  return `${String(hour).padStart(2, "0")}:00`;
+function clampNumber(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, value));
 }
 
-function buildAxisTicks(): HistoryTimelineAxisTick[] {
-  return [0, 6, 12, 18, 24].map((hour) => ({
-    label: formatAxisLabel(hour),
-    ratio: hour / 24,
-  }));
+export function getHistoryTimelineZoomDurationMs(zoomHours: HistoryTimelineZoomHours) {
+  return Math.min(DAY_MS, Math.max(HOUR_MS, zoomHours * HOUR_MS));
+}
+
+export function normalizeHistoryTimelineViewport({
+  selectedDate,
+  zoomHours,
+  requestedStartMs,
+}: {
+  selectedDate: Date;
+  zoomHours: HistoryTimelineZoomHours;
+  requestedStartMs?: number | null;
+}): HistoryTimelineViewport {
+  const { dayStartMs, dayEndMs } = getFullDayRange(selectedDate);
+  const durationMs = getHistoryTimelineZoomDurationMs(zoomHours);
+
+  if (zoomHours === 24 || durationMs >= DAY_MS) {
+    return {
+      startMs: dayStartMs,
+      endMs: dayEndMs,
+      zoomHours: 24,
+    };
+  }
+
+  const maxStartMs = dayEndMs - durationMs;
+  const safeRequestedStartMs = typeof requestedStartMs === "number" && Number.isFinite(requestedStartMs)
+    ? requestedStartMs
+    : dayStartMs;
+  const startMs = clampNumber(safeRequestedStartMs, dayStartMs, maxStartMs);
+
+  return {
+    startMs,
+    endMs: startMs + durationMs,
+    zoomHours,
+  };
+}
+
+export function snapHistoryTimelineFocusToNearestHalfHour({
+  selectedDate,
+  requestedTimeMs,
+}: {
+  selectedDate: Date;
+  requestedTimeMs: number;
+}) {
+  const { dayStartMs, dayEndMs } = getFullDayRange(selectedDate);
+  const safeRequestedTimeMs = typeof requestedTimeMs === "number" && Number.isFinite(requestedTimeMs)
+    ? requestedTimeMs
+    : dayStartMs;
+  const snappedTimeMs = dayStartMs
+    + Math.round((safeRequestedTimeMs - dayStartMs) / HALF_HOUR_MS) * HALF_HOUR_MS;
+
+  return clampNumber(snappedTimeMs, dayStartMs, dayEndMs);
+}
+
+export function normalizeHistoryTimelineViewportAroundFocus({
+  selectedDate,
+  zoomHours,
+  focusTimeMs,
+}: {
+  selectedDate: Date;
+  zoomHours: HistoryTimelineZoomHours;
+  focusTimeMs: number;
+}) {
+  const focusMs = snapHistoryTimelineFocusToNearestHalfHour({
+    selectedDate,
+    requestedTimeMs: focusTimeMs,
+  });
+  const durationMs = getHistoryTimelineZoomDurationMs(zoomHours);
+
+  return normalizeHistoryTimelineViewport({
+    selectedDate,
+    zoomHours,
+    requestedStartMs: focusMs - durationMs / 2,
+  });
+}
+
+function formatAxisLabel(timeMs: number, dayEndMs: number) {
+  if (timeMs === dayEndMs) {
+    return "24:00";
+  }
+
+  const time = new Date(timeMs);
+  return `${String(time.getHours()).padStart(2, "0")}:${String(time.getMinutes()).padStart(2, "0")}`;
+}
+
+function getAxisIntervalMs(zoomHours: HistoryTimelineZoomHours) {
+  switch (zoomHours) {
+    case 1:
+      return 15 * MINUTE_MS;
+    case 4:
+      return HOUR_MS;
+    case 8:
+      return 2 * HOUR_MS;
+    case 12:
+      return 3 * HOUR_MS;
+    case 24:
+    default:
+      return 6 * HOUR_MS;
+  }
+}
+
+function buildAxisTicks(
+  viewport: HistoryTimelineViewport,
+  dayEndMs: number,
+): HistoryTimelineAxisTick[] {
+  const viewportDurationMs = Math.max(1, viewport.endMs - viewport.startMs);
+  const intervalMs = getAxisIntervalMs(viewport.zoomHours);
+  const ticks: HistoryTimelineAxisTick[] = [];
+
+  for (let timeMs = viewport.startMs; timeMs < viewport.endMs; timeMs += intervalMs) {
+    ticks.push({
+      label: formatAxisLabel(timeMs, dayEndMs),
+      ratio: clampRatio((timeMs - viewport.startMs) / viewportDurationMs),
+    });
+  }
+
+  const lastTick = ticks[ticks.length - 1];
+  if (!lastTick || lastTick.ratio < 1) {
+    ticks.push({
+      label: formatAxisLabel(viewport.endMs, dayEndMs),
+      ratio: 1,
+    });
+  }
+
+  return ticks;
 }
 
 function resolveVisibleEndMs(selectedDate: Date, nowMs: number, dayStartMs: number, dayEndMs: number) {
@@ -151,18 +288,20 @@ function buildSegment(
   dayStartMs: number,
   dayEndMs: number,
   visibleEndMs: number,
+  viewport: HistoryTimelineViewport,
 ): HistoryTimelineSegment | null {
   const rawEndTime = Math.max(session.startTime, session.endTime ?? session.startTime);
-  const clippedStart = Math.max(session.startTime, dayStartMs);
-  const clippedEnd = Math.min(rawEndTime, dayEndMs, visibleEndMs);
+  const clippedStart = Math.max(session.startTime, dayStartMs, viewport.startMs);
+  const clippedEnd = Math.min(rawEndTime, dayEndMs, visibleEndMs, viewport.endMs);
 
   if (clippedEnd <= clippedStart) {
     return null;
   }
 
   const mapped = AppClassification.mapApp(session.appKey, { appName: session.displayName });
-  const startRatio = clampRatio((clippedStart - dayStartMs) / DAY_MS);
-  const endRatio = clampRatio((clippedEnd - dayStartMs) / DAY_MS);
+  const viewportDurationMs = Math.max(1, viewport.endMs - viewport.startMs);
+  const startRatio = clampRatio((clippedStart - viewport.startMs) / viewportDurationMs);
+  const endRatio = clampRatio((clippedEnd - viewport.startMs) / viewportDurationMs);
   const titleSampleDetails = clipTitleSampleDetails(session, clippedStart, clippedEnd);
 
   return {
@@ -387,7 +526,8 @@ function selectDominantMinuteItem(bucket: MinuteTimelineBucket) {
 
 function buildMinuteSegment(
   bucket: MinuteTimelineBucket,
-  dayStartMs: number,
+  viewportStartMs: number,
+  viewportDurationMs: number,
   mode: HistoryTimelineDisplayMode,
 ) {
   const dominant = selectDominantMinuteItem(bucket);
@@ -406,8 +546,8 @@ function buildMinuteSegment(
     ))
     .map((item) => getItemLabel(item, mode));
   const titleSamples = dominant.titleSampleDetails.map((sample) => sample.title);
-  const startRatio = clampRatio((startTime - dayStartMs) / DAY_MS);
-  const endRatio = clampRatio((endTime - dayStartMs) / DAY_MS);
+  const startRatio = clampRatio((startTime - viewportStartMs) / viewportDurationMs);
+  const endRatio = clampRatio((endTime - viewportStartMs) / viewportDurationMs);
 
   return {
     id: `${dominant.key}-${bucket.startTime}-${bucket.endTime}`,
@@ -465,11 +605,14 @@ function buildDominantMinuteSegments(
   segments: HistoryTimelineSegment[],
   dayStartMs: number,
   visibleEndMs: number,
+  viewport: HistoryTimelineViewport,
   mode: HistoryTimelineDisplayMode,
   mergeThresholdMs: number,
 ) {
-  const minuteSegments = buildMinuteBuckets(segments, dayStartMs, visibleEndMs, mode)
-    .map((bucket) => buildMinuteSegment(bucket, dayStartMs, mode))
+  const viewportDurationMs = Math.max(1, viewport.endMs - viewport.startMs);
+  const timelineEndMs = Math.min(visibleEndMs, viewport.endMs);
+  const minuteSegments = buildMinuteBuckets(segments, dayStartMs, timelineEndMs, mode)
+    .map((bucket) => buildMinuteSegment(bucket, viewport.startMs, viewportDurationMs, mode))
     .filter((segment): segment is HistoryTimelineSegment => Boolean(segment));
 
   return keepVisibleTimelineSegments(
@@ -517,28 +660,40 @@ export function buildHistoryTimelineViewModel({
   nowMs,
   mode,
   mergeThresholdSecs = 0,
+  viewport: requestedViewport,
 }: BuildHistoryTimelineViewModelParams): HistoryTimelineViewModel {
   const { dayStartMs, dayEndMs } = getFullDayRange(selectedDate);
+  const viewport = requestedViewport ?? normalizeHistoryTimelineViewport({
+    selectedDate,
+    zoomHours: 24,
+    requestedStartMs: dayStartMs,
+  });
   const visibleEndMs = resolveVisibleEndMs(selectedDate, nowMs, dayStartMs, dayEndMs);
   const mergeThresholdMs = Math.max(0, mergeThresholdSecs) * 1000;
   const rawSegments = sessions
-    .map((session) => buildSegment(session, dayStartMs, dayEndMs, visibleEndMs))
+    .map((session) => buildSegment(session, dayStartMs, dayEndMs, visibleEndMs, viewport))
     .filter((segment): segment is HistoryTimelineSegment => Boolean(segment))
     .sort((a, b) => a.startTime - b.startTime || a.endTime - b.endTime);
   const segments = buildDominantMinuteSegments(
     rawSegments,
     dayStartMs,
     visibleEndMs,
+    viewport,
     mode,
     mergeThresholdMs,
   );
+  const viewportDurationMs = Math.max(1, viewport.endMs - viewport.startMs);
 
   return {
     segments,
     legendItems: buildLegendItems(segments, mode),
-    axisTicks: buildAxisTicks(),
+    axisTicks: buildAxisTicks(viewport, dayEndMs),
     dayStartMs,
     dayEndMs,
+    viewportStartMs: viewport.startMs,
+    viewportEndMs: viewport.endMs,
+    viewportDurationMs,
+    zoomHours: viewport.zoomHours,
     visibleEndMs,
     visibleEndRatio: clampRatio((visibleEndMs - dayStartMs) / DAY_MS),
   };

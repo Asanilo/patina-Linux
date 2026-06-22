@@ -16,9 +16,12 @@ interface Props {
   mode: HistoryTimelineDisplayMode;
   iconThemeColors: Record<string, string>;
   title?: string | null;
+  titleAction?: ReactNode;
   actions?: ReactNode;
   variant?: "default" | "expanded";
+  showHeader?: boolean;
   showEmptyMessage?: boolean;
+  emptyMessage?: string;
 }
 
 type TimelineMetricVariable =
@@ -136,12 +139,16 @@ export default function HistoryHorizontalTimeline({
   mode,
   iconThemeColors,
   title,
+  titleAction,
   actions,
   variant = "default",
+  showHeader = true,
   showEmptyMessage = true,
+  emptyMessage,
 }: Props) {
   const copy = getTimelineCopy();
-  const headingTitle = title ?? copy.defaultTitle;
+  const headingTitle = title === undefined ? copy.defaultTitle : title;
+  const resolvedEmptyMessage = emptyMessage ?? copy.emptyDay;
   const [viewportWidth, setViewportWidth] = useState(getViewportWidth);
   useEffect(() => {
     if (variant !== "default") {
@@ -219,53 +226,63 @@ export default function HistoryHorizontalTimeline({
     <section
       className={`history-horizontal-timeline history-horizontal-timeline-${mode} history-horizontal-timeline-${variant}`}
       data-history-timeline-mode={mode}
+      data-history-timeline-zoom-hours={viewModel.zoomHours}
+      data-history-timeline-window-start={viewModel.viewportStartMs}
+      data-history-timeline-window-end={viewModel.viewportEndMs}
       aria-label={copy.ariaLabel}
     >
-      <header className="history-horizontal-timeline-header">
-        {headingTitle && (
-          <h3 className="history-horizontal-timeline-title font-semibold text-[var(--qp-text-primary)] text-sm">
-            {headingTitle}
-          </h3>
-        )}
-        <div className="history-horizontal-timeline-meta">
-          {visibleLegendItems.length > 0 && (
-            <div className="history-horizontal-timeline-legend">
-              {visibleLegendItems.map((item) => (
-                <span key={item.key} className="history-horizontal-timeline-legend-item">
-                  <span
-                    className="history-horizontal-timeline-legend-dot"
-                    style={{ backgroundColor: resolveLegendColor(item, mode, iconThemeColors) }}
-                    aria-hidden="true"
-                  />
-                  <span className="history-horizontal-timeline-legend-label">{item.label}</span>
-                </span>
-              ))}
-              {hiddenLegendCount > 0 && (
-                <QuietTooltip
-                  label={hiddenLegendTooltip}
-                  placement="top"
-                  className="history-horizontal-timeline-legend-more-anchor"
-                  tooltipClassName="history-horizontal-timeline-legend-more-popover"
-                >
-                  <span
-                    className="history-horizontal-timeline-legend-more"
-                    tabIndex={0}
-                    aria-label={hiddenLegendHint}
-                    data-history-timeline-legend-more={hiddenLegendCount}
-                  >
-                    {hiddenLegendLabel}
-                  </span>
-                </QuietTooltip>
+      {showHeader && (
+        <header className="history-horizontal-timeline-header">
+          {(headingTitle || titleAction) && (
+            <div className="history-horizontal-timeline-title-row">
+              {headingTitle && (
+                <h3 className="history-horizontal-timeline-title font-semibold text-[var(--qp-text-primary)] text-sm">
+                  {headingTitle}
+                </h3>
               )}
+              {titleAction}
             </div>
           )}
-          {actions && (
-            <div className="history-horizontal-timeline-actions">
-              {actions}
-            </div>
-          )}
-        </div>
-      </header>
+          <div className="history-horizontal-timeline-meta">
+            {visibleLegendItems.length > 0 && (
+              <div className="history-horizontal-timeline-legend">
+                {visibleLegendItems.map((item) => (
+                  <span key={item.key} className="history-horizontal-timeline-legend-item">
+                    <span
+                      className="history-horizontal-timeline-legend-dot"
+                      style={{ backgroundColor: resolveLegendColor(item, mode, iconThemeColors) }}
+                      aria-hidden="true"
+                    />
+                    <span className="history-horizontal-timeline-legend-label">{item.label}</span>
+                  </span>
+                ))}
+                {hiddenLegendCount > 0 && (
+                  <QuietTooltip
+                    label={hiddenLegendTooltip}
+                    placement="top"
+                    className="history-horizontal-timeline-legend-more-anchor"
+                    tooltipClassName="history-horizontal-timeline-legend-more-popover"
+                  >
+                    <span
+                      className="history-horizontal-timeline-legend-more"
+                      tabIndex={0}
+                      aria-label={hiddenLegendHint}
+                      data-history-timeline-legend-more={hiddenLegendCount}
+                    >
+                      {hiddenLegendLabel}
+                    </span>
+                  </QuietTooltip>
+                )}
+              </div>
+            )}
+            {actions && (
+              <div className="history-horizontal-timeline-actions">
+                {actions}
+              </div>
+            )}
+          </div>
+        </header>
+      )}
 
       <div className="history-horizontal-timeline-canvas">
         <div className="history-horizontal-timeline-track" style={trackStyle}>
@@ -326,7 +343,7 @@ export default function HistoryHorizontalTimeline({
           )}
           {viewModel.segments.length === 0 && showEmptyMessage && (
             <span className="history-horizontal-timeline-empty">
-              {copy.emptyDay}
+              {resolvedEmptyMessage}
             </span>
           )}
         </div>

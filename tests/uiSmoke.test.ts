@@ -359,6 +359,42 @@ await runTest("History regular view avoids visible loading copy", () => {
   assert.match(appCss, /styles\/features\/history\.css/);
 });
 
+await runTest("History separates timeline list dialog from zoom dialog", () => {
+  const history = readUtf8("src/features/history/components/History.tsx");
+  const historyTimeline = readUtf8("src/features/history/services/historyTimelineViewModel.ts");
+  const historyCss = readUtf8("src/styles/features/history.css");
+
+  assert.match(history, /HISTORY_TIMELINE_ZOOM_OPTIONS/);
+  assert.match(history, /readHistoryTimelineZoomHours/);
+  assert.match(history, /rememberHistoryTimelineZoomHours/);
+  assert.match(history, /normalizeHistoryTimelineViewport/);
+  assert.match(history, /normalizeHistoryTimelineViewportAroundFocus/);
+  assert.match(history, /snapHistoryTimelineFocusToNearestHalfHour/);
+  assert.match(history, /timelineDialogOpen/);
+  assert.match(history, /timelineZoomDialogOpen/);
+  assert.match(history, /timelineZoomHours/);
+  assert.match(history, /timelineViewportStartMs/);
+  assert.match(history, /timelineZoomTimelineView/);
+  assert.match(history, /history-timeline-open/);
+  assert.match(history, /history-timeline-zoom-open/);
+  assert.match(history, /history-timeline-zoom-switch/);
+  assert.match(history, /history-timeline-zoom-dialog-surface/);
+  assert.match(history, /emptyTimelineWindow: "当前时间段暂无记录"/);
+  assert.match(history, /emptyMessage=\{historyCopy\.emptyTimelineWindow\}/);
+  assert.match(history, /handleTimelineViewportWheel/);
+  assert.match(history, /viewportDurationMs \/ 6/);
+  assert.match(history, /onWheel=\{handleTimelineViewportWheel\}/);
+  assert.match(history, /variant="expanded"/);
+  assert.doesNotMatch(history, /timelineViewportWasPannedRef\.current.*localStorage/s);
+  assert.match(historyTimeline, /export const HISTORY_TIMELINE_ZOOM_OPTIONS = \[24, 12, 8, 4, 1\] as const/);
+  assert.match(historyTimeline, /export const DEFAULT_HISTORY_TIMELINE_ZOOM_HOURS: HistoryTimelineZoomHours = 24/);
+  assert.match(historyTimeline, /export function normalizeHistoryTimelineViewport/);
+  assert.match(historyTimeline, /export function normalizeHistoryTimelineViewportAroundFocus/);
+  assert.match(historyTimeline, /export function snapHistoryTimelineFocusToNearestHalfHour/);
+  assert.match(historyCss, /\.history-timeline-zoom-dialog-timeline/);
+  assert.match(historyCss, /overscroll-behavior: contain/);
+});
+
 await runTest("operation-oriented pages keep explicit busy feedback", () => {
   const settings = readUtf8("src/features/settings/components/Settings.tsx");
   const mapping = readUtf8("src/features/classification/components/AppMapping.tsx");

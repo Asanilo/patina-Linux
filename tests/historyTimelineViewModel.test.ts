@@ -2,17 +2,27 @@ import assert from "node:assert/strict";
 import {
   readHistoryDayDistributionMode,
   readHistoryTimelineMode,
+  readHistoryTimelineZoomHours,
   rememberHistoryDayDistributionMode,
   rememberHistoryTimelineMode,
+  rememberHistoryTimelineZoomHours,
   resolveEffectiveDayDistributionMode,
 } from "../src/features/history/services/historyLayoutPreferenceStorage.ts";
-import { buildHistoryTimelineViewModel } from "../src/features/history/services/historyTimelineViewModel.ts";
+import {
+  buildHistoryTimelineViewModel,
+  DEFAULT_HISTORY_TIMELINE_ZOOM_HOURS,
+  HISTORY_TIMELINE_ZOOM_OPTIONS,
+  normalizeHistoryTimelineViewport,
+  normalizeHistoryTimelineViewportAroundFocus,
+  snapHistoryTimelineFocusToNearestHalfHour,
+} from "../src/features/history/services/historyTimelineViewModel.ts";
 import { ProcessMapper } from "../src/shared/classification/processMapper.ts";
 import type { CompiledSession } from "../src/shared/lib/sessionReadCompiler.ts";
 import { createTestHarness } from "./helpers/trackingTestHarness.ts";
 
 const harness = createTestHarness();
 const runTest = harness.run;
+const HOUR_MS = 60 * 60_000;
 
 class MemoryStorage {
   private values = new Map<string, string>();
@@ -145,6 +155,25 @@ runTest("timeline display mode persists locally", () => {
   });
 });
 
+runTest("timeline zoom hours persist locally with full-day first install default", () => {
+  assert.equal(readHistoryTimelineZoomHours(), DEFAULT_HISTORY_TIMELINE_ZOOM_HOURS);
+  assert.equal(DEFAULT_HISTORY_TIMELINE_ZOOM_HOURS, 24);
+
+  withWindowStorage(new MemoryStorage(), () => {
+    assert.equal(readHistoryTimelineZoomHours(), 24);
+
+    rememberHistoryTimelineZoomHours(4);
+    assert.equal(readHistoryTimelineZoomHours(), 4);
+    assert.equal(window.localStorage.getItem("patina:history-timeline-zoom-hours"), "4");
+
+    window.localStorage.setItem("patina:history-timeline-zoom-hours", "3");
+    assert.equal(readHistoryTimelineZoomHours(), 24);
+
+    window.localStorage.setItem("patina:history-timeline-zoom-hours", "category");
+    assert.equal(readHistoryTimelineZoomHours(), 24);
+  });
+});
+
 runTest("timeline ratios use the full local day", () => {
   const day = new Date(2026, 0, 2);
   const dayStart = new Date(2026, 0, 2, 0, 0, 0, 0).getTime();
@@ -163,6 +192,176 @@ runTest("timeline ratios use the full local day", () => {
   assert.equal(viewModel.segments[0]?.startRatio, 0.25);
   assert.equal(viewModel.segments[0]?.endRatio, 0.375);
   assert.equal(viewModel.segments[0]?.widthRatio, 0.125);
+});
+
+runTest("timeline zoom options stay on the supported discrete windows", () => {
+  assert.deepEqual([...HISTORY_TIMELINE_ZOOM_OPTIONS], [24, 12, 8, 4, 1]);
+});
+
+runTest("timeline viewport clamps requested windows within the selected day", () => {
+  const selectedDate = new Date(2026, 0, 2);
+  const dayStart = new Date(2026, 0, 2, 0, 0, 0, 0).getTime();
+  const dayEnd = dayStart + 24 * HOUR_MS;
+
+  const earlyViewport = normalizeHistoryTimelineViewport({
+    selectedDate,
+    zoomHours: 8,
+    requestedStartMs: dayStart - HOUR_MS,
+  });
+  assert.deepEqual(earlyViewport, {
+    startMs: dayStart,
+    endMs: dayStart + 8 * HOUR_MS,
+    zoomHours: 8,
+  });
+
+  const lateViewport = normalizeHistoryTimelineViewport({
+    selectedDate,
+    zoomHours: 8,
+    requestedStartMs: dayStart + 22 * HOUR_MS,
+  });
+  assert.deepEqual(lateViewport, {
+    startMs: dayEnd - 8 * HOUR_MS,
+    endMs: dayEnd,
+    zoomHours: 8,
+  });
+
+  const fullDayViewport = normalizeHistoryTimelineViewport({
+    selectedDate,
+    zoomHours: 24,
+    requestedStartMs: dayStart + 12 * HOUR_MS,
+  });
+  assert.deepEqual(fullDayViewport, {
+    startMs: dayStart,
+    endMs: dayEnd,
+    zoomHours: 24,
+  });
+});
+
+runTest("timeline zoom focus snaps to the nearest selected-day half hour", () => {
+  const selectedDate = new Date(2026, 0, 2);
+  const dayStart = new Date(2026, 0, 2, 0, 0, 0, 0).getTime();
+  const dayEnd = dayStart + 24 * HOUR_MS;
+
+  assert.equal(
+    snapHistoryTimelineFocusToNearestHalfHour({
+      selectedDate,
+      requestedTimeMs: new Date(2026, 0, 2, 10, 14, 0, 0).getTime(),
+    }),
+    new Date(2026, 0, 2, 10, 0, 0, 0).getTime(),
+  );
+  assert.equal(
+    snapHistoryTimelineFocusToNearestHalfHour({
+      selectedDate,
+      requestedTimeMs: new Date(2026, 0, 2, 10, 16, 0, 0).getTime(),
+    }),
+    new Date(2026, 0, 2, 10, 30, 0, 0).getTime(),
+  );
+  assert.equal(
+    snapHistoryTimelineFocusToNearestHalfHour({
+      selectedDate,
+      requestedTimeMs: dayStart - HOUR_MS,
+    }),
+    dayStart,
+  );
+  assert.equal(
+    snapHistoryTimelineFocusToNearestHalfHour({
+      selectedDate,
+      requestedTimeMs: dayEnd + HOUR_MS,
+    }),
+    dayEnd,
+  );
+});
+
+runTest("timeline viewport around focus centers on the snapped half hour when possible", () => {
+  const selectedDate = new Date(2026, 0, 2);
+  const dayStart = new Date(2026, 0, 2, 0, 0, 0, 0).getTime();
+
+  const centeredViewport = normalizeHistoryTimelineViewportAroundFocus({
+    selectedDate,
+    zoomHours: 4,
+    focusTimeMs: new Date(2026, 0, 2, 10, 16, 0, 0).getTime(),
+  });
+  assert.deepEqual(centeredViewport, {
+    startMs: dayStart + 8.5 * HOUR_MS,
+    endMs: dayStart + 12.5 * HOUR_MS,
+    zoomHours: 4,
+  });
+
+  const boundaryViewport = normalizeHistoryTimelineViewportAroundFocus({
+    selectedDate,
+    zoomHours: 8,
+    focusTimeMs: new Date(2026, 0, 2, 23, 50, 0, 0).getTime(),
+  });
+  assert.deepEqual(boundaryViewport, {
+    startMs: dayStart + 16 * HOUR_MS,
+    endMs: dayStart + 24 * HOUR_MS,
+    zoomHours: 8,
+  });
+});
+
+runTest("timeline viewport ratios and axis use the zoom window", () => {
+  const selectedDate = new Date(2026, 0, 2);
+  const dayStart = new Date(2026, 0, 2, 0, 0, 0, 0).getTime();
+  const viewport = normalizeHistoryTimelineViewport({
+    selectedDate,
+    zoomHours: 8,
+    requestedStartMs: dayStart + 8 * HOUR_MS,
+  });
+  const viewModel = buildHistoryTimelineViewModel({
+    sessions: [
+      makeCompiledSession({
+        id: 1,
+        startTime: dayStart + 7 * HOUR_MS,
+        endTime: dayStart + 10 * HOUR_MS,
+        duration: 3 * HOUR_MS,
+      }),
+      makeCompiledSession({
+        id: 2,
+        startTime: dayStart + 15 * HOUR_MS,
+        endTime: dayStart + 17 * HOUR_MS,
+        duration: 2 * HOUR_MS,
+      }),
+    ],
+    selectedDate,
+    nowMs: new Date(2026, 0, 3).getTime(),
+    mode: "app",
+    viewport,
+  });
+
+  assert.equal(viewModel.zoomHours, 8);
+  assert.equal(viewModel.viewportStartMs, dayStart + 8 * HOUR_MS);
+  assert.equal(viewModel.viewportEndMs, dayStart + 16 * HOUR_MS);
+  assert.deepEqual(
+    viewModel.axisTicks.map((tick) => tick.label),
+    ["08:00", "10:00", "12:00", "14:00", "16:00"],
+  );
+  assert.equal(viewModel.segments.length, 2);
+  assert.equal(viewModel.segments[0]?.startRatio, 0);
+  assert.equal(viewModel.segments[0]?.endRatio, 0.25);
+  assert.equal(viewModel.segments[1]?.startRatio, 0.875);
+  assert.equal(viewModel.segments[1]?.endRatio, 1);
+});
+
+runTest("one hour timeline viewport uses quarter hour axis ticks", () => {
+  const selectedDate = new Date(2026, 0, 2);
+  const dayStart = new Date(2026, 0, 2, 0, 0, 0, 0).getTime();
+  const viewport = normalizeHistoryTimelineViewport({
+    selectedDate,
+    zoomHours: 1,
+    requestedStartMs: dayStart + 9.5 * HOUR_MS,
+  });
+  const viewModel = buildHistoryTimelineViewModel({
+    sessions: [],
+    selectedDate,
+    nowMs: new Date(2026, 0, 3).getTime(),
+    mode: "app",
+    viewport,
+  });
+
+  assert.deepEqual(
+    viewModel.axisTicks.map((tick) => tick.label),
+    ["09:30", "09:45", "10:00", "10:15", "10:30"],
+  );
 });
 
 runTest("timeline clips sessions crossing midnight", () => {
