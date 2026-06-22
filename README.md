@@ -16,6 +16,9 @@ English · [简体中文](README.zh-CN.md)
 
 </div>
 
+![Patina dashboard](.github/assets/readme/dashboard.png)
+
+
 This fork tracks the Linux migration work for Patina. The upstream project is a local-first Windows desktop time tracker; this fork is currently focused on GNOME/Linux foreground tracking, browser webpage activity, and a localhost API/MCP surface for external AI analysis.
 
 The Linux port is usable as a development prototype, but it is not release-stable yet.
@@ -30,6 +33,13 @@ The Linux port is usable as a development prototype, but it is not release-stabl
 - Firefox/Zen extension support.
 - Settings diagnostics for window tracking, local API, browser bridge, and Linux autostart.
 - Repair action for Linux `~/.config/autostart/Patina.desktop`.
+
+## Interface Preview
+|  |  |
+| --- | --- |
+| **Today**<br>![Today page](.github/assets/readme/dashboard.png) | **History**<br>![History page](.github/assets/readme/history.png)|
+| **Data**<br>![Data page](.github/assets/readme/data.png) | **Apps**<br>![Apps page](.github/assets/readme/mapping.png) |
+| **Settings**<br>![Settings page](.github/assets/readme/settings.png) | **About**<br>![About page](.github/assets/readme/about.png) |
 
 ## Current Linux Status
 

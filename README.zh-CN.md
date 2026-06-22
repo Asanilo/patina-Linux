@@ -16,6 +16,9 @@ Patina 的 Linux 移植与本地 AI/API 集成 fork。
 
 </div>
 
+![Patina dashboard](.github/assets/readme.zh-CN/dashboard.png)
+
+
 这个 fork 用来推进 Patina 的 Linux 移植。上游 Patina 是一个本地优先的 Windows 桌面时间追踪工具；这个 fork 目前重点放在 GNOME/Linux 前台窗口识别、浏览器网页活动记录、本地 HTTP API，以及面向外部 AI/MCP 的数据接口。
 
 Linux 版本当前是可用的开发原型，还不是稳定发行版。
@@ -30,6 +33,13 @@ Linux 版本当前是可用的开发原型，还不是稳定发行版。
 - 支持 Firefox / Zen 扩展。
 - 设置页提供窗口追踪、本地 API、浏览器桥接、Linux 自启动诊断。
 - 可以修复 Linux `~/.config/autostart/Patina.desktop` 的错误 `Exec`。
+## 界面预览
+
+|  |  |
+| --- | --- |
+| **今天**<br>![今天页面](.github/assets/readme.zh-CN/dashboard.png)| **历史**<br>![历史页面](.github/assets/readme.zh-CN/history.png) |
+| **数据**<br>![数据页面](.github/assets/readme.zh-CN/data.png) | **应用**<br>![应用页面](.github/assets/readme.zh-CN/mapping.png) |
+| **设置**<br>![设置页面](.github/assets/readme.zh-CN/settings.png) | **关于**<br>![关于页面](.github/assets/readme.zh-CN/about.png) |
 
 ## 当前 Linux 状态
 
