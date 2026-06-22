@@ -57,6 +57,7 @@ export interface ReleaseDefaultSettingsProfile {
   launchAtLogin: boolean;
   startMinimized: boolean;
   backgroundOptimization: boolean;
+  audioParticipationEnabled: boolean;
   onboardingCompleted: boolean;
   webActivityEnabled: boolean;
   webActivityPort: number;
@@ -83,6 +84,7 @@ export const RELEASE_DEFAULT_SETTINGS: ReleaseDefaultSettingsProfile = {
   launchAtLogin: true,
   startMinimized: true,
   backgroundOptimization: false,
+  audioParticipationEnabled: true,
   onboardingCompleted: true,
   webActivityEnabled: false,
   webActivityPort: 12345,

@@ -45,6 +45,7 @@ type RawAppSettingsKey =
   | "launch_at_login"
   | "start_minimized"
   | "background_optimization"
+  | "audio_participation_enabled"
   | "onboarding_completed"
   | "web_activity_enabled"
   | "web_activity_port"
@@ -70,6 +71,7 @@ const APP_SETTINGS_RAW_KEYS: Record<keyof AppSettings, RawAppSettingsKey> = {
   launchAtLogin: "launch_at_login",
   startMinimized: "start_minimized",
   backgroundOptimization: "background_optimization",
+  audioParticipationEnabled: "audio_participation_enabled",
   onboardingCompleted: "onboarding_completed",
   webActivityEnabled: "web_activity_enabled",
   webActivityPort: "web_activity_port",
@@ -284,6 +286,10 @@ export function normalizeSettingsRecord(record: Record<string, string | undefine
     backgroundOptimization: parseBooleanSetting(
       record.background_optimization,
       DEFAULT_SETTINGS.backgroundOptimization,
+    ),
+    audioParticipationEnabled: parseBooleanSetting(
+      record.audio_participation_enabled,
+      DEFAULT_SETTINGS.audioParticipationEnabled,
     ),
     onboardingCompleted: parseBooleanSetting(
       record.onboarding_completed,

@@ -1,6 +1,6 @@
 use crate::domain::settings::{
-    DesktopBehaviorSettings, RemoteStatusBridgeSettings, WebActivityBridgeSettings,
-    WebActivitySettings,
+    parse_audio_participation_enabled, DesktopBehaviorSettings, RemoteStatusBridgeSettings,
+    WebActivityBridgeSettings, WebActivitySettings,
 };
 use sqlx::{Pool, Row, Sqlite};
 
@@ -9,6 +9,7 @@ const MINIMIZE_BEHAVIOR_KEY: &str = "minimize_behavior";
 const LAUNCH_AT_LOGIN_KEY: &str = "launch_at_login";
 const START_MINIMIZED_KEY: &str = "start_minimized";
 const BACKGROUND_OPTIMIZATION_KEY: &str = "background_optimization";
+const AUDIO_PARTICIPATION_ENABLED_KEY: &str = "audio_participation_enabled";
 const WEB_ACTIVITY_ENABLED_KEY: &str = "web_activity_enabled";
 const WEB_ACTIVITY_PORT_KEY: &str = "web_activity_port";
 const WEB_ACTIVITY_TOKEN_KEY: &str = "web_activity_token";
@@ -139,6 +140,7 @@ fn is_allowed_app_setting_key(key: &str) -> bool {
             | "launch_at_login"
             | "start_minimized"
             | "background_optimization"
+            | "audio_participation_enabled"
             | "onboarding_completed"
             | "web_activity_enabled"
             | "web_activity_port"
@@ -148,6 +150,16 @@ fn is_allowed_app_setting_key(key: &str) -> bool {
             | "remote_status_bridge_token"
             | "remote_status_bridge_machine_id"
     )
+}
+
+pub async fn load_audio_participation_enabled(pool: &Pool<Sqlite>) -> Result<bool, sqlx::Error> {
+    let value = sqlx::query("SELECT value FROM settings WHERE key = ?")
+        .bind(AUDIO_PARTICIPATION_ENABLED_KEY)
+        .fetch_optional(pool)
+        .await?
+        .map(|row| row.get::<String, _>("value"));
+
+    Ok(parse_audio_participation_enabled(value.as_deref()))
 }
 
 pub async fn load_web_activity_bridge_settings(
@@ -329,6 +341,27 @@ mod tests {
 
             let settings = load_desktop_behavior_settings(&pool).await.unwrap();
             assert!(settings.should_optimize_background_resources());
+        });
+    }
+
+    #[test]
+    fn audio_participation_setting_loads_and_allows_commits() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+
+            assert!(load_audio_participation_enabled(&pool).await.unwrap());
+
+            commit_app_setting_mutations(
+                &pool,
+                &[AppSettingMutation {
+                    key: "audio_participation_enabled".to_string(),
+                    value: "0".to_string(),
+                }],
+            )
+            .await
+            .unwrap();
+
+            assert!(!load_audio_participation_enabled(&pool).await.unwrap());
         });
     }
 

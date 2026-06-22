@@ -3,6 +3,7 @@ use crate::app::main_window;
 use crate::app::runtime_tasks;
 use crate::app::state::DesktopBehaviorState;
 use crate::app::tray::{apply_tray_visibility, setup_tray, MAIN_WINDOW_LABEL};
+use crate::data::sqlite_pool::wait_for_sqlite_pool;
 use crate::engine::tracking::watchdog::RuntimeHealthState;
 #[cfg(target_os = "linux")]
 use crate::platform::linux::{audio, media, power};
@@ -59,7 +60,7 @@ pub fn setup(
     ))
     .map_err(std::io::Error::other)?;
     power::start(app.handle().clone());
-    audio::start_signal_source();
+    audio::start_signal_source(load_audio_participation_enabled(app.handle().clone()));
     media::start_signal_source();
     crate::app::web_activity_bridge::start(app.handle().clone());
     crate::engine::remote_status_bridge::start(app.handle().clone());
@@ -93,6 +94,19 @@ pub fn setup(
     runtime_tasks::spawn_tools_runtime_restart_loop(app.handle().clone());
 
     Ok(())
+}
+
+fn load_audio_participation_enabled(app: tauri::AppHandle) -> bool {
+    tauri::async_runtime::block_on(async move {
+        let pool = wait_for_sqlite_pool(&app).await?;
+        crate::data::repositories::app_settings::load_audio_participation_enabled(&pool)
+            .await
+            .map_err(|error| format!("failed to load audio participation setting: {error}"))
+    })
+    .unwrap_or_else(|error| {
+        eprintln!("[audio] failed to load audio participation setting: {error}");
+        crate::domain::settings::DEFAULT_AUDIO_PARTICIPATION_ENABLED
+    })
 }
 
 #[cfg(test)]

@@ -48,6 +48,32 @@ await runTest("settings diagnostics report available Linux window tracking and A
   assert.equal(items.find((item) => item.id === "local-api")?.value, "http://127.0.0.1:14840");
 });
 
+await runTest("settings diagnostics warn when Linux autostart Exec is not Patina", () => {
+  const items = buildSettingsDiagnosticsViewModel({
+    trackerHealth: HEALTHY_GNOME,
+    webActivityEnabled: false,
+    webActivityPort: 18080,
+    webActivityToken: "",
+    webActivityBridge: null,
+    desktopIntegration: {
+      launchAtLogin: true,
+      startMinimized: true,
+      autostart: {
+        path: "/home/user/.config/autostart/Patina.desktop",
+        exists: true,
+        exec: "/usr/local/bin/ghostty --autostart",
+        valid: false,
+        reason: "exec-not-patina",
+      },
+    },
+  });
+
+  const desktopIntegration = items.find((item) => item.id === "desktop-integration");
+  assert.equal(desktopIntegration?.tone, "warning");
+  assert.equal(desktopIntegration?.value, "自启动异常");
+  assert.match(desktopIntegration?.detail ?? "", /ghostty --autostart/);
+});
+
 await runTest("settings diagnostics warn when browser bridge is enabled but disconnected", () => {
   const items = buildSettingsDiagnosticsViewModel({
     trackerHealth: HEALTHY_GNOME,

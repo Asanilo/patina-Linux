@@ -172,6 +172,10 @@ export default function Settings({
             }}
             trackingPaused={draftSettings.trackingPaused}
             onTrackingPausedChange={(nextChecked) => handleChange("trackingPaused", nextChecked)}
+            audioParticipationEnabled={draftSettings.audioParticipationEnabled}
+            onAudioParticipationEnabledChange={(nextChecked) => {
+              handleChange("audioParticipationEnabled", nextChecked);
+            }}
           />
 
           <SettingsAppearancePanel
@@ -234,6 +238,11 @@ export default function Settings({
             webActivityEnabled={draftSettings.webActivityEnabled}
             webActivityPort={draftSettings.webActivityPort}
             webActivityToken={draftSettings.webActivityToken}
+            launchAtLoginChecked={draftSettings.launchAtLogin}
+            onLaunchAtLoginChange={(nextChecked) => handleChange("launchAtLogin", nextChecked)}
+            startMinimizedChecked={draftSettings.startMinimized}
+            startMinimizedDisabled={!draftSettings.launchAtLogin}
+            onStartMinimizedChange={(nextChecked) => handleChange("startMinimized", nextChecked)}
           />
 
           <SettingsDataSafetyPanel

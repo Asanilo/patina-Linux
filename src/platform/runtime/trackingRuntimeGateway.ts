@@ -44,6 +44,10 @@ export async function setAfkThreshold(thresholdSecs: number): Promise<void> {
   await invoke("cmd_set_afk_threshold", { thresholdSecs });
 }
 
+export async function setAudioParticipationEnabled(enabled: boolean): Promise<void> {
+  await invoke("cmd_set_audio_participation_enabled", { enabled });
+}
+
 export async function toggleTrackingPaused(): Promise<void> {
   await invoke("cmd_toggle_tracking_paused");
 }

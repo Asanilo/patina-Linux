@@ -51,6 +51,7 @@ export interface AppSettings {
   launchAtLogin: boolean;
   startMinimized: boolean;
   backgroundOptimization: boolean;
+  audioParticipationEnabled: boolean;
   onboardingCompleted: boolean;
   webActivityEnabled: boolean;
   webActivityPort: number;

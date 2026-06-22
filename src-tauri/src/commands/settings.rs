@@ -80,6 +80,15 @@ pub fn cmd_set_background_optimization(
 }
 
 #[tauri::command]
+pub fn cmd_set_audio_participation_enabled(enabled: bool) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    crate::platform::linux::audio::set_signal_source_enabled(enabled);
+    #[cfg(target_os = "windows")]
+    crate::platform::windows::audio::set_signal_source_enabled(enabled);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn cmd_commit_app_settings(
     mutations: Vec<AppSettingMutationDto>,
     app: AppHandle,

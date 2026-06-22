@@ -26,20 +26,28 @@ static AUDIO_SIGNAL_SOURCE: OnceLock<Arc<AudioSignalSourceState>> = OnceLock::ne
 struct AudioSignalSourceState {
     snapshot: Mutex<AudioSnapshot>,
     probe_in_flight: Arc<AtomicBool>,
+    enabled: AtomicBool,
 }
 
 struct AudioProbeInFlightGuard {
     probe_in_flight: Arc<AtomicBool>,
 }
 
-pub fn start_signal_source() {
+pub fn start_signal_source(enabled: bool) {
     let state = AUDIO_SIGNAL_SOURCE
         .get_or_init(|| Arc::new(AudioSignalSourceState::new()))
         .clone();
+    state.set_enabled(enabled);
 
     tauri::async_runtime::spawn(async move {
         state.run().await;
     });
+}
+
+pub fn set_signal_source_enabled(enabled: bool) {
+    if let Some(state) = AUDIO_SIGNAL_SOURCE.get() {
+        state.set_enabled(enabled);
+    }
 }
 
 pub async fn get_sustained_participation_signal(
@@ -53,6 +61,9 @@ pub async fn get_sustained_participation_signal(
     let Some(state) = AUDIO_SIGNAL_SOURCE.get() else {
         return SustainedParticipationSignalSnapshot::default();
     };
+    if !state.is_enabled() {
+        return SustainedParticipationSignalSnapshot::default();
+    }
 
     state.resolve_signal_for_window(window, now_ms)
 }
@@ -62,12 +73,29 @@ impl AudioSignalSourceState {
         Self {
             snapshot: Mutex::new(AudioSnapshot::unknown(now_ms(), AUDIO_SNAPSHOT_TTL_MS)),
             probe_in_flight: Arc::new(AtomicBool::new(false)),
+            enabled: AtomicBool::new(true),
         }
+    }
+
+    fn set_enabled(&self, enabled: bool) {
+        self.enabled.store(enabled, Ordering::Release);
+        if !enabled {
+            self.replace_snapshot(AudioSnapshot::empty_success(
+                now_ms(),
+                AUDIO_SNAPSHOT_TTL_MS,
+            ));
+        }
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.enabled.load(Ordering::Acquire)
     }
 
     async fn run(&self) {
         loop {
-            self.reconcile_once().await;
+            if self.is_enabled() {
+                self.reconcile_once().await;
+            }
             sleep(Duration::from_secs(AUDIO_RECONCILE_INTERVAL_SECS)).await;
         }
     }

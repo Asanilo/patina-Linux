@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_LAUNCH_AT_LOGIN: bool = true;
 pub const DEFAULT_START_MINIMIZED: bool = true;
 pub const DEFAULT_BACKGROUND_OPTIMIZATION: bool = false;
+pub const DEFAULT_AUDIO_PARTICIPATION_ENABLED: bool = true;
 pub const DEFAULT_WEB_ACTIVITY_ENABLED: bool = false;
 pub const DEFAULT_WEB_ACTIVITY_PORT: u16 = 12_345;
 pub const DEFAULT_WEB_ACTIVITY_TOKEN: &str = "";
@@ -273,6 +274,11 @@ pub fn parse_boolean_setting(raw: &str, fallback: bool) -> bool {
     }
 }
 
+pub fn parse_audio_participation_enabled(raw: Option<&str>) -> bool {
+    raw.map(|value| parse_boolean_setting(value, DEFAULT_AUDIO_PARTICIPATION_ENABLED))
+        .unwrap_or(DEFAULT_AUDIO_PARTICIPATION_ENABLED)
+}
+
 pub fn parse_web_activity_port(raw: &str) -> Option<u16> {
     let port = raw.trim().parse::<u16>().ok()?;
     (WEB_ACTIVITY_PORT_MIN..=u16::MAX)
@@ -286,8 +292,8 @@ mod tests {
         parse_boolean_setting, parse_close_behavior, parse_minimize_behavior,
         parse_web_activity_port, CloseBehavior, DesktopBehaviorSettings, MinimizeBehavior,
         RemoteStatusBridgeSettings, WebActivityBridgeSettings, WebActivitySettings,
-        DEFAULT_BACKGROUND_OPTIMIZATION, DEFAULT_LAUNCH_AT_LOGIN, DEFAULT_START_MINIMIZED,
-        DEFAULT_WEB_ACTIVITY_PORT,
+        DEFAULT_AUDIO_PARTICIPATION_ENABLED, DEFAULT_BACKGROUND_OPTIMIZATION,
+        DEFAULT_LAUNCH_AT_LOGIN, DEFAULT_START_MINIMIZED, DEFAULT_WEB_ACTIVITY_PORT,
     };
 
     #[test]
@@ -313,6 +319,15 @@ mod tests {
         assert!(!parse_boolean_setting("off", true));
         assert!(parse_boolean_setting("invalid", true));
         assert!(!parse_boolean_setting("invalid", false));
+    }
+
+    #[test]
+    fn audio_participation_defaults_to_enabled_and_accepts_boolean_storage() {
+        assert!(DEFAULT_AUDIO_PARTICIPATION_ENABLED);
+        assert!(super::parse_audio_participation_enabled(None));
+        assert!(super::parse_audio_participation_enabled(Some("yes")));
+        assert!(!super::parse_audio_participation_enabled(Some("0")));
+        assert!(super::parse_audio_participation_enabled(Some("invalid")));
     }
 
     #[test]

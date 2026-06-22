@@ -18,6 +18,8 @@ type SettingsTrackingPanelProps = {
   minSessionControl: MinuteControlProps;
   trackingPaused: boolean;
   onTrackingPausedChange: (nextChecked: boolean) => void;
+  audioParticipationEnabled: boolean;
+  onAudioParticipationEnabledChange: (nextChecked: boolean) => void;
 };
 
 const clampMinute = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -120,6 +122,8 @@ export default function SettingsTrackingPanel({
   minSessionControl,
   trackingPaused,
   onTrackingPausedChange,
+  audioParticipationEnabled,
+  onAudioParticipationEnabledChange,
 }: SettingsTrackingPanelProps) {
   return (
     <section className="qp-panel min-h-[240px] p-5 md:p-6">
@@ -132,6 +136,22 @@ export default function SettingsTrackingPanel({
         <TrackingMinuteField {...timelineMergeGapControl} />
         <TrackingMinuteField {...idleTimeoutControl} />
         <TrackingMinuteField {...minSessionControl} />
+
+        <div>
+          <label className="text-[11px] font-semibold text-[var(--qp-text-tertiary)] uppercase tracking-[0.06em]">
+            {UI_TEXT.settings.audioParticipationLabel}
+          </label>
+          <div className="mt-2 flex items-start justify-between gap-4">
+            <p className="text-sm text-[var(--qp-text-secondary)] leading-relaxed">
+              {UI_TEXT.settings.audioParticipationHint}
+            </p>
+            <QuietSwitch
+              checked={audioParticipationEnabled}
+              onChange={onAudioParticipationEnabledChange}
+              ariaLabel={UI_TEXT.accessibility.settings.toggleAudioParticipation}
+            />
+          </div>
+        </div>
 
         <div>
           <label className="text-[11px] font-semibold text-[var(--qp-text-tertiary)] uppercase tracking-[0.06em]">

@@ -95,6 +95,7 @@ interface AppSettings {
   launchAtLogin: boolean;
   startMinimized: boolean;
   backgroundOptimization: boolean;
+  audioParticipationEnabled: boolean;
   onboardingCompleted: boolean;
   webActivityEnabled: boolean;
   webActivityPort: number;
@@ -123,6 +124,7 @@ const BASE_SETTINGS: AppSettings = {
   launchAtLogin: false,
   startMinimized: false,
   backgroundOptimization: false,
+  audioParticipationEnabled: true,
   onboardingCompleted: false,
   webActivityEnabled: false,
   webActivityPort: 12345,
@@ -211,6 +213,9 @@ await runTest("commitSettingsPatchWithDeps returns not-needed for empty patches"
     syncIdleTimeout: async () => {
       events.push("sync");
     },
+    syncAudioParticipation: async () => {
+      events.push("sync-audio");
+    },
     notifySettingsChanged: async () => {
       events.push("notify");
     },
@@ -237,6 +242,9 @@ await runTest("commitSettingsPatchWithDeps syncs idle timeout after persistence"
     },
     syncIdleTimeout: async (seconds) => {
       events.push(`sync-idle:${seconds}`);
+    },
+    syncAudioParticipation: async (enabled) => {
+      events.push(`sync-audio:${enabled}`);
     },
     notifySettingsChanged: async (patch) => {
       events.push(`notify:${Object.keys(patch).length}`);
@@ -268,6 +276,9 @@ await runTest("commitSettingsPatchWithDeps keeps persisted success when runtime 
       events.push("sync");
       throw new Error("runtime unavailable");
     },
+    syncAudioParticipation: async () => {
+      events.push("sync-audio");
+    },
     notifySettingsChanged: async () => {
       events.push("notify");
     },
@@ -298,6 +309,9 @@ await runTest("commitSettingsPatchWithDeps does not attempt runtime sync when pe
       },
       syncIdleTimeout: async () => {
         events.push("sync");
+      },
+      syncAudioParticipation: async () => {
+        events.push("sync-audio");
       },
       notifySettingsChanged: async () => {
         events.push("notify");
@@ -407,6 +421,7 @@ await runTest("normalizeSettingsRecord accepts current minimize behavior values"
   assert.equal(defaultSettings.webActivityEnabled, false);
   assert.equal(defaultSettings.webActivityPort, 12345);
   assert.equal(defaultSettings.webActivityToken, "");
+  assert.equal(defaultSettings.audioParticipationEnabled, true);
   assert.equal(defaultSettings.remoteStatusBridgeEnabled, false);
   assert.equal(defaultSettings.remoteStatusBridgeUrl, "");
   assert.equal(defaultSettings.remoteStatusBridgeToken, "");
@@ -478,6 +493,11 @@ await runTest("normalizeSettingsRecord accepts current minimize behavior values"
     minimize_behavior: "floating-sidebar",
   });
   assert.equal(fallbackSettings.minimizeBehavior, "widget");
+
+  const disabledAudioSettings = normalizeSettingsRecord({
+    audio_participation_enabled: "0",
+  });
+  assert.equal(disabledAudioSettings.audioParticipationEnabled, false);
 });
 
 await runTest("remote backup settings normalize WebDAV directory and timestamps", () => {

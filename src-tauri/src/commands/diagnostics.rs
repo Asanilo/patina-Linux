@@ -4,9 +4,9 @@ use crate::platform::linux::{foreground, icon, resource};
 use crate::platform::windows::{foreground, icon, resource};
 use serde::Serialize;
 use std::net::{SocketAddr, TcpStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
-use tauri::Manager;
+use tauri::{Manager, State};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ResourceDiagnosticsSnapshot {
@@ -23,6 +23,22 @@ pub struct LocalApiDiagnosticsSnapshot {
     pub token_path: String,
     pub token_present: bool,
     pub listening: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct AutostartDiagnosticsSnapshot {
+    pub path: String,
+    pub exists: bool,
+    pub exec: Option<String>,
+    pub valid: bool,
+    pub reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct DesktopIntegrationDiagnosticsSnapshot {
+    pub launch_at_login: bool,
+    pub start_minimized: bool,
+    pub autostart: AutostartDiagnosticsSnapshot,
 }
 
 #[tauri::command]
@@ -52,6 +68,20 @@ pub fn cmd_get_local_api_diagnostics() -> LocalApiDiagnosticsSnapshot {
     build_local_api_diagnostics(port, token_path, token_present, listening)
 }
 
+#[tauri::command]
+pub fn cmd_get_desktop_integration_diagnostics(
+    desktop_behavior_state: State<crate::app::state::DesktopBehaviorState>,
+) -> DesktopIntegrationDiagnosticsSnapshot {
+    let settings = desktop_behavior_state.snapshot();
+    let autostart = inspect_autostart_desktop_file();
+
+    DesktopIntegrationDiagnosticsSnapshot {
+        launch_at_login: settings.launch_at_login,
+        start_minimized: settings.start_minimized,
+        autostart,
+    }
+}
+
 fn build_local_api_diagnostics(
     port: u16,
     token_path: PathBuf,
@@ -71,6 +101,59 @@ fn is_local_api_listening(port: u16) -> bool {
     TcpStream::connect_timeout(&address, Duration::from_millis(100)).is_ok()
 }
 
+fn inspect_autostart_desktop_file() -> AutostartDiagnosticsSnapshot {
+    let path = autostart_desktop_file_path();
+    let content = std::fs::read_to_string(&path).ok();
+    let exec = content.as_deref().and_then(extract_desktop_exec);
+    let exists = path.exists();
+    let reason = resolve_autostart_reason(exists, exec.as_deref());
+
+    AutostartDiagnosticsSnapshot {
+        path: path.display().to_string(),
+        exists,
+        exec: exec.map(str::to_string),
+        valid: reason.is_none(),
+        reason,
+    }
+}
+
+fn autostart_desktop_file_path() -> PathBuf {
+    let config_home = std::env::var("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+            Path::new(&home).join(".config")
+        });
+    config_home.join("autostart").join("Patina.desktop")
+}
+
+fn extract_desktop_exec(content: &str) -> Option<&str> {
+    content.lines().find_map(|line| {
+        let trimmed = line.trim();
+        trimmed.strip_prefix("Exec=").map(str::trim)
+    })
+}
+
+fn resolve_autostart_reason(exists: bool, exec: Option<&str>) -> Option<String> {
+    if !exists {
+        return Some("desktop-file-missing".to_string());
+    }
+
+    let Some(exec) = exec.filter(|value| !value.trim().is_empty()) else {
+        return Some("exec-missing".to_string());
+    };
+
+    let normalized = exec.to_ascii_lowercase();
+    if !normalized.contains("patina") {
+        return Some("exec-not-patina".to_string());
+    }
+    if !normalized.contains("--autostart") {
+        return Some("autostart-arg-missing".to_string());
+    }
+
+    None
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -86,5 +169,26 @@ mod tests {
         assert_eq!(snapshot.token_path, "/tmp/patina/api_token");
         assert!(snapshot.token_present);
         assert!(!snapshot.listening);
+    }
+
+    #[test]
+    fn autostart_exec_validation_detects_wrong_or_incomplete_commands() {
+        assert_eq!(
+            super::extract_desktop_exec("Name=Patina\nExec=/usr/bin/patina --autostart\n"),
+            Some("/usr/bin/patina --autostart")
+        );
+        assert_eq!(
+            super::resolve_autostart_reason(true, Some("/usr/local/bin/ghostty --autostart"))
+                .as_deref(),
+            Some("exec-not-patina")
+        );
+        assert_eq!(
+            super::resolve_autostart_reason(true, Some("/usr/bin/patina")).as_deref(),
+            Some("autostart-arg-missing")
+        );
+        assert_eq!(
+            super::resolve_autostart_reason(true, Some("/usr/bin/patina --autostart")),
+            None
+        );
     }
 }

@@ -16,7 +16,10 @@ import {
 } from "../../../platform/backup/backupRuntimeGateway.ts";
 import { openExternalUrl } from "../../../platform/desktop/externalUrlGateway.ts";
 import { emitAppSettingsChanged } from "../../../platform/runtime/appSettingsEventGateway.ts";
-import { setAfkThreshold } from "../../../platform/runtime/trackingRuntimeGateway.ts";
+import {
+  setAfkThreshold,
+  setAudioParticipationEnabled,
+} from "../../../platform/runtime/trackingRuntimeGateway.ts";
 import { getUiLocale, UI_TEXT } from "../../../shared/copy/uiText.ts";
 import type { CleanupRange } from "../types.ts";
 import {
@@ -44,6 +47,7 @@ export interface SettingsCommitResult {
 interface SettingsCommitDeps {
   persistPatch: (patch: SettingsPatch) => Promise<void>;
   syncIdleTimeout: (seconds: number) => Promise<void>;
+  syncAudioParticipation: (enabled: boolean) => Promise<void>;
   notifySettingsChanged: (patch: SettingsPatch) => Promise<void>;
 }
 type ExportBackupDeps = {
@@ -84,6 +88,7 @@ const prepareBackupRestoreDeps: PrepareBackupRestoreDeps = {
 const defaultSettingsCommitDeps: SettingsCommitDeps = {
   persistPatch: saveAppSettingsPatch,
   syncIdleTimeout: setAfkThreshold,
+  syncAudioParticipation: setAudioParticipationEnabled,
   notifySettingsChanged: emitAppSettingsChanged,
 };
 
@@ -223,11 +228,21 @@ export async function commitSettingsPatchWithDeps(
     }
   }
 
+  const audioParticipationEnabled = patch.audioParticipationEnabled;
+  const needsAudioRuntimeSync = typeof audioParticipationEnabled === "boolean";
+  if (needsAudioRuntimeSync) {
+    try {
+      await deps.syncAudioParticipation(audioParticipationEnabled);
+    } catch (error) {
+      runtimeSyncErrors.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   return {
     persisted: true,
     runtimeSync: runtimeSyncErrors.length > 0
         ? "failed"
-        : needsRuntimeSync
+        : needsRuntimeSync || needsAudioRuntimeSync
           ? "synced"
           : "not-needed",
     runtimeSyncErrors,
