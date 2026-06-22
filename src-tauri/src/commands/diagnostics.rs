@@ -82,6 +82,22 @@ pub fn cmd_get_desktop_integration_diagnostics(
     }
 }
 
+#[tauri::command]
+pub fn cmd_repair_autostart_desktop_file(
+    desktop_behavior_state: State<crate::app::state::DesktopBehaviorState>,
+) -> Result<DesktopIntegrationDiagnosticsSnapshot, String> {
+    let executable_path = std::env::current_exe()
+        .map_err(|error| format!("failed to resolve current executable path: {error}"))?;
+    repair_autostart_desktop_file(&autostart_desktop_file_path(), &executable_path)
+        .map_err(|error| format!("failed to repair autostart desktop file: {error}"))?;
+
+    Ok(DesktopIntegrationDiagnosticsSnapshot {
+        launch_at_login: desktop_behavior_state.snapshot().launch_at_login,
+        start_minimized: desktop_behavior_state.snapshot().start_minimized,
+        autostart: inspect_autostart_desktop_file(),
+    })
+}
+
 fn build_local_api_diagnostics(
     port: u16,
     token_path: PathBuf,
@@ -115,6 +131,52 @@ fn inspect_autostart_desktop_file() -> AutostartDiagnosticsSnapshot {
         valid: reason.is_none(),
         reason,
     }
+}
+
+fn repair_autostart_desktop_file(
+    desktop_file_path: &Path,
+    executable_path: &Path,
+) -> std::io::Result<()> {
+    if let Some(parent) = desktop_file_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    std::fs::write(
+        desktop_file_path,
+        build_autostart_desktop_file(executable_path),
+    )
+}
+
+fn build_autostart_desktop_file(executable_path: &Path) -> String {
+    let executable = quote_desktop_exec_argument(&executable_path.display().to_string());
+    format!(
+        "[Desktop Entry]\n\
+Type=Application\n\
+Version=1.0\n\
+Name=Patina\n\
+Comment=Start Patina in the background\n\
+Exec={executable} {}\n\
+StartupNotify=false\n\
+Terminal=false\n\
+X-GNOME-Autostart-enabled=true\n",
+        crate::app::runtime::AUTOSTART_ARG
+    )
+}
+
+fn quote_desktop_exec_argument(argument: &str) -> String {
+    if !argument
+        .chars()
+        .any(|character| character.is_whitespace() || matches!(character, '"' | '\\' | '$' | '`'))
+    {
+        return argument.to_string();
+    }
+
+    let escaped = argument
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('$', "\\$")
+        .replace('`', "\\`");
+    format!("\"{escaped}\"")
 }
 
 fn autostart_desktop_file_path() -> PathBuf {
@@ -190,5 +252,24 @@ mod tests {
             super::resolve_autostart_reason(true, Some("/usr/bin/patina --autostart")),
             None
         );
+    }
+
+    #[test]
+    fn autostart_repair_file_points_to_patina_with_autostart_arg() {
+        let content =
+            super::build_autostart_desktop_file(std::path::Path::new("/opt/Patina/patina"));
+
+        assert!(content.contains("Name=Patina\n"));
+        assert!(content.contains("Exec=/opt/Patina/patina --autostart\n"));
+        assert!(content.contains("X-GNOME-Autostart-enabled=true\n"));
+    }
+
+    #[test]
+    fn autostart_repair_quotes_executable_paths_with_spaces() {
+        let content = super::build_autostart_desktop_file(std::path::Path::new(
+            "/home/user/My Apps/Patina/patina",
+        ));
+
+        assert!(content.contains("Exec=\"/home/user/My Apps/Patina/patina\" --autostart\n"));
     }
 }

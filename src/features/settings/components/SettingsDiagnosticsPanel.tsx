@@ -1,4 +1,4 @@
-import { Activity, Clipboard, Globe2, MonitorCheck, Power } from "lucide-react";
+import { Activity, Clipboard, Globe2, MonitorCheck, Power, Wrench } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import QuietSwitch from "../../../shared/components/QuietSwitch";
@@ -14,6 +14,7 @@ import {
 } from "../../../platform/runtime/localApiDiagnosticsGateway.ts";
 import {
   getDesktopIntegrationDiagnostics,
+  repairAutostartDesktopFile,
   type DesktopIntegrationDiagnosticsSnapshot,
 } from "../../../platform/runtime/desktopIntegrationDiagnosticsGateway.ts";
 import {
@@ -57,6 +58,7 @@ export default function SettingsDiagnosticsPanel({
   const [localApiSnapshot, setLocalApiSnapshot] = useState<LocalApiDiagnosticsSnapshot | null>(null);
   const [desktopIntegrationSnapshot, setDesktopIntegrationSnapshot] =
     useState<DesktopIntegrationDiagnosticsSnapshot | null>(null);
+  const [isRepairingAutostart, setIsRepairingAutostart] = useState(false);
 
   useEffect(() => {
     let disposed = false;
@@ -138,6 +140,23 @@ export default function SettingsDiagnosticsPanel({
     );
   };
 
+  const canRepairAutostart = Boolean(
+    desktopIntegrationSnapshot?.launchAtLogin
+      && !desktopIntegrationSnapshot.autostart.valid,
+  );
+
+  const handleRepairAutostart = async () => {
+    setIsRepairingAutostart(true);
+    try {
+      const snapshot = await repairAutostartDesktopFile();
+      setDesktopIntegrationSnapshot(snapshot);
+    } catch (error) {
+      console.warn("repair autostart desktop file failed", error);
+    } finally {
+      setIsRepairingAutostart(false);
+    }
+  };
+
   return (
     <section className="qp-panel p-5 md:p-6">
       <div className="mb-5 flex items-center gap-2.5 border-b border-[var(--qp-border-subtle)] pb-2">
@@ -153,20 +172,34 @@ export default function SettingsDiagnosticsPanel({
             key={item.id}
             item={item}
             actions={item.id === "desktop-integration" ? (
-              <div className="grid min-w-[220px] gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-                <DiagnosticSwitch
-                  label={UI_TEXT.settings.launchAtLoginLabel}
-                  checked={launchAtLoginChecked}
-                  onChange={onLaunchAtLoginChange}
-                  ariaLabel={UI_TEXT.accessibility.settings.toggleLaunchAtLogin}
-                />
-                <DiagnosticSwitch
-                  label={UI_TEXT.settings.startMinimizedLabel}
-                  checked={startMinimizedChecked}
-                  disabled={startMinimizedDisabled}
-                  onChange={onStartMinimizedChange}
-                  ariaLabel={UI_TEXT.accessibility.settings.toggleStartMinimized}
-                />
+              <div className="grid min-w-[220px] gap-3">
+                {canRepairAutostart ? (
+                  <button
+                    type="button"
+                    className="qp-button-secondary inline-flex h-8 items-center justify-center gap-2 px-3 text-xs font-semibold"
+                    onClick={() => void handleRepairAutostart()}
+                    disabled={isRepairingAutostart}
+                    aria-label={UI_TEXT.accessibility.settings.repairAutostart}
+                  >
+                    <Wrench size={13} />
+                    <span>{isRepairingAutostart ? UI_TEXT.settings.repairingAutostartLabel : UI_TEXT.settings.repairAutostartLabel}</span>
+                  </button>
+                ) : null}
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                  <DiagnosticSwitch
+                    label={UI_TEXT.settings.launchAtLoginLabel}
+                    checked={launchAtLoginChecked}
+                    onChange={onLaunchAtLoginChange}
+                    ariaLabel={UI_TEXT.accessibility.settings.toggleLaunchAtLogin}
+                  />
+                  <DiagnosticSwitch
+                    label={UI_TEXT.settings.startMinimizedLabel}
+                    checked={startMinimizedChecked}
+                    disabled={startMinimizedDisabled}
+                    onChange={onStartMinimizedChange}
+                    ariaLabel={UI_TEXT.accessibility.settings.toggleStartMinimized}
+                  />
+                </div>
               </div>
             ) : item.id === "local-api" ? (
               <button
