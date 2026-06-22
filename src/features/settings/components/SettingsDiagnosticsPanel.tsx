@@ -201,6 +201,13 @@ function DiagnosticItem({
     : item.tone === "warning"
       ? "text-[var(--qp-warning)]"
       : "text-[var(--qp-text-tertiary)]";
+  const statusClassName = item.tone === "ok"
+    ? "qp-status-ok"
+    : item.tone === "danger"
+      ? "qp-status-danger"
+    : item.tone === "warning"
+      ? "qp-status-warning"
+      : "qp-status-muted";
 
   return (
     <div className="grid grid-cols-1 gap-3 py-4 first:pt-0 last:pb-0 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
@@ -211,7 +218,7 @@ function DiagnosticItem({
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <p className="text-sm font-semibold text-[var(--qp-text-primary)]">{item.label}</p>
-            <span className={`qp-status px-2 py-0.5 text-[11px] font-semibold ${toneClassName}`}>
+            <span className={`qp-status px-2 py-0.5 text-[11px] font-semibold ${statusClassName}`}>
               {item.value}
             </span>
           </div>

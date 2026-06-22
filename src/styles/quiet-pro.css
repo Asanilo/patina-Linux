@@ -505,8 +505,20 @@
   color: var(--qp-text-secondary);
 }
 
+.qp-status-ok {
+  color: var(--qp-success);
+}
+
+.qp-status-warning {
+  color: var(--qp-warning);
+}
+
 .qp-status-danger {
   color: var(--qp-danger);
+}
+
+.qp-status-muted {
+  color: var(--qp-text-tertiary);
 }
 
 .qp-progress-indeterminate {
