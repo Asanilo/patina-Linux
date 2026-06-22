@@ -18,6 +18,7 @@ const REQUIRED_FILES = [
   "popup.js",
   "README.en.md",
   "README.zh-CN.md",
+  "package.sh",
   ...Object.values(REQUIRED_ICON_FILES),
 ] as const;
 

@@ -2,173 +2,208 @@
 
 <img src="src-tauri/icons/128x128.png" width="72" height="72" alt="Patina icon">
 
-# Patina
+# Patina Linux Fork
 
-面向 Windows 桌面工作的本地优先时间追踪工具。
+Patina 的 Linux 移植与本地 AI/API 集成 fork。
 
 [English](README.md) · 简体中文
 
-![Platform](https://img.shields.io/badge/platform-Windows-4f6f8f)
+![Platform](https://img.shields.io/badge/platform-Linux%20prototype%20%7C%20Windows%20upstream-4f6f8f)
 ![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%20v2-4f7f8f)
 ![Local first](https://img.shields.io/badge/data-local--first-5f7f68)
-[![Downloads](https://img.shields.io/github/downloads/Ceceliaee/patina/total?label=downloads&color=b07a3a)](https://github.com/Ceceliaee/patina/releases)
-[![Latest downloads](https://img.shields.io/github/downloads/Ceceliaee/patina/latest/total?label=latest&color=8f6f4f)](https://github.com/Ceceliaee/patina/releases/latest)
+![Status](https://img.shields.io/badge/status-fork%20prototype-b07a3a)
 [![License](https://img.shields.io/badge/license-MIT-6f647a)](LICENSE)
 
 </div>
 
+这个 fork 用来推进 Patina 的 Linux 移植。上游 Patina 是一个本地优先的 Windows 桌面时间追踪工具；这个 fork 目前重点放在 GNOME/Linux 前台窗口识别、浏览器网页活动记录、本地 HTTP API，以及面向外部 AI/MCP 的数据接口。
 
-<p align="center">
-Patina 自动记录前台应用，并整理成今日概览、历史时间线和长期趋势。<br>
-专注于安静可信的个人桌面时间记录。
-</p>
+Linux 版本当前是可用的开发原型，还不是稳定发行版。
 
-![Patina 今日概览](.github/assets/readme.zh-CN/dashboard.png)
+## 当前 fork 重点
 
-## 下载
+- GNOME Wayland 下通过 GNOME Shell 扩展和 session D-Bus 获取前台窗口。
+- 保留 Linux X11 fallback 方向。
+- 提供本地 HTTP API，供脚本、agent 和 MCP wrapper 调用。
+- 通过浏览器扩展同步当前活动网页。
+- 支持 Chromium 扩展。
+- 支持 Firefox / Zen 扩展。
+- 设置页提供窗口追踪、本地 API、浏览器桥接、Linux 自启动诊断。
+- 可以修复 Linux `~/.config/autostart/Patina.desktop` 的错误 `Exec`。
 
-预构建版本发布在 GitHub Releases：
+## 当前 Linux 状态
 
-- [最新版发布页面](https://github.com/Ceceliaee/patina/releases/latest)
+| 模块 | 状态 | 说明 |
+|---|---|---|
+| GNOME Wayland 窗口追踪 | 原型可用 | 依赖 GNOME Shell 扩展提供的 `org.patina.WindowTracker`。 |
+| X11 追踪 | 计划 / 部分 | 作为 fallback 方向保留，尚不是主要验证路径。 |
+| KDE / wlroots Wayland | 暂不承诺 | 后续需要按桌面环境分别适配。 |
+| 本地 API | 已实现 | 监听 `127.0.0.1:14840`，使用 bearer token。 |
+| MCP wrapper | 原型已实现 | `npm run mcp:patina`。 |
+| Chromium 网页同步 | 已实现 | `extensions/chromium`。 |
+| Firefox / Zen 网页同步 | 原型已实现 | `extensions/firefox`；签名 XPI 分发目前仍是手动流程。 |
+| Linux 打包 | 未完成 | 当前优先开发运行路径，安装器后续再做。 |
 
-如果只是想使用应用，进入最新版页面后下载 `.exe` 安装包即可。
+## Linux 快速开始
 
-如果需要同步浏览器网页，发布包中也提供 Patina Web Sync 扩展，使用说明在扩展包内。
-
-## 为什么使用 Patina
-
-- 自动记录前台应用，不需要手动维护主时间记录。
-- 处理无操作、锁屏、睡眠、崩溃恢复等边界，尽量让记录可信。
-- 数据默认存储在本地 SQLite 数据库中，不依赖账号、云同步或服务器。
-- 可以管理应用名称、分类、颜色、统计排除和窗口标题记录。
-- 提供提醒器、计时器和番茄钟等轻量本地工具。
-- 界面保持克制、清晰、低打扰，适合日常长期打开。
-
-## 核心能力
-
-### 自动追踪
-
-- 识别当前前台窗口与应用。
-- 空闲时间不会悄悄计入有效活动。
-- 锁屏、睡眠和长时间离开后会封口会话，避免时间串记。
-- 对视频、会议、课程、直播等低交互场景，结合媒体和音频信号减少漏记。
-
-### 回看与分析
-
-- 在今日概览中查看有效活动、应用排行、分类分布和当前追踪状态。
-- 按日期查看历史时间线，展开同一应用下的窗口标题明细。
-- 通过趋势、热力图和应用曲线观察长期时间分布。
-
-### 管理与控制
-
-- 重命名应用、调整分类和颜色。
-- 将应用排除出统计，或关闭指定应用的窗口标题记录。
-- 导出本地备份，恢复备份，清理历史记录。
-
-### 轻量工具
-
-- 创建一次性提醒和软件使用上限提醒。
-- 使用计时、倒计时和番茄钟处理主动专注任务。
-- 工具状态保留在本地，不替代自动追踪记录。
-
-## 界面预览
-
-| 今天 | 历史 |
-| :---: | :---: |
-| ![今天页面](.github/assets/readme.zh-CN/dashboard.png) | ![历史页面](.github/assets/readme.zh-CN/history.png) |
-| 数据 | 应用 |
-| ![数据页面](.github/assets/readme.zh-CN/data.png) | ![应用页面](.github/assets/readme.zh-CN/mapping.png) |
-| 设置 | 关于 |
-| ![设置页面](.github/assets/readme.zh-CN/settings.png) | ![关于页面](.github/assets/readme.zh-CN/about.png) |
-
-## 可靠性与隐私
-
-时间追踪只有在结果可信时才有长期价值。Patina 当前重点保护这些边界：
-
-- **原生窗口追踪**：通过 Rust 和 Windows API 识别前台窗口。
-- **AFK 感知计时**：无操作时间不会继续被算作有效活动。
-- **生命周期边界**：处理锁屏、睡眠、恢复和异常退出后的会话封口。
-- **噪音过滤**：过滤安装器、更新器、系统临时窗口等不适合进入统计的进程。
-- **真实时长统计**：排行、分布和总时长基于有效活动时间，而不是单纯的视觉跨度。
-- **标题记录控制**：窗口标题记录可以按应用关闭，减少不必要的敏感信息保留。
-- **本地数据控制**：核心数据保存在本地，备份和恢复由用户主动管理。
-
-## 当前范围
-
-Patina 有意保持范围克制：
-
-- **Windows 10/11 优先**
-- **个人使用优先**
-- **本地优先的数据存储与控制**
-- **安静、专业、可长期使用的桌面体验**
-- **提醒、计时器和番茄钟等轻量本地工具**
-
-团队协作、账号体系、云同步、移动端、多平台同步铺开、任务管理平台、游戏化生产力工具和重型 AI 洞察暂不作为当前主线。
-
-## 从源码运行
-
-### 环境要求
-
-- [Rust](https://www.rust-lang.org/tools/install)
-- [Node.js](https://nodejs.org/) 18+
-
-### 安装依赖
+### 1. 安装依赖
 
 ```bash
-git clone https://github.com/Ceceliaee/patina.git
-cd patina
 npm install
 ```
 
-### 开发运行
+还需要 Rust 和你当前发行版所需的 Tauri Linux 构建依赖。
+
+### 2. 安装 GNOME Shell 扩展
+
+```bash
+npm run extension:gnome:check
+npm run extension:gnome:install
+gnome-extensions enable patina-window-tracker@patina
+```
+
+如果 GNOME Shell 仍缓存旧扩展，注销后重新登录。
+
+验证 D-Bus：
+
+```bash
+gdbus call --session \
+  --dest org.patina.WindowTracker \
+  --object-path /org/patina/WindowTracker \
+  --method org.patina.WindowTracker.GetFocusedWindow
+```
+
+### 3. 运行 Patina
 
 ```bash
 npm run tauri dev
 ```
 
-### 构建安装包
-
-```bash
-npm run tauri build
-```
-
-安装包会生成在：
+应用会自动启动本地 API：
 
 ```text
-src-tauri/target/release/bundle/
+http://127.0.0.1:14840
 ```
 
-## 技术栈
+Token 路径：
 
-- 桌面壳：Tauri v2
-- 后端：Rust
-- 前端：React + Vite + TypeScript
-- 样式：Tailwind CSS
-- 动效：Framer Motion
-- 图表：Recharts
-- 数据库：SQLite，通过 `@tauri-apps/plugin-sql`
-- Windows 集成：`windows` crate
+```text
+${XDG_DATA_HOME:-~/.local/share}/Patina/api_token
+```
 
-## 项目文档
+## 浏览器网页同步
 
-如果你要参与贡献、了解产品方向或审查架构边界，建议先阅读 [`CONTRIBUTING.md`](CONTRIBUTING.md#zh-cn)。
+Patina 可以通过浏览器扩展记录当前活动网页的 URL、标题和域名。扩展不会读取网页正文、表单内容、截图、剪贴板或浏览历史库。
 
-## 支持项目
+### Chromium / Chrome / Edge
 
-Patina 是一个个人维护的、本地优先开源项目。如果它对你的日常生活或工作有帮助，也欢迎选择方便的方式支持后续维护：
+目录：
 
-<div align="center">
-  <a href="https://ko-fi.com/ceceliaee"><img src="https://storage.ko-fi.com/cdn/kofi2.png?v=3" height="36" alt="Buy me a coffee"></a>
-  <br><br>
-  <img src=".github/assets/support/wechat-reward.png" width="200" alt="微信赞赏码">
-</div>
+```text
+extensions/chromium
+```
 
-赞助会帮助项目持续维护，但不会影响功能优先级、问题处理方式、路线图或产品方向。
+打开 `chrome://extensions`，开启开发者模式，加载这个未打包扩展目录。
 
-## 反馈
+### Firefox / Zen
 
-- Releases: <https://github.com/Ceceliaee/patina/releases>
-- Issues: <https://github.com/Ceceliaee/patina/issues/new/choose>
+目录：
+
+```text
+extensions/firefox
+```
+
+开发临时加载：
+
+```text
+about:debugging#/runtime/this-firefox
+```
+
+选择 `extensions/firefox/manifest.json`。
+
+如果要在 Firefox/Zen 里持久安装，需要签名后的 `.xpi`。当前辅助脚本：
+
+```bash
+cd extensions/firefox
+./package.sh
+```
+
+签名和分发流程目前仍是手动。
+
+## 本地 API
+
+设置环境变量：
+
+```bash
+export PATINA_API_BASE="http://127.0.0.1:14840"
+export PATINA_API_TOKEN="$(cat "${XDG_DATA_HOME:-$HOME/.local/share}/Patina/api_token")"
+```
+
+示例：
+
+```bash
+curl -s "$PATINA_API_BASE/api/v1/diagnostics" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN"
+```
+
+主要接口索引：
+
+- [docs/api-index.md](docs/api-index.md)
+
+当前已实现 diagnostics、current activity、sessions、summary、trend、web activity、apps、tracker settings 等接口组。
+
+## MCP Wrapper
+
+当前 MCP wrapper 会把 MCP tool call 转成本地 API 请求：
+
+```bash
+npm run mcp:patina
+```
+
+读取这些配置：
+
+- `PATINA_API_BASE`
+- `PATINA_API_TOKEN`
+- `PATINA_API_TOKEN_FILE`
+
+当前工具包括：
+
+- `get_diagnostics`
+- `get_current_activity`
+- `query_sessions`
+- `get_active_session`
+- `get_today_summary`
+- `get_week_summary`
+- `get_activity_trend`
+- `query_web_activity`
+- `list_apps`
+- `classify_app`
+
+## 常用检查
+
+```bash
+npm run build
+npm run test:settings
+npm run extension:gnome:check
+npm run extension:chromium:check
+npm run extension:firefox:check
+node --experimental-strip-types --experimental-specifier-resolution=node tests/patinaMcpScript.test.ts
+cargo check --manifest-path src-tauri/Cargo.toml --quiet
+```
+
+## 上游产品背景
+
+Patina 是一个面向个人桌面的本地优先时间追踪工具。它会自动记录前台应用，处理 AFK、锁屏、睡眠、崩溃恢复等边界，数据保存在本地 SQLite，并提供 Dashboard、History、Data、App Mapping 等回看和管理界面。
+
+上游稳定方向仍是 Windows 优先。这个 fork 主要探索同一套产品能否在 Linux 上成立，并为外部 AI 分析暴露足够稳定的本地结构化数据。
+
+## 文档
+
+- Linux 设置：[docs/linux-development-setup.md](docs/linux-development-setup.md)
+- API 索引：[docs/api-index.md](docs/api-index.md)
+- Linux/API 设计：[docs/linux-port-and-api-design.md](docs/linux-port-and-api-design.md)
+- 产品范围：[docs/product-principles-and-scope.md](docs/product-principles-and-scope.md)
+- 架构规则：[docs/architecture.md](docs/architecture.md)
 
 ## 许可证
 

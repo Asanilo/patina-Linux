@@ -2,173 +2,208 @@
 
 <img src="src-tauri/icons/128x128.png" width="72" height="72" alt="Patina icon">
 
-# Patina
+# Patina Linux Fork
 
-Local-first time tracking for Windows desktop work.
+Linux port and local AI/API integration fork of Patina.
 
 English · [简体中文](README.zh-CN.md)
 
-![Platform](https://img.shields.io/badge/platform-Windows-4f6f8f)
+![Platform](https://img.shields.io/badge/platform-Linux%20prototype%20%7C%20Windows%20upstream-4f6f8f)
 ![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%20v2-4f7f8f)
 ![Local first](https://img.shields.io/badge/data-local--first-5f7f68)
-[![Downloads](https://img.shields.io/github/downloads/Ceceliaee/patina/total?label=downloads&color=b07a3a)](https://github.com/Ceceliaee/patina/releases)
-[![Latest downloads](https://img.shields.io/github/downloads/Ceceliaee/patina/latest/total?label=latest&color=8f6f4f)](https://github.com/Ceceliaee/patina/releases/latest)
+![Status](https://img.shields.io/badge/status-fork%20prototype-b07a3a)
 [![License](https://img.shields.io/badge/license-MIT-6f647a)](LICENSE)
 
 </div>
 
+This fork tracks the Linux migration work for Patina. The upstream project is a local-first Windows desktop time tracker; this fork is currently focused on GNOME/Linux foreground tracking, browser webpage activity, and a localhost API/MCP surface for external AI analysis.
 
-<p align="center">
-Patina records foreground apps and organizes them into today's overview, a timeline, and long-term trends.<br>
-Focused on quiet and trustworthy personal desktop time records.
-</p>
+The Linux port is usable as a development prototype, but it is not release-stable yet.
 
-![Patina dashboard](.github/assets/readme/dashboard.png)
+## Current Fork Focus
 
-## Download
+- GNOME Wayland foreground-window tracking through a GNOME Shell extension and session D-Bus.
+- Linux X11 fallback path where available.
+- Local HTTP API for external scripts, agents, and MCP wrappers.
+- Browser activity sync through local browser extensions.
+- Chromium extension support.
+- Firefox/Zen extension support.
+- Settings diagnostics for window tracking, local API, browser bridge, and Linux autostart.
+- Repair action for Linux `~/.config/autostart/Patina.desktop`.
 
-Prebuilt versions are published on GitHub Releases:
+## Current Linux Status
 
-- [Latest release page](https://github.com/Ceceliaee/patina/releases/latest)
+| Area | Status | Notes |
+|---|---|---|
+| GNOME Wayland window tracking | Working prototype | Uses `org.patina.WindowTracker` from the GNOME Shell extension. |
+| X11 tracking | Planned / partial | Kept as fallback direction, not the main verified path yet. |
+| KDE / wlroots Wayland | Not promised | Needs compositor-specific work later. |
+| Local API | Implemented | Binds to `127.0.0.1:14840` and uses a bearer token. |
+| MCP wrapper | Prototype implemented | `npm run mcp:patina`. |
+| Chromium Web Sync | Implemented | `extensions/chromium`. |
+| Firefox / Zen Web Sync | Prototype implemented | `extensions/firefox`; signed XPI distribution is still manual. |
+| Linux packaging | Not complete | Development workflow first, installer flow later. |
 
-If you just want to use the app, open the latest release page and download the `.exe` installer.
+## Quick Start On Linux
 
-For browser webpage sync, the release also includes the Patina Web Sync extension, with usage instructions inside the extension package.
-
-## Why Patina
-
-- Automatic foreground app tracking without manually maintaining the main time record.
-- AFK, lock, sleep, and crash recovery boundaries designed to keep records trustworthy.
-- Local SQLite storage by default, with no account, cloud sync, or server dependency.
-- App-level controls for names, categories, colors, stats exclusions, and title capture.
-- Lightweight local tools for reminders, timers, and Pomodoro.
-- A restrained, low-interruption desktop interface for long-term daily use.
-
-## Core Features
-
-### Automatic Tracking
-
-- Detects the active foreground window and application.
-- Prevents idle time from silently counting as effective activity.
-- Seals sessions across lock, sleep, long-away, and abnormal-exit boundaries.
-- Uses media and audio signals to reduce missed time in low-interaction scenarios such as videos, meetings, courses, and livestreams.
-
-### Review And Analysis
-
-- Review today's effective activity, app ranking, category distribution, and live tracking status.
-- Browse the daily timeline and inspect title details under the same app.
-- Explore trends, heatmaps, and app-level curves across longer time ranges.
-
-### Management And Control
-
-- Rename apps and adjust categories or colors.
-- Exclude apps from statistics or disable title capture for specific apps.
-- Export local backups, restore backups, and clean up historical records.
-
-### Lightweight Tools
-
-- Create one-off reminders and app usage limit reminders.
-- Use stopwatch, countdown, and Pomodoro for active focus tasks.
-- Tool state stays local and does not replace automatic tracking records.
-
-## Interface Preview
-
-| Today | History |
-| :---: | :---: |
-| ![Today page](.github/assets/readme/dashboard.png) | ![History page](.github/assets/readme/history.png) |
-| Data | Apps |
-| ![Data page](.github/assets/readme/data.png) | ![Apps page](.github/assets/readme/mapping.png) |
-| Settings | About |
-| ![Settings page](.github/assets/readme/settings.png) | ![About page](.github/assets/readme/about.png) |
-
-## Reliability And Privacy
-
-Time tracking has long-term value only when the records are trustworthy. Patina focuses on these boundaries:
-
-- **Native window tracking**: identifies the foreground window through Rust and the Windows API.
-- **AFK-aware timing**: idle time does not continue counting as effective activity.
-- **Lifecycle boundaries**: handles lock, sleep, resume, and abnormal-exit session sealing.
-- **Noise filtering**: filters installers, updaters, temporary system windows, and similar processes that should not enter statistics.
-- **Real-duration stats**: rankings, distributions, and totals use effective activity time, not just visual spans.
-- **Title capture control**: window title capture can be disabled per app to reduce unnecessary sensitive information retention.
-- **Local data control**: core data stays local, and backups or restores are initiated by the user.
-
-## Current Scope
-
-Patina intentionally keeps its scope focused:
-
-- **Windows 10/11 first**
-- **Personal use first**
-- **Local-first data storage and control**
-- **Quiet, professional, long-term desktop experience**
-- **Lightweight local tools such as reminders, timers, and Pomodoro**
-
-Team collaboration, account systems, cloud sync, mobile apps, broad multi-platform parity, task management platforms, gamified productivity tools, and heavy AI insights are not the current main direction.
-
-## Build From Source
-
-### Requirements
-
-- [Rust](https://www.rust-lang.org/tools/install)
-- [Node.js](https://nodejs.org/) 18+
-
-### Install Dependencies
+### 1. Install dependencies
 
 ```bash
-git clone https://github.com/Ceceliaee/patina.git
-cd patina
 npm install
 ```
 
-### Run In Development
+You also need Rust and the Tauri Linux build dependencies for your distribution.
+
+### 2. Install the GNOME Shell extension
+
+```bash
+npm run extension:gnome:check
+npm run extension:gnome:install
+gnome-extensions enable patina-window-tracker@patina
+```
+
+Log out and back in if GNOME Shell keeps an older extension copy.
+
+Verify D-Bus:
+
+```bash
+gdbus call --session \
+  --dest org.patina.WindowTracker \
+  --object-path /org/patina/WindowTracker \
+  --method org.patina.WindowTracker.GetFocusedWindow
+```
+
+### 3. Run Patina
 
 ```bash
 npm run tauri dev
 ```
 
-### Build Installer
-
-```bash
-npm run tauri build
-```
-
-Installers are generated under:
+The app starts the local API automatically:
 
 ```text
-src-tauri/target/release/bundle/
+http://127.0.0.1:14840
 ```
 
-## Tech Stack
+Token path:
 
-- Desktop shell: Tauri v2
-- Backend: Rust
-- Frontend: React + Vite + TypeScript
-- Styling: Tailwind CSS
-- Animation: Framer Motion
-- Charts: Recharts
-- Database: SQLite via `@tauri-apps/plugin-sql`
-- Windows integration: `windows` crate
+```text
+${XDG_DATA_HOME:-~/.local/share}/Patina/api_token
+```
 
-## Project Docs
+## Browser Web Sync
 
-If you want to contribute, understand the product direction, or review architecture boundaries, start with [`CONTRIBUTING.md`](CONTRIBUTING.md#english).
+Patina can record the active webpage URL/title/domain through a browser extension. It does not read page contents, form contents, screenshots, clipboard data, or browser history.
 
-## Support
+### Chromium / Chrome / Edge
 
-Patina is a personal, local-first open-source project. If it has been useful in your daily life or work, you can support ongoing maintenance in whichever way is convenient:
+Use:
 
-<div align="center">
-  <a href="https://ko-fi.com/ceceliaee"><img src="https://storage.ko-fi.com/cdn/kofi2.png?v=3" height="36" alt="Buy me a coffee"></a>
-  <br><br>
-  <img src=".github/assets/support/wechat-reward.png" width="200" alt="WeChat reward code">
-</div>
+```text
+extensions/chromium
+```
 
-Sponsorship helps sustain maintenance, but it does not affect feature priority, issue handling, the roadmap, or the product direction.
+Open `chrome://extensions`, enable developer mode, and load the unpacked extension directory.
 
-## Feedback
+### Firefox / Zen
 
-- Releases: <https://github.com/Ceceliaee/patina/releases>
-- Issues: <https://github.com/Ceceliaee/patina/issues/new/choose>
+Use:
+
+```text
+extensions/firefox
+```
+
+For temporary development loading, open:
+
+```text
+about:debugging#/runtime/this-firefox
+```
+
+Then load `extensions/firefox/manifest.json`.
+
+For persistent Firefox/Zen installation, use a signed `.xpi`. The current helper script is:
+
+```bash
+cd extensions/firefox
+./package.sh
+```
+
+Signing/distribution is still manual for now.
+
+## Local API
+
+Set helper environment variables:
+
+```bash
+export PATINA_API_BASE="http://127.0.0.1:14840"
+export PATINA_API_TOKEN="$(cat "${XDG_DATA_HOME:-$HOME/.local/share}/Patina/api_token")"
+```
+
+Example:
+
+```bash
+curl -s "$PATINA_API_BASE/api/v1/diagnostics" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN"
+```
+
+Main endpoint index:
+
+- [docs/api-index.md](docs/api-index.md)
+
+Implemented API groups include diagnostics, current activity, sessions, summaries, trends, web activity, apps, and tracker settings.
+
+## MCP Wrapper
+
+The prototype MCP wrapper maps MCP tool calls to the local API:
+
+```bash
+npm run mcp:patina
+```
+
+It reads:
+
+- `PATINA_API_BASE`
+- `PATINA_API_TOKEN`
+- `PATINA_API_TOKEN_FILE`
+
+Current tools include:
+
+- `get_diagnostics`
+- `get_current_activity`
+- `query_sessions`
+- `get_active_session`
+- `get_today_summary`
+- `get_week_summary`
+- `get_activity_trend`
+- `query_web_activity`
+- `list_apps`
+- `classify_app`
+
+## Useful Checks
+
+```bash
+npm run build
+npm run test:settings
+npm run extension:gnome:check
+npm run extension:chromium:check
+npm run extension:firefox:check
+node --experimental-strip-types --experimental-specifier-resolution=node tests/patinaMcpScript.test.ts
+cargo check --manifest-path src-tauri/Cargo.toml --quiet
+```
+
+## Upstream Product Background
+
+Patina is a personal, local-first desktop time tracker. It automatically records foreground apps, handles AFK/lock/sleep/crash boundaries, stores data locally in SQLite, and provides dashboard/history/data/app-management views.
+
+Upstream stable direction remains Windows-first. This fork explores whether the same product can become useful on Linux while also exposing enough structured local data for external AI analysis.
+
+## Documentation
+
+- Linux setup: [docs/linux-development-setup.md](docs/linux-development-setup.md)
+- API index: [docs/api-index.md](docs/api-index.md)
+- Linux/API design notes: [docs/linux-port-and-api-design.md](docs/linux-port-and-api-design.md)
+- Product scope: [docs/product-principles-and-scope.md](docs/product-principles-and-scope.md)
+- Architecture rules: [docs/architecture.md](docs/architecture.md)
 
 ## License
 
