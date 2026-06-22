@@ -121,14 +121,9 @@ about:debugging#/runtime/this-firefox
 
 选择 `extensions/firefox/manifest.json`。
 
-如果要在 Firefox/Zen 里持久安装，需要签名后的 `.xpi`。当前辅助脚本：
+如果要在 Firefox/Zen 里持久安装，直接安装已签名的 `.xpi` 包即可。
 
-```bash
-cd extensions/firefox
-./package.sh
-```
-
-签名和分发流程目前仍是手动。
+如果你修改扩展源码后需要重新构建，可以先用 `extensions/firefox/package.sh` 生成未签名包，再重新签名后分发。
 
 ## 本地 API
 

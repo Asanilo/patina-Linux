@@ -121,14 +121,9 @@ about:debugging#/runtime/this-firefox
 
 Then load `extensions/firefox/manifest.json`.
 
-For persistent Firefox/Zen installation, use a signed `.xpi`. The current helper script is:
+For persistent Firefox/Zen installation, install the signed `.xpi` package.
 
-```bash
-cd extensions/firefox
-./package.sh
-```
-
-Signing/distribution is still manual for now.
+If you rebuild the extension locally, use `extensions/firefox/package.sh` to create an unsigned package first, then sign it before distribution.
 
 ## Local API
 
