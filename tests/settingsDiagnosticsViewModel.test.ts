@@ -48,7 +48,7 @@ await runTest("settings diagnostics report available Linux window tracking and A
   assert.equal(items.find((item) => item.id === "local-api")?.value, "http://127.0.0.1:14840");
 });
 
-await runTest("settings diagnostics warn when Linux autostart Exec is not Patina", () => {
+await runTest("settings diagnostics mark Linux autostart Exec failures as danger", () => {
   const items = buildSettingsDiagnosticsViewModel({
     trackerHealth: HEALTHY_GNOME,
     webActivityEnabled: false,
@@ -69,12 +69,12 @@ await runTest("settings diagnostics warn when Linux autostart Exec is not Patina
   });
 
   const desktopIntegration = items.find((item) => item.id === "desktop-integration");
-  assert.equal(desktopIntegration?.tone, "warning");
+  assert.equal(desktopIntegration?.tone, "danger");
   assert.equal(desktopIntegration?.value, "自启动异常");
   assert.match(desktopIntegration?.detail ?? "", /ghostty --autostart/);
 });
 
-await runTest("settings diagnostics warn when browser bridge is enabled but disconnected", () => {
+await runTest("settings diagnostics mark browser bridge disconnects as danger", () => {
   const items = buildSettingsDiagnosticsViewModel({
     trackerHealth: HEALTHY_GNOME,
     webActivityEnabled: true,
@@ -92,7 +92,7 @@ await runTest("settings diagnostics warn when browser bridge is enabled but disc
 
   const bridge = items.find((item) => item.id === "browser-bridge");
   assert.equal(bridge?.value, "未连接");
-  assert.equal(bridge?.tone, "warning");
+  assert.equal(bridge?.tone, "danger");
   assert.match(bridge?.detail ?? "", /18080/);
 });
 
@@ -117,11 +117,11 @@ await runTest("settings diagnostics surface GNOME extension D-Bus failures", () 
   });
 
   const windowTracking = items.find((item) => item.id === "window-tracking");
-  assert.equal(windowTracking?.tone, "warning");
+  assert.equal(windowTracking?.tone, "danger");
   assert.match(windowTracking?.detail ?? "", /GNOME 扩展 D-Bus 不可用/);
 });
 
-await runTest("settings diagnostics warn when local API is not listening", () => {
+await runTest("settings diagnostics mark local API failures as danger without duplicated paths", () => {
   const items = buildSettingsDiagnosticsViewModel({
     trackerHealth: HEALTHY_GNOME,
     webActivityEnabled: false,
@@ -137,9 +137,10 @@ await runTest("settings diagnostics warn when local API is not listening", () =>
   });
 
   const localApi = items.find((item) => item.id === "local-api");
-  assert.equal(localApi?.tone, "warning");
+  assert.equal(localApi?.tone, "danger");
   assert.equal(localApi?.value, "未监听");
-  assert.match(localApi?.detail ?? "", /api_token/);
+  assert.equal(localApi?.detail, "不可连接 / Token 已生成");
+  assert.equal(localApi?.metadata?.find((entry) => entry.label === "Token file")?.value, "/home/user/.local/share/Patina/api_token");
 });
 
 console.log(`Passed ${passed} settings diagnostics view model tests`);

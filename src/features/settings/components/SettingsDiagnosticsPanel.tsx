@@ -196,6 +196,8 @@ function DiagnosticItem({
   const Icon = DIAGNOSTIC_ICONS[item.id as keyof typeof DIAGNOSTIC_ICONS] ?? Activity;
   const toneClassName = item.tone === "ok"
     ? "text-[var(--qp-success)]"
+    : item.tone === "danger"
+      ? "text-[var(--qp-danger)]"
     : item.tone === "warning"
       ? "text-[var(--qp-warning)]"
       : "text-[var(--qp-text-tertiary)]";

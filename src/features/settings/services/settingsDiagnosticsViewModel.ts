@@ -4,7 +4,7 @@ import type { DesktopIntegrationDiagnosticsSnapshot } from "../../../platform/ru
 import type { TrackerHealthSnapshot } from "../../../shared/types/tracking.ts";
 import { resolvePlatformTrackingDiagnosticMessage } from "../../../app/services/platformTrackingDiagnosticsService.ts";
 
-export type SettingsDiagnosticTone = "ok" | "warning" | "muted";
+export type SettingsDiagnosticTone = "ok" | "warning" | "danger" | "muted";
 
 export interface SettingsDiagnosticItem {
   id: string;
@@ -47,7 +47,7 @@ export function buildSettingsDiagnosticsViewModel(
       value: resolveWindowTrackingValue(input.trackerHealth),
       detail: platformMessage
         ?? resolveWindowTrackingDetail(windowTracking?.provider, windowTracking?.sessionType, windowTracking?.desktop),
-      tone: input.trackerHealth.status === "healthy" && !platformMessage ? "ok" : "warning",
+      tone: input.trackerHealth.status === "healthy" && !platformMessage ? "ok" : "danger",
     },
     {
       id: "local-api",
@@ -104,14 +104,14 @@ function resolveLocalApiDetail(
 
   const status = localApi.listening ? "可连接" : "不可连接";
   const token = localApi.tokenPresent ? "Token 已生成" : "Token 未生成";
-  return `${localApi.baseUrl} / ${status} / ${token} / ${localApi.tokenPath}`;
+  return `${status} / ${token}`;
 }
 
 function resolveLocalApiTone(
   localApi: LocalApiDiagnosticsSnapshot | null | undefined,
 ): SettingsDiagnosticTone {
   if (!localApi) return "muted";
-  if (!localApi.tokenPresent || !localApi.listening) return "warning";
+  if (!localApi.tokenPresent || !localApi.listening) return "danger";
   return "ok";
 }
 
@@ -154,7 +154,7 @@ function resolveDesktopIntegrationTone(
   desktopIntegration: DesktopIntegrationDiagnosticsSnapshot | null | undefined,
 ): SettingsDiagnosticTone {
   if (!desktopIntegration || !desktopIntegration.launchAtLogin) return "muted";
-  if (!desktopIntegration.autostart.valid) return "warning";
+  if (!desktopIntegration.autostart.valid) return "danger";
   return "ok";
 }
 
@@ -235,7 +235,7 @@ function resolveBrowserBridgeTone(
   bridge: WebActivityBridgeSnapshot | null,
 ): SettingsDiagnosticTone {
   if (!webActivityEnabled) return "muted";
-  if (webActivityToken.trim().length === 0) return "warning";
-  if (!bridge || !bridge.connected) return "warning";
+  if (webActivityToken.trim().length === 0) return "danger";
+  if (!bridge || !bridge.connected) return "danger";
   return "ok";
 }
