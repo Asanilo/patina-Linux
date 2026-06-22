@@ -63,3 +63,10 @@ export function rememberHistoryDayDistributionMode(mode: DayDistributionMode) {
     // History layout preferences are best-effort; never block the interaction.
   }
 }
+
+export function resolveEffectiveDayDistributionMode(
+  mode: DayDistributionMode,
+  webActivityEnabled: boolean,
+): DayDistributionMode {
+  return !webActivityEnabled && mode === "web" ? "app" : mode;
+}

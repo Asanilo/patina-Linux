@@ -40,6 +40,7 @@ import {
   readHistoryTimelineMode,
   rememberHistoryDayDistributionMode,
   rememberHistoryTimelineMode,
+  resolveEffectiveDayDistributionMode,
   type DayDistributionMode,
 } from "../services/historyLayoutPreferenceStorage.ts";
 import {
@@ -775,7 +776,10 @@ export default function History({
       webDomainOverrides,
     ],
   );
-  const effectiveDayDistributionMode = webActivityEnabled ? dayDistributionMode : "app";
+  const effectiveDayDistributionMode = resolveEffectiveDayDistributionMode(
+    dayDistributionMode,
+    webActivityEnabled,
+  );
   const dayDistributionOptions: QuietSegmentedFilterOption<DayDistributionMode>[] = webActivityEnabled
     ? [
       { value: "app", label: historyCopy.distributionByApp },

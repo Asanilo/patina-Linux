@@ -430,7 +430,8 @@ await runTest("web activity views are gated by saved web sync setting", () => {
   assert.match(historyBranch, /webActivityEnabled=\{appSettings\.webActivityEnabled\}/);
   assert.match(mappingBranch, /webActivityEnabled=\{appSettings\.webActivityEnabled\}/);
   assert.match(history, /webActivityEnabled = false/);
-  assert.match(history, /const effectiveDayDistributionMode = webActivityEnabled \? dayDistributionMode : "app"/);
+  assert.match(history, /resolveEffectiveDayDistributionMode\(\s*dayDistributionMode,\s*webActivityEnabled,\s*\)/);
+  assert.doesNotMatch(history, /const effectiveDayDistributionMode = webActivityEnabled \? dayDistributionMode : "app"/);
   assert.match(history, /const effectiveTimelineDialogMode = webActivityEnabled \? timelineDialogMode : "app"/);
   assert.match(history, /webActivityEnabled && \(/);
   assert.match(history, /if \(!webActivityEnabled\) return \[\]/);

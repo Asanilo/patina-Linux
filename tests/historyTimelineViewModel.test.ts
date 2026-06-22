@@ -4,6 +4,7 @@ import {
   readHistoryTimelineMode,
   rememberHistoryDayDistributionMode,
   rememberHistoryTimelineMode,
+  resolveEffectiveDayDistributionMode,
 } from "../src/features/history/services/historyLayoutPreferenceStorage.ts";
 import { buildHistoryTimelineViewModel } from "../src/features/history/services/historyTimelineViewModel.ts";
 import { ProcessMapper } from "../src/shared/classification/processMapper.ts";
@@ -121,6 +122,12 @@ runTest("day distribution mode persists locally", () => {
     window.localStorage.setItem("patina:history-day-distribution-mode", "timeline");
     assert.equal(readHistoryDayDistributionMode(), "app");
   });
+});
+
+runTest("day distribution keeps category available when web sync is disabled", () => {
+  assert.equal(resolveEffectiveDayDistributionMode("category", false), "category");
+  assert.equal(resolveEffectiveDayDistributionMode("web", false), "app");
+  assert.equal(resolveEffectiveDayDistributionMode("web", true), "web");
 });
 
 runTest("timeline display mode persists locally", () => {
