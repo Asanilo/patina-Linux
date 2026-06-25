@@ -173,6 +173,9 @@ pub(crate) fn handle_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
 
         if keep_tray_visible && !exit_requested {
             api.prevent_exit();
+        } else {
+            app.state::<crate::engine::api::server::ApiServerState>()
+                .shutdown();
         }
     }
 }

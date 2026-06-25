@@ -24,6 +24,9 @@ import {
 } from "../scripts/release.ts";
 
 const execFileAsync = promisify(execFile);
+const currentPackageVersion = JSON.parse(
+  await readFile("package.json", "utf8"),
+).version;
 
 const versionPolicyExcerpt = [
   "## 3. 当前仓库现实",
@@ -306,6 +309,9 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
     trackedFirefoxAssets.trim(),
     "extensions/firefox/dist/patina-web-sync.xpi",
   );
+  assert.deepEqual(tauriConfig.plugins.updater.endpoints, [
+    "https://github.com/Asanilo/patina-Linux/releases/latest/download/latest.json",
+  ]);
   assert.equal(
     tauriConfig.bundle.linux.deb.files[
       "/usr/share/gnome-shell/extensions/patina-window-tracker@patina/extension.js"
@@ -318,8 +324,10 @@ async function testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest()
   const tempRoot = await mkdtemp(path.join(tmpdir(), "patina-linux-release-"));
   const bundleDir = path.join(tempRoot, "bundle");
   const outputDir = path.join(tempRoot, "output");
-  const appImagePath = path.join(bundleDir, "appimage", "Patina_1.7.0_amd64.AppImage");
+  const appImageName = `Patina_${currentPackageVersion}_amd64.AppImage`;
+  const appImagePath = path.join(bundleDir, "appimage", appImageName);
   const updaterPath = `${appImagePath}.tar.gz`;
+  const debName = `Patina_${currentPackageVersion}_amd64.deb`;
 
   try {
     await mkdir(path.dirname(appImagePath), { recursive: true });
@@ -328,7 +336,7 @@ async function testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest()
     await writeFile(updaterPath, "updater", "utf8");
     await writeFile(`${updaterPath}.sig`, "linux-signature\n", "utf8");
     await writeFile(
-      path.join(bundleDir, "deb", "Patina_1.7.0_amd64.deb"),
+      path.join(bundleDir, "deb", debName),
       "debian",
       "utf8",
     );
@@ -337,25 +345,25 @@ async function testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest()
       "--experimental-strip-types",
       "scripts/release.ts",
       "prepare-linux-release-assets",
-      "1.7.0",
+      currentPackageVersion,
       bundleDir,
       outputDir,
       "Asanilo/patina-Linux",
     ]);
 
     assert.equal(
-      await readFile(path.join(outputDir, "Patina_1.7.0_amd64.AppImage"), "utf8"),
+      await readFile(path.join(outputDir, appImageName), "utf8"),
       "appimage",
     );
     assert.equal(
       await readFile(
-        path.join(outputDir, "Patina_1.7.0_amd64.AppImage.tar.gz"),
+        path.join(outputDir, `${appImageName}.tar.gz`),
         "utf8",
       ),
       "updater",
     );
     assert.equal(
-      await readFile(path.join(outputDir, "Patina_1.7.0_amd64.deb"), "utf8"),
+      await readFile(path.join(outputDir, debName), "utf8"),
       "debian",
     );
 
@@ -364,7 +372,7 @@ async function testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest()
     );
     assert.equal(
       latest.platforms["linux-x86_64"].url,
-      "https://github.com/Asanilo/patina-Linux/releases/download/v1.7.0/Patina_1.7.0_amd64.AppImage.tar.gz",
+      `https://github.com/Asanilo/patina-Linux/releases/download/v${currentPackageVersion}/Patina_${currentPackageVersion}_amd64.AppImage.tar.gz`,
     );
     assert.equal(
       latest.platforms["linux-x86_64"].signature,

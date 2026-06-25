@@ -54,7 +54,7 @@ fn get_icon_base64_uncached(exe_path: &str) -> Option<String> {
     find_and_load_icon(&icon_name)
 }
 
-pub fn get_window_icon_base64(hwnd_text: &str) -> Option<String> {
+pub fn get_window_icon_base64(_hwnd_text: &str) -> Option<String> {
     // On Linux, window icon lookup is the same as exe icon lookup
     // The hwnd_text would be an X11 window id, but we don't have a direct
     // way to get the icon from the window without additional X11 queries.
@@ -74,7 +74,7 @@ fn find_desktop_entry(exe_name: &str) -> Option<PathBuf> {
 
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().map_or(true, |ext| ext != "desktop") {
+            if path.extension().is_none_or(|ext| ext != "desktop") {
                 continue;
             }
 

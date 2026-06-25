@@ -1,3 +1,4 @@
+#[cfg(target_os = "windows")]
 const WEBDAV_BACKUP_CREDENTIAL_TARGET: &str = "com.ceceliaee.patina.backup.webdav.default";
 
 #[cfg(target_os = "windows")]

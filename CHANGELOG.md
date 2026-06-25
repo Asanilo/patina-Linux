@@ -18,11 +18,37 @@ App note en: TBD.
 
 ### Added
 
-- 新增 Linux x86_64 发布产物：AppImage、Debian 安装包、GNOME Shell 扩展包与 Firefox / Zen XPI；Debian 包会安装 GNOME 扩展文件。
+- 暂无。
 
 ### Changed
 
 - 暂无。
+
+### Fixed
+
+- 暂无。
+
+### Removed
+
+- 暂无。
+
+### Internal
+
+- 暂无。
+
+## [1.7.5] - 2026-06-25
+
+Release: 新增 Linux 安装包与扩展发布，并修复本地 API 时间汇总。
+App note: 新增 Linux 安装包，并修复本地 API 时间汇总。
+App note en: Adds Linux packages and fixes local API time summaries.
+
+### Added
+
+- 新增 Linux x86_64 发布产物：AppImage、Debian 安装包、GNOME Shell 扩展包与 Firefox / Zen XPI；Debian 包会安装 GNOME 扩展文件。
+
+### Changed
+
+- 更新通道改用 `Asanilo/patina-Linux` GitHub Releases，并启用 fork 自己的 updater 签名公钥。
 
 ### Fixed
 
@@ -34,7 +60,7 @@ App note en: TBD.
 
 ### Internal
 
-- 发布工作流新增 Ubuntu 22.04 Linux 构建任务，并将 `windows-x86_64` 与 `linux-x86_64` 合并到同一 updater 清单。
+- 发布工作流新增 Ubuntu 22.04 Linux 构建任务，并将 `windows-x86_64` 与 `linux-x86_64` 合并到同一 updater 清单；同时收紧 Rust Clippy 发布质量门槛。
 
 ## [1.7.0] - 2026-06-18
 

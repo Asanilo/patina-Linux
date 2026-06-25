@@ -15,7 +15,7 @@ pub async fn handle_connection(mut stream: TcpStream, app: tauri::AppHandle) {
         return;
     }
 
-    let parts: Vec<&str> = request_line.trim().split_whitespace().collect();
+    let parts: Vec<&str> = request_line.split_whitespace().collect();
     if parts.len() < 2 {
         write_error_response(
             &mut writer,
@@ -74,14 +74,12 @@ pub async fn handle_connection(mut stream: TcpStream, app: tauri::AppHandle) {
 
     // Handle CORS preflight
     if method == "OPTIONS" {
-        let response = format!(
-            "HTTP/1.1 204 No Content\r\n\
-             Access-Control-Allow-Origin: *\r\n\
-             Access-Control-Allow-Headers: Authorization, Content-Type\r\n\
-             Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\n\
-             Access-Control-Max-Age: 86400\r\n\
-             \r\n"
-        );
+        let response = "HTTP/1.1 204 No Content\r\n\
+                        Access-Control-Allow-Origin: *\r\n\
+                        Access-Control-Allow-Headers: Authorization, Content-Type\r\n\
+                        Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\n\
+                        Access-Control-Max-Age: 86400\r\n\
+                        \r\n";
         let _ = writer.write_all(response.as_bytes()).await;
         return;
     }

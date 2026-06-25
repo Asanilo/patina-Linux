@@ -62,7 +62,7 @@ pub fn cmd_get_resource_diagnostics(app: tauri::AppHandle) -> ResourceDiagnostic
 pub fn cmd_get_local_api_diagnostics() -> LocalApiDiagnosticsSnapshot {
     let port = crate::engine::api::server::DEFAULT_PORT;
     let token_path = crate::engine::api::auth::token_file_path();
-    let token_present = crate::engine::api::auth::get_api_token().trim().len() > 0;
+    let token_present = !crate::engine::api::auth::get_api_token().trim().is_empty();
     let listening = is_local_api_listening(port);
 
     build_local_api_diagnostics(port, token_path, token_present, listening)
@@ -122,7 +122,7 @@ fn inspect_autostart_desktop_file() -> AutostartDiagnosticsSnapshot {
     let content = std::fs::read_to_string(&path).ok();
     let exec = content.as_deref().and_then(extract_desktop_exec);
     let exists = path.exists();
-    let reason = resolve_autostart_reason(exists, exec.as_deref());
+    let reason = resolve_autostart_reason(exists, exec);
 
     AutostartDiagnosticsSnapshot {
         path: path.display().to_string(),

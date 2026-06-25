@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 #[cfg(target_os = "windows")]
 use std::os::windows::ffi::OsStrExt;
+#[cfg(target_os = "windows")]
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use tokio::sync::Semaphore;
@@ -308,7 +309,7 @@ fn resolve_process_display_name(process_path: &str) -> Option<String> {
 
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().map_or(true, |ext| ext != "desktop") {
+            if path.extension().is_none_or(|ext| ext != "desktop") {
                 continue;
             }
 
@@ -319,7 +320,7 @@ fn resolve_process_display_name(process_path: &str) -> Option<String> {
             // Check if Exec= contains our exe
             let matches = content.lines().any(|line| {
                 line.strip_prefix("Exec=")
-                    .map_or(false, |exec| exec.to_lowercase().contains(stem))
+                    .is_some_and(|exec| exec.to_lowercase().contains(stem))
             });
 
             if matches {
