@@ -851,7 +851,7 @@ tauri-winrt-notification = "0.7.2"
 - `npm run mcp:patina` 已提供最小 MCP wrapper，当前覆盖 diagnostics、current、active session、today/week summary 和 web activity 查询。
 
 **部分实现但需要修正**：
-- `/summary/*` 当前主要聚合已关闭 session，活跃 session 的实时 duration 与前端 read model 口径不完全一致。
+- `/summary/*` 已统一使用区间重叠与边界裁剪口径，并把活跃 session 计算到响应采样时刻。
 - `/summary/today` 与 `/summary/week` 已改用本地日/周边界；`/summary/range` 仍按调用方传入的毫秒范围执行，后续如暴露 timezone 应在响应中明确。
 - `/sessions/active` 已返回实时 duration、app、title、exe、continuity group 和 sampled_at；后续可继续补分类、标题记录开关后的脱敏口径。
 - `/trend` 已支持 `period=week|month&granularity=day`，按本地日期切分跨天 session，并把 active session 计到当前时间；后续可补 hour/week granularity、分类趋势和 timezone 字段。

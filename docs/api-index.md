@@ -293,11 +293,8 @@ Schema:
 Current behavior:
 
 - Uses local day boundary.
-- Aggregates closed sessions only.
-
-Known gap:
-
-- Active session is not yet included, so it can differ from frontend live read models.
+- Includes closed sessions and the current active session.
+- Clips every session to the local-day range before aggregation.
 
 ### `GET /api/v1/summary/range`
 
@@ -320,8 +317,8 @@ Same response shape as `GET /api/v1/summary/today`.
 Current behavior:
 
 - Uses caller-provided millisecond bounds.
-- Aggregates closed sessions only.
-- Filters by `start_time`; it does not clip sessions crossing range boundaries.
+- Includes closed sessions and the current active session.
+- Selects sessions that overlap the requested range and clips them to both boundaries.
 
 ### `GET /api/v1/summary/week`
 
@@ -339,11 +336,8 @@ Same response shape as `GET /api/v1/summary/today`; `date` is currently `"week"`
 Current behavior:
 
 - Uses local week boundary, Monday start.
-- Aggregates closed sessions only.
-
-Known gap:
-
-- Active session is not yet included.
+- Includes closed sessions and the current active session.
+- Clips every session to the local-week range before aggregation.
 
 ### `GET /api/v1/trend`
 

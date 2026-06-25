@@ -221,17 +221,19 @@ async fn build_summary_response(
             };
         }
     };
+    let sampled_at_ms = now_ms();
+    let active_cutoff_ms = sampled_at_ms.min(to_ms);
 
     let rows = match sqlx::query(
-        "SELECT exe_name, SUM(duration) as total_ms
+        "SELECT exe_name, start_time, end_time
          FROM sessions
-         WHERE end_time IS NOT NULL
-           AND start_time >= ? AND start_time <= ?
-         GROUP BY exe_name
-         ORDER BY total_ms DESC",
+         WHERE start_time < ?
+           AND COALESCE(end_time, ?) > ?
+         ORDER BY start_time ASC",
     )
-    .bind(from_ms)
     .bind(to_ms)
+    .bind(active_cutoff_ms)
+    .bind(from_ms)
     .fetch_all(&pool)
     .await
     {
@@ -244,26 +246,12 @@ async fn build_summary_response(
         }
     };
 
-    let mut total_active_ms: i64 = 0;
-    let mut app_map: Vec<(String, i64)> = Vec::new();
-
-    for row in &rows {
-        let exe: String = row.try_get("exe_name").unwrap_or_default();
-        let ms: i64 = row.try_get("total_ms").unwrap_or(0);
-        total_active_ms += ms;
-        app_map.push((exe, ms));
-    }
-
-    let apps: Vec<AppSummaryEntry> = app_map
+    let sessions = rows
         .iter()
-        .map(|(exe, ms)| AppSummaryEntry {
-            exe_name: exe.clone(),
-            total_ms: *ms,
-            percentage: if total_active_ms > 0 {
-                (*ms as f64 / total_active_ms as f64) * 100.0
-            } else {
-                0.0
-            },
+        .map(|row| SummarySessionInput {
+            exe_name: row.try_get::<String, _>("exe_name").unwrap_or_default(),
+            start_time: row.try_get::<i64, _>("start_time").unwrap_or(0),
+            end_time: row.try_get::<Option<i64>, _>("end_time").unwrap_or(None),
         })
         .collect();
 
@@ -274,7 +262,6 @@ async fn build_summary_response(
             .await
             .unwrap_or_default();
 
-    let mut category_map: HashMap<String, i64> = HashMap::new();
     let mut exe_to_category: HashMap<String, String> = HashMap::new();
 
     for row in &category_rows {
@@ -285,28 +272,90 @@ async fn build_summary_response(
         }
     }
 
-    for (exe, ms) in &app_map {
-        if let Some(cat) = exe_to_category.get(exe) {
-            *category_map.entry(cat.clone()).or_insert(0) += ms;
-        }
-    }
-
-    let categories: Vec<CategorySummaryEntry> = category_map
-        .into_iter()
-        .map(|(name, ms)| CategorySummaryEntry { name, total_ms: ms })
-        .collect();
-
     RouteResponse {
         status: 200,
         body: serde_json::to_value(ApiResponse {
-            data: SummaryResponse {
-                date: label.to_string(),
-                total_active_ms,
-                apps,
-                categories,
-            },
+            data: build_summary_from_sessions(
+                label,
+                from_ms,
+                to_ms,
+                sampled_at_ms,
+                sessions,
+                &exe_to_category,
+            ),
         })
         .unwrap_or_default(),
+    }
+}
+
+#[derive(Clone, Debug)]
+struct SummarySessionInput {
+    exe_name: String,
+    start_time: i64,
+    end_time: Option<i64>,
+}
+
+fn build_summary_from_sessions(
+    label: &str,
+    from_ms: i64,
+    to_ms: i64,
+    sampled_at_ms: i64,
+    sessions: Vec<SummarySessionInput>,
+    exe_to_category: &HashMap<String, String>,
+) -> SummaryResponse {
+    let mut app_totals = HashMap::<String, i64>::new();
+
+    for session in sessions {
+        let overlap_start = session.start_time.max(from_ms);
+        let overlap_end = session.end_time.unwrap_or(sampled_at_ms).min(to_ms);
+        let duration = overlap_end.saturating_sub(overlap_start);
+        if duration > 0 {
+            *app_totals.entry(session.exe_name).or_insert(0) += duration;
+        }
+    }
+
+    let total_active_ms = app_totals.values().copied().sum();
+    let mut apps = app_totals
+        .iter()
+        .map(|(exe_name, total_ms)| AppSummaryEntry {
+            exe_name: exe_name.clone(),
+            total_ms: *total_ms,
+            percentage: if total_active_ms > 0 {
+                (*total_ms as f64 / total_active_ms as f64) * 100.0
+            } else {
+                0.0
+            },
+        })
+        .collect::<Vec<_>>();
+    apps.sort_by(|left, right| {
+        right
+            .total_ms
+            .cmp(&left.total_ms)
+            .then_with(|| left.exe_name.cmp(&right.exe_name))
+    });
+
+    let mut category_totals = HashMap::<String, i64>::new();
+    for (exe_name, total_ms) in &app_totals {
+        if let Some(category) = exe_to_category.get(exe_name) {
+            *category_totals.entry(category.clone()).or_insert(0) += total_ms;
+        }
+    }
+    let mut categories = category_totals
+        .into_iter()
+        .map(|(name, total_ms)| CategorySummaryEntry { name, total_ms })
+        .collect::<Vec<_>>();
+    categories.sort_by(|left, right| {
+        right
+            .total_ms
+            .cmp(&left.total_ms)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+
+    SummaryResponse {
+        date: label.to_string(),
+        total_active_ms,
+        apps,
+        categories,
     }
 }
 
@@ -450,6 +499,7 @@ mod local_summary_range_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn active_session_response_includes_realtime_duration_and_window_fields() {
@@ -487,5 +537,87 @@ mod tests {
         );
 
         assert_eq!(response.duration, 0);
+    }
+
+    #[test]
+    fn summary_clips_cross_boundary_sessions_and_counts_active_session_until_sample_time() {
+        let sessions = vec![
+            SummarySessionInput {
+                exe_name: "ghostty".to_string(),
+                start_time: 500,
+                end_time: Some(1_500),
+            },
+            SummarySessionInput {
+                exe_name: "ghostty".to_string(),
+                start_time: 2_500,
+                end_time: None,
+            },
+            SummarySessionInput {
+                exe_name: "obsidian".to_string(),
+                start_time: 1_500,
+                end_time: Some(3_500),
+            },
+        ];
+        let categories = HashMap::from([
+            ("ghostty".to_string(), "Development".to_string()),
+            ("obsidian".to_string(), "Writing".to_string()),
+        ]);
+
+        let summary =
+            build_summary_from_sessions("range", 1_000, 3_000, 3_000, sessions, &categories);
+
+        assert_eq!(summary.total_active_ms, 2_500);
+        assert_eq!(summary.apps.len(), 2);
+        assert_eq!(
+            summary
+                .apps
+                .iter()
+                .find(|app| app.exe_name == "ghostty")
+                .map(|app| app.total_ms),
+            Some(1_000),
+        );
+        assert_eq!(
+            summary
+                .apps
+                .iter()
+                .find(|app| app.exe_name == "obsidian")
+                .map(|app| app.total_ms),
+            Some(1_500),
+        );
+        assert_eq!(
+            summary
+                .categories
+                .iter()
+                .find(|category| category.name == "Development")
+                .map(|category| category.total_ms),
+            Some(1_000),
+        );
+        assert_eq!(
+            summary
+                .categories
+                .iter()
+                .find(|category| category.name == "Writing")
+                .map(|category| category.total_ms),
+            Some(1_500),
+        );
+    }
+
+    #[test]
+    fn summary_does_not_count_active_session_past_sample_time() {
+        let summary = build_summary_from_sessions(
+            "range",
+            1_000,
+            5_000,
+            3_000,
+            vec![SummarySessionInput {
+                exe_name: "ghostty".to_string(),
+                start_time: 2_000,
+                end_time: None,
+            }],
+            &HashMap::new(),
+        );
+
+        assert_eq!(summary.total_active_ms, 1_000);
+        assert_eq!(summary.apps[0].total_ms, 1_000);
     }
 }
