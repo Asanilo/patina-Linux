@@ -275,6 +275,7 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   assert.doesNotMatch(workflow, /windows-x86_64/);
   assert.doesNotMatch(workflow, /merge-latest-json/);
   assert.match(verifyWorkflow, /runs-on: ubuntu-22\.04/);
+  assert.match(verifyWorkflow, /workflow_dispatch:/);
   assert.doesNotMatch(verifyWorkflow, /windows-latest/);
   assert.equal(
     trackedFirefoxAssets.trim(),
