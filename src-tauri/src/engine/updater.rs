@@ -10,8 +10,8 @@ use crate::domain::update::{UpdateErrorStage, UpdateSnapshot, UpdateStatus};
 
 const STARTUP_AUTO_CHECK_DELAYS_MS: [u64; 3] = [3_500, 15_000, 60_000];
 const UPDATE_SNAPSHOT_CHANGED_EVENT: &str = "update-snapshot-changed";
-const RELEASES_BASE_URL: &str = "https://github.com/Asanilo/patina/releases";
-const LATEST_RELEASE_URL: &str = "https://github.com/Asanilo/patina/releases/latest";
+const RELEASES_BASE_URL: &str = "https://github.com/Asanilo/patina-Linux/releases";
+const LATEST_RELEASE_URL: &str = "https://github.com/Asanilo/patina-Linux/releases/latest";
 
 #[derive(Clone)]
 pub struct UpdaterRuntimeState {
@@ -173,11 +173,11 @@ mod tests {
     fn updater_fallback_urls_use_the_linux_fork_release_pages() {
         assert_eq!(
             latest_release_page_url(),
-            "https://github.com/Asanilo/patina/releases/latest"
+            "https://github.com/Asanilo/patina-Linux/releases/latest"
         );
         assert_eq!(
             release_page_url_for_version("1.8.0").as_deref(),
-            Some("https://github.com/Asanilo/patina/releases/tag/v1.8.0")
+            Some("https://github.com/Asanilo/patina-Linux/releases/tag/v1.8.0")
         );
     }
 }

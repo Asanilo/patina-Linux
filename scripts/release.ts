@@ -18,6 +18,8 @@ const VERSION_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9A-Za-z-][0-9A-Za-z-]*))*))?$/;
 const VERSION_POLICY_CURRENT_CODE_VERSION_PATTERN = /(- 代码版本为 `)([^`]+)(`)/;
 const GITHUB_UPDATER_ENDPOINT =
+  "https://github.com/Asanilo/patina-Linux/releases/latest/download/latest.json";
+const LEGACY_FORK_UPDATER_ENDPOINT =
   "https://github.com/Asanilo/patina/releases/latest/download/latest.json";
 const LEGACY_UPSTREAM_UPDATER_ENDPOINT =
   "https://github.com/Ceceliaee/patina/releases/latest/download/latest.json";
@@ -73,6 +75,7 @@ export function buildUpdaterEndpoints(existingEndpoints = []) {
     GITHUB_UPDATER_ENDPOINT,
     ...existingEndpoints.filter((endpoint) =>
       endpoint !== GITHUB_UPDATER_ENDPOINT
+      && endpoint !== LEGACY_FORK_UPDATER_ENDPOINT
       && endpoint !== LEGACY_UPSTREAM_UPDATER_ENDPOINT
     ),
   ]);

@@ -141,12 +141,13 @@ function testUpdaterNotesFallsBackToAppNote() {
 function testUpdaterEndpointsKeepGithubFirstAndPreserveMirrors() {
   const endpoints = buildUpdaterEndpoints([
     "https://pub-example.r2.dev/latest.json",
+    "https://github.com/Asanilo/patina/releases/latest/download/latest.json",
     "https://github.com/Ceceliaee/patina/releases/latest/download/latest.json",
     "https://pub-example.r2.dev/latest.json",
   ]);
 
   assert.deepEqual(endpoints, [
-    "https://github.com/Asanilo/patina/releases/latest/download/latest.json",
+    "https://github.com/Asanilo/patina-Linux/releases/latest/download/latest.json",
     "https://pub-example.r2.dev/latest.json",
   ]);
 }
@@ -339,7 +340,7 @@ async function testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest()
       "1.7.0",
       bundleDir,
       outputDir,
-      "Asanilo/patina",
+      "Asanilo/patina-Linux",
     ]);
 
     assert.equal(
@@ -363,7 +364,7 @@ async function testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest()
     );
     assert.equal(
       latest.platforms["linux-x86_64"].url,
-      "https://github.com/Asanilo/patina/releases/download/v1.7.0/Patina_1.7.0_amd64.AppImage.tar.gz",
+      "https://github.com/Asanilo/patina-Linux/releases/download/v1.7.0/Patina_1.7.0_amd64.AppImage.tar.gz",
     );
     assert.equal(
       latest.platforms["linux-x86_64"].signature,
