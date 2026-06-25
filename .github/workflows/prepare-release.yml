@@ -1,10 +1,10 @@
-name: Publish Release
+name: Publish Linux Release
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Existing version tag to publish, for example 1.6.1"
+        description: "Existing version tag to publish, for example 1.7.6"
         required: true
         type: string
   push:
@@ -16,268 +16,8 @@ permissions:
   contents: write
 
 jobs:
-  prepare:
-    name: Prepare, build, and publish release
-    runs-on: windows-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Set up Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Resolve release version
-        id: release
-        shell: pwsh
-        run: |
-          $semverPattern = '(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9A-Za-z-][0-9A-Za-z-]*))*))?'
-
-          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            $version = "${{ inputs.version }}"
-          } else {
-            $refName = "${{ github.ref_name }}"
-            if ($refName -notmatch "^v(?<version>$semverPattern)$") {
-              throw "Tag '$refName' is not a release version tag."
-            }
-            $version = $Matches.version
-          }
-
-          if ($version -notmatch "^$semverPattern$") {
-            throw "Version '$version' is not a valid SemVer version."
-          }
-
-          "version=$version" >> $env:GITHUB_OUTPUT
-          "tag=v$version" >> $env:GITHUB_OUTPUT
-          "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
-          Write-Host "Resolved release version: $version"
-
-      - name: Checkout release tag
-        shell: pwsh
-        run: |
-          $version = "${{ steps.release.outputs.version }}"
-          $tag = "v$version"
-
-          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            $existingTag = git ls-remote --tags origin "refs/tags/$tag"
-            if (-not $existingTag) {
-              throw "Tag $tag does not exist. Prepare the release commit and push the tag first."
-            }
-            Write-Host "Tag $tag exists. The workflow will publish from that tag."
-          } else {
-            Write-Host "Release was triggered by pushed tag $tag."
-          }
-
-          $tagRef = "refs/tags/$tag"
-          git fetch --force origin "${tagRef}:${tagRef}"
-          if ($LASTEXITCODE -ne 0) {
-            throw "Failed to fetch $tag from origin."
-          }
-
-          git checkout $tag
-          if ($LASTEXITCODE -ne 0) {
-            throw "Failed to checkout $tag."
-          }
-
-          $tagCommit = git rev-list -n 1 $tag
-          $headCommit = git rev-parse HEAD
-          if ($tagCommit -ne $headCommit) {
-            throw "HEAD ($headCommit) does not match $tag ($tagCommit)."
-          }
-
-          Write-Host "Publishing $tag from $headCommit"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Validate version files
-        run: node --experimental-strip-types scripts/release.ts validate-version-files ${{ steps.release.outputs.version }}
-
-      - name: Validate changelog
-        run: node --experimental-strip-types scripts/release.ts validate-changelog ${{ steps.release.outputs.version }}
-
-      - name: Verify release notes generation
-        run: node --experimental-strip-types scripts/release.ts write-release-notes ${{ steps.release.outputs.version }} dist-release/release-notes.md
-
-      - name: Run release quality gate
-        run: npm run release:check
-
-      - name: Ensure updater signing key exists
-        shell: pwsh
-        run: |
-          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
-            throw "Missing TAURI_SIGNING_PRIVATE_KEY secret."
-          }
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-
-      - name: Build Tauri bundle
-        run: npm run tauri build -- --bundles nsis
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-
-      - name: Prepare release assets
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force dist-release | Out-Null
-          $version = "${{ steps.release.outputs.version }}"
-          npm run release:prepare-assets -- $version src-tauri/target/release/bundle dist-release ${{ github.repository }} windows-x86_64
-
-      - name: Package Chromium extension
-        shell: pwsh
-        run: |
-          npm run extension:chromium:package
-          $extensionManifest = Get-Content "extensions/chromium/manifest.json" -Raw | ConvertFrom-Json
-          $extensionAsset = "patina-chromium-extension-v$($extensionManifest.version).zip"
-          Copy-Item `
-            "dist/extensions/chromium/$extensionAsset" `
-            "dist-release/$extensionAsset" `
-            -Force
-          "CHROMIUM_EXTENSION_ASSET=$extensionAsset" >> $env:GITHUB_ENV
-
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: v${{ steps.release.outputs.version }}
-          name: Patina v${{ steps.release.outputs.version }}
-          body_path: dist-release/release-notes.md
-          draft: false
-          prerelease: ${{ contains(steps.release.outputs.version, '-') }}
-          files: |
-            dist-release/Patina_${{ steps.release.outputs.version }}_x64-setup.exe
-            dist-release/${{ env.CHROMIUM_EXTENSION_ASSET }}
-            dist-release/latest.json
-
-      - name: Check R2 mirror configuration
-        shell: pwsh
-        env:
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-          R2_PUBLIC_BASE_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}
-        run: |
-          $required = @(
-            "R2_ACCOUNT_ID",
-            "R2_ACCESS_KEY_ID",
-            "R2_SECRET_ACCESS_KEY",
-            "R2_BUCKET",
-            "R2_PUBLIC_BASE_URL"
-          )
-          $missing = @()
-          foreach ($name in $required) {
-            if (-not [Environment]::GetEnvironmentVariable($name)) {
-              $missing += $name
-            }
-          }
-
-          if ($missing.Count -gt 0) {
-            "R2_MIRROR_ENABLED=false" >> $env:GITHUB_ENV
-            Write-Host "R2 mirror secrets are not fully configured; skipping R2 sync."
-            Write-Host "Missing: $($missing -join ', ')"
-          } else {
-            "R2_MIRROR_ENABLED=true" >> $env:GITHUB_ENV
-            Write-Host "R2 mirror is configured."
-          }
-
-      - name: Ensure AWS CLI for R2 sync
-        if: env.R2_MIRROR_ENABLED == 'true'
-        shell: pwsh
-        run: |
-          if (Get-Command aws -ErrorAction SilentlyContinue) {
-            aws --version
-            exit 0
-          }
-
-          choco install awscli -y --no-progress
-          aws --version
-
-      - name: Generate R2 updater manifest
-        if: env.R2_MIRROR_ENABLED == 'true'
-        shell: pwsh
-        env:
-          R2_PUBLIC_BASE_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}
-        run: |
-          New-Item -ItemType Directory -Force dist-release/r2 | Out-Null
-          $version = "${{ steps.release.outputs.version }}"
-          $installerName = "Patina_${version}_x64-setup.exe"
-          $r2BaseUrl = $env:R2_PUBLIC_BASE_URL.TrimEnd("/")
-          $r2InstallerUrl = "$r2BaseUrl/releases/v$version/$installerName"
-          $githubLatest = Get-Content "dist-release/latest.json" -Raw | ConvertFrom-Json
-          $signature = $githubLatest.platforms.'windows-x86_64'.signature
-
-          if (-not $signature) {
-            throw "Could not read updater signature from dist-release/latest.json."
-          }
-
-          npm run release:latest -- $version $r2InstallerUrl $signature dist-release/r2/latest.json windows-x86_64
-
-      - name: Upload R2 updater mirror
-        if: env.R2_MIRROR_ENABLED == 'true'
-        shell: pwsh
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-        run: |
-          $version = "${{ steps.release.outputs.version }}"
-          $installerName = "Patina_${version}_x64-setup.exe"
-          $r2Endpoint = "https://$env:R2_ACCOUNT_ID.r2.cloudflarestorage.com"
-
-          aws s3 cp `
-            "dist-release/$installerName" `
-            "s3://$env:R2_BUCKET/releases/v$version/$installerName" `
-            --endpoint-url $r2Endpoint `
-            --content-type "application/octet-stream"
-
-          aws s3 cp `
-            "dist-release/r2/latest.json" `
-            "s3://$env:R2_BUCKET/latest.json" `
-            --endpoint-url $r2Endpoint `
-            --content-type "application/json" `
-            --cache-control "no-cache"
-
-      - name: Clean old R2 updater mirrors
-        if: env.R2_MIRROR_ENABLED == 'true'
-        shell: pwsh
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-        run: |
-          $version = "${{ steps.release.outputs.version }}"
-          $currentPrefix = "releases/v$version/"
-          $r2Endpoint = "https://$env:R2_ACCOUNT_ID.r2.cloudflarestorage.com"
-          $objects = aws s3api list-objects-v2 `
-            --bucket $env:R2_BUCKET `
-            --prefix "releases/" `
-            --delimiter "/" `
-            --endpoint-url $r2Endpoint | ConvertFrom-Json
-
-          $prefixes = @($objects.CommonPrefixes | ForEach-Object { $_.Prefix })
-          foreach ($prefix in $prefixes) {
-            if ($prefix -and $prefix -ne $currentPrefix) {
-              Write-Host "Removing old R2 mirror prefix: $prefix"
-              aws s3 rm "s3://$env:R2_BUCKET/$prefix" --recursive --endpoint-url $r2Endpoint
-            }
-          }
-
   publish-linux:
-    name: Build and publish Linux bundles
-    needs: prepare
+    name: Build and publish Linux release
     runs-on: ubuntu-22.04
 
     steps:
@@ -317,6 +57,14 @@ jobs:
         shell: bash
         run: |
           tag="${{ steps.release.outputs.tag }}"
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null || {
+              echo "Tag $tag does not exist. Prepare and push the release tag first." >&2
+              exit 1
+            }
+          fi
+
           git fetch --force origin "refs/tags/$tag:refs/tags/$tag"
           git checkout "$tag"
           test "$(git rev-list -n 1 "$tag")" = "$(git rev-parse HEAD)"
@@ -347,6 +95,12 @@ jobs:
         run: |
           node --experimental-strip-types scripts/release.ts validate-version-files "${{ steps.release.outputs.version }}"
           node --experimental-strip-types scripts/release.ts validate-changelog "${{ steps.release.outputs.version }}"
+          node --experimental-strip-types scripts/release.ts write-release-notes \
+            "${{ steps.release.outputs.version }}" \
+            dist-release/release-notes.md
+
+      - name: Run release quality gate
+        run: npm run release:check
 
       - name: Ensure updater signing key exists
         shell: bash
@@ -384,6 +138,15 @@ jobs:
           )
           echo "GNOME_EXTENSION_ASSET=$extension_asset" >> "$GITHUB_ENV"
 
+      - name: Package Chromium extension
+        shell: bash
+        run: |
+          npm run extension:chromium:package
+          extension_version="$(node -p "require('./extensions/chromium/manifest.json').version")"
+          extension_asset="patina-chromium-extension-v${extension_version}.zip"
+          cp "dist/extensions/chromium/${extension_asset}" "dist-release/${extension_asset}"
+          echo "CHROMIUM_EXTENSION_ASSET=$extension_asset" >> "$GITHUB_ENV"
+
       - name: Package signed Firefox extension
         shell: bash
         run: |
@@ -392,32 +155,20 @@ jobs:
           cp extensions/firefox/dist/patina-web-sync.xpi "dist-release/${extension_asset}"
           echo "FIREFOX_EXTENSION_ASSET=$extension_asset" >> "$GITHUB_ENV"
 
-      - name: Download Windows updater manifest
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p dist-release/windows
-          gh release download "${{ steps.release.outputs.tag }}" \
-            --pattern latest.json \
-            --dir dist-release/windows \
-            --clobber
-
-      - name: Merge updater manifests
-        run: |
-          node --experimental-strip-types scripts/release.ts merge-latest-json \
-            dist-release/windows/latest.json \
-            dist-release/latest-linux.json \
-            dist-release/latest.json
-
-      - name: Publish Linux bundles and merged updater manifest
+      - name: Publish Linux release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.release.outputs.tag }}
+          name: Patina v${{ steps.release.outputs.version }}
+          body_path: dist-release/release-notes.md
+          draft: false
+          prerelease: ${{ contains(steps.release.outputs.version, '-') }}
           overwrite_files: true
           files: |
             dist-release/Patina_${{ steps.release.outputs.version }}_amd64.AppImage
             dist-release/Patina_${{ steps.release.outputs.version }}_amd64.AppImage.tar.gz
             dist-release/Patina_${{ steps.release.outputs.version }}_amd64.deb
             dist-release/${{ env.GNOME_EXTENSION_ASSET }}
+            dist-release/${{ env.CHROMIUM_EXTENSION_ASSET }}
             dist-release/${{ env.FIREFOX_EXTENSION_ASSET }}
             dist-release/latest.json

@@ -84,12 +84,6 @@ export function buildUpdaterEndpoints(existingEndpoints = []) {
 export function releaseAssetNames(version, target) {
   assertVersion(version);
 
-  if (target === "windows-x86_64") {
-    return {
-      updater: `Patina_${version}_x64-setup.exe`,
-    };
-  }
-
   if (target === "linux-x86_64") {
     return {
       updater: `Patina_${version}_amd64.AppImage.tar.gz`,
@@ -99,40 +93,6 @@ export function releaseAssetNames(version, target) {
   }
 
   throw new Error(`unsupported release target: ${target}`);
-}
-
-export function mergeUpdaterManifests(manifests) {
-  if (!Array.isArray(manifests) || manifests.length === 0) {
-    throw new Error("at least one updater manifest is required");
-  }
-
-  const [first, ...remaining] = manifests;
-  const version = first?.version;
-  if (!version) {
-    throw new Error("updater manifest version is required");
-  }
-
-  for (const manifest of remaining) {
-    if (manifest?.version !== version) {
-      throw new Error(
-        `updater manifest version mismatch: expected ${version}, got ${manifest?.version ?? "missing"}`,
-      );
-    }
-  }
-
-  return {
-    version,
-    notes: first.notes ?? "",
-    pub_date: manifests
-      .map((manifest) => manifest.pub_date)
-      .filter((value) => typeof value === "string")
-      .sort()
-      .at(-1) ?? new Date().toISOString(),
-    platforms: Object.assign(
-      {},
-      ...manifests.map((manifest) => manifest.platforms ?? {}),
-    ),
-  };
 }
 
 function withUpdaterDefaults(config) {
@@ -537,7 +497,6 @@ export function renderReleaseNotes(parsed) {
   lines.push(
     "### 下载",
     "",
-    "- Windows 安装包：请下载本页面附件中的 `.exe` 安装包。",
     "- Linux AppImage：下载 `.AppImage`，添加执行权限后直接运行。",
     "- Linux Debian：Debian / Ubuntu 用户可安装 `.deb` 包。",
     "",
@@ -560,7 +519,7 @@ async function printReleaseNotes(version) {
   process.stdout.write(renderReleaseNotes(parsed));
 }
 
-async function writeLatestJson(version, assetUrl, signature, outputPath, target = "windows-x86_64") {
+async function writeLatestJson(version, assetUrl, signature, outputPath, target = "linux-x86_64") {
   const parsed = await parseChangelog(version);
   await validateChangelog(version);
 
@@ -586,52 +545,6 @@ async function writeLatestJson(version, assetUrl, signature, outputPath, target 
 
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeJson(outputPath, latest);
-}
-
-async function mergeLatestJsonFiles(inputPaths, outputPath) {
-  if (inputPaths.length < 2) {
-    fail("merge-latest-json requires at least two input manifests");
-  }
-
-  let manifests;
-  try {
-    manifests = await Promise.all(
-      inputPaths.map(async (inputPath) => JSON.parse(await readText(inputPath))),
-    );
-  } catch (error) {
-    fail(`could not read updater manifests: ${error instanceof Error ? error.message : String(error)}`);
-  }
-
-  let merged;
-  try {
-    merged = mergeUpdaterManifests(manifests);
-  } catch (error) {
-    fail(error instanceof Error ? error.message : String(error));
-  }
-
-  await mkdir(path.dirname(outputPath), { recursive: true });
-  await writeJson(outputPath, merged);
-}
-
-async function findSignedInstaller(bundleDir) {
-  const entries = await readDirRecursive(bundleDir);
-  const signatureFile = entries.find((entry) => entry.endsWith(".exe.sig"));
-
-  if (!signatureFile) {
-    fail(`Could not find updater .exe.sig artifact under ${bundleDir}.`);
-  }
-
-  const installerFilePath = signatureFile.replace(/\.sig$/i, "");
-  try {
-    await readFile(installerFilePath);
-  } catch {
-    fail(`Could not find installer matching ${signatureFile}.`);
-  }
-
-  return {
-    installerFilePath,
-    signatureFilePath: signatureFile,
-  };
 }
 
 async function findLinuxBundles(bundleDir) {
@@ -680,46 +593,6 @@ async function readDirRecursive(rootDir) {
   return files.flat();
 }
 
-async function prepareReleaseAssets(
-  version,
-  bundleDir,
-  outputDir,
-  repository,
-  target = "windows-x86_64",
-) {
-  const resolvedVersion = await resolveTargetVersion(version);
-  await validateChangelog(resolvedVersion);
-
-  if (!bundleDir) {
-    fail("missing bundle directory");
-  }
-
-  if (!outputDir) {
-    fail("missing output directory");
-  }
-
-  if (!repository) {
-    fail("missing repository slug");
-  }
-
-  const { installerFilePath, signatureFilePath } = await findSignedInstaller(bundleDir);
-  const signature = (await readText(signatureFilePath)).trim();
-  if (!signature) {
-    fail(`updater signature file is empty: ${signatureFilePath}`);
-  }
-
-  const releaseInstallerName = releaseAssetNames(resolvedVersion, target).updater;
-  const releaseInstallerPath = path.join(outputDir, releaseInstallerName);
-  const tagName = `v${resolvedVersion}`;
-  const encodedName = encodeURIComponent(releaseInstallerName);
-  const assetUrl = `https://github.com/${repository}/releases/download/${tagName}/${encodedName}`;
-  const latestJsonPath = path.join(outputDir, "latest.json");
-
-  await mkdir(outputDir, { recursive: true });
-  await copyFile(installerFilePath, releaseInstallerPath);
-  await writeLatestJson(resolvedVersion, assetUrl, signature, latestJsonPath, target);
-}
-
 async function prepareLinuxReleaseAssets(version, bundleDir, outputDir, repository) {
   const resolvedVersion = await resolveTargetVersion(version);
   await validateChangelog(resolvedVersion);
@@ -758,7 +631,7 @@ async function prepareLinuxReleaseAssets(version, bundleDir, outputDir, reposito
     resolvedVersion,
     updaterUrl,
     signature,
-    path.join(outputDir, "latest-linux.json"),
+    path.join(outputDir, "latest.json"),
     "linux-x86_64",
   );
 }
@@ -770,10 +643,7 @@ function help() {
   node --experimental-strip-types scripts/release.ts validate-changelog <version>
   node --experimental-strip-types scripts/release.ts print-release-notes <version>
   node --experimental-strip-types scripts/release.ts write-release-notes <version> <output>
-  node --experimental-strip-types scripts/release.ts write-latest-json <version> <asset-url> <signature> <output> [target]
-  node --experimental-strip-types scripts/release.ts prepare-release-assets <version> <bundle-dir> <output-dir> <repository> [target]
   node --experimental-strip-types scripts/release.ts prepare-linux-release-assets <version> <bundle-dir> <output-dir> <repository>
-  node --experimental-strip-types scripts/release.ts merge-latest-json <input-a> <input-b> [...inputs] <output>
 `);
 }
 
@@ -796,17 +666,8 @@ async function main() {
     case "write-release-notes":
       await writeReleaseNotes(args[0], args[1]);
       break;
-    case "write-latest-json":
-      await writeLatestJson(args[0], args[1], args[2], args[3], args[4]);
-      break;
-    case "prepare-release-assets":
-      await prepareReleaseAssets(args[0], args[1], args[2], args[3], args[4]);
-      break;
     case "prepare-linux-release-assets":
       await prepareLinuxReleaseAssets(args[0], args[1], args[2], args[3]);
-      break;
-    case "merge-latest-json":
-      await mergeLatestJsonFiles(args.slice(0, -1), args.at(-1));
       break;
     default:
       help();

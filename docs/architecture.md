@@ -30,7 +30,7 @@
 - `Tauri v2` 桌面应用
 - `Rust + React + TypeScript` 双栈工程
 - 本地优先、SQLite 驱动的数据产品
-- 强依赖 Windows 前台窗口、图标、锁屏、休眠等平台能力的时间追踪工具
+- 强依赖 Linux 前台窗口、图标、锁屏、休眠等平台能力的时间追踪工具
 
 这意味着长期架构设计优先服务于：
 
@@ -60,7 +60,7 @@ Rust 拥有运行时主链和写侧副作用；前端拥有 UI、交互编排和
 
 ### 3.3 平台细节必须显式收口
 
-与 Tauri、SQLite、本地桌面环境、Windows API 打交道的能力必须有明确边界，不应散落在页面、壳层或临时 util 中。
+与 Tauri、SQLite、本地桌面环境、D-Bus、X11 和保留的 Windows API 打交道的能力必须有明确边界，不应散落在页面、壳层或临时 util 中。
 
 ### 3.4 共享层只承接稳定共享能力
 
@@ -384,7 +384,7 @@ src-tauri/src/
 
 `platform/*` 负责：
 
-- Windows API 细节
+- Linux D-Bus / X11 细节与保留的 Windows API 细节
 - 前台窗口、图标、电源事件等平台能力
 - 未来其他平台的隔离落点
 
@@ -529,7 +529,7 @@ Rust 侧允许为了稳定演进保留少量入口协调或兼容封装，但规
 - 核心行为流程：进 `engine/*`
 - 领域模型与语义：进 `domain/*`
 - sqlite 与仓储：进 `data/*`
-- 持续参与识别相关的状态机、信号融合、identity 归一与诊断快照：继续按 `platform/windows/* -> domain/tracking.rs / domain/tracking/* -> engine/tracking/sustained_participation.rs / runtime.rs` 的 owner 链收口，不回流到 `commands/*`、`lib.rs` 或前端本地规则
+- 持续参与识别相关的状态机、信号融合、identity 归一与诊断快照：继续按 `platform/linux/* -> domain/tracking.rs / domain/tracking/* -> engine/tracking/sustained_participation.rs / runtime.rs` 的主 owner 链收口；保留的 `platform/windows/*` 只维持平台边界，不回流到 `commands/*`、`lib.rs` 或前端本地规则
 
 不确定时，优先放在最小作用域，而不是优先抽公共层。
 

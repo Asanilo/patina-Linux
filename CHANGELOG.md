@@ -22,7 +22,7 @@ App note en: TBD.
 
 ### Changed
 
-- 暂无。
+- 后续版本的默认 CI 与 Release 改为 Linux-only，不再构建或发布 Windows 安装包。
 
 ### Fixed
 
@@ -34,7 +34,7 @@ App note en: TBD.
 
 ### Internal
 
-- 暂无。
+- 产品、路线、架构与发布文档统一为 Linux/GNOME-first；Windows 平台源码暂时保留为未承诺维护的兼容实现。
 
 ## [1.7.5] - 2026-06-25
 

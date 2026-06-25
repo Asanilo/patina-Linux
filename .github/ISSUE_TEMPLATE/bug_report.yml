@@ -102,11 +102,20 @@ body:
       required: true
 
   - type: input
-    id: windows-version
+    id: linux-distribution
     attributes:
-      label: "Windows Version / Windows 版本"
-      description: "For example: Windows 11 24H2. / 例如：Windows 11 24H2。"
-      placeholder: "Windows 11 24H2"
+      label: "Linux Distribution / Linux 发行版"
+      description: "For example: Ubuntu 22.04. / 例如：Ubuntu 22.04。"
+      placeholder: "Ubuntu 22.04"
+    validations:
+      required: true
+
+  - type: input
+    id: desktop-session
+    attributes:
+      label: "Desktop And Session / 桌面与会话"
+      description: "For example: GNOME 42 Wayland or KDE Plasma 6 X11. / 例如：GNOME 42 Wayland 或 KDE Plasma 6 X11。"
+      placeholder: "GNOME 42 Wayland"
     validations:
       required: true
 
@@ -115,7 +124,8 @@ body:
     attributes:
       label: "Installation Source / 安装来源"
       options:
-        - "GitHub Release installer / GitHub Release 安装包"
+        - "GitHub Release Debian package / GitHub Release Debian 安装包"
+        - "GitHub Release AppImage / GitHub Release AppImage"
         - "Built from source / 从源码构建"
         - "Other / 其他"
     validations:

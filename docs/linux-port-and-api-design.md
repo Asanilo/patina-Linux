@@ -835,7 +835,7 @@ tauri-winrt-notification = "0.7.2"
 - WebSocket 实时推送（当前窗口变化通知）
 - 凭证存储（libsecret）
 
-### 当前实现缺口（2026-06-21）
+### 当前实现缺口（2026-06-26）
 
 本文最初按“未开始实现”编写；当前仓库已经有 Linux 原型和 API 原型，但仍未完成以下内容：
 
@@ -849,6 +849,7 @@ tauri-winrt-notification = "0.7.2"
 - Linux 音频会话 probe 已修复 threaded PulseAudio mainloop 未启动导致的超时；在 PipeWire + pipewire-pulse 环境下 live probe test 可完成。
 - GNOME 扩展源、校验、build 与本地安装脚本已进入仓库。
 - `npm run mcp:patina` 已提供最小 MCP wrapper，当前覆盖 diagnostics、current、active session、today/week summary 和 web activity 查询。
+- 默认 CI 与 Release 已改为 Linux-only：Ubuntu runner 直接生成 AppImage、`.deb`、Linux updater manifest 和浏览器/GNOME 扩展，不再依赖 Windows job。
 
 **部分实现但需要修正**：
 - `/summary/*` 已统一使用区间重叠与边界裁剪口径，并把活跃 session 计算到响应采样时刻。
@@ -863,7 +864,6 @@ tauri-winrt-notification = "0.7.2"
 - MCP wrapper 的 sessions/trend/apps/settings 写侧工具。
 - API token/port 的完整 UI 管理。
 - KDE Wayland、wlroots Wayland 适配。
-- Linux 打包、安装、扩展部署与 autostart 的正式发布流程。
 - Patina UI 中更完整的平台能力矩阵。
 
 ---

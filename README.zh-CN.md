@@ -8,10 +8,10 @@ Patina 的 Linux 移植与本地 AI/API 集成 fork。
 
 [English](README.md) · 简体中文
 
-![Platform](https://img.shields.io/badge/platform-Linux%20prototype%20%7C%20Windows%20upstream-4f6f8f)
+![Platform](https://img.shields.io/badge/platform-Linux%20x86__64-4f6f8f)
 ![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%20v2-4f7f8f)
 ![Local first](https://img.shields.io/badge/data-local--first-5f7f68)
-![Status](https://img.shields.io/badge/status-fork%20prototype-b07a3a)
+![Status](https://img.shields.io/badge/status-Linux--first%20development-b07a3a)
 [![License](https://img.shields.io/badge/license-MIT-6f647a)](LICENSE)
 
 </div>
@@ -19,7 +19,7 @@ Patina 的 Linux 移植与本地 AI/API 集成 fork。
 ![Patina dashboard](.github/assets/readme.zh-CN/dashboard.png)
 
 
-这个 fork 用来推进 Patina 的 Linux 移植。上游 Patina 是一个本地优先的 Windows 桌面时间追踪工具；这个 fork 目前重点放在 GNOME/Linux 前台窗口识别、浏览器网页活动记录、本地 HTTP API，以及面向外部 AI/MCP 的数据接口。
+这个 fork 是 Patina 的 Linux-first 版本，重点放在 GNOME/Linux 前台窗口识别、浏览器网页活动记录、本地 HTTP API，以及面向外部 AI/MCP 的数据接口。Windows 平台源码暂时保留作为历史兼容实现，但不进入默认 CI、Release 或当前支持承诺。
 
 Linux 版本当前是可用的开发原型，还不是稳定发行版。
 
@@ -231,7 +231,7 @@ cargo check --manifest-path src-tauri/Cargo.toml --quiet
 
 Patina 是一个面向个人桌面的本地优先时间追踪工具。它会自动记录前台应用，处理 AFK、锁屏、睡眠、崩溃恢复等边界，数据保存在本地 SQLite，并提供 Dashboard、History、Data、App Mapping 等回看和管理界面。
 
-上游稳定方向仍是 Windows 优先。这个 fork 主要探索同一套产品能否在 Linux 上成立，并为外部 AI 分析暴露足够稳定的本地结构化数据。
+这个 fork 的当前产品与发布方向是 Linux/GNOME 优先，并为外部 AI 分析暴露稳定的本地结构化数据。其他桌面平台只有在形成独立维护能力后才会重新进入支持范围。
 
 ## 文档
 

@@ -8,10 +8,10 @@ Linux port and local AI/API integration fork of Patina.
 
 English · [简体中文](README.zh-CN.md)
 
-![Platform](https://img.shields.io/badge/platform-Linux%20prototype%20%7C%20Windows%20upstream-4f6f8f)
+![Platform](https://img.shields.io/badge/platform-Linux%20x86__64-4f6f8f)
 ![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%20v2-4f7f8f)
 ![Local first](https://img.shields.io/badge/data-local--first-5f7f68)
-![Status](https://img.shields.io/badge/status-fork%20prototype-b07a3a)
+![Status](https://img.shields.io/badge/status-Linux--first%20development-b07a3a)
 [![License](https://img.shields.io/badge/license-MIT-6f647a)](LICENSE)
 
 </div>
@@ -19,7 +19,7 @@ English · [简体中文](README.zh-CN.md)
 ![Patina dashboard](.github/assets/readme/dashboard.png)
 
 
-This fork tracks the Linux migration work for Patina. The upstream project is a local-first Windows desktop time tracker; this fork is currently focused on GNOME/Linux foreground tracking, browser webpage activity, and a localhost API/MCP surface for external AI analysis.
+This fork is the Linux-first edition of Patina. It focuses on GNOME/Linux foreground tracking, browser webpage activity, and a localhost API/MCP surface for external AI analysis. Windows platform sources remain as historical compatibility code, but they are outside the default CI, release pipeline, and current support commitment.
 
 The Linux port is usable as a development prototype, but it is not release-stable yet.
 
@@ -231,7 +231,7 @@ cargo check --manifest-path src-tauri/Cargo.toml --quiet
 
 Patina is a personal, local-first desktop time tracker. It automatically records foreground apps, handles AFK/lock/sleep/crash boundaries, stores data locally in SQLite, and provides dashboard/history/data/app-management views.
 
-Upstream stable direction remains Windows-first. This fork explores whether the same product can become useful on Linux while also exposing enough structured local data for external AI analysis.
+This fork now treats Linux/GNOME as its product and release priority while exposing stable local structured data for external AI analysis. Other desktop platforms will only return to the support scope when they have a dedicated maintenance path.
 
 ## Documentation
 

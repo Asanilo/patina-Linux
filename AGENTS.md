@@ -67,7 +67,7 @@ These instructions apply to all UI work unless the user gives an explicit task-s
 
 ## Product And Priority Direction
 
-- Keep the product centered on personal, local-first, Windows desktop time tracking.
+- Keep the product centered on personal, local-first, Linux desktop time tracking, with GNOME Wayland as the primary supported environment.
 - Prioritize trust, readability, control, and long-term usability over feature count.
 - Do not quietly expand the product toward team SaaS, cloud-first workflows, mobile-first usage, or gamified productivity unless the user explicitly changes product direction.
 - When multiple directions compete, prefer correctness, data safety, and high-frequency core flows before expansion work.

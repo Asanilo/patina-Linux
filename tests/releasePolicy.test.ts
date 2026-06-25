@@ -12,7 +12,6 @@ import path from "node:path";
 import { promisify } from "node:util";
 import {
   buildUpdaterEndpoints,
-  mergeUpdaterManifests,
   releaseAssetNames,
   fieldValue,
   renderReleaseNotes,
@@ -165,51 +164,15 @@ function testReleaseNotesIncludeAllVisibleBullets() {
   assert.match(notes, /- Change 8/);
   assert.match(notes, /Linux AppImage/);
   assert.match(notes, /Linux Debian/);
+  assert.doesNotMatch(notes, /Windows 安装包/);
 }
 
-function testReleaseAssetNamesCoverWindowsAndLinuxBundles() {
-  assert.deepEqual(releaseAssetNames("1.7.0", "windows-x86_64"), {
-    updater: "Patina_1.7.0_x64-setup.exe",
-  });
+function testReleaseAssetNamesCoverLinuxBundles() {
   assert.deepEqual(releaseAssetNames("1.7.0", "linux-x86_64"), {
     updater: "Patina_1.7.0_amd64.AppImage.tar.gz",
     portable: "Patina_1.7.0_amd64.AppImage",
     installer: "Patina_1.7.0_amd64.deb",
   });
-}
-
-function testMergeUpdaterManifestsKeepsAllPlatforms() {
-  const merged = mergeUpdaterManifests([
-    {
-      version: "1.7.0",
-      notes: "Ready.",
-      pub_date: "2026-06-25T00:00:00.000Z",
-      platforms: {
-        "windows-x86_64": {
-          signature: "windows-signature",
-          url: "https://example.com/patina.exe",
-        },
-      },
-    },
-    {
-      version: "1.7.0",
-      notes: "Ready.",
-      pub_date: "2026-06-25T00:01:00.000Z",
-      platforms: {
-        "linux-x86_64": {
-          signature: "linux-signature",
-          url: "https://example.com/patina.AppImage",
-        },
-      },
-    },
-  ]);
-
-  assert.equal(merged.version, "1.7.0");
-  assert.equal(merged.pub_date, "2026-06-25T00:01:00.000Z");
-  assert.deepEqual(Object.keys(merged.platforms).sort(), [
-    "linux-x86_64",
-    "windows-x86_64",
-  ]);
 }
 
 function testVersionFilesValidationPassesWhenAllVersionsMatch() {
@@ -295,6 +258,7 @@ function testVersionFilesValidationRejectsInvalidVersion() {
 
 async function testLinuxReleaseWorkflowAndBundleContract() {
   const workflow = await readFile(".github/workflows/prepare-release.yml", "utf8");
+  const verifyWorkflow = await readFile(".github/workflows/verify.yml", "utf8");
   const tauriConfig = JSON.parse(await readFile("src-tauri/tauri.conf.json", "utf8"));
   const { stdout: trackedFirefoxAssets } = await execFileAsync("git", [
     "ls-files",
@@ -304,7 +268,14 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   assert.match(workflow, /runs-on: ubuntu-22\.04/);
   assert.match(workflow, /--bundles appimage,deb/);
   assert.match(workflow, /prepare-linux-release-assets/);
-  assert.match(workflow, /merge-latest-json/);
+  assert.match(workflow, /Package Chromium extension/);
+  assert.match(workflow, /Publish Linux release/);
+  assert.doesNotMatch(workflow, /windows-latest/);
+  assert.doesNotMatch(workflow, /--bundles nsis/);
+  assert.doesNotMatch(workflow, /windows-x86_64/);
+  assert.doesNotMatch(workflow, /merge-latest-json/);
+  assert.match(verifyWorkflow, /runs-on: ubuntu-22\.04/);
+  assert.doesNotMatch(verifyWorkflow, /windows-latest/);
   assert.equal(
     trackedFirefoxAssets.trim(),
     "extensions/firefox/dist/patina-web-sync.xpi",
@@ -368,7 +339,7 @@ async function testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest()
     );
 
     const latest = JSON.parse(
-      await readFile(path.join(outputDir, "latest-linux.json"), "utf8"),
+      await readFile(path.join(outputDir, "latest.json"), "utf8"),
     );
     assert.equal(
       latest.platforms["linux-x86_64"].url,
@@ -391,8 +362,7 @@ testUpdaterNotesKeepLocalizedVariants();
 testUpdaterNotesFallsBackToAppNote();
 testUpdaterEndpointsKeepGithubFirstAndPreserveMirrors();
 testReleaseNotesIncludeAllVisibleBullets();
-testReleaseAssetNamesCoverWindowsAndLinuxBundles();
-testMergeUpdaterManifestsKeepsAllPlatforms();
+testReleaseAssetNamesCoverLinuxBundles();
 testVersionFilesValidationPassesWhenAllVersionsMatch();
 testVersionFilesValidationCatchesPackageJsonMismatch();
 testVersionFilesValidationCatchesPackageLockRootMismatch();
@@ -404,4 +374,4 @@ testVersionFilesValidationRejectsInvalidVersion();
 await testLinuxReleaseWorkflowAndBundleContract();
 await testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest();
 
-console.log("Passed 20 release policy tests");
+console.log("Passed 19 release policy tests");

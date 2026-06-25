@@ -9,9 +9,9 @@ body:
 
         感谢你提出建议。
 
-        Patina is intentionally focused on personal, local-first Windows desktop time tracking. Please explain the user problem before proposing implementation details.
+        Patina Linux fork is intentionally focused on personal, local-first Linux desktop time tracking. Please explain the user problem before proposing implementation details.
 
-        Patina 有意聚焦个人、本地优先的 Windows 桌面时间追踪。请先说明用户问题，再提出实现方案。
+        Patina Linux fork 聚焦个人、本地优先的 Linux 桌面时间追踪。请先说明用户问题，再提出实现方案。
 
   - type: checkboxes
     id: preflight
