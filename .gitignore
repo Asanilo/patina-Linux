@@ -9,6 +9,9 @@ lerna-debug.log*
 
 node_modules
 dist
+!extensions/firefox/dist/
+extensions/firefox/dist/*
+!extensions/firefox/dist/patina-web-sync.xpi
 dist-ssr
 tmp/
 *.local

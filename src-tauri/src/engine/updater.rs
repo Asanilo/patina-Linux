@@ -10,8 +10,8 @@ use crate::domain::update::{UpdateErrorStage, UpdateSnapshot, UpdateStatus};
 
 const STARTUP_AUTO_CHECK_DELAYS_MS: [u64; 3] = [3_500, 15_000, 60_000];
 const UPDATE_SNAPSHOT_CHANGED_EVENT: &str = "update-snapshot-changed";
-const RELEASES_BASE_URL: &str = "https://github.com/Ceceliaee/patina/releases";
-const LATEST_RELEASE_URL: &str = "https://github.com/Ceceliaee/patina/releases/latest";
+const RELEASES_BASE_URL: &str = "https://github.com/Asanilo/patina/releases";
+const LATEST_RELEASE_URL: &str = "https://github.com/Asanilo/patina/releases/latest";
 
 #[derive(Clone)]
 pub struct UpdaterRuntimeState {
@@ -163,6 +163,23 @@ fn release_page_url_for_version(version: &str) -> Option<String> {
     }
 
     Some(format!("{RELEASES_BASE_URL}/tag/v{version}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{latest_release_page_url, release_page_url_for_version};
+
+    #[test]
+    fn updater_fallback_urls_use_the_linux_fork_release_pages() {
+        assert_eq!(
+            latest_release_page_url(),
+            "https://github.com/Asanilo/patina/releases/latest"
+        );
+        assert_eq!(
+            release_page_url_for_version("1.8.0").as_deref(),
+            Some("https://github.com/Asanilo/patina/releases/tag/v1.8.0")
+        );
+    }
 }
 
 fn emit_update_snapshot_changed<R: Runtime>(app: &AppHandle<R>, snapshot: &UpdateSnapshot) {

@@ -18,7 +18,7 @@ App note en: TBD.
 
 ### Added
 
-- 暂无。
+- 新增 Linux x86_64 发布产物：AppImage、Debian 安装包、GNOME Shell 扩展包与 Firefox / Zen XPI；Debian 包会安装 GNOME 扩展文件。
 
 ### Changed
 
@@ -26,7 +26,7 @@ App note en: TBD.
 
 ### Fixed
 
-- 暂无。
+- 修复本地 API Summary 漏计当前会话和跨查询边界会话的问题，并避免将当前会话统计到未来时间。
 
 ### Removed
 
@@ -34,7 +34,7 @@ App note en: TBD.
 
 ### Internal
 
-- 暂无。
+- 发布工作流新增 Ubuntu 22.04 Linux 构建任务，并将 `windows-x86_64` 与 `linux-x86_64` 合并到同一 updater 清单。
 
 ## [1.7.0] - 2026-06-18
 

@@ -1,6 +1,19 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
 import {
   buildUpdaterEndpoints,
+  mergeUpdaterManifests,
+  releaseAssetNames,
   fieldValue,
   renderReleaseNotes,
   readVersionPolicyCurrentCodeVersion,
@@ -9,6 +22,8 @@ import {
   validateReleaseVersionFilesText,
   validateVersionPolicyCurrentCodeVersionText,
 } from "../scripts/release.ts";
+
+const execFileAsync = promisify(execFile);
 
 const versionPolicyExcerpt = [
   "## 3. 当前仓库现实",
@@ -131,7 +146,7 @@ function testUpdaterEndpointsKeepGithubFirstAndPreserveMirrors() {
   ]);
 
   assert.deepEqual(endpoints, [
-    "https://github.com/Ceceliaee/patina/releases/latest/download/latest.json",
+    "https://github.com/Asanilo/patina/releases/latest/download/latest.json",
     "https://pub-example.r2.dev/latest.json",
   ]);
 }
@@ -144,6 +159,53 @@ function testReleaseNotesIncludeAllVisibleBullets() {
 
   assert.match(notes, /- Change 7/);
   assert.match(notes, /- Change 8/);
+  assert.match(notes, /Linux AppImage/);
+  assert.match(notes, /Linux Debian/);
+}
+
+function testReleaseAssetNamesCoverWindowsAndLinuxBundles() {
+  assert.deepEqual(releaseAssetNames("1.7.0", "windows-x86_64"), {
+    updater: "Patina_1.7.0_x64-setup.exe",
+  });
+  assert.deepEqual(releaseAssetNames("1.7.0", "linux-x86_64"), {
+    updater: "Patina_1.7.0_amd64.AppImage.tar.gz",
+    portable: "Patina_1.7.0_amd64.AppImage",
+    installer: "Patina_1.7.0_amd64.deb",
+  });
+}
+
+function testMergeUpdaterManifestsKeepsAllPlatforms() {
+  const merged = mergeUpdaterManifests([
+    {
+      version: "1.7.0",
+      notes: "Ready.",
+      pub_date: "2026-06-25T00:00:00.000Z",
+      platforms: {
+        "windows-x86_64": {
+          signature: "windows-signature",
+          url: "https://example.com/patina.exe",
+        },
+      },
+    },
+    {
+      version: "1.7.0",
+      notes: "Ready.",
+      pub_date: "2026-06-25T00:01:00.000Z",
+      platforms: {
+        "linux-x86_64": {
+          signature: "linux-signature",
+          url: "https://example.com/patina.AppImage",
+        },
+      },
+    },
+  ]);
+
+  assert.equal(merged.version, "1.7.0");
+  assert.equal(merged.pub_date, "2026-06-25T00:01:00.000Z");
+  assert.deepEqual(Object.keys(merged.platforms).sort(), [
+    "linux-x86_64",
+    "windows-x86_64",
+  ]);
 }
 
 function testVersionFilesValidationPassesWhenAllVersionsMatch() {
@@ -227,6 +289,91 @@ function testVersionFilesValidationRejectsInvalidVersion() {
   ]);
 }
 
+async function testLinuxReleaseWorkflowAndBundleContract() {
+  const workflow = await readFile(".github/workflows/prepare-release.yml", "utf8");
+  const tauriConfig = JSON.parse(await readFile("src-tauri/tauri.conf.json", "utf8"));
+  const { stdout: trackedFirefoxAssets } = await execFileAsync("git", [
+    "ls-files",
+    "extensions/firefox/dist/patina-web-sync.xpi",
+  ]);
+
+  assert.match(workflow, /runs-on: ubuntu-22\.04/);
+  assert.match(workflow, /--bundles appimage,deb/);
+  assert.match(workflow, /prepare-linux-release-assets/);
+  assert.match(workflow, /merge-latest-json/);
+  assert.equal(
+    trackedFirefoxAssets.trim(),
+    "extensions/firefox/dist/patina-web-sync.xpi",
+  );
+  assert.equal(
+    tauriConfig.bundle.linux.deb.files[
+      "/usr/share/gnome-shell/extensions/patina-window-tracker@patina/extension.js"
+    ],
+    "../extensions/gnome-shell/patina-window-tracker@patina/extension.js",
+  );
+}
+
+async function testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest() {
+  const tempRoot = await mkdtemp(path.join(tmpdir(), "patina-linux-release-"));
+  const bundleDir = path.join(tempRoot, "bundle");
+  const outputDir = path.join(tempRoot, "output");
+  const appImagePath = path.join(bundleDir, "appimage", "Patina_1.7.0_amd64.AppImage");
+  const updaterPath = `${appImagePath}.tar.gz`;
+
+  try {
+    await mkdir(path.dirname(appImagePath), { recursive: true });
+    await mkdir(path.join(bundleDir, "deb"), { recursive: true });
+    await writeFile(appImagePath, "appimage", "utf8");
+    await writeFile(updaterPath, "updater", "utf8");
+    await writeFile(`${updaterPath}.sig`, "linux-signature\n", "utf8");
+    await writeFile(
+      path.join(bundleDir, "deb", "Patina_1.7.0_amd64.deb"),
+      "debian",
+      "utf8",
+    );
+
+    await execFileAsync(process.execPath, [
+      "--experimental-strip-types",
+      "scripts/release.ts",
+      "prepare-linux-release-assets",
+      "1.7.0",
+      bundleDir,
+      outputDir,
+      "Asanilo/patina",
+    ]);
+
+    assert.equal(
+      await readFile(path.join(outputDir, "Patina_1.7.0_amd64.AppImage"), "utf8"),
+      "appimage",
+    );
+    assert.equal(
+      await readFile(
+        path.join(outputDir, "Patina_1.7.0_amd64.AppImage.tar.gz"),
+        "utf8",
+      ),
+      "updater",
+    );
+    assert.equal(
+      await readFile(path.join(outputDir, "Patina_1.7.0_amd64.deb"), "utf8"),
+      "debian",
+    );
+
+    const latest = JSON.parse(
+      await readFile(path.join(outputDir, "latest-linux.json"), "utf8"),
+    );
+    assert.equal(
+      latest.platforms["linux-x86_64"].url,
+      "https://github.com/Asanilo/patina/releases/download/v1.7.0/Patina_1.7.0_amd64.AppImage.tar.gz",
+    );
+    assert.equal(
+      latest.platforms["linux-x86_64"].signature,
+      "linux-signature",
+    );
+  } finally {
+    await rm(tempRoot, { force: true, recursive: true });
+  }
+}
+
 testSyncsCurrentCodeVersion();
 testSupportsPrereleaseVersion();
 testMissingPolicyVersionIsNull();
@@ -235,6 +382,8 @@ testUpdaterNotesKeepLocalizedVariants();
 testUpdaterNotesFallsBackToAppNote();
 testUpdaterEndpointsKeepGithubFirstAndPreserveMirrors();
 testReleaseNotesIncludeAllVisibleBullets();
+testReleaseAssetNamesCoverWindowsAndLinuxBundles();
+testMergeUpdaterManifestsKeepsAllPlatforms();
 testVersionFilesValidationPassesWhenAllVersionsMatch();
 testVersionFilesValidationCatchesPackageJsonMismatch();
 testVersionFilesValidationCatchesPackageLockRootMismatch();
@@ -243,5 +392,7 @@ testVersionFilesValidationCatchesCargoMismatch();
 testVersionFilesValidationCatchesPolicyMismatch();
 testVersionFilesValidationCatchesMissingChangelogSection();
 testVersionFilesValidationRejectsInvalidVersion();
+await testLinuxReleaseWorkflowAndBundleContract();
+await testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest();
 
-console.log("Passed 16 release policy tests");
+console.log("Passed 20 release policy tests");

@@ -51,8 +51,8 @@ The Linux port is usable as a development prototype, but it is not release-stabl
 | Local API | Implemented | Binds to `127.0.0.1:14840` and uses a bearer token. |
 | MCP wrapper | Prototype implemented | `npm run mcp:patina`. |
 | Chromium Web Sync | Implemented | `extensions/chromium`. |
-| Firefox / Zen Web Sync | Prototype implemented | `extensions/firefox`; signed XPI distribution is still manual. |
-| Linux packaging | Not complete | Development workflow first, installer flow later. |
+| Firefox / Zen Web Sync | Prototype implemented | The signed XPI can be installed directly. |
+| Linux packaging | Release pipeline configured | Future version tags build x86_64 AppImage, `.deb`, and a merged updater manifest. |
 
 ## Quick Start On Linux
 
@@ -99,6 +99,37 @@ Token path:
 
 ```text
 ${XDG_DATA_HOME:-~/.local/share}/Patina/api_token
+```
+
+## Linux Packages
+
+The release workflow produces:
+
+- `Patina_<version>_amd64.AppImage`
+- `Patina_<version>_amd64.deb`
+- `patina-gnome-shell-extension-v<version>.zip`
+- `patina-firefox-extension-v<version>.xpi`
+
+Ubuntu and Debian users should prefer the `.deb`. It installs the GNOME Shell extension files into the system extension directory, but the extension must still be enabled for the current user:
+
+```bash
+gnome-extensions enable patina-window-tracker@patina
+```
+
+Log out and back in if GNOME Shell has cached an older extension.
+
+The AppImage does not modify system directories:
+
+```bash
+chmod +x Patina_<version>_amd64.AppImage
+./Patina_<version>_amd64.AppImage
+```
+
+GNOME Wayland users must also install the extension archive:
+
+```bash
+gnome-extensions install --force patina-gnome-shell-extension-v<version>.zip
+gnome-extensions enable patina-window-tracker@patina
 ```
 
 ## Browser Web Sync

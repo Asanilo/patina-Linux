@@ -18,6 +18,8 @@ const VERSION_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9A-Za-z-][0-9A-Za-z-]*))*))?$/;
 const VERSION_POLICY_CURRENT_CODE_VERSION_PATTERN = /(- 代码版本为 `)([^`]+)(`)/;
 const GITHUB_UPDATER_ENDPOINT =
+  "https://github.com/Asanilo/patina/releases/latest/download/latest.json";
+const LEGACY_UPSTREAM_UPDATER_ENDPOINT =
   "https://github.com/Ceceliaee/patina/releases/latest/download/latest.json";
 const MAX_RELEASE_NOTE_LENGTH = 100;
 const MAX_APP_NOTE_LENGTH = 60;
@@ -69,8 +71,65 @@ function dedupeStrings(values) {
 export function buildUpdaterEndpoints(existingEndpoints = []) {
   return dedupeStrings([
     GITHUB_UPDATER_ENDPOINT,
-    ...existingEndpoints.filter((endpoint) => endpoint !== GITHUB_UPDATER_ENDPOINT),
+    ...existingEndpoints.filter((endpoint) =>
+      endpoint !== GITHUB_UPDATER_ENDPOINT
+      && endpoint !== LEGACY_UPSTREAM_UPDATER_ENDPOINT
+    ),
   ]);
+}
+
+export function releaseAssetNames(version, target) {
+  assertVersion(version);
+
+  if (target === "windows-x86_64") {
+    return {
+      updater: `Patina_${version}_x64-setup.exe`,
+    };
+  }
+
+  if (target === "linux-x86_64") {
+    return {
+      updater: `Patina_${version}_amd64.AppImage.tar.gz`,
+      portable: `Patina_${version}_amd64.AppImage`,
+      installer: `Patina_${version}_amd64.deb`,
+    };
+  }
+
+  throw new Error(`unsupported release target: ${target}`);
+}
+
+export function mergeUpdaterManifests(manifests) {
+  if (!Array.isArray(manifests) || manifests.length === 0) {
+    throw new Error("at least one updater manifest is required");
+  }
+
+  const [first, ...remaining] = manifests;
+  const version = first?.version;
+  if (!version) {
+    throw new Error("updater manifest version is required");
+  }
+
+  for (const manifest of remaining) {
+    if (manifest?.version !== version) {
+      throw new Error(
+        `updater manifest version mismatch: expected ${version}, got ${manifest?.version ?? "missing"}`,
+      );
+    }
+  }
+
+  return {
+    version,
+    notes: first.notes ?? "",
+    pub_date: manifests
+      .map((manifest) => manifest.pub_date)
+      .filter((value) => typeof value === "string")
+      .sort()
+      .at(-1) ?? new Date().toISOString(),
+    platforms: Object.assign(
+      {},
+      ...manifests.map((manifest) => manifest.platforms ?? {}),
+    ),
+  };
 }
 
 function withUpdaterDefaults(config) {
@@ -472,7 +531,14 @@ export function renderReleaseNotes(parsed) {
     lines.push("### 主要变化", "", ...visibleBullets, "");
   }
 
-  lines.push("### 下载", "", "- Windows 安装包：请下载本页面附件中的 `.exe` 安装包。", "");
+  lines.push(
+    "### 下载",
+    "",
+    "- Windows 安装包：请下载本页面附件中的 `.exe` 安装包。",
+    "- Linux AppImage：下载 `.AppImage`，添加执行权限后直接运行。",
+    "- Linux Debian：Debian / Ubuntu 用户可安装 `.deb` 包。",
+    "",
+  );
 
   return lines.join("\n");
 }
@@ -519,6 +585,31 @@ async function writeLatestJson(version, assetUrl, signature, outputPath, target 
   await writeJson(outputPath, latest);
 }
 
+async function mergeLatestJsonFiles(inputPaths, outputPath) {
+  if (inputPaths.length < 2) {
+    fail("merge-latest-json requires at least two input manifests");
+  }
+
+  let manifests;
+  try {
+    manifests = await Promise.all(
+      inputPaths.map(async (inputPath) => JSON.parse(await readText(inputPath))),
+    );
+  } catch (error) {
+    fail(`could not read updater manifests: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  let merged;
+  try {
+    merged = mergeUpdaterManifests(manifests);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+  }
+
+  await mkdir(path.dirname(outputPath), { recursive: true });
+  await writeJson(outputPath, merged);
+}
+
 async function findSignedInstaller(bundleDir) {
   const entries = await readDirRecursive(bundleDir);
   const signatureFile = entries.find((entry) => entry.endsWith(".exe.sig"));
@@ -537,6 +628,39 @@ async function findSignedInstaller(bundleDir) {
   return {
     installerFilePath,
     signatureFilePath: signatureFile,
+  };
+}
+
+async function findLinuxBundles(bundleDir) {
+  const entries = await readDirRecursive(bundleDir);
+  const signatureFilePath = entries.find((entry) =>
+    entry.endsWith(".AppImage.tar.gz.sig")
+  );
+  const portableFilePath = entries.find((entry) => entry.endsWith(".AppImage"));
+  const installerFilePath = entries.find((entry) => entry.endsWith(".deb"));
+
+  if (!signatureFilePath) {
+    fail(`Could not find updater .AppImage.tar.gz.sig artifact under ${bundleDir}.`);
+  }
+  if (!portableFilePath) {
+    fail(`Could not find portable .AppImage artifact under ${bundleDir}.`);
+  }
+  if (!installerFilePath) {
+    fail(`Could not find Debian .deb artifact under ${bundleDir}.`);
+  }
+
+  const updaterFilePath = signatureFilePath.replace(/\.sig$/i, "");
+  try {
+    await readFile(updaterFilePath);
+  } catch {
+    fail(`Could not find AppImage matching ${signatureFilePath}.`);
+  }
+
+  return {
+    installerFilePath,
+    portableFilePath,
+    signatureFilePath,
+    updaterFilePath,
   };
 }
 
@@ -581,7 +705,7 @@ async function prepareReleaseAssets(
     fail(`updater signature file is empty: ${signatureFilePath}`);
   }
 
-  const releaseInstallerName = `Patina_${resolvedVersion}_x64-setup.exe`;
+  const releaseInstallerName = releaseAssetNames(resolvedVersion, target).updater;
   const releaseInstallerPath = path.join(outputDir, releaseInstallerName);
   const tagName = `v${resolvedVersion}`;
   const encodedName = encodeURIComponent(releaseInstallerName);
@@ -593,6 +717,49 @@ async function prepareReleaseAssets(
   await writeLatestJson(resolvedVersion, assetUrl, signature, latestJsonPath, target);
 }
 
+async function prepareLinuxReleaseAssets(version, bundleDir, outputDir, repository) {
+  const resolvedVersion = await resolveTargetVersion(version);
+  await validateChangelog(resolvedVersion);
+
+  if (!bundleDir) {
+    fail("missing bundle directory");
+  }
+  if (!outputDir) {
+    fail("missing output directory");
+  }
+  if (!repository) {
+    fail("missing repository slug");
+  }
+
+  const {
+    installerFilePath,
+    portableFilePath,
+    signatureFilePath,
+    updaterFilePath,
+  } = await findLinuxBundles(bundleDir);
+  const signature = (await readText(signatureFilePath)).trim();
+  if (!signature) {
+    fail(`updater signature file is empty: ${signatureFilePath}`);
+  }
+
+  const names = releaseAssetNames(resolvedVersion, "linux-x86_64");
+  const tagName = `v${resolvedVersion}`;
+  const updaterUrl =
+    `https://github.com/${repository}/releases/download/${tagName}/${encodeURIComponent(names.updater)}`;
+
+  await mkdir(outputDir, { recursive: true });
+  await copyFile(updaterFilePath, path.join(outputDir, names.updater));
+  await copyFile(portableFilePath, path.join(outputDir, names.portable));
+  await copyFile(installerFilePath, path.join(outputDir, names.installer));
+  await writeLatestJson(
+    resolvedVersion,
+    updaterUrl,
+    signature,
+    path.join(outputDir, "latest-linux.json"),
+    "linux-x86_64",
+  );
+}
+
 function help() {
   console.log(`Usage:
   node --experimental-strip-types scripts/release.ts sync-version <version>
@@ -602,6 +769,8 @@ function help() {
   node --experimental-strip-types scripts/release.ts write-release-notes <version> <output>
   node --experimental-strip-types scripts/release.ts write-latest-json <version> <asset-url> <signature> <output> [target]
   node --experimental-strip-types scripts/release.ts prepare-release-assets <version> <bundle-dir> <output-dir> <repository> [target]
+  node --experimental-strip-types scripts/release.ts prepare-linux-release-assets <version> <bundle-dir> <output-dir> <repository>
+  node --experimental-strip-types scripts/release.ts merge-latest-json <input-a> <input-b> [...inputs] <output>
 `);
 }
 
@@ -629,6 +798,12 @@ async function main() {
       break;
     case "prepare-release-assets":
       await prepareReleaseAssets(args[0], args[1], args[2], args[3], args[4]);
+      break;
+    case "prepare-linux-release-assets":
+      await prepareLinuxReleaseAssets(args[0], args[1], args[2], args[3]);
+      break;
+    case "merge-latest-json":
+      await mergeLatestJsonFiles(args.slice(0, -1), args.at(-1));
       break;
     default:
       help();

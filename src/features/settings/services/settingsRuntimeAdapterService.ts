@@ -59,9 +59,9 @@ type PrepareBackupRestoreDeps = {
   previewBackup: (path: string) => Promise<BackupPreview>;
 };
 
-const RELEASE_NOTES_URL = "https://github.com/Ceceliaee/patina/releases";
-const REPOSITORY_URL = "https://github.com/Ceceliaee/patina";
-const FEEDBACK_URL = "https://github.com/Ceceliaee/patina/issues/new/choose";
+const RELEASE_NOTES_URL = "https://github.com/Asanilo/patina/releases";
+const REPOSITORY_URL = "https://github.com/Asanilo/patina";
+const FEEDBACK_URL = "https://github.com/Asanilo/patina/issues/new/choose";
 const KOFI_SUPPORT_URL = "https://ko-fi.com/ceceliaee";
 
 export function buildBackupPreviewSummary(preview: BackupPreview): string {

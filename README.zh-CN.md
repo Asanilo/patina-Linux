@@ -51,8 +51,8 @@ Linux 版本当前是可用的开发原型，还不是稳定发行版。
 | 本地 API | 已实现 | 监听 `127.0.0.1:14840`，使用 bearer token。 |
 | MCP wrapper | 原型已实现 | `npm run mcp:patina`。 |
 | Chromium 网页同步 | 已实现 | `extensions/chromium`。 |
-| Firefox / Zen 网页同步 | 原型已实现 | `extensions/firefox`；签名 XPI 分发目前仍是手动流程。 |
-| Linux 打包 | 未完成 | 当前优先开发运行路径，安装器后续再做。 |
+| Firefox / Zen 网页同步 | 原型已实现 | 已签名 XPI 可直接安装。 |
+| Linux 打包 | 发布链已配置 | 后续版本 tag 会生成 x86_64 AppImage、`.deb` 和合并后的 updater 清单。 |
 
 ## Linux 快速开始
 
@@ -99,6 +99,37 @@ Token 路径：
 
 ```text
 ${XDG_DATA_HOME:-~/.local/share}/Patina/api_token
+```
+
+## Linux 安装包
+
+正式发布工作流会生成：
+
+- `Patina_<version>_amd64.AppImage`
+- `Patina_<version>_amd64.deb`
+- `patina-gnome-shell-extension-v<version>.zip`
+- `patina-firefox-extension-v<version>.xpi`
+
+Ubuntu / Debian 用户优先安装 `.deb`。它会把 GNOME Shell 扩展文件安装到系统扩展目录，但仍需为当前用户启用扩展：
+
+```bash
+gnome-extensions enable patina-window-tracker@patina
+```
+
+如果 GNOME Shell 已缓存旧版本，注销后重新登录。
+
+AppImage 不会修改系统目录。下载后运行：
+
+```bash
+chmod +x Patina_<version>_amd64.AppImage
+./Patina_<version>_amd64.AppImage
+```
+
+GNOME Wayland 用户还需要下载扩展 zip 并安装：
+
+```bash
+gnome-extensions install --force patina-gnome-shell-extension-v<version>.zip
+gnome-extensions enable patina-window-tracker@patina
 ```
 
 ## 浏览器网页同步
