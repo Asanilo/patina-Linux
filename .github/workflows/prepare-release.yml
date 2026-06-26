@@ -121,7 +121,18 @@ jobs:
           echo "TAURI_SIGNING_PRIVATE_KEY_PATH=$signing_key_path" >> "$GITHUB_ENV"
 
       - name: Build AppImage and Debian bundles
-        run: npm run tauri build -- --bundles appimage,deb
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          signing_key_path="${TAURI_SIGNING_PRIVATE_KEY_PATH:?Missing signing key path}"
+          test -s "$signing_key_path" || {
+            echo "Prepared signing key file is missing or empty." >&2
+            exit 1
+          }
+
+          export TAURI_SIGNING_PRIVATE_KEY="$(cat "$signing_key_path")"
+          npm run tauri build -- --bundles appimage,deb
         env:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
