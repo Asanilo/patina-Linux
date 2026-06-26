@@ -31,9 +31,13 @@ import {
   hasClassificationDraftChanges,
   type ClassificationDraftState,
 } from "../src/features/classification/services/classificationDraftState.ts";
-import type { AppSettings } from "../src/shared/settings/appSettings.ts";
+import {
+  DEFAULT_SETTINGS,
+  type AppSettings,
+} from "../src/shared/settings/appSettings.ts";
 
 const BASE_SETTINGS: AppSettings = {
+  ...DEFAULT_SETTINGS,
   idleTimeoutSecs: 300,
   timelineMergeGapSecs: 60,
   refreshIntervalSecs: 1,

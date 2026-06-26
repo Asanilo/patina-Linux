@@ -64,6 +64,7 @@ App note en: Adds Linux API/MCP integration, History zoom, and clearer release v
 ### Internal
 
 - README 与长期文档补充 Linux-first 发布验证、`.deb` release asset contract 和选择性跟进上游 Windows 主线的规则。
+- Bundle budget 检查将 Tauri 平台适配 chunk 作为独立预算项，避免把稳定平台胶水误算进 feature/other 预算。
 
 ## [1.7.6] - 2026-06-26
 
