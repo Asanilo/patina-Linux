@@ -169,7 +169,7 @@ function testReleaseNotesIncludeAllVisibleBullets() {
 
 function testReleaseAssetNamesCoverLinuxBundles() {
   assert.deepEqual(releaseAssetNames("1.7.0", "linux-x86_64"), {
-    updater: "Patina_1.7.0_amd64.AppImage.tar.gz",
+    updater: "Patina_1.7.0_amd64.AppImage",
     portable: "Patina_1.7.0_amd64.AppImage",
     installer: "Patina_1.7.0_amd64.deb",
   });
@@ -308,15 +308,13 @@ async function testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest()
   const outputDir = path.join(tempRoot, "output");
   const appImageName = `Patina_${currentPackageVersion}_amd64.AppImage`;
   const appImagePath = path.join(bundleDir, "appimage", appImageName);
-  const updaterPath = `${appImagePath}.tar.gz`;
   const debName = `Patina_${currentPackageVersion}_amd64.deb`;
 
   try {
     await mkdir(path.dirname(appImagePath), { recursive: true });
     await mkdir(path.join(bundleDir, "deb"), { recursive: true });
     await writeFile(appImagePath, "appimage", "utf8");
-    await writeFile(updaterPath, "updater", "utf8");
-    await writeFile(`${updaterPath}.sig`, "linux-signature\n", "utf8");
+    await writeFile(`${appImagePath}.sig`, "linux-signature\n", "utf8");
     await writeFile(
       path.join(bundleDir, "deb", debName),
       "debian",
@@ -338,13 +336,6 @@ async function testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest()
       "appimage",
     );
     assert.equal(
-      await readFile(
-        path.join(outputDir, `${appImageName}.tar.gz`),
-        "utf8",
-      ),
-      "updater",
-    );
-    assert.equal(
       await readFile(path.join(outputDir, debName), "utf8"),
       "debian",
     );
@@ -354,7 +345,7 @@ async function testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest()
     );
     assert.equal(
       latest.platforms["linux-x86_64"].url,
-      `https://github.com/Asanilo/patina-Linux/releases/download/v${currentPackageVersion}/Patina_${currentPackageVersion}_amd64.AppImage.tar.gz`,
+      `https://github.com/Asanilo/patina-Linux/releases/download/v${currentPackageVersion}/Patina_${currentPackageVersion}_amd64.AppImage`,
     );
     assert.equal(
       latest.platforms["linux-x86_64"].signature,

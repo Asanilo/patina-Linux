@@ -190,7 +190,6 @@ jobs:
           overwrite_files: true
           files: |
             dist-release/Patina_${{ steps.release.outputs.version }}_amd64.AppImage
-            dist-release/Patina_${{ steps.release.outputs.version }}_amd64.AppImage.tar.gz
             dist-release/Patina_${{ steps.release.outputs.version }}_amd64.deb
             dist-release/${{ env.GNOME_EXTENSION_ASSET }}
             dist-release/${{ env.CHROMIUM_EXTENSION_ASSET }}

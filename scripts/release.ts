@@ -86,7 +86,7 @@ export function releaseAssetNames(version, target) {
 
   if (target === "linux-x86_64") {
     return {
-      updater: `Patina_${version}_amd64.AppImage.tar.gz`,
+      updater: `Patina_${version}_amd64.AppImage`,
       portable: `Patina_${version}_amd64.AppImage`,
       installer: `Patina_${version}_amd64.deb`,
     };
@@ -550,13 +550,13 @@ async function writeLatestJson(version, assetUrl, signature, outputPath, target 
 async function findLinuxBundles(bundleDir) {
   const entries = await readDirRecursive(bundleDir);
   const signatureFilePath = entries.find((entry) =>
-    entry.endsWith(".AppImage.tar.gz.sig")
+    entry.endsWith(".AppImage.sig")
   );
   const portableFilePath = entries.find((entry) => entry.endsWith(".AppImage"));
   const installerFilePath = entries.find((entry) => entry.endsWith(".deb"));
 
   if (!signatureFilePath) {
-    fail(`Could not find updater .AppImage.tar.gz.sig artifact under ${bundleDir}.`);
+    fail(`Could not find updater .AppImage.sig artifact under ${bundleDir}.`);
   }
   if (!portableFilePath) {
     fail(`Could not find portable .AppImage artifact under ${bundleDir}.`);
@@ -625,7 +625,9 @@ async function prepareLinuxReleaseAssets(version, bundleDir, outputDir, reposito
 
   await mkdir(outputDir, { recursive: true });
   await copyFile(updaterFilePath, path.join(outputDir, names.updater));
-  await copyFile(portableFilePath, path.join(outputDir, names.portable));
+  if (portableFilePath !== updaterFilePath || names.portable !== names.updater) {
+    await copyFile(portableFilePath, path.join(outputDir, names.portable));
+  }
   await copyFile(installerFilePath, path.join(outputDir, names.installer));
   await writeLatestJson(
     resolvedVersion,
