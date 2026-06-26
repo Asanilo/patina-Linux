@@ -110,6 +110,7 @@ async fn route_request(
 ) -> RouteResponse {
     match (method, path) {
         ("GET", "/api/v1/health") => handlers::health::get_health(app),
+        ("GET", "/api/v1/openapi.json") => handlers::openapi::get_openapi(),
         ("GET", "/api/v1/diagnostics") => handlers::diagnostics::get_diagnostics(app).await,
         ("GET", "/api/v1/current") => handlers::health::get_current(app),
         ("GET", "/api/v1/sessions") => handlers::sessions::get_sessions(app, query).await,
@@ -121,6 +122,7 @@ async fn route_request(
         ("GET", "/api/v1/web-activity") => {
             handlers::web_activity::get_web_activity(app, query).await
         }
+        ("GET", "/api/v1/ai/activity-context") => handlers::ai::get_activity_context(app).await,
         ("GET", "/api/v1/apps") => handlers::apps::get_apps(app).await,
         ("POST", path) if path.starts_with("/api/v1/apps/") => {
             handlers::apps::handle_app_action(app, path, body).await
@@ -129,6 +131,7 @@ async fn route_request(
         ("POST", "/api/v1/settings/tracker/afk-threshold") => {
             handlers::settings::set_afk_threshold(app, body).await
         }
+        ("GET", "/api/v1/tools/snapshot") => handlers::tools::get_tools_snapshot(app).await,
         _ => RouteResponse {
             status: 404,
             body: serde_json::to_value(ApiError::not_found("endpoint not found"))

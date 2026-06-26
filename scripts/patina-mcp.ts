@@ -99,6 +99,16 @@ export const PATINA_MCP_TOOLS: PatinaMcpTool[] = [
     }),
   },
   {
+    name: "get_activity_context",
+    description: "Read aggregated Patina context for external AI analysis.",
+    inputSchema: objectSchema({}),
+  },
+  {
+    name: "get_tools_snapshot",
+    description: "Read the current Patina Tools runtime snapshot.",
+    inputSchema: objectSchema({}),
+  },
+  {
     name: "list_apps",
     description: "List known apps from recorded Patina sessions.",
     inputSchema: objectSchema({}),
@@ -109,6 +119,22 @@ export const PATINA_MCP_TOOLS: PatinaMcpTool[] = [
     inputSchema: objectSchema({
       exeName: { type: "string", description: "Exact app exe_name to classify." },
       category: { type: "string", description: "Category name to assign." },
+    }),
+  },
+  {
+    name: "rename_app",
+    description: "Assign a Patina display name to an app exe_name.",
+    inputSchema: objectSchema({
+      exeName: { type: "string", description: "Exact app exe_name to rename." },
+      displayName: { type: "string", description: "Display name to assign." },
+    }),
+  },
+  {
+    name: "set_app_excluded",
+    description: "Set whether an app is excluded from Patina activity statistics.",
+    inputSchema: objectSchema({
+      exeName: { type: "string", description: "Exact app exe_name to update." },
+      excluded: { type: "boolean", description: "Whether the app should be excluded." },
     }),
   },
 ];
@@ -210,13 +236,59 @@ function toolNameToApiRequest(name: string, args: Record<string, unknown>) {
       return getRequest(trendPath(args));
     case "query_web_activity":
       return getRequest(webActivityPath(args));
+    case "get_activity_context":
+      return getRequest("/api/v1/ai/activity-context");
+    case "get_tools_snapshot":
+      return getRequest("/api/v1/tools/snapshot");
     case "list_apps":
       return getRequest("/api/v1/apps");
     case "classify_app":
       return classifyAppRequest(args);
+    case "rename_app":
+      return renameAppRequest(args);
+    case "set_app_excluded":
+      return setAppExcludedRequest(args);
     default:
       return null;
   }
+}
+
+function renameAppRequest(args: Record<string, unknown>) {
+  const exeName = stringValue(args.exeName);
+  const displayName = stringValue(args.displayName);
+  if (!exeName) {
+    return { error: "rename_app requires exeName" };
+  }
+  if (!displayName) {
+    return { error: "rename_app requires displayName" };
+  }
+
+  return {
+    path: `/api/v1/apps/${encodeURIComponent(exeName)}/rename`,
+    init: {
+      method: "POST" as const,
+      body: { display_name: displayName },
+    },
+  };
+}
+
+function setAppExcludedRequest(args: Record<string, unknown>) {
+  const exeName = stringValue(args.exeName);
+  const excluded = booleanValue(args.excluded);
+  if (!exeName) {
+    return { error: "set_app_excluded requires exeName" };
+  }
+  if (excluded === null) {
+    return { error: "set_app_excluded requires excluded" };
+  }
+
+  return {
+    path: `/api/v1/apps/${encodeURIComponent(exeName)}/exclude`,
+    init: {
+      method: "POST" as const,
+      body: { excluded },
+    },
+  };
 }
 
 function getRequest(path: string) {
@@ -285,6 +357,10 @@ function appendStringParam(params: URLSearchParams, key: string, value: unknown)
 
 function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function booleanValue(value: unknown) {
+  return typeof value === "boolean" ? value : null;
 }
 
 function ok(id: string | number | null, result: Record<string, unknown>): JsonRpcResponse {

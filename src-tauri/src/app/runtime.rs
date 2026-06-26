@@ -68,7 +68,13 @@ pub fn setup(
 
     // Start HTTP API server for AI agent integration
     let api_server = crate::engine::api::server::ApiServerState::new();
-    api_server.start(app.handle().clone(), None);
+    let local_api_settings = load_local_api_settings(app.handle().clone());
+    if !local_api_settings.token.trim().is_empty() {
+        if let Err(error) = crate::engine::api::auth::replace_api_token(&local_api_settings.token) {
+            eprintln!("[api] failed to apply stored API token: {error}");
+        }
+    }
+    api_server.start(app.handle().clone(), Some(local_api_settings.port));
     app.manage(api_server);
 
     let app_handle = app.handle().clone();
@@ -94,6 +100,19 @@ pub fn setup(
     runtime_tasks::spawn_tools_runtime_restart_loop(app.handle().clone());
 
     Ok(())
+}
+
+fn load_local_api_settings(app: tauri::AppHandle) -> crate::domain::settings::LocalApiSettings {
+    tauri::async_runtime::block_on(async move {
+        let pool = wait_for_sqlite_pool(&app).await?;
+        crate::data::repositories::app_settings::load_local_api_settings(&pool)
+            .await
+            .map_err(|error| format!("failed to load local API setting: {error}"))
+    })
+    .unwrap_or_else(|error| {
+        eprintln!("[api] failed to load local API setting: {error}");
+        crate::domain::settings::LocalApiSettings::default()
+    })
 }
 
 fn load_audio_participation_enabled(app: tauri::AppHandle) -> bool {

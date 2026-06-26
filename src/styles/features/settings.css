@@ -158,6 +158,14 @@
   padding: 10px;
 }
 
+.settings-token-input-hidden {
+  -webkit-text-security: disc;
+}
+
+.settings-token-input-with-actions {
+  padding-right: 108px;
+}
+
 .settings-token-action-button {
   position: absolute;
   top: 50%;
@@ -167,12 +175,17 @@
   align-items: center;
   justify-content: center;
   border-radius: 7px;
+  background: var(--qp-bg-panel);
   color: var(--qp-text-tertiary);
   transform: translateY(-50%);
 }
 
 .settings-token-random-button {
-  right: 34px;
+  right: 70px;
+}
+
+.settings-token-copy-button {
+  right: 38px;
 }
 
 .settings-token-visibility-button {

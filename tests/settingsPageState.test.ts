@@ -16,6 +16,7 @@ import {
 import {
   normalizeSettingsRecord,
 } from "../src/platform/persistence/appSettingsStore.ts";
+import { DEFAULT_SETTINGS } from "../src/shared/settings/appSettings.ts";
 import {
   remoteBackupSettingsInternals,
 } from "../src/platform/persistence/remoteBackupSettingsStore.ts";
@@ -100,10 +101,13 @@ interface AppSettings {
   webActivityEnabled: boolean;
   webActivityPort: number;
   webActivityToken: string;
+  webActivityUrlPrivacy: "full" | "strip_query" | "domain_only";
   remoteStatusBridgeEnabled: boolean;
   remoteStatusBridgeUrl: string;
   remoteStatusBridgeToken: string;
   remoteStatusBridgeMachineId: string;
+  localApiPort: number;
+  localApiToken: string;
 }
 
 type CleanupRange = 180 | 90 | 60 | 30 | 15 | 7;
@@ -129,6 +133,9 @@ const BASE_SETTINGS: AppSettings = {
   webActivityEnabled: false,
   webActivityPort: 12345,
   webActivityToken: "",
+  webActivityUrlPrivacy: "full",
+  localApiPort: 14840,
+  localApiToken: "patina_api_default",
   remoteStatusBridgeEnabled: false,
   remoteStatusBridgeUrl: "",
   remoteStatusBridgeToken: "",
@@ -186,6 +193,7 @@ await runTest("buildSettingsPatch only keeps changed keys", () => {
     webActivityEnabled: true,
     webActivityPort: 18080,
     webActivityToken: "secret",
+    webActivityUrlPrivacy: "strip_query",
     backgroundOptimization: true,
   });
 
@@ -199,6 +207,7 @@ await runTest("buildSettingsPatch only keeps changed keys", () => {
     webActivityEnabled: true,
     webActivityPort: 18080,
     webActivityToken: "secret",
+    webActivityUrlPrivacy: "strip_query",
     backgroundOptimization: true,
   });
 });
@@ -215,6 +224,9 @@ await runTest("commitSettingsPatchWithDeps returns not-needed for empty patches"
     },
     syncAudioParticipation: async () => {
       events.push("sync-audio");
+    },
+    syncLocalApiSettings: async () => {
+      events.push("sync-local-api");
     },
     notifySettingsChanged: async () => {
       events.push("notify");
@@ -245,6 +257,9 @@ await runTest("commitSettingsPatchWithDeps syncs idle timeout after persistence"
     },
     syncAudioParticipation: async (enabled) => {
       events.push(`sync-audio:${enabled}`);
+    },
+    syncLocalApiSettings: async (port, token) => {
+      events.push(`sync-local-api:${port}:${token}`);
     },
     notifySettingsChanged: async (patch) => {
       events.push(`notify:${Object.keys(patch).length}`);
@@ -278,6 +293,9 @@ await runTest("commitSettingsPatchWithDeps keeps persisted success when runtime 
     },
     syncAudioParticipation: async () => {
       events.push("sync-audio");
+    },
+    syncLocalApiSettings: async () => {
+      events.push("sync-local-api");
     },
     notifySettingsChanged: async () => {
       events.push("notify");
@@ -313,6 +331,9 @@ await runTest("commitSettingsPatchWithDeps does not attempt runtime sync when pe
       syncAudioParticipation: async () => {
         events.push("sync-audio");
       },
+      syncLocalApiSettings: async () => {
+        events.push("sync-local-api");
+      },
       notifySettingsChanged: async () => {
         events.push("notify");
       },
@@ -321,6 +342,22 @@ await runTest("commitSettingsPatchWithDeps does not attempt runtime sync when pe
   );
 
   assert.deepEqual(events, ["persist"]);
+});
+
+await runTest("buildSettingsPatch keeps local API port and token together", () => {
+  const saved = buildSettings({
+    localApiPort: 14840,
+    localApiToken: "old-token",
+  });
+  const draft = buildSettings({
+    localApiPort: 14840,
+    localApiToken: "new-token",
+  });
+
+  assert.deepEqual(SettingsRuntimeAdapterService.buildSettingsPatch(saved, draft), {
+    localApiPort: 14840,
+    localApiToken: "new-token",
+  });
 });
 
 await runTest("saveSettingsPageStateWithDeps normalizes service settings", async () => {
@@ -372,6 +409,22 @@ await runTest("saveSettingsPageStateWithDeps normalizes service settings", async
   });
 });
 
+await runTest("normalizeSettingsRecord accepts local API port and token", () => {
+  const settings = normalizeSettingsRecord({
+    local_api_port: "15555",
+    local_api_token: " patina_api_test ",
+  });
+
+  assert.equal(settings.localApiPort, 15555);
+  assert.equal(settings.localApiToken, "patina_api_test");
+
+  const fallback = normalizeSettingsRecord({
+    local_api_port: "80",
+  });
+
+  assert.equal(fallback.localApiPort, DEFAULT_SETTINGS.localApiPort);
+});
+
 await runTest("saveSettingsPageStateWithDeps preserves remote push switch while endpoint is empty", async () => {
   let committedPatch: Partial<AppSettings> | null = null;
   const savedSettings = buildSettings();
@@ -421,6 +474,7 @@ await runTest("normalizeSettingsRecord accepts current minimize behavior values"
   assert.equal(defaultSettings.webActivityEnabled, false);
   assert.equal(defaultSettings.webActivityPort, 12345);
   assert.equal(defaultSettings.webActivityToken, "");
+  assert.equal(defaultSettings.webActivityUrlPrivacy, "full");
   assert.equal(defaultSettings.audioParticipationEnabled, true);
   assert.equal(defaultSettings.remoteStatusBridgeEnabled, false);
   assert.equal(defaultSettings.remoteStatusBridgeUrl, "");
@@ -430,18 +484,22 @@ await runTest("normalizeSettingsRecord accepts current minimize behavior values"
     web_activity_enabled: "1",
     web_activity_port: "18080",
     web_activity_token: "secret",
+    web_activity_url_privacy: "strip_query",
   });
   assert.equal(webActivitySettings.webActivityEnabled, true);
   assert.equal(webActivitySettings.webActivityPort, 18080);
   assert.equal(webActivitySettings.webActivityToken, "secret");
+  assert.equal(webActivitySettings.webActivityUrlPrivacy, "strip_query");
 
   const invalidWebActivitySettings = normalizeSettingsRecord({
     web_activity_enabled: "1",
     web_activity_port: "80",
     web_activity_token: "secret",
+    web_activity_url_privacy: "unknown",
   });
   assert.equal(invalidWebActivitySettings.webActivityEnabled, true);
   assert.equal(invalidWebActivitySettings.webActivityPort, 12345);
+  assert.equal(invalidWebActivitySettings.webActivityUrlPrivacy, "full");
 
   const missingTokenSettings = normalizeSettingsRecord({
     web_activity_enabled: "1",

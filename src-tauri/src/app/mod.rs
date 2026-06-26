@@ -1,3 +1,4 @@
+pub mod autostart;
 pub mod backup;
 pub mod bootstrap;
 pub mod desktop_behavior;

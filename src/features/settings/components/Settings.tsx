@@ -219,15 +219,21 @@ export default function Settings({
 
           <SettingsInterfacePanel
             webActivityEnabled={draftSettings.webActivityEnabled}
+            localApiPort={draftSettings.localApiPort}
+            localApiToken={draftSettings.localApiToken}
             port={draftSettings.webActivityPort}
             webActivityToken={draftSettings.webActivityToken}
+            webActivityUrlPrivacy={draftSettings.webActivityUrlPrivacy}
             remoteStatusBridgeEnabled={draftSettings.remoteStatusBridgeEnabled}
             remoteStatusBridgeUrl={draftSettings.remoteStatusBridgeUrl}
             remoteStatusBridgeToken={draftSettings.remoteStatusBridgeToken}
             remoteStatusBridgeMachineId={draftSettings.remoteStatusBridgeMachineId}
             onWebActivityEnabledChange={(nextChecked) => handleChange("webActivityEnabled", nextChecked)}
+            onLocalApiPortChange={(nextPort) => handleChange("localApiPort", nextPort)}
+            onLocalApiTokenChange={(nextToken) => handleChange("localApiToken", nextToken)}
             onPortChange={(nextPort) => handleChange("webActivityPort", nextPort)}
             onWebActivityTokenChange={(nextToken) => handleChange("webActivityToken", nextToken)}
+            onWebActivityUrlPrivacyChange={(nextMode) => handleChange("webActivityUrlPrivacy", nextMode)}
             onRemoteStatusBridgeEnabledChange={(nextChecked) => handleChange("remoteStatusBridgeEnabled", nextChecked)}
             onRemoteStatusBridgeUrlChange={(nextUrl) => handleChange("remoteStatusBridgeUrl", nextUrl)}
             onRemoteStatusBridgeTokenChange={(nextToken) => handleChange("remoteStatusBridgeToken", nextToken)}

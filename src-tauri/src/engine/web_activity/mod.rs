@@ -230,6 +230,7 @@ mod tests {
             &WebActivitySettings {
                 enabled: true,
                 token: "secret".into(),
+                url_privacy: crate::domain::settings::WebActivityUrlPrivacyMode::Full,
             },
             2_000,
         );

@@ -7,11 +7,16 @@ pub const DEFAULT_AUDIO_PARTICIPATION_ENABLED: bool = true;
 pub const DEFAULT_WEB_ACTIVITY_ENABLED: bool = false;
 pub const DEFAULT_WEB_ACTIVITY_PORT: u16 = 12_345;
 pub const DEFAULT_WEB_ACTIVITY_TOKEN: &str = "";
+pub const DEFAULT_WEB_ACTIVITY_URL_PRIVACY: WebActivityUrlPrivacyMode =
+    WebActivityUrlPrivacyMode::Full;
+pub const DEFAULT_LOCAL_API_PORT: u16 = 14_840;
+pub const DEFAULT_LOCAL_API_TOKEN: &str = "";
 pub const DEFAULT_REMOTE_STATUS_BRIDGE_ENABLED: bool = false;
 pub const DEFAULT_REMOTE_STATUS_BRIDGE_URL: &str = "";
 pub const DEFAULT_REMOTE_STATUS_BRIDGE_TOKEN: &str = "";
 pub const DEFAULT_REMOTE_STATUS_BRIDGE_MACHINE_ID: &str = "";
 pub const WEB_ACTIVITY_PORT_MIN: u16 = 1024;
+pub const LOCAL_API_PORT_MIN: u16 = 1024;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -49,6 +54,15 @@ pub struct WebActivityBridgeSettings {
 pub struct WebActivitySettings {
     pub enabled: bool,
     pub token: String,
+    pub url_privacy: WebActivityUrlPrivacyMode,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WebActivityUrlPrivacyMode {
+    #[default]
+    Full,
+    StripQuery,
+    DomainOnly,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -57,6 +71,32 @@ pub struct RemoteStatusBridgeSettings {
     pub url: String,
     pub token: String,
     pub machine_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocalApiSettings {
+    pub port: u16,
+    pub token: String,
+}
+
+impl Default for LocalApiSettings {
+    fn default() -> Self {
+        Self {
+            port: DEFAULT_LOCAL_API_PORT,
+            token: DEFAULT_LOCAL_API_TOKEN.to_string(),
+        }
+    }
+}
+
+impl LocalApiSettings {
+    pub fn from_storage_values(port: Option<&str>, token: Option<&str>) -> Self {
+        Self {
+            port: port
+                .and_then(parse_local_api_port)
+                .unwrap_or(DEFAULT_LOCAL_API_PORT),
+            token: token.unwrap_or(DEFAULT_LOCAL_API_TOKEN).trim().to_string(),
+        }
+    }
 }
 
 impl Default for WebActivityBridgeSettings {
@@ -74,6 +114,7 @@ impl Default for WebActivitySettings {
         Self {
             enabled: DEFAULT_WEB_ACTIVITY_ENABLED,
             token: DEFAULT_WEB_ACTIVITY_TOKEN.to_string(),
+            url_privacy: DEFAULT_WEB_ACTIVITY_URL_PRIVACY,
         }
     }
 }
@@ -115,7 +156,11 @@ impl WebActivityBridgeSettings {
 }
 
 impl WebActivitySettings {
-    pub fn from_storage_values(enabled: Option<&str>, token: Option<&str>) -> Self {
+    pub fn from_storage_values(
+        enabled: Option<&str>,
+        token: Option<&str>,
+        url_privacy: Option<&str>,
+    ) -> Self {
         let token = token
             .unwrap_or(DEFAULT_WEB_ACTIVITY_TOKEN)
             .trim()
@@ -125,7 +170,11 @@ impl WebActivitySettings {
             .unwrap_or(DEFAULT_WEB_ACTIVITY_ENABLED)
             && !token.is_empty();
 
-        Self { enabled, token }
+        Self {
+            enabled,
+            token,
+            url_privacy: parse_web_activity_url_privacy(url_privacy),
+        }
     }
 }
 
@@ -279,9 +328,24 @@ pub fn parse_audio_participation_enabled(raw: Option<&str>) -> bool {
         .unwrap_or(DEFAULT_AUDIO_PARTICIPATION_ENABLED)
 }
 
+pub fn parse_web_activity_url_privacy(raw: Option<&str>) -> WebActivityUrlPrivacyMode {
+    match raw.unwrap_or("").trim().to_ascii_lowercase().as_str() {
+        "strip_query" => WebActivityUrlPrivacyMode::StripQuery,
+        "domain_only" => WebActivityUrlPrivacyMode::DomainOnly,
+        _ => DEFAULT_WEB_ACTIVITY_URL_PRIVACY,
+    }
+}
+
 pub fn parse_web_activity_port(raw: &str) -> Option<u16> {
     let port = raw.trim().parse::<u16>().ok()?;
     (WEB_ACTIVITY_PORT_MIN..=u16::MAX)
+        .contains(&port)
+        .then_some(port)
+}
+
+pub fn parse_local_api_port(raw: &str) -> Option<u16> {
+    let port = raw.trim().parse::<u16>().ok()?;
+    (LOCAL_API_PORT_MIN..=u16::MAX)
         .contains(&port)
         .then_some(port)
 }
@@ -292,8 +356,9 @@ mod tests {
         parse_boolean_setting, parse_close_behavior, parse_minimize_behavior,
         parse_web_activity_port, CloseBehavior, DesktopBehaviorSettings, MinimizeBehavior,
         RemoteStatusBridgeSettings, WebActivityBridgeSettings, WebActivitySettings,
-        DEFAULT_AUDIO_PARTICIPATION_ENABLED, DEFAULT_BACKGROUND_OPTIMIZATION,
-        DEFAULT_LAUNCH_AT_LOGIN, DEFAULT_START_MINIMIZED, DEFAULT_WEB_ACTIVITY_PORT,
+        WebActivityUrlPrivacyMode, DEFAULT_AUDIO_PARTICIPATION_ENABLED,
+        DEFAULT_BACKGROUND_OPTIMIZATION, DEFAULT_LAUNCH_AT_LOGIN, DEFAULT_START_MINIMIZED,
+        DEFAULT_WEB_ACTIVITY_PORT,
     };
 
     #[test]
@@ -367,17 +432,23 @@ mod tests {
     #[test]
     fn web_activity_settings_require_a_token_to_enable() {
         assert_eq!(
-            WebActivitySettings::from_storage_values(Some("1"), Some("   ")),
+            WebActivitySettings::from_storage_values(Some("1"), Some("   "), None),
             WebActivitySettings {
                 enabled: false,
                 token: String::new(),
+                url_privacy: WebActivityUrlPrivacyMode::Full,
             }
         );
         assert_eq!(
-            WebActivitySettings::from_storage_values(Some("1"), Some("secret")),
+            WebActivitySettings::from_storage_values(
+                Some("1"),
+                Some("secret"),
+                Some("strip_query")
+            ),
             WebActivitySettings {
                 enabled: true,
                 token: "secret".to_string(),
+                url_privacy: WebActivityUrlPrivacyMode::StripQuery,
             }
         );
     }

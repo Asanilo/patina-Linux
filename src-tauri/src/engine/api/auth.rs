@@ -1,17 +1,43 @@
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 
-static API_TOKEN: OnceLock<String> = OnceLock::new();
+static API_TOKEN: OnceLock<RwLock<String>> = OnceLock::new();
 
 #[allow(dead_code)]
 pub fn set_api_token(token: String) {
-    let _ = API_TOKEN.set(token);
+    let lock = API_TOKEN.get_or_init(|| RwLock::new(load_or_generate_token()));
+    match lock.write() {
+        Ok(mut guard) => {
+            *guard = token;
+        }
+        Err(poisoned) => {
+            *poisoned.into_inner() = token;
+        }
+    }
 }
 
-pub fn get_api_token() -> &'static str {
-    API_TOKEN.get_or_init(|| {
-        // Try to load from file first, fall back to generating new one
-        load_or_generate_token()
-    })
+pub fn get_api_token() -> String {
+    let lock = API_TOKEN.get_or_init(|| RwLock::new(load_or_generate_token()));
+    match lock.read() {
+        Ok(guard) => guard.clone(),
+        Err(poisoned) => poisoned.into_inner().clone(),
+    }
+}
+
+pub fn replace_api_token(token: &str) -> Result<String, String> {
+    let normalized = token.trim().to_string();
+    if normalized.is_empty() {
+        return Err("API token cannot be empty".to_string());
+    }
+
+    let path = token_file_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("failed to create API token directory: {error}"))?;
+    }
+    std::fs::write(&path, &normalized)
+        .map_err(|error| format!("failed to write API token file: {error}"))?;
+    set_api_token(normalized.clone());
+    Ok(normalized)
 }
 
 pub fn token_file_path() -> std::path::PathBuf {

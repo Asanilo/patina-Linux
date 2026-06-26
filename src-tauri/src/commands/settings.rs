@@ -89,6 +89,25 @@ pub fn cmd_set_audio_participation_enabled(enabled: bool) -> Result<(), String> 
 }
 
 #[tauri::command]
+pub fn cmd_set_local_api_settings(
+    port: u16,
+    token: String,
+    app: AppHandle,
+    api_server_state: State<crate::engine::api::server::ApiServerState>,
+) -> Result<(), String> {
+    let Some(port) = crate::domain::settings::parse_local_api_port(&port.to_string()) else {
+        return Err("invalid local API port".to_string());
+    };
+
+    crate::engine::api::auth::replace_api_token(&token)?;
+    if api_server_state.port() != port {
+        api_server_state.restart(app, port);
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn cmd_commit_app_settings(
     mutations: Vec<AppSettingMutationDto>,
     app: AppHandle,

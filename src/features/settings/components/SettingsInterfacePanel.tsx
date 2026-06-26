@@ -2,22 +2,31 @@ import { Copy, Dices, EthernetPort, ExternalLink, Eye, EyeOff, Fingerprint, KeyR
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import QuietActionRow from "../../../shared/components/QuietActionRow";
+import QuietSelect from "../../../shared/components/QuietSelect";
 import QuietSubpanel from "../../../shared/components/QuietSubpanel";
 import QuietSwitch from "../../../shared/components/QuietSwitch";
 import { UI_TEXT } from "../../../shared/copy/uiText.ts";
+import type { WebActivityUrlPrivacy } from "../../../shared/settings/appSettings.ts";
+import { buildBrowserExtensionConfigText } from "../services/settingsBrowserExtensionService.ts";
 import { createSettingsToken } from "../services/settingsTokenService.ts";
 
 type SettingsInterfacePanelProps = {
   webActivityEnabled: boolean;
+  localApiPort: number;
+  localApiToken: string;
   port: number;
   webActivityToken: string;
+  webActivityUrlPrivacy: WebActivityUrlPrivacy;
   remoteStatusBridgeEnabled: boolean;
   remoteStatusBridgeUrl: string;
   remoteStatusBridgeToken: string;
   remoteStatusBridgeMachineId: string;
   onWebActivityEnabledChange: (nextChecked: boolean) => void;
+  onLocalApiPortChange: (nextPort: number) => void;
+  onLocalApiTokenChange: (nextToken: string) => void;
   onPortChange: (nextPort: number) => void;
   onWebActivityTokenChange: (nextToken: string) => void;
+  onWebActivityUrlPrivacyChange: (nextMode: WebActivityUrlPrivacy) => void;
   onRemoteStatusBridgeEnabledChange: (nextChecked: boolean) => void;
   onRemoteStatusBridgeUrlChange: (nextUrl: string) => void;
   onRemoteStatusBridgeTokenChange: (nextToken: string) => void;
@@ -30,6 +39,7 @@ type TokenFieldProps = {
   disabled: boolean;
   onChange: (nextToken: string) => void;
   onGenerate: () => void;
+  onCopy: () => void;
   onToggleVisible: () => void;
   showLabel: string;
   hideLabel: string;
@@ -105,20 +115,27 @@ function TokenField({
   disabled,
   onChange,
   onGenerate,
+  onCopy,
   onToggleVisible,
   showLabel,
   hideLabel,
 }: TokenFieldProps) {
+  const inputClassName = [
+    "qp-input settings-token-input-with-actions h-[34px] w-full",
+    visible ? null : "settings-token-input-hidden",
+  ].filter(Boolean).join(" ");
+
   return (
     <div className="relative w-full">
       <input
         id={id}
-        type={visible ? "text" : "password"}
+        type="text"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="qp-input h-[34px] w-full pr-18"
+        className={inputClassName}
         disabled={disabled}
         autoComplete="off"
+        spellCheck={false}
       />
       <button
         type="button"
@@ -128,6 +145,15 @@ function TokenField({
         onClick={onGenerate}
       >
         <Dices size={14} />
+      </button>
+      <button
+        type="button"
+        className="settings-token-action-button settings-token-copy-button"
+        disabled={disabled || value.trim().length === 0}
+        aria-label={`${UI_TEXT.settings.copyBrowserExtensionConfigLabel} ${UI_TEXT.settings.webActivityTokenLabel}`}
+        onClick={onCopy}
+      >
+        <Copy size={14} />
       </button>
       <button
         type="button"
@@ -200,13 +226,18 @@ function RevealableTextField({
   hideLabel,
   onToggleVisible,
 }: RevealableTextFieldProps) {
+  const inputClassName = [
+    "qp-input h-[34px] w-full pr-10",
+    visible ? null : "settings-token-input-hidden",
+  ].filter(Boolean).join(" ");
+
   return (
     <div className="relative w-full">
       <input
         id={id}
-        type={visible ? "text" : "password"}
+        type="text"
         value={value}
-        className="qp-input h-[34px] w-full pr-10"
+        className={inputClassName}
         disabled={disabled}
         readOnly={readOnly}
         autoComplete="off"
@@ -251,23 +282,41 @@ function InterfaceInlineField({
   );
 }
 
-function BrowserExtensionInstallGuide() {
+function BrowserExtensionInstallGuide({
+  port,
+  token,
+}: {
+  port: number;
+  token: string;
+}) {
   const copyText = async (value: string) => {
     await navigator.clipboard.writeText(value);
   };
+  const extensionConfigText = buildBrowserExtensionConfigText({ port, token });
 
   return (
     <div className="mt-4 border-t border-[var(--qp-border-subtle)] pt-4">
-      <div className="flex items-start gap-2.5">
-        <Puzzle size={14} className="mt-0.5 shrink-0 text-[var(--qp-text-tertiary)]" />
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-[var(--qp-text-primary)]">
-            {UI_TEXT.settings.browserExtensionInstallTitle}
-          </p>
-          <p className="mt-1 text-sm leading-relaxed text-[var(--qp-text-secondary)]">
-            {UI_TEXT.settings.browserExtensionInstallHint}
-          </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-2.5">
+          <Puzzle size={14} className="mt-0.5 shrink-0 text-[var(--qp-text-tertiary)]" />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-[var(--qp-text-primary)]">
+              {UI_TEXT.settings.browserExtensionInstallTitle}
+            </p>
+            <p className="mt-1 text-sm leading-relaxed text-[var(--qp-text-secondary)]">
+              {UI_TEXT.settings.browserExtensionInstallHint}
+            </p>
+          </div>
         </div>
+        <button
+          type="button"
+          className="qp-button-secondary inline-flex h-8 shrink-0 items-center justify-center gap-2 px-3 text-xs font-semibold"
+          onClick={() => void copyText(extensionConfigText)}
+          aria-label={UI_TEXT.settings.copyBrowserExtensionConfigLabel}
+        >
+          <Copy size={13} />
+          <span>{UI_TEXT.settings.copyBrowserExtensionConfigLabel}</span>
+        </button>
       </div>
 
       <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -311,27 +360,48 @@ function BrowserExtensionInstallGuide() {
 
 export default function SettingsInterfacePanel({
   webActivityEnabled,
+  localApiPort,
+  localApiToken,
   port,
   webActivityToken,
+  webActivityUrlPrivacy,
   remoteStatusBridgeEnabled,
   remoteStatusBridgeUrl,
   remoteStatusBridgeToken,
   remoteStatusBridgeMachineId,
   onWebActivityEnabledChange,
+  onLocalApiPortChange,
+  onLocalApiTokenChange,
   onPortChange,
   onWebActivityTokenChange,
+  onWebActivityUrlPrivacyChange,
   onRemoteStatusBridgeEnabledChange,
   onRemoteStatusBridgeUrlChange,
   onRemoteStatusBridgeTokenChange,
 }: SettingsInterfacePanelProps) {
   const [webActivityPortDraft, setWebActivityPortDraft] = useState(String(port));
+  const [localApiPortDraft, setLocalApiPortDraft] = useState(String(localApiPort));
+  const [localApiTokenVisible, setLocalApiTokenVisible] = useState(false);
   const [webActivityTokenVisible, setWebActivityTokenVisible] = useState(false);
   const [remoteStatusBridgeTokenVisible, setRemoteStatusBridgeTokenVisible] = useState(false);
   const [remoteStatusBridgeMachineIdVisible, setRemoteStatusBridgeMachineIdVisible] = useState(false);
+  const webActivityUrlPrivacyOptions: Array<{ value: WebActivityUrlPrivacy; label: string }> = [
+    { value: "full", label: UI_TEXT.settings.webActivityUrlPrivacyOptions.full },
+    { value: "strip_query", label: UI_TEXT.settings.webActivityUrlPrivacyOptions.stripQuery },
+    { value: "domain_only", label: UI_TEXT.settings.webActivityUrlPrivacyOptions.domainOnly },
+  ];
+
+  const copyText = async (value: string) => {
+    await navigator.clipboard.writeText(value);
+  };
 
   useEffect(() => {
     setWebActivityPortDraft(String(port));
   }, [port]);
+
+  useEffect(() => {
+    setLocalApiPortDraft(String(localApiPort));
+  }, [localApiPort]);
 
   const handleWebActivityEnabledChange = (nextChecked: boolean) => {
     if (nextChecked && webActivityToken.trim().length === 0) {
@@ -345,14 +415,19 @@ export default function SettingsInterfacePanel({
     }
     onRemoteStatusBridgeEnabledChange(nextChecked);
   };
-  const commitPortDraft = (draft: string, setDraft: (nextDraft: string) => void) => {
+  const commitPortDraft = (
+    draft: string,
+    currentPort: number,
+    setDraft: (nextDraft: string) => void,
+    onChange: (nextPort: number) => void,
+  ) => {
     const normalized = normalizePort(draft);
     if (normalized) {
       setDraft(normalized);
       const nextPort = Number(normalized);
-      if (nextPort !== port) onPortChange(nextPort);
+      if (nextPort !== currentPort) onChange(nextPort);
     } else {
-      setDraft(String(port));
+      setDraft(String(currentPort));
     }
   };
   return (
@@ -363,6 +438,62 @@ export default function SettingsInterfacePanel({
       </div>
 
       <div className="space-y-5">
+        <QuietSubpanel>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-[var(--qp-text-primary)]">
+              {UI_TEXT.settings.localApiTitle}
+            </p>
+            <p className="mt-1 text-sm leading-relaxed text-[var(--qp-text-secondary)]">
+              {UI_TEXT.settings.localApiHint}
+            </p>
+          </div>
+
+          <div className={INTERFACE_FIELD_GRID_CLASS}>
+            <InterfaceInlineField
+              htmlFor="settings-local-api-port"
+              icon={<EthernetPort size={14} className="text-[var(--qp-text-tertiary)]" />}
+              title={UI_TEXT.settings.localApiPortLabel}
+            >
+              <PortField
+                id="settings-local-api-port"
+                value={localApiPortDraft}
+                disabled={false}
+                onChange={(nextValue) => {
+                  if (PORT_DRAFT_PATTERN.test(nextValue)) setLocalApiPortDraft(nextValue);
+                }}
+                onCommit={() => commitPortDraft(
+                  localApiPortDraft,
+                  localApiPort,
+                  setLocalApiPortDraft,
+                  onLocalApiPortChange,
+                )}
+              />
+            </InterfaceInlineField>
+
+            <InterfaceInlineField
+              htmlFor="settings-local-api-token"
+              icon={<KeyRound size={14} className="text-[var(--qp-text-tertiary)]" />}
+              title={UI_TEXT.settings.localApiTokenLabel}
+            >
+              <TokenField
+                id="settings-local-api-token"
+                value={localApiToken}
+                visible={localApiTokenVisible}
+                disabled={false}
+                onChange={onLocalApiTokenChange}
+                onGenerate={() => {
+                  onLocalApiTokenChange(`patina_api_${createSettingsToken()}`);
+                  setLocalApiTokenVisible(true);
+                }}
+                onCopy={() => void copyText(localApiToken.trim())}
+                onToggleVisible={() => setLocalApiTokenVisible((current) => !current)}
+                showLabel={UI_TEXT.accessibility.settings.showServiceToken}
+                hideLabel={UI_TEXT.accessibility.settings.hideServiceToken}
+              />
+            </InterfaceInlineField>
+          </div>
+        </QuietSubpanel>
+
         <QuietSubpanel>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
@@ -395,7 +526,12 @@ export default function SettingsInterfacePanel({
                     onChange={(nextValue) => {
                       if (PORT_DRAFT_PATTERN.test(nextValue)) setWebActivityPortDraft(nextValue);
                     }}
-                    onCommit={() => commitPortDraft(webActivityPortDraft, setWebActivityPortDraft)}
+                    onCommit={() => commitPortDraft(
+                      webActivityPortDraft,
+                      port,
+                      setWebActivityPortDraft,
+                      onPortChange,
+                    )}
                   />
                 </InterfaceInlineField>
 
@@ -414,13 +550,34 @@ export default function SettingsInterfacePanel({
                       onWebActivityTokenChange(createSettingsToken());
                       setWebActivityTokenVisible(true);
                     }}
+                    onCopy={() => void copyText(webActivityToken.trim())}
                     onToggleVisible={() => setWebActivityTokenVisible((current) => !current)}
                     showLabel={UI_TEXT.accessibility.settings.showServiceToken}
                     hideLabel={UI_TEXT.accessibility.settings.hideServiceToken}
                   />
                 </InterfaceInlineField>
+
+                <InterfaceInlineField
+                  htmlFor="settings-web-activity-url-privacy"
+                  icon={<Link2 size={14} className="text-[var(--qp-text-tertiary)]" />}
+                  title={UI_TEXT.settings.webActivityUrlPrivacyLabel}
+                  className="lg:col-span-2"
+                >
+                  <div className="grid gap-1.5">
+                    <QuietSelect
+                      value={webActivityUrlPrivacy}
+                      options={webActivityUrlPrivacyOptions}
+                      onChange={onWebActivityUrlPrivacyChange}
+                      ariaLabel={UI_TEXT.accessibility.settings.webActivityUrlPrivacy}
+                      disabled={!webActivityEnabled}
+                    />
+                    <p className="text-xs leading-relaxed text-[var(--qp-text-tertiary)]">
+                      {UI_TEXT.settings.webActivityUrlPrivacyHint}
+                    </p>
+                  </div>
+                </InterfaceInlineField>
               </div>
-              <BrowserExtensionInstallGuide />
+              <BrowserExtensionInstallGuide port={port} token={webActivityToken} />
             </>
           ) : null}
         </QuietSubpanel>
@@ -491,6 +648,7 @@ export default function SettingsInterfacePanel({
                     onRemoteStatusBridgeTokenChange(createSettingsToken());
                     setRemoteStatusBridgeTokenVisible(true);
                   }}
+                  onCopy={() => void copyText(remoteStatusBridgeToken.trim())}
                   onToggleVisible={() => setRemoteStatusBridgeTokenVisible((current) => !current)}
                   showLabel={UI_TEXT.accessibility.settings.showServiceToken}
                   hideLabel={UI_TEXT.accessibility.settings.hideServiceToken}

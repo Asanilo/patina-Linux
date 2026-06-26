@@ -86,6 +86,7 @@ fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Build
         commands::settings::cmd_set_launch_behavior,
         commands::settings::cmd_set_background_optimization,
         commands::settings::cmd_set_audio_participation_enabled,
+        commands::settings::cmd_set_local_api_settings,
         commands::settings::cmd_commit_app_settings,
         commands::settings::cmd_commit_classification_settings,
         commands::tools::cmd_get_tools_snapshot,
@@ -137,6 +138,7 @@ fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Build
         commands::backup::cmd_download_webdav_backup,
         commands::persistence::cmd_reopen_sqlite_pool,
         commands::diagnostics::cmd_get_local_api_diagnostics,
+        commands::diagnostics::cmd_get_local_api_settings,
         commands::diagnostics::cmd_get_desktop_integration_diagnostics,
         commands::diagnostics::cmd_repair_autostart_desktop_file,
         commands::diagnostics::cmd_get_resource_diagnostics

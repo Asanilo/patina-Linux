@@ -5,6 +5,7 @@ export type MinimizeBehavior = "taskbar" | "widget";
 export type ThemeMode = "light" | "dark" | "system";
 export type AppLanguage = "zh-CN" | "en-US";
 export type HourlyActivityChartMode = "total" | "category";
+export type WebActivityUrlPrivacy = "full" | "strip_query" | "domain_only";
 export type ColorScheme =
   | "default"
   | "absolutely"
@@ -56,6 +57,9 @@ export interface AppSettings {
   webActivityEnabled: boolean;
   webActivityPort: number;
   webActivityToken: string;
+  webActivityUrlPrivacy: WebActivityUrlPrivacy;
+  localApiPort: number;
+  localApiToken: string;
   remoteStatusBridgeEnabled: boolean;
   remoteStatusBridgeUrl: string;
   remoteStatusBridgeToken: string;

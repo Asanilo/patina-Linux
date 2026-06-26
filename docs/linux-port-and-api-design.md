@@ -1,7 +1,7 @@
 # Patina Linux 移植 + HTTP API 设计文档
 
-> 状态：设计稿 + 当前实现对照（Linux 原型已部分实现）
-> 目标：将 Patina 从 Windows-only 扩展为 Linux 支持，并添加 HTTP API 层用于 AI 集成
+> 状态：当前实现对照 + 剩余路线。早期设计内容保留为背景，当前承诺以本文件的“当前实现对照”和 [`api-index.md`](./api-index.md) 为准。
+> 目标：将 Patina 收敛为 Linux-first 本地时间追踪工具，并添加 HTTP API / MCP 外接面用于后续 AI 分析
 > 当前 API 索引：见 [`api-index.md`](./api-index.md)
 
 ---
@@ -10,9 +10,10 @@
 
 ### 1.1 目标
 
-1. **Linux 平台支持**：在 X11 和 GNOME Wayland 环境下实现与 Windows 版本接近的追踪能力
-2. **HTTP API 层**：为 AI agent 提供标准化的数据查询和管理接口
-3. **最小改动原则**：复用现有 domain/data/engine/commands 层，仅替换 platform 层
+1. **Linux 平台支持**：优先支持 GNOME Wayland，通过 GNOME Shell 扩展 + D-Bus 获取焦点窗口；X11 作为 fallback 路径保留并逐步验证。
+2. **HTTP API / MCP 外接面**：为脚本、MCP wrapper 和后续 AI agent 提供标准化的数据查询与轻量管理接口。
+3. **本地优先与可解释**：核心追踪、浏览器活动、诊断状态和 API 都默认运行在本机，用户能看到能力状态和降级原因。
+4. **最小跨层破坏**：复用现有 domain/data/engine/commands 层；平台适配、API 和设置 UI 按现有 owner 边界补齐。
 
 ### 1.2 非目标
 
@@ -20,13 +21,15 @@
 - macOS 支持
 - 移动端
 - CLI 工具（HTTP API 就绪后，CLI 可作为薄壳后补）
-- 前端 UI 修改（Tauri 前端天然跨平台）
+- 大型前端重设计；但 Settings 诊断、隐私控制、安装提示属于当前 Linux-first 支持范围
 
 ### 1.3 成功标准
 
-- Linux X11 和 GNOME Wayland 环境下能自动追踪前台窗口、检测 AFK、识别媒体播放
+- GNOME Wayland 环境下能自动追踪前台窗口、检测 AFK、识别媒体/音频参与信号
+- X11 环境下 fallback 路径可用，并在验证后再提升为稳定承诺
 - HTTP API 能被 `curl`、MCP server、或任意 AI agent 调用
-- 现有 Windows 功能零回归
+- Settings 能显示窗口追踪、本地 API、浏览器扩展、桌面集成的诊断状态
+- Windows 源码保留为历史兼容代码，但当前 fork 的默认验证、打包和支持承诺以 Linux 为主
 
 ---
 
@@ -253,11 +256,11 @@ platform/linux/
 - 现有的 Windows 过滤列表（LockApp, SearchHost, svchost, dwm 等）保留
 - 新增 Linux 过滤：`gnome-shell`, `kwin_wayland`, `Xorg`, `dbus-daemon`, `systemd`, `pipewire`, `pulseaudio`, `xdg-desktop-portal` 等
 
-**Wayland 兼容（Phase 2）**：
+**Wayland 兼容（当前决策）**：
 - 方案 A：`wlr-foreign-toplevel-management` 协议（Sway/wlroots 系）
 - 方案 B：`ext-foreign-toplevel-list` 协议（新标准，尚未普及）
-- 方案 C：GNOME 通过 D-Bus `org.gnome.Shell` 扩展
-- Phase 1 不实现，检测到 Wayland 时打印警告并使用降级模式（仅追踪 AFK）
+- 方案 C：GNOME 通过 Patina GNOME Shell 扩展导出 `org.patina.WindowTracker`
+- 当前只承诺 GNOME Wayland。GNOME Wayland 下扩展不可用时进入明确诊断/降级状态，不再按“仅 AFK”静默视为正常追踪。
 
 **当前 GNOME Wayland 决策（2026-06-21）**：
 - GNOME Wayland：使用 Patina GNOME Shell 扩展导出 `org.patina.WindowTracker`，Rust 通过 session D-Bus 调用 `GetFocusedWindow()` 获取焦点窗口。
@@ -528,8 +531,8 @@ pub fn sustained_participation_app_identity(exe_name: &str, process_path: &str) 
 ### 5.3 端口与鉴权
 
 ```
-默认端口：14840（可配置）
-鉴权：Bearer token（首次启动生成，存入 settings）
+默认端口：14840（Settings 可修改并重启本地 API listener）
+鉴权：Bearer token（首次启动生成，存入 `${XDG_DATA_HOME:-~/.local/share}/Patina/api_token`；Settings 可替换并同步 token 文件）
 绑定：127.0.0.1（仅本地）
 协议：HTTP/1.1（不搞 HTTPS，本地通信不需要）
 ```
@@ -605,9 +608,7 @@ POST /api/v1/apps/{exe_name}/exclude
 Body: { "excluded": true }
 Response: { "ok": true }
 
-POST /api/v1/apps/{exe_name}/title-recording
-Body: { "enabled": false }
-Response: { "ok": true }
+标题记录开关目前仍走应用设置/前端管理路径，尚未暴露独立 API endpoint。
 ```
 
 #### 5.4.4 设置查询
@@ -670,7 +671,7 @@ engine/api/
     sessions.rs       — /sessions, /summary/*
     apps.rs           — /apps/*
     settings.rs       — /settings/*
-    tools.rs          — /tools/*
+    tools.rs          — /tools/snapshot（Tools 写侧 API 尚未实现）
     web_activity.rs   — /web-activity
   auth.rs             — Token 鉴权中间件
   types.rs            — 请求/响应类型定义
@@ -685,18 +686,18 @@ engine/api/
 - 在 `app/runtime.rs` 的 `setup()` 中，紧跟 `web_activity_bridge::start()` 之后
 - 需要等 SQLite 初始化完成
 
-### 5.7 MCP Server 集成（后续）
+### 5.7 MCP Server 集成（当前原型）
 
-HTTP API 就绪后，可以加一个轻量 MCP server wrapper：
+HTTP API 已有一个轻量 MCP server wrapper：
 
 ```
-mcp-patina-server
+npm run mcp:patina
   → 连接 http://127.0.0.1:14840
-  → 注册 tools: query_sessions, get_summary, classify_app, ...
-  → Claude Code 直接调用
+  → 读取 PATINA_API_BASE / PATINA_API_TOKEN / PATINA_API_TOKEN_FILE
+  → 注册 diagnostics、current、sessions、summary、trend、web activity、AI context、Tools snapshot、apps、classify/rename/exclude app 等工具
 ```
 
-这不在本次设计范围内，但 API 设计为此预留了基础。
+当前 MCP wrapper 覆盖查询侧和 app classify/rename/exclude 轻量写侧；tracker settings、API 隐私/配置、Tools 创建/启动/暂停等写侧工具后续再补。
 
 ---
 
@@ -794,9 +795,11 @@ tauri-winrt-notification = "0.7.2"
 
 ## 8. 实施阶段
 
-### Phase 1：Linux 平台层（X11）
+### Phase 1：Linux 平台层（历史计划，已调整）
 
-**目标**：Linux X11 下能跑起来，追踪功能基本对等
+**历史目标**：Linux X11 下能跑起来，追踪功能基本对等。
+
+当前实际路线已调整为 GNOME Wayland 优先：GNOME Shell 扩展 + D-Bus 是主路径，X11 是 fallback 和后续验证项。
 
 | 步骤 | 内容 | 预估 |
 |------|------|------|
@@ -812,9 +815,9 @@ tauri-winrt-notification = "0.7.2"
 | 1.10 | 集成测试 + 修复 | 2 天 |
 | **合计** | | **13 天** |
 
-### Phase 2：HTTP API 层
+### Phase 2：HTTP API 层（大部分已实现）
 
-**目标**：AI agent 能通过 HTTP 查询数据和管理应用
+**目标**：外部脚本、MCP wrapper 和 AI agent 能通过 HTTP 查询数据和执行轻量管理。
 
 | 步骤 | 内容 | 预估 |
 |------|------|------|
@@ -829,9 +832,9 @@ tauri-winrt-notification = "0.7.2"
 
 ### Phase 3：增强（后续）
 
-- Wayland 支持
+- KDE/wlroots Wayland 支持
 - CLI 薄壳（`patina query --today`）
-- MCP Server 包装
+- MCP wrapper 写侧工具与更完整 schema
 - WebSocket 实时推送（当前窗口变化通知）
 - 凭证存储（libsecret）
 
@@ -845,10 +848,12 @@ tauri-winrt-notification = "0.7.2"
 - 本地 HTTP API 服务已能监听 `127.0.0.1:14840`，并实现 `/health`、`/current`、`/sessions`、`/sessions/active`、`/summary/today`、`/summary/range`、`/summary/week`、`/trend`、`/web-activity`、`/apps`、部分 `/settings`。
 - Chromium 浏览器扩展目录已存在，`platform/web_activity_bridge.rs` 仍监听浏览器活动桥接端口。
 - `/api/v1/diagnostics` 已暴露 window tracking、tracker runtime probe 和 browser bridge 状态，供外部 AI/MCP 调用方判断数据可信度。
+- `/api/v1/openapi.json` 已暴露字段级 OpenAPI 3.1 schema，覆盖 paths、parameters、request bodies、response envelopes、auth/error envelopes，以及核心 response/request component schemas；行为说明仍以 [`api-index.md`](./api-index.md) 为准。
 - Settings 已有 Linux/API 诊断面板，包含窗口追踪、Local API 监听/token 状态、浏览器扩展连接状态。
+- Settings 已有本地 API port/token 管理；保存后会同步 token 文件并在端口变化时重启本地 API listener。
 - Linux 音频会话 probe 已修复 threaded PulseAudio mainloop 未启动导致的超时；在 PipeWire + pipewire-pulse 环境下 live probe test 可完成。
 - GNOME 扩展源、校验、build 与本地安装脚本已进入仓库。
-- `npm run mcp:patina` 已提供最小 MCP wrapper，当前覆盖 diagnostics、current、active session、today/week summary 和 web activity 查询。
+- `npm run mcp:patina` 已提供 MCP wrapper，当前覆盖 diagnostics、current、sessions、active session、today/week summary、trend、web activity、AI context、Tools snapshot、apps 查询，以及 classify/rename/exclude app 轻量写侧。
 - 默认 CI 与 Release 已改为 Linux-only：Ubuntu runner 直接生成 AppImage、`.deb`、Linux updater manifest 和浏览器/GNOME 扩展，不再依赖 Windows job。
 
 **部分实现但需要修正**：
@@ -856,15 +861,15 @@ tauri-winrt-notification = "0.7.2"
 - `/summary/today` 与 `/summary/week` 已改用本地日/周边界；`/summary/range` 仍按调用方传入的毫秒范围执行，后续如暴露 timezone 应在响应中明确。
 - `/sessions/active` 已返回实时 duration、app、title、exe、continuity group 和 sampled_at；后续可继续补分类、标题记录开关后的脱敏口径。
 - `/trend` 已支持 `period=week|month&granularity=day`，按本地日期切分跨天 session，并把 active session 计到当前时间；后续可补 hour/week granularity、分类趋势和 timezone 字段。
-- `/web-activity` 已支持按时间、域名和 limit 查询浏览器活动片段，并默认返回非隐身 `http` / `https` 页面的完整 URL；后续需要补 API 设置里的 URL 脱敏/诊断说明。
+- `/web-activity` 已支持按时间、域名和 limit 查询浏览器活动片段，并可按 Settings 中的 URL 隐私模式返回完整 URL、去除 query/fragment 后的 URL，或仅保留域名。
+- `/api/v1/ai/activity-context` 已提供外接 AI 聚合上下文，包含 diagnostics、active session、today/week summary 和最近 web activity；它不内置聊天或生成式分析。
 - Wayland 下 X11 fallback 曾触发 XCB panic；GNOME Wayland 路径应优先扩展 D-Bus，D-Bus 不可用时明确降级。
 
 **尚未实现**：
-- `/api/v1/tools/*`。
-- MCP wrapper 的 sessions/trend/apps/settings 写侧工具。
-- API token/port 的完整 UI 管理。
+- `/api/v1/tools/snapshot` 已实现；Tools 写侧 API 仍未实现。
+- MCP wrapper 的 tracker settings、API 配置、Tools 创建/启动/暂停等写侧工具。
 - KDE Wayland、wlroots Wayland 适配。
-- Patina UI 中更完整的平台能力矩阵。
+- 更完整的平台能力矩阵；当前 Settings 已覆盖窗口追踪、本地 API、桌面集成、浏览器扩展诊断，不再另做重复的 Linux 安装向导。
 
 ---
 

@@ -47,6 +47,7 @@ export interface SettingsCancelFlowResult {
 
 function normalizeSettingsForSave(settings: AppSettings): AppSettings {
   const webActivityToken = settings.webActivityToken.trim();
+  const localApiToken = settings.localApiToken.trim();
   const remoteStatusBridgeToken = settings.remoteStatusBridgeToken.trim();
   const remoteStatusBridgeUrl = settings.remoteStatusBridgeUrl.trim();
   const remoteStatusBridgeMachineId = settings.remoteStatusBridgeMachineId.trim();
@@ -54,6 +55,7 @@ function normalizeSettingsForSave(settings: AppSettings): AppSettings {
     ...settings,
     webActivityEnabled: settings.webActivityEnabled && webActivityToken.length > 0,
     webActivityToken,
+    localApiToken,
     remoteStatusBridgeEnabled: settings.remoteStatusBridgeEnabled,
     remoteStatusBridgeUrl,
     remoteStatusBridgeToken,

@@ -389,28 +389,25 @@ await runTest("settings leaves web activity connection status to the extension",
 await runTest("settings services only expose web sync and remote push controls", () => {
   const settings = readUtf8("src/features/settings/components/Settings.tsx");
   const settingsInterface = readUtf8("src/features/settings/components/SettingsInterfacePanel.tsx");
-  const appSettings = readUtf8("src/shared/settings/appSettings.ts");
   const appSettingsStore = readUtf8("src/platform/persistence/appSettingsStore.ts");
   const bridgeRuntime = readUtf8("src-tauri/src/platform/web_activity_bridge.rs");
-  const combined = [
-    settings,
-    settingsInterface,
-    appSettings,
-    appSettingsStore,
-    bridgeRuntime,
-  ].join("\n");
-  const retiredNames = [
-    ["local", "Api"].join(""),
-    ["Local", "Api"].join(""),
-    ["local", "_api"].join(""),
-    ["LOCAL", "_API"].join(""),
-  ];
-
-  for (const name of retiredNames) {
-    assert.ok(!combined.includes(name), `unexpected retired setting name: ${name}`);
-  }
+  const settingsCss = readUtf8("src/styles/features/settings.css");
   assert.match(settingsInterface, /UI_TEXT\.settings\.servicesTitle/);
+  assert.match(settingsInterface, /UI_TEXT\.settings\.localApiTitle/);
+  assert.match(settingsInterface, /settings-local-api-port/);
+  assert.match(settingsInterface, /settings-local-api-token/);
+  assert.match(settingsInterface, /UI_TEXT\.settings\.copyBrowserExtensionConfigLabel/);
+  assert.match(settingsInterface, /UI_TEXT\.settings\.webActivityUrlPrivacyLabel/);
+  assert.match(settingsInterface, /buildBrowserExtensionConfigText/);
+  assert.match(settingsInterface, /settings-token-input-hidden/);
+  assert.match(settingsInterface, /settings-token-input-with-actions/);
+  assert.doesNotMatch(settingsInterface, /type=\{visible \? "text" : "password"\}/);
+  assert.match(settingsCss, /-webkit-text-security:\s*disc/);
+  assert.match(settingsCss, /\.settings-token-input-with-actions\s*\{[\s\S]*padding-right:\s*108px/);
+  assert.match(settingsCss, /\.settings-token-copy-button\s*\{[\s\S]*right:\s*38px/);
   assert.match(settings, /draftSettings\.webActivityPort/);
+  assert.match(settings, /draftSettings\.localApiPort/);
+  assert.match(appSettingsStore, /localApiPort: "local_api_port"/);
   assert.match(appSettingsStore, /webActivityPort: "web_activity_port"/);
   assert.doesNotMatch(bridgeRuntime, /tungstenite|accept_async|Message::Text|browser-bridge/);
 

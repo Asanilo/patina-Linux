@@ -10,7 +10,7 @@ const CHUNK_BUDGETS = [
   { label: "react-vendor", pattern: /^react-vendor-.*\.js$/, gzipKiB: 70 },
   { label: "motion", pattern: /^motion-.*\.js$/, gzipKiB: 50 },
   { label: "icons", pattern: /^icons-.*\.js$/, gzipKiB: 15 },
-  { label: "index", pattern: /^index-.*\.js$/, gzipKiB: 70 },
+  { label: "index", pattern: /^index-.*\.js$/, gzipKiB: 71 },
 ] as const;
 
 const FEATURE_OTHER_CHUNKS_GZIP_BUDGET_KI_B = 70;

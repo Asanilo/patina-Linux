@@ -28,17 +28,34 @@ const settingsPageBootstrapDeps: SettingsPageBootstrapDeps = {
 export async function loadSettingsPageBootstrapWithDeps(
   deps: SettingsPageBootstrapDeps,
 ): Promise<SettingsPageBootstrapData> {
-  const [settings, appVersion] = await Promise.all([
+  const [settings, appVersion, localApiSettings] = await Promise.all([
     deps.loadAppSettings(),
     deps.getAppVersion(),
+    loadLocalApiSettingsForBootstrap(),
   ]);
+  const mergedSettings = localApiSettings
+    ? {
+        ...settings,
+        localApiPort: localApiSettings.port,
+        localApiToken: localApiSettings.token,
+      }
+    : settings;
 
   const bootstrap = {
-    settings,
+    settings: mergedSettings,
     appVersion,
   };
   deps.setSettingsBootstrapCache(bootstrap);
   return bootstrap;
+}
+
+async function loadLocalApiSettingsForBootstrap() {
+  try {
+    const module = await import("../../../platform/runtime/localApiDiagnosticsGateway.ts");
+    return await module.getLocalApiSettings();
+  } catch {
+    return null;
+  }
 }
 
 export async function loadSettingsPageBootstrap(): Promise<SettingsPageBootstrapData> {

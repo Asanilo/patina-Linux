@@ -27,8 +27,12 @@ await runTest("Patina MCP tool list exposes core local API tools", () => {
     "query_sessions",
     "get_activity_trend",
     "query_web_activity",
+    "get_activity_context",
+    "get_tools_snapshot",
     "list_apps",
     "classify_app",
+    "rename_app",
+    "set_app_excluded",
   ]);
 });
 
@@ -44,7 +48,7 @@ await runTest("Patina MCP tools/list returns tool metadata", async () => {
   });
 
   assert.equal(response.id, 1);
-  assert.equal(response.result.tools.length, 10);
+  assert.equal(response.result.tools.length, 14);
   assert.equal(response.result.tools[0].name, "get_diagnostics");
 });
 
@@ -163,6 +167,72 @@ await runTest("Patina MCP classify_app sends POST body", async () => {
       init: {
         method: "POST",
         body: { category: "Development" },
+      },
+    },
+  ]);
+});
+
+await runTest("Patina MCP rename_app sends POST body", async () => {
+  const calls: Array<{ path: string; init?: { method?: string; body?: unknown } }> = [];
+  await handleMcpRequest({
+    jsonrpc: "2.0",
+    id: 6,
+    method: "tools/call",
+    params: {
+      name: "rename_app",
+      arguments: {
+        exeName: "zen",
+        displayName: "Zen Browser",
+      },
+    },
+  }, {
+    apiBase: "http://127.0.0.1:14840",
+    apiToken: "token",
+    callApi: async (path, _deps, init) => {
+      calls.push({ path, init });
+      return { data: { ok: true } };
+    },
+  });
+
+  assert.deepEqual(calls, [
+    {
+      path: "/api/v1/apps/zen/rename",
+      init: {
+        method: "POST",
+        body: { display_name: "Zen Browser" },
+      },
+    },
+  ]);
+});
+
+await runTest("Patina MCP set_app_excluded sends POST body", async () => {
+  const calls: Array<{ path: string; init?: { method?: string; body?: unknown } }> = [];
+  await handleMcpRequest({
+    jsonrpc: "2.0",
+    id: 7,
+    method: "tools/call",
+    params: {
+      name: "set_app_excluded",
+      arguments: {
+        exeName: "steam_app_default",
+        excluded: true,
+      },
+    },
+  }, {
+    apiBase: "http://127.0.0.1:14840",
+    apiToken: "token",
+    callApi: async (path, _deps, init) => {
+      calls.push({ path, init });
+      return { data: { ok: true } };
+    },
+  });
+
+  assert.deepEqual(calls, [
+    {
+      path: "/api/v1/apps/steam_app_default/exclude",
+      init: {
+        method: "POST",
+        body: { excluded: true },
       },
     },
   ]);

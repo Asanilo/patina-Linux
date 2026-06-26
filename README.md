@@ -46,13 +46,14 @@ The Linux port is usable as a development prototype, but it is not release-stabl
 | Area | Status | Notes |
 |---|---|---|
 | GNOME Wayland window tracking | Working prototype | Uses `org.patina.WindowTracker` from the GNOME Shell extension. |
-| X11 tracking | Planned / partial | Kept as fallback direction, not the main verified path yet. |
+| X11 tracking | Implemented fallback / limited verification | Used on X11 sessions; GNOME Wayland does not silently fall back to X11. |
 | KDE / wlroots Wayland | Not promised | Needs compositor-specific work later. |
 | Local API | Implemented | Binds to `127.0.0.1:14840` and uses a bearer token. |
-| MCP wrapper | Prototype implemented | `npm run mcp:patina`. |
+| MCP wrapper | Implemented, query-first | `npm run mcp:patina`; write side currently covers app classify/rename/exclude. |
 | Chromium Web Sync | Implemented | `extensions/chromium`. |
 | Firefox / Zen Web Sync | Prototype implemented | The signed XPI can be installed directly. |
 | Linux packaging | Release pipeline configured | Future version tags build x86_64 AppImage, `.deb`, and a merged updater manifest. |
+| Local API token/port UI | Implemented | Settings manages the local API port/token separately from browser Web Sync. |
 
 ## Quick Start On Linux
 
@@ -136,6 +137,8 @@ gnome-extensions enable patina-window-tracker@patina
 
 Patina can record the active webpage URL/title/domain through a browser extension. It does not read page contents, form contents, screenshots, clipboard data, or browser history.
 
+The browser extension port/token shown in Settings are separate from the local API token used by `http://127.0.0.1:14840`.
+
 ### Chromium / Chrome / Edge
 
 Use:
@@ -186,11 +189,11 @@ Main endpoint index:
 
 - [docs/api-index.md](docs/api-index.md)
 
-Implemented API groups include diagnostics, current activity, sessions, summaries, trends, web activity, apps, and tracker settings.
+Implemented API groups include diagnostics, current activity, sessions, summaries, trends, web activity, apps, tracker settings, external AI context, and Tools snapshot. The local API also exposes `GET /api/v1/openapi.json` with a field-level OpenAPI 3.1 schema.
 
 ## MCP Wrapper
 
-The prototype MCP wrapper maps MCP tool calls to the local API:
+The MCP wrapper maps MCP tool calls to the local API:
 
 ```bash
 npm run mcp:patina
@@ -212,8 +215,14 @@ Current tools include:
 - `get_week_summary`
 - `get_activity_trend`
 - `query_web_activity`
+- `get_activity_context`
+- `get_tools_snapshot`
 - `list_apps`
 - `classify_app`
+- `rename_app`
+- `set_app_excluded`
+
+See [docs/mcp-wrapper.md](docs/mcp-wrapper.md) for MCP client setup, tool-to-API mapping, and remaining write-side gaps.
 
 ## Useful Checks
 

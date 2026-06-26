@@ -1,24 +1,50 @@
 use crate::engine::api::router;
 use std::net::SocketAddr;
+use std::sync::Mutex;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 
 pub const DEFAULT_PORT: u16 = 14840;
 
 pub struct ApiServerState {
-    shutdown_tx: watch::Sender<bool>,
+    inner: Mutex<ApiServerRuntime>,
+}
+
+#[derive(Default)]
+struct ApiServerRuntime {
+    shutdown_tx: Option<watch::Sender<bool>>,
+    port: Option<u16>,
 }
 
 impl ApiServerState {
     pub fn new() -> Self {
-        let (shutdown_tx, _) = watch::channel(false);
-        Self { shutdown_tx }
+        Self {
+            inner: Mutex::new(ApiServerRuntime::default()),
+        }
     }
 
     pub fn start(&self, app_handle: tauri::AppHandle, port: Option<u16>) {
         let port = port.unwrap_or(DEFAULT_PORT);
         let token = super::auth::get_api_token().to_string();
-        let shutdown_rx = self.shutdown_tx.subscribe();
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        match self.inner.lock() {
+            Ok(mut guard) => {
+                if let Some(previous) = guard.shutdown_tx.take() {
+                    let _ = previous.send(true);
+                }
+                guard.shutdown_tx = Some(shutdown_tx);
+                guard.port = Some(port);
+            }
+            Err(poisoned) => {
+                let mut guard = poisoned.into_inner();
+                if let Some(previous) = guard.shutdown_tx.take() {
+                    let _ = previous.send(true);
+                }
+                guard.shutdown_tx = Some(shutdown_tx);
+                guard.port = Some(port);
+            }
+        }
 
         println!("[api] token: {token}");
 
@@ -29,8 +55,33 @@ impl ApiServerState {
         });
     }
 
+    pub fn restart(&self, app_handle: tauri::AppHandle, port: u16) {
+        self.start(app_handle, Some(port));
+    }
+
     pub fn shutdown(&self) {
-        let _ = self.shutdown_tx.send(true);
+        match self.inner.lock() {
+            Ok(mut guard) => {
+                if let Some(tx) = guard.shutdown_tx.take() {
+                    let _ = tx.send(true);
+                }
+                guard.port = None;
+            }
+            Err(poisoned) => {
+                let mut guard = poisoned.into_inner();
+                if let Some(tx) = guard.shutdown_tx.take() {
+                    let _ = tx.send(true);
+                }
+                guard.port = None;
+            }
+        }
+    }
+
+    pub fn port(&self) -> u16 {
+        match self.inner.lock() {
+            Ok(guard) => guard.port.unwrap_or(DEFAULT_PORT),
+            Err(poisoned) => poisoned.into_inner().port.unwrap_or(DEFAULT_PORT),
+        }
     }
 }
 

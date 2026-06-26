@@ -40,8 +40,10 @@ gdbus call --session \
 Expected behavior:
 
 - On GNOME Wayland, Patina should use `org.patina.WindowTracker`.
-- On X11, Patina should use the X11 fallback path.
+- On X11, Patina should use the X11 fallback path. This path exists in code but has less release verification than GNOME Wayland.
 - KDE and wlroots Wayland are not currently promised.
+
+Settings -> Diagnostics shows the current window-tracking provider and distinguishes unavailable GNOME extension D-Bus from unsupported non-GNOME Wayland compositors.
 
 ## Local API
 
@@ -57,6 +59,8 @@ Token path:
 ${XDG_DATA_HOME:-~/.local/share}/Patina/api_token
 ```
 
+This local API token/port is separate from the browser Web Sync port/token shown in Settings -> Interface. The local API defaults to port `14840`, and Settings can update the local API port/token.
+
 Example:
 
 ```bash
@@ -66,6 +70,23 @@ export PATINA_API_TOKEN="$(cat "${XDG_DATA_HOME:-$HOME/.local/share}/Patina/api_
 curl -s "$PATINA_API_BASE/api/v1/diagnostics" \
   -H "Authorization: Bearer $PATINA_API_TOKEN"
 ```
+
+Settings -> Diagnostics also shows whether the API is listening and where the token file lives.
+
+## Browser Web Sync
+
+Browser activity sync is configured from Settings -> Interface. The page can copy the extension configuration and shows separate Firefox/Zen and Chromium installation paths.
+
+Supported development paths:
+
+- Firefox / Zen: `extensions/firefox`
+- Chromium / Chrome / Edge: `extensions/chromium`
+
+Persistent Firefox/Zen installation requires a signed XPI. Temporary development loading through `about:debugging#/runtime/this-firefox` is not persistent across browser restarts.
+
+## Linux Autostart Diagnostics
+
+Settings -> Diagnostics shows the current `~/.config/autostart/Patina.desktop` state. When the `Exec` path points to a stale launcher, such as a terminal executable used during development, the Desktop Integration row exposes a repair action that rewrites it to the current Patina executable with `--autostart`.
 
 ## Linux Release Bundles
 
@@ -99,7 +120,7 @@ The release workflow publishes a Linux-only `latest.json` containing `linux-x86_
 
 ## MCP Wrapper
 
-The prototype MCP wrapper is a stdio server that maps MCP tool calls to the local API:
+The MCP wrapper is a stdio server that maps MCP tool calls to the local API:
 
 ```bash
 npm run mcp:patina
@@ -121,8 +142,14 @@ Current tools:
 - `get_week_summary`
 - `get_activity_trend`
 - `query_web_activity`
+- `get_activity_context`
+- `get_tools_snapshot`
 - `list_apps`
 - `classify_app`
+- `rename_app`
+- `set_app_excluded`
+
+The full MCP client setup and tool-to-endpoint mapping lives in [`mcp-wrapper.md`](./mcp-wrapper.md).
 
 ## Current Validation Commands
 

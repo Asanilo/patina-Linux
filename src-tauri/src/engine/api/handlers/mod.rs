@@ -1,8 +1,11 @@
+pub mod ai;
 pub mod apps;
 pub mod diagnostics;
 pub mod health;
+pub mod openapi;
 pub mod sessions;
 pub mod settings;
+pub mod tools;
 pub mod trend;
 pub mod web_activity;
 

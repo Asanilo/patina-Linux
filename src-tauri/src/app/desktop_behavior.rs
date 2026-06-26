@@ -1,3 +1,4 @@
+use crate::app::autostart;
 use crate::app::state::DesktopBehaviorState;
 use crate::app::tray::{apply_tray_visibility, show_main_window, MAIN_WINDOW_LABEL};
 use crate::app::widget;
@@ -5,37 +6,47 @@ use crate::data::repositories::{app_settings, update_state};
 use crate::data::sqlite_pool::wait_for_sqlite_pool;
 use crate::domain::settings::MinimizeBehavior;
 use tauri::{AppHandle, Manager, Runtime};
+#[cfg(not(target_os = "linux"))]
 use tauri_plugin_autostart::ManagerExt as AutostartManagerExt;
 
 pub(crate) fn apply_autostart<R: Runtime>(
     app: &AppHandle<R>,
     launch_at_login: bool,
 ) -> Result<(), String> {
-    let autostart_manager = app.autolaunch();
-
-    if launch_at_login {
-        #[cfg(all(debug_assertions, target_os = "windows"))]
-        {
-            let executable_path = std::env::current_exe()
-                .ok()
-                .map(|path| path.display().to_string())
-                .unwrap_or_else(|| "<unknown>".to_string());
-            return Err(format!(
-                "autostart enable blocked in debug build on Windows to avoid registering a debug executable path ({executable_path}). Please enable launch-at-login from the installed release build."
-            ));
-        }
-
-        #[cfg(not(all(debug_assertions, target_os = "windows")))]
-        autostart_manager
-            .enable()
-            .map_err(|error| format!("failed to enable autostart: {error}"))?;
-    } else {
-        autostart_manager
-            .disable()
-            .map_err(|error| format!("failed to disable autostart: {error}"))?;
+    #[cfg(target_os = "linux")]
+    {
+        let _ = app;
+        autostart::apply_linux_autostart(launch_at_login)
     }
 
-    Ok(())
+    #[cfg(not(target_os = "linux"))]
+    {
+        let autostart_manager = app.autolaunch();
+
+        if launch_at_login {
+            #[cfg(all(debug_assertions, target_os = "windows"))]
+            {
+                let executable_path = std::env::current_exe()
+                    .ok()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|| "<unknown>".to_string());
+                return Err(format!(
+                "autostart enable blocked in debug build on Windows to avoid registering a debug executable path ({executable_path}). Please enable launch-at-login from the installed release build."
+            ));
+            }
+
+            #[cfg(not(all(debug_assertions, target_os = "windows")))]
+            autostart_manager
+                .enable()
+                .map_err(|error| format!("failed to enable autostart: {error}"))?;
+        } else {
+            autostart_manager
+                .disable()
+                .map_err(|error| format!("failed to disable autostart: {error}"))?;
+        }
+
+        Ok(())
+    }
 }
 
 pub(crate) fn set_desktop_behavior<R: Runtime>(

@@ -15,6 +15,7 @@ import {
   type HourlyActivityChartMode,
   type MinimizeBehavior,
   type ThemeMode,
+  type WebActivityUrlPrivacy,
 } from "../../shared/settings/appSettings.ts";
 
 const TRACKER_LAST_HEARTBEAT_KEY = "__tracker_last_heartbeat_ms";
@@ -50,6 +51,9 @@ type RawAppSettingsKey =
   | "web_activity_enabled"
   | "web_activity_port"
   | "web_activity_token"
+  | "web_activity_url_privacy"
+  | "local_api_port"
+  | "local_api_token"
   | "remote_status_bridge_enabled"
   | "remote_status_bridge_url"
   | "remote_status_bridge_token"
@@ -76,6 +80,9 @@ const APP_SETTINGS_RAW_KEYS: Record<keyof AppSettings, RawAppSettingsKey> = {
   webActivityEnabled: "web_activity_enabled",
   webActivityPort: "web_activity_port",
   webActivityToken: "web_activity_token",
+  webActivityUrlPrivacy: "web_activity_url_privacy",
+  localApiPort: "local_api_port",
+  localApiToken: "local_api_token",
   remoteStatusBridgeEnabled: "remote_status_bridge_enabled",
   remoteStatusBridgeUrl: "remote_status_bridge_url",
   remoteStatusBridgeToken: "remote_status_bridge_token",
@@ -87,6 +94,7 @@ const TIMELINE_MERGE_GAP_SECONDS_RANGE = { min: 60, max: 300, step: 60 } as cons
 const REFRESH_INTERVAL_OPTIONS = [1, 3];
 const MIN_SESSION_SECONDS_RANGE = { min: 60, max: 600, step: 60 } as const;
 const WEB_ACTIVITY_PORT_RANGE = { min: 1024, max: 65535 } as const;
+const LOCAL_API_PORT_RANGE = { min: 1024, max: 65535 } as const;
 function parseNumberSetting(value: string | undefined, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -120,6 +128,16 @@ function normalizeIntegerRangeValue(
 
 function normalizeWebActivityToken(value: string | undefined) {
   return value?.trim() ?? DEFAULT_SETTINGS.webActivityToken;
+}
+
+function normalizeLocalApiToken(value: string | undefined) {
+  return value?.trim() ?? DEFAULT_SETTINGS.localApiToken;
+}
+
+function normalizeWebActivityUrlPrivacy(value: string | undefined): WebActivityUrlPrivacy {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "strip_query" || normalized === "domain_only") return normalized;
+  return DEFAULT_SETTINGS.webActivityUrlPrivacy;
 }
 
 function normalizeRemoteStatusBridgeToken(value: string | undefined) {
@@ -305,6 +323,13 @@ export function normalizeSettingsRecord(record: Record<string, string | undefine
       WEB_ACTIVITY_PORT_RANGE,
     ),
     webActivityToken,
+    webActivityUrlPrivacy: normalizeWebActivityUrlPrivacy(record.web_activity_url_privacy),
+    localApiPort: normalizeIntegerRangeValue(
+      record.local_api_port,
+      DEFAULT_SETTINGS.localApiPort,
+      LOCAL_API_PORT_RANGE,
+    ),
+    localApiToken: normalizeLocalApiToken(record.local_api_token),
     remoteStatusBridgeEnabled: parseBooleanSetting(
       record.remote_status_bridge_enabled,
       DEFAULT_SETTINGS.remoteStatusBridgeEnabled,

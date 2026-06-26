@@ -1,6 +1,6 @@
 use crate::domain::settings::{
-    parse_audio_participation_enabled, DesktopBehaviorSettings, RemoteStatusBridgeSettings,
-    WebActivityBridgeSettings, WebActivitySettings,
+    parse_audio_participation_enabled, DesktopBehaviorSettings, LocalApiSettings,
+    RemoteStatusBridgeSettings, WebActivityBridgeSettings, WebActivitySettings,
 };
 use sqlx::{Pool, Row, Sqlite};
 
@@ -13,6 +13,9 @@ const AUDIO_PARTICIPATION_ENABLED_KEY: &str = "audio_participation_enabled";
 const WEB_ACTIVITY_ENABLED_KEY: &str = "web_activity_enabled";
 const WEB_ACTIVITY_PORT_KEY: &str = "web_activity_port";
 const WEB_ACTIVITY_TOKEN_KEY: &str = "web_activity_token";
+const WEB_ACTIVITY_URL_PRIVACY_KEY: &str = "web_activity_url_privacy";
+const LOCAL_API_PORT_KEY: &str = "local_api_port";
+const LOCAL_API_TOKEN_KEY: &str = "local_api_token";
 const REMOTE_STATUS_BRIDGE_ENABLED_KEY: &str = "remote_status_bridge_enabled";
 const REMOTE_STATUS_BRIDGE_URL_KEY: &str = "remote_status_bridge_url";
 const REMOTE_STATUS_BRIDGE_TOKEN_KEY: &str = "remote_status_bridge_token";
@@ -145,11 +148,41 @@ fn is_allowed_app_setting_key(key: &str) -> bool {
             | "web_activity_enabled"
             | "web_activity_port"
             | "web_activity_token"
+            | "web_activity_url_privacy"
+            | "local_api_port"
+            | "local_api_token"
             | "remote_status_bridge_enabled"
             | "remote_status_bridge_url"
             | "remote_status_bridge_token"
             | "remote_status_bridge_machine_id"
     )
+}
+
+pub async fn load_local_api_settings(pool: &Pool<Sqlite>) -> Result<LocalApiSettings, sqlx::Error> {
+    let rows = sqlx::query("SELECT key, value FROM settings WHERE key IN (?, ?)")
+        .bind(LOCAL_API_PORT_KEY)
+        .bind(LOCAL_API_TOKEN_KEY)
+        .fetch_all(pool)
+        .await?;
+
+    let mut port: Option<String> = None;
+    let mut token: Option<String> = None;
+
+    for row in rows {
+        let key: String = row.get("key");
+        let value: String = row.get("value");
+
+        match key.as_str() {
+            LOCAL_API_PORT_KEY => port = Some(value),
+            LOCAL_API_TOKEN_KEY => token = Some(value),
+            _ => {}
+        }
+    }
+
+    Ok(LocalApiSettings::from_storage_values(
+        port.as_deref(),
+        token.as_deref(),
+    ))
 }
 
 pub async fn load_audio_participation_enabled(pool: &Pool<Sqlite>) -> Result<bool, sqlx::Error> {
@@ -198,14 +231,16 @@ pub async fn load_web_activity_bridge_settings(
 pub async fn load_web_activity_settings(
     pool: &Pool<Sqlite>,
 ) -> Result<WebActivitySettings, sqlx::Error> {
-    let rows = sqlx::query("SELECT key, value FROM settings WHERE key IN (?, ?)")
+    let rows = sqlx::query("SELECT key, value FROM settings WHERE key IN (?, ?, ?)")
         .bind(WEB_ACTIVITY_ENABLED_KEY)
         .bind(WEB_ACTIVITY_TOKEN_KEY)
+        .bind(WEB_ACTIVITY_URL_PRIVACY_KEY)
         .fetch_all(pool)
         .await?;
 
     let mut enabled: Option<String> = None;
     let mut token: Option<String> = None;
+    let mut url_privacy: Option<String> = None;
 
     for row in rows {
         let key: String = row.get("key");
@@ -214,6 +249,7 @@ pub async fn load_web_activity_settings(
         match key.as_str() {
             WEB_ACTIVITY_ENABLED_KEY => enabled = Some(value),
             WEB_ACTIVITY_TOKEN_KEY => token = Some(value),
+            WEB_ACTIVITY_URL_PRIVACY_KEY => url_privacy = Some(value),
             _ => {}
         }
     }
@@ -221,6 +257,7 @@ pub async fn load_web_activity_settings(
     Ok(WebActivitySettings::from_storage_values(
         enabled.as_deref(),
         token.as_deref(),
+        url_privacy.as_deref(),
     ))
 }
 
@@ -428,6 +465,40 @@ mod tests {
             assert_eq!(settings.url, "wss://worker.example/ws");
             assert_eq!(settings.token, "secret");
             assert_eq!(settings.machine_id, "machine-1");
+        });
+    }
+
+    #[test]
+    fn web_activity_settings_loads_url_privacy_mode() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+
+            commit_app_setting_mutations(
+                &pool,
+                &[
+                    AppSettingMutation {
+                        key: "web_activity_enabled".to_string(),
+                        value: "1".to_string(),
+                    },
+                    AppSettingMutation {
+                        key: "web_activity_token".to_string(),
+                        value: "secret".to_string(),
+                    },
+                    AppSettingMutation {
+                        key: "web_activity_url_privacy".to_string(),
+                        value: "domain_only".to_string(),
+                    },
+                ],
+            )
+            .await
+            .unwrap();
+
+            let settings = load_web_activity_settings(&pool).await.unwrap();
+            assert!(settings.enabled);
+            assert_eq!(
+                settings.url_privacy,
+                crate::domain::settings::WebActivityUrlPrivacyMode::DomainOnly
+            );
         });
     }
 }

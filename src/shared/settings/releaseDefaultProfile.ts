@@ -62,6 +62,9 @@ export interface ReleaseDefaultSettingsProfile {
   webActivityEnabled: boolean;
   webActivityPort: number;
   webActivityToken: string;
+  webActivityUrlPrivacy: "full" | "strip_query" | "domain_only";
+  localApiPort: number;
+  localApiToken: string;
   remoteStatusBridgeEnabled: boolean;
   remoteStatusBridgeUrl: string;
   remoteStatusBridgeToken: string;
@@ -89,6 +92,9 @@ export const RELEASE_DEFAULT_SETTINGS: ReleaseDefaultSettingsProfile = {
   webActivityEnabled: false,
   webActivityPort: 12345,
   webActivityToken: "",
+  webActivityUrlPrivacy: "full",
+  localApiPort: 14840,
+  localApiToken: "",
   remoteStatusBridgeEnabled: false,
   remoteStatusBridgeUrl: "",
   remoteStatusBridgeToken: "",

@@ -48,6 +48,10 @@ export async function setAudioParticipationEnabled(enabled: boolean): Promise<vo
   await invoke("cmd_set_audio_participation_enabled", { enabled });
 }
 
+export async function setLocalApiSettings(port: number, token: string): Promise<void> {
+  await invoke("cmd_set_local_api_settings", { port, token });
+}
+
 export async function toggleTrackingPaused(): Promise<void> {
   await invoke("cmd_toggle_tracking_paused");
 }

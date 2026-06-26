@@ -1,6 +1,6 @@
 # Patina Local API Index
 
-> Status: active index for the local HTTP API prototype.
+> Status: active reference for the local HTTP API.
 > Purpose: track what endpoints exist, their current scope, and known gaps for external AI/MCP integration.
 
 ---
@@ -27,10 +27,11 @@ All curl examples below assume those two variables are set.
 
 Current caveats:
 
-- API token and port do not have UI management yet.
+- API token and port can be managed from Settings.
 - The server binds to localhost only.
 - CORS is permissive for local integration.
-- This is not an OpenAPI spec yet; it is the source-of-truth endpoint index while the API is still moving.
+- `/api/v1/openapi.json` exposes the machine-readable OpenAPI 3.1 schema with paths, query/path parameters, request bodies, response envelopes, auth, error envelopes, and field-level component schemas.
+- This document remains the human-maintained reference for behavior notes and implementation caveats.
 
 ---
 
@@ -39,6 +40,7 @@ Current caveats:
 | Endpoint | Method | Status | Purpose |
 |---|---:|---|---|
 | `/api/v1/health` | `GET` | Implemented | API health, app version, platform |
+| `/api/v1/openapi.json` | `GET` | Implemented | Machine-readable OpenAPI 3.1 schema |
 | `/api/v1/diagnostics` | `GET` | Implemented | Platform, tracker runtime, and browser bridge diagnostics |
 | `/api/v1/current` | `GET` | Implemented | Current foreground window snapshot |
 | `/api/v1/sessions` | `GET` | Implemented | Closed session query |
@@ -48,16 +50,41 @@ Current caveats:
 | `/api/v1/summary/week` | `GET` | Implemented | Local-week summary |
 | `/api/v1/trend` | `GET` | Partial | Daily activity trend for week/month |
 | `/api/v1/web-activity` | `GET` | Implemented | Browser activity segment query |
+| `/api/v1/ai/activity-context` | `GET` | Implemented | Aggregated diagnostics, active session, summaries, and recent web activity for external AI analysis |
 | `/api/v1/apps` | `GET` | Implemented | Known apps from recorded sessions |
 | `/api/v1/apps/{exe_name}/classify` | `POST` | Implemented | Save app category |
 | `/api/v1/apps/{exe_name}/rename` | `POST` | Implemented | Save app display name |
 | `/api/v1/apps/{exe_name}/exclude` | `POST` | Implemented | Save app exclusion flag |
 | `/api/v1/settings/tracker` | `GET` | Implemented | Tracker settings snapshot |
 | `/api/v1/settings/tracker/afk-threshold` | `POST` | Implemented | Update idle timeout threshold |
+| `/api/v1/tools/snapshot` | `GET` | Implemented | Current Tools runtime snapshot |
 
 ---
 
 ## 3. Endpoint Notes
+
+### `GET /api/v1/openapi.json`
+
+Curl:
+
+```bash
+curl -s "$PATINA_API_BASE/api/v1/openapi.json" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN"
+```
+
+Current scope:
+
+- OpenAPI version: `3.1.0`
+- Auth model: bearer token through `components.securitySchemes.bearerAuth`
+- Paths: every implemented local API endpoint listed in this document
+- Parameters: query params for sessions, summary range, trend, web activity; path params for app management
+- Request bodies: classify, rename, exclude, and AFK threshold writes
+- Responses: success envelopes and standard `400` / `401` / `404` / `500` error envelopes
+- Components: field-level schemas for health, diagnostics, current window, sessions, active session, summaries, trend, web activity, apps, tracker settings, AI activity context, and Tools snapshot
+
+Known gap:
+
+- OpenAPI does not yet document future Tools write-side endpoints because those routes are not implemented.
 
 ### `GET /api/v1/health`
 
@@ -421,6 +448,13 @@ Returns browser activity segments ordered by newest first:
 - `duration`
 - `source`
 
+URL privacy:
+
+- The Settings page controls how the `url` field is exposed to local API clients.
+- `Full URL` keeps the captured URL unchanged.
+- `Remove query and fragment` strips `?query` and `#fragment` before returning `url`.
+- `Domain only` returns `url: null`; `domain` and `normalized_domain` remain available for grouping and AI aggregation.
+
 Schema:
 
 ```json
@@ -449,14 +483,13 @@ Schema:
 
 Current behavior:
 
-- Stores and returns full `http` / `https` URLs for non-incognito tabs.
+- Stores `http` / `https` URLs for non-incognito tabs, then applies the configured URL privacy mode when serving this API.
 - Ignores non-web schemes such as `chrome://`.
 - Active browser segment has `end_time: null`; `duration` is computed from the current API sample time.
 - Domain-level recording overrides still apply at capture time.
 
 Known gaps:
 
-- No URL redaction mode in API settings yet.
 - Query params are currently simple key/value parsing, not full URL-decoding.
 
 ### `GET /api/v1/apps`
@@ -676,43 +709,41 @@ curl -s "$PATINA_API_BASE/api/v1/missing" \
 
 The API is intended as the stable external integration surface.
 
-Prototype MCP wrapper:
+MCP wrapper:
 
 ```bash
 npm run mcp:patina
 ```
+
+Full MCP setup and client configuration are documented in [`mcp-wrapper.md`](./mcp-wrapper.md).
 
 The wrapper is a dependency-free stdio MCP server that reads:
 
 - `PATINA_API_BASE`, defaulting to `http://127.0.0.1:14840`
 - `PATINA_API_TOKEN`, or `PATINA_API_TOKEN_FILE`, or the default token file path
 
-Current MCP tools map to these endpoint groups:
+Current MCP tools:
 
-- `get_diagnostics`
-- `get_current_activity`
-- `query_sessions`
-- `get_active_session`
-- `get_today_summary`
-- `get_week_summary`
-- `get_activity_trend`
-- `query_web_activity`
-- `list_apps`
-- `classify_app`
-
-Implemented in the prototype wrapper:
-
-- `get_diagnostics`
-- `get_current_activity`
-- `query_sessions`
-- `get_active_session`
-- `get_today_summary`
-- `get_week_summary`
-- `get_activity_trend`
-- `query_web_activity`
-- `list_apps`
-- `classify_app`
+| Tool | HTTP API | Arguments | Purpose |
+|---|---|---|---|
+| `get_diagnostics` | `GET /api/v1/diagnostics` | none | Check Linux/window/browser/API runtime health |
+| `get_current_activity` | `GET /api/v1/current` | none | Read current foreground activity snapshot |
+| `query_sessions` | `GET /api/v1/sessions` | `from`, `to`, `app`, `limit` | Query closed activity sessions |
+| `get_active_session` | `GET /api/v1/sessions/active` | none | Read the currently active session with realtime duration |
+| `get_today_summary` | `GET /api/v1/summary/today` | none | Read local-day summary |
+| `get_week_summary` | `GET /api/v1/summary/week` | none | Read local-week summary |
+| `get_activity_trend` | `GET /api/v1/trend` | `period`, `granularity` | Read daily week/month trend |
+| `query_web_activity` | `GET /api/v1/web-activity` | `from`, `to`, `domain`, `limit` | Query browser extension activity segments |
+| `get_activity_context` | `GET /api/v1/ai/activity-context` | none | Fetch diagnostics, active session, summaries, and recent web activity for external AI analysis |
+| `get_tools_snapshot` | `GET /api/v1/tools/snapshot` | none | Fetch current Tools runtime snapshot |
+| `list_apps` | `GET /api/v1/apps` | none | List known apps from recorded sessions |
+| `classify_app` | `POST /api/v1/apps/{exe_name}/classify` | `exeName`, `category` | Save an app category |
+| `rename_app` | `POST /api/v1/apps/{exe_name}/rename` | `exeName`, `displayName` | Save an app display name |
+| `set_app_excluded` | `POST /api/v1/apps/{exe_name}/exclude` | `exeName`, `excluded` | Save an app exclusion flag |
 
 Remaining MCP wrapper gaps:
 
-- `/api/v1/tools/*`
+- Tracker settings write-side tools.
+- Local API configuration tools.
+- Tools write-side actions such as creating reminders or starting timers.
+- Generated MCP tool metadata does not yet consume `/api/v1/openapi.json`; the wrapper keeps an explicit hand-written tool list for now.
