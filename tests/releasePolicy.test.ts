@@ -268,8 +268,18 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   assert.match(workflow, /runs-on: ubuntu-22\.04/);
   assert.match(workflow, /--bundles appimage,deb/);
   assert.match(workflow, /prepare-linux-release-assets/);
+  assert.match(workflow, /Prepare updater signing key/);
+  assert.match(workflow, /TAURI_SIGNING_PRIVATE_KEY_PATH=/);
+  assert.match(workflow, /printf '%s\\n' "\$TAURI_SIGNING_PRIVATE_KEY" > "\$signing_key_path"/);
+  assert.match(workflow, /chmod 600 "\$signing_key_path"/);
+  assert.match(workflow, /Cleanup updater signing key/);
+  assert.match(workflow, /rm -f "\$RUNNER_TEMP\/tauri-signing\.key"/);
   assert.match(workflow, /Package Chromium extension/);
   assert.match(workflow, /Publish Linux release/);
+  assert.doesNotMatch(
+    workflow,
+    /Build AppImage and Debian bundles[\s\S]*TAURI_SIGNING_PRIVATE_KEY:\s*\$\{\{\s*secrets\.TAURI_SIGNING_PRIVATE_KEY\s*\}\}/,
+  );
   assert.doesNotMatch(workflow, /windows-latest/);
   assert.doesNotMatch(workflow, /--bundles nsis/);
   assert.doesNotMatch(workflow, /windows-x86_64/);

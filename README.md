@@ -34,6 +34,21 @@ The Linux port is usable as a development prototype, but it is not release-stabl
 - Settings diagnostics for window tracking, local API, browser bridge, and Linux autostart.
 - Repair action for Linux `~/.config/autostart/Patina.desktop`.
 
+## Upstream Tracking Policy
+
+The fork follows upstream Patina selectively: cross-platform UI, data, tracking-consistency, and quality fixes should be reviewed and ported when they fit the Linux-first product boundary. Platform-specific Windows release work is not copied into the Linux release line by default.
+
+Already synced from upstream v1.8 work:
+
+- History timeline zoom.
+- History category distribution fix when Web Sync is disabled.
+
+Upstream-inspired work still needs Linux-specific design before porting:
+
+- Local data directory and WebView cache management.
+- Web Sync setup guide polish.
+- Engineering cleanup around copy modules, quality hotspot checks, and bundle budget checks.
+
 ## Interface Preview
 |  |  |
 | --- | --- |
@@ -52,7 +67,7 @@ The Linux port is usable as a development prototype, but it is not release-stabl
 | MCP wrapper | Implemented, query-first | `npm run mcp:patina`; write side currently covers app classify/rename/exclude. |
 | Chromium Web Sync | Implemented | `extensions/chromium`. |
 | Firefox / Zen Web Sync | Prototype implemented | The signed XPI can be installed directly. |
-| Linux packaging | Release pipeline configured | Future version tags build x86_64 AppImage, `.deb`, and a merged updater manifest. |
+| Linux packaging | Release pipeline configured | Future version tags build x86_64 AppImage, `.deb`, browser/desktop extension assets, and a Linux-only updater manifest. |
 | Local API token/port UI | Implemented | Settings manages the local API port/token separately from browser Web Sync. |
 
 ## Quick Start On Linux
@@ -107,9 +122,12 @@ ${XDG_DATA_HOME:-~/.local/share}/Patina/api_token
 The release workflow produces:
 
 - `Patina_<version>_amd64.AppImage`
+- `Patina_<version>_amd64.AppImage.tar.gz`
 - `Patina_<version>_amd64.deb`
 - `patina-gnome-shell-extension-v<version>.zip`
+- `patina-chromium-extension-v<version>.zip`
 - `patina-firefox-extension-v<version>.xpi`
+- `latest.json`
 
 Ubuntu and Debian users should prefer the `.deb`. It installs the GNOME Shell extension files into the system extension directory, but the extension must still be enabled for the current user:
 
@@ -132,6 +150,21 @@ GNOME Wayland users must also install the extension archive:
 gnome-extensions install --force patina-gnome-shell-extension-v<version>.zip
 gnome-extensions enable patina-window-tracker@patina
 ```
+
+### Release Validation
+
+Before publishing a Linux tag, run:
+
+```bash
+npm run release:validate-version-files -- <version>
+npm run release:validate-changelog -- <version>
+npm run test:release
+npm run extension:gnome:check
+npm run extension:chromium:check
+npm run extension:firefox:check
+```
+
+`npm run test:release` verifies that the release workflow builds Linux-only bundles, that `prepare-linux-release-assets` copies the `.deb` into `dist-release`, and that `latest.json` points to the signed AppImage updater archive.
 
 ## Browser Web Sync
 
@@ -228,6 +261,7 @@ See [docs/mcp-wrapper.md](docs/mcp-wrapper.md) for MCP client setup, tool-to-API
 
 ```bash
 npm run build
+npm run test:release
 npm run test:settings
 npm run extension:gnome:check
 npm run extension:chromium:check

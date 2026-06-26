@@ -33,6 +33,22 @@ Linux 版本当前是可用的开发原型，还不是稳定发行版。
 - 支持 Firefox / Zen 扩展。
 - 设置页提供窗口追踪、本地 API、浏览器桥接、Linux 自启动诊断。
 - 可以修复 Linux `~/.config/autostart/Patina.desktop` 的错误 `Exec`。
+
+## 上游跟进策略
+
+这个 fork 会选择性跟进上游 Patina：跨平台 UI、数据、追踪一致性和质量修复，只要符合 Linux-first 产品边界，就应该评估并移植。Windows 平台专属的发布、安装和系统集成工作，不默认进入 Linux 发布线。
+
+已经从上游 v1.8 工作同步：
+
+- 历史页时间轴缩放。
+- 网页同步关闭时的历史页分类分布修复。
+
+仍需要 Linux 设计后再跟进的上游方向：
+
+- 本机数据目录管理与 WebView cache 管理。
+- 网页同步安装向导体验。
+- copy 模块拆分、quality hotspot 检查、bundle budget 检查等工程整理。
+
 ## 界面预览
 
 |  |  |
@@ -46,13 +62,14 @@ Linux 版本当前是可用的开发原型，还不是稳定发行版。
 | 模块 | 状态 | 说明 |
 |---|---|---|
 | GNOME Wayland 窗口追踪 | 原型可用 | 依赖 GNOME Shell 扩展提供的 `org.patina.WindowTracker`。 |
-| X11 追踪 | 计划 / 部分 | 作为 fallback 方向保留，尚不是主要验证路径。 |
+| X11 追踪 | 已实现 fallback / 验证有限 | X11 session 可走 fallback；GNOME Wayland 不会静默降级到 X11。 |
 | KDE / wlroots Wayland | 暂不承诺 | 后续需要按桌面环境分别适配。 |
 | 本地 API | 已实现 | 监听 `127.0.0.1:14840`，使用 bearer token。 |
-| MCP wrapper | 原型已实现 | `npm run mcp:patina`。 |
+| MCP wrapper | 已实现，查询优先 | `npm run mcp:patina`；写侧当前覆盖应用分类、重命名和排除。 |
 | Chromium 网页同步 | 已实现 | `extensions/chromium`。 |
 | Firefox / Zen 网页同步 | 原型已实现 | 已签名 XPI 可直接安装。 |
-| Linux 打包 | 发布链已配置 | 后续版本 tag 会生成 x86_64 AppImage、`.deb` 和合并后的 updater 清单。 |
+| Linux 打包 | 发布链已配置 | 后续版本 tag 会生成 x86_64 AppImage、`.deb`、浏览器/桌面扩展资产和 Linux-only updater 清单。 |
+| 本地 API token/port UI | 已实现 | 设置页可管理本地 API port/token，和浏览器网页同步配置分开。 |
 
 ## Linux 快速开始
 
@@ -106,9 +123,12 @@ ${XDG_DATA_HOME:-~/.local/share}/Patina/api_token
 正式发布工作流会生成：
 
 - `Patina_<version>_amd64.AppImage`
+- `Patina_<version>_amd64.AppImage.tar.gz`
 - `Patina_<version>_amd64.deb`
 - `patina-gnome-shell-extension-v<version>.zip`
+- `patina-chromium-extension-v<version>.zip`
 - `patina-firefox-extension-v<version>.xpi`
+- `latest.json`
 
 Ubuntu / Debian 用户优先安装 `.deb`。它会把 GNOME Shell 扩展文件安装到系统扩展目录，但仍需为当前用户启用扩展：
 
@@ -131,6 +151,21 @@ GNOME Wayland 用户还需要下载扩展 zip 并安装：
 gnome-extensions install --force patina-gnome-shell-extension-v<version>.zip
 gnome-extensions enable patina-window-tracker@patina
 ```
+
+### 发布验证
+
+发布 Linux tag 前先运行：
+
+```bash
+npm run release:validate-version-files -- <version>
+npm run release:validate-changelog -- <version>
+npm run test:release
+npm run extension:gnome:check
+npm run extension:chromium:check
+npm run extension:firefox:check
+```
+
+`npm run test:release` 会验证发布工作流只构建 Linux 包、`prepare-linux-release-assets` 会把 `.deb` 复制进 `dist-release`，并确认 `latest.json` 指向签名后的 AppImage updater archive。
 
 ## 浏览器网页同步
 
@@ -186,7 +221,7 @@ curl -s "$PATINA_API_BASE/api/v1/diagnostics" \
 
 - [docs/api-index.md](docs/api-index.md)
 
-当前已实现 diagnostics、current activity、sessions、summary、trend、web activity、apps、tracker settings 等接口组。
+当前已实现 diagnostics、current activity、sessions、summary、trend、web activity、apps、tracker settings、外接 AI context 和 Tools snapshot 等接口组。本地 API 也提供 `GET /api/v1/openapi.json`，其中包含字段级 OpenAPI 3.1 schema。
 
 ## MCP Wrapper
 
@@ -212,13 +247,20 @@ npm run mcp:patina
 - `get_week_summary`
 - `get_activity_trend`
 - `query_web_activity`
+- `get_activity_context`
+- `get_tools_snapshot`
 - `list_apps`
 - `classify_app`
+- `rename_app`
+- `set_app_excluded`
+
+完整 MCP 客户端配置、tool 到 API 的映射和剩余写侧缺口见 [docs/mcp-wrapper.md](docs/mcp-wrapper.md)。
 
 ## 常用检查
 
 ```bash
 npm run build
+npm run test:release
 npm run test:settings
 npm run extension:gnome:check
 npm run extension:chromium:check

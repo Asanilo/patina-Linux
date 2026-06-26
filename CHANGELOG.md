@@ -18,6 +18,32 @@ App note en: TBD.
 
 ### Added
 
+- 暂无。
+
+### Changed
+
+- 暂无。
+
+### Fixed
+
+- 暂无。
+
+### Removed
+
+- 暂无。
+
+### Internal
+
+- 暂无。
+
+## [1.8.0] - 2026-06-27
+
+Release: 新增 Linux API/MCP 外接能力、历史缩放和更清晰的发布验证。
+App note: 新增 Linux API/MCP 外接能力、历史缩放和更清晰的发布验证。
+App note en: Adds Linux API/MCP integration, History zoom, and clearer release validation.
+
+### Added
+
 - 历史页新增独立时间轴缩放弹窗，首装默认 `24h`，之后记住上次选择的缩放倍率，并支持 `24h / 12h / 8h / 4h / 1h` 离散缩放、同一时段展开和时间窗口平移，便于细看短会话与高频切换。Refs [#6](https://github.com/Ceceliaee/patina/issues/6)
 - 本地 API 新增字段级 OpenAPI 3.1 schema、外接 AI activity context、Tools snapshot endpoint，并补全 MCP wrapper 文档与 app classify/rename/exclude 写侧工具。
 - Settings 新增本地 API port/token 管理、浏览器扩展配置复制、Linux 自启动诊断修复，以及更完整的 Linux/API/MCP 文档索引。
@@ -29,6 +55,7 @@ App note en: TBD.
 ### Fixed
 
 - 修复网页同步关闭时，历史页当日分布无法保留“分类”视图的问题。
+- 修复 Linux 发布 workflow 的 updater signing key 准备流程，把 GitHub Secret 中的 Tauri 私钥原样写入临时文件并通过 `TAURI_SIGNING_PRIVATE_KEY_PATH` 传给构建，避免私钥中的 base64 padding 被 env content 路径误解码。
 
 ### Removed
 
@@ -36,7 +63,7 @@ App note en: TBD.
 
 ### Internal
 
-- 暂无。
+- README 与长期文档补充 Linux-first 发布验证、`.deb` release asset contract 和选择性跟进上游 Windows 主线的规则。
 
 ## [1.7.6] - 2026-06-26
 
