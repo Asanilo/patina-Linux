@@ -22,7 +22,34 @@ App note en: TBD.
 
 ### Changed
 
-- 后续版本的默认 CI 与 Release 改为 Linux-only，不再构建或发布 Windows 安装包。
+- 暂无。
+
+### Fixed
+
+- 暂无。
+
+### Removed
+
+- 暂无。
+
+### Internal
+
+- 暂无。
+
+## [1.7.6] - 2026-06-26
+
+Release: 发布流程改为 Linux-only，并补充可手动触发的验证链路。
+App note: 发布流程改为 Linux-only，后续安装包只面向 Linux 桌面。
+App note en: Makes the release pipeline Linux-only and keeps verification manually runnable.
+
+### Added
+
+- 暂无。
+
+### Changed
+
+- 默认 CI 与 Release 改为 Linux-only，不再构建或发布 Windows 安装包。
+- Verify 工作流支持手动触发，便于在准备 Linux 发布前复跑完整质量门槛。
 
 ### Fixed
 
