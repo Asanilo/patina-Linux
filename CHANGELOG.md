@@ -19,6 +19,8 @@ App note en: TBD.
 ### Added
 
 - 历史页新增独立时间轴缩放弹窗，首装默认 `24h`，之后记住上次选择的缩放倍率，并支持 `24h / 12h / 8h / 4h / 1h` 离散缩放、同一时段展开和时间窗口平移，便于细看短会话与高频切换。Refs [#6](https://github.com/Ceceliaee/patina/issues/6)
+- 本地 API 新增字段级 OpenAPI 3.1 schema、外接 AI activity context、Tools snapshot endpoint，并补全 MCP wrapper 文档与 app classify/rename/exclude 写侧工具。
+- Settings 新增本地 API port/token 管理、浏览器扩展配置复制、Linux 自启动诊断修复，以及更完整的 Linux/API/MCP 文档索引。
 
 ### Changed
 
@@ -26,7 +28,7 @@ App note en: TBD.
 
 ### Fixed
 
-- 暂无。
+- 修复网页同步关闭时，历史页当日分布无法保留“分类”视图的问题。
 
 ### Removed
 
