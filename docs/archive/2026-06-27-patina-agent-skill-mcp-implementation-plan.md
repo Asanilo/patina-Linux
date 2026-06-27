@@ -16,10 +16,10 @@
 - Modify: `tests/patinaMcpScript.test.ts`
 - Modify: `scripts/patina-mcp.ts`
 
-- [ ] Add failing tests for newline-delimited messages, notification suppression, buffer consumption, required write arguments, and tool-result errors.
-- [ ] Run `node --experimental-strip-types tests/patinaMcpScript.test.ts` and confirm the new assertions fail for the expected reasons.
-- [ ] Implement the minimal protocol and schema corrections.
-- [ ] Re-run the focused test and confirm it passes.
+- [x] Add failing tests for newline-delimited messages, notification suppression, buffer consumption, required write arguments, and tool-result errors.
+- [x] Run `node --experimental-strip-types tests/patinaMcpScript.test.ts` and confirm the new assertions fail for the expected reasons.
+- [x] Implement the minimal protocol and schema corrections.
+- [x] Re-run the focused test and confirm it passes.
 
 ### Task 2: API and MCP reference completeness
 
@@ -29,10 +29,10 @@
 - Modify: `README.md`
 - Modify: `src-tauri/src/engine/api/handlers/openapi.rs`
 
-- [ ] Add a failing documentation contract test for every implemented endpoint section and MCP tool.
-- [ ] Document AI activity context, Tools snapshot, transport framing, direct Node launch, and error behavior.
-- [ ] Make the OpenAPI server URL explicitly describe the default port instead of claiming it follows runtime configuration.
-- [ ] Run the focused documentation and Rust OpenAPI tests.
+- [x] Add a failing documentation contract test for every implemented endpoint section and MCP tool.
+- [x] Document AI activity context, Tools snapshot, transport framing, direct Node launch, and error behavior.
+- [x] Make the OpenAPI server URL explicitly describe the default port instead of claiming it follows runtime configuration.
+- [x] Run the focused documentation and Rust OpenAPI tests.
 
 ### Task 3: Agent Skill
 
@@ -45,19 +45,19 @@
 - Create: `tests/patinaAgentSkill.test.ts`
 - Modify: `package.json`
 
-- [ ] Add a failing Skill contract test covering transport selection, privacy, active-session handling, diagnostics, and write confirmation.
-- [ ] Initialize the Skill with `skill-creator/scripts/init_skill.py`.
-- [ ] Write the minimal Skill and transport references needed to pass the contract.
-- [ ] Run `skill-creator/scripts/quick_validate.py` and the Skill contract test.
+- [x] Add a failing Skill contract test covering transport selection, privacy, active-session handling, diagnostics, and write confirmation.
+- [x] Initialize the Skill with `skill-creator/scripts/init_skill.py`.
+- [x] Write the minimal Skill and transport references needed to pass the contract.
+- [x] Run `skill-creator/scripts/quick_validate.py` and the Skill contract test.
 
 ### Task 4: Completion validation
 
 **Files:**
 - Move: `docs/working/2026-06-27-patina-agent-skill-mcp-*.md` to `docs/archive/`
 
-- [ ] Run `npm test`.
-- [ ] Run `npm run test:replay`.
-- [ ] Run `npm run build`.
-- [ ] Run focused MCP, Skill, and Rust OpenAPI tests.
-- [ ] Check `git diff --check` and review the final diff.
-- [ ] Archive the completed working documents.
+- [x] Run `npm test`.
+- [x] Run `npm run test:replay`.
+- [x] Run `npm run build`.
+- [x] Run focused MCP, Skill, and Rust OpenAPI tests.
+- [x] Check `git diff --check` and review the final diff.
+- [x] Archive the completed working documents.

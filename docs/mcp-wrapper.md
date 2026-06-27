@@ -36,6 +36,8 @@ node --experimental-strip-types scripts/patina-mcp.ts
 
 The Patina desktop app must be running, and the local API must be listening.
 
+For an MCP client, launch the Node script directly with an absolute path. Do not put `npm run` between the client and server because package-manager output can contaminate the stdio protocol stream.
+
 ---
 
 ## 3. Environment
@@ -74,11 +76,14 @@ Example shape:
 {
   "mcpServers": {
     "patina": {
-      "command": "npm",
-      "args": ["run", "mcp:patina"],
-      "cwd": "/home/arinp22/code/patina",
+      "command": "node",
+      "args": [
+        "--experimental-strip-types",
+        "/absolute/path/to/patina/scripts/patina-mcp.ts"
+      ],
       "env": {
-        "PATINA_API_BASE": "http://127.0.0.1:14840"
+        "PATINA_API_BASE": "http://127.0.0.1:14840",
+        "PATINA_API_TOKEN_FILE": "/home/user/.local/share/Patina/api_token"
       }
     }
   }
@@ -86,6 +91,14 @@ Example shape:
 ```
 
 If the client does not inherit your shell environment, set either `PATINA_API_TOKEN` or `PATINA_API_TOKEN_FILE` explicitly.
+
+### Stdio protocol
+
+- Messages are UTF-8, newline-delimited JSON-RPC. Each request or response occupies one line.
+- `notifications/initialized` and other notifications produce no response.
+- The wrapper processes lines sequentially and writes only JSON-RPC messages to stdout.
+- Startup and transport failures belong on stderr; stdout must not contain logs or shell/package-manager banners.
+- Protocol version `2024-11-05` is currently advertised for broad client compatibility.
 
 ---
 
@@ -104,19 +117,32 @@ If the client does not inherit your shell environment, set either `PATINA_API_TO
 | `get_activity_context` | `GET /api/v1/ai/activity-context` | none | Fetch an AI-oriented activity context bundle |
 | `get_tools_snapshot` | `GET /api/v1/tools/snapshot` | none | Fetch Tools runtime state |
 | `list_apps` | `GET /api/v1/apps` | none | List known apps |
-| `classify_app` | `POST /api/v1/apps/{exe_name}/classify` | `exeName`, `category` | Save app category |
-| `rename_app` | `POST /api/v1/apps/{exe_name}/rename` | `exeName`, `displayName` | Save app display name |
-| `set_app_excluded` | `POST /api/v1/apps/{exe_name}/exclude` | `exeName`, `excluded` | Save app exclusion flag |
+| `classify_app` | `POST /api/v1/apps/{exe_name}/classify` | required: `exeName`, `category` | Save app category |
+| `rename_app` | `POST /api/v1/apps/{exe_name}/rename` | required: `exeName`, `displayName` | Save app display name |
+| `set_app_excluded` | `POST /api/v1/apps/{exe_name}/exclude` | required: `exeName`, `excluded` | Save app exclusion flag |
 
 Argument timestamps are milliseconds since Unix epoch.
 
+### Errors
+
+- Invalid tool names or missing required arguments return JSON-RPC `-32602` errors.
+- Unsupported protocol methods return JSON-RPC `-32601` errors.
+- Malformed JSON lines return JSON-RPC `-32700` errors.
+- Patina API connection, authentication, and handler failures are tool execution errors: `tools/call` returns normal MCP content with `isError: true` and the failure text.
+- A successful tool call returns the Patina HTTP response envelope as formatted JSON text.
+
 ---
 
-## 6. Current Gaps
+## 6. Agent Skill
+
+The repository includes [`skills/analyzing-patina-activity`](../skills/analyzing-patina-activity/SKILL.md). It has separate MCP and direct HTTP workflows and shared rules for diagnostics, active sessions, privacy, and write confirmation.
+
+---
+
+## 7. Current Gaps
 
 - The wrapper does not generate tools from `/api/v1/openapi.json` yet.
 - Tracker settings write-side tools are not implemented yet.
 - Local API configuration write-side tools are not implemented yet.
 - Tools write-side actions such as creating reminders, starting timers, and pausing timers are not implemented yet.
 - Browser extension installation and GNOME extension installation remain app/docs workflows, not MCP tools.
-

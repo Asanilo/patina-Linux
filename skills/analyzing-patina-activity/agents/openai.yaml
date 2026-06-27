@@ -1,0 +1,4 @@
+interface:
+  display_name: "Analyze Patina Activity"
+  short_description: "Analyze local Patina activity through MCP or HTTP"
+  default_prompt: "Use $analyzing-patina-activity to analyze my recent Patina activity safely."

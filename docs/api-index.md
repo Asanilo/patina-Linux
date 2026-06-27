@@ -31,6 +31,7 @@ Current caveats:
 - The server binds to localhost only.
 - CORS is permissive for local integration.
 - `/api/v1/openapi.json` exposes the machine-readable OpenAPI 3.1 schema with paths, query/path parameters, request bodies, response envelopes, auth, error envelopes, and field-level component schemas.
+- The OpenAPI server URL uses a configurable `{port}` variable whose default is `14840`.
 - This document remains the human-maintained reference for behavior notes and implementation caveats.
 
 ---
@@ -492,6 +493,65 @@ Known gaps:
 
 - Query params are currently simple key/value parsing, not full URL-decoding.
 
+### `GET /api/v1/ai/activity-context`
+
+Curl:
+
+```bash
+curl -s "$PATINA_API_BASE/api/v1/ai/activity-context" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN"
+```
+
+Returns one AI-oriented context bundle:
+
+- `diagnostics`: same `data` shape as `GET /api/v1/diagnostics`.
+- `active_session`: same nullable `data` shape as `GET /api/v1/sessions/active`.
+- `today_summary`: same `data` shape as `GET /api/v1/summary/today`.
+- `week_summary`: same `data` shape as `GET /api/v1/summary/week`.
+- `recent_web_activity`: same `data` shape as `GET /api/v1/web-activity`, limited to the 25 newest segments.
+
+Schema:
+
+```json
+{
+  "data": {
+    "diagnostics": {
+      "window_tracking": {
+        "status": "available",
+        "reason": null,
+        "provider": "gnome-shell-extension",
+        "session_type": "wayland",
+        "desktop": "GNOME"
+      },
+      "tracker_runtime": null,
+      "web_activity_bridge": null
+    },
+    "active_session": null,
+    "today_summary": {
+      "date": "2026-06-27",
+      "total_active_ms": 0,
+      "apps": [],
+      "categories": []
+    },
+    "week_summary": {
+      "date": "week",
+      "total_active_ms": 0,
+      "apps": [],
+      "categories": []
+    },
+    "recent_web_activity": {
+      "items": []
+    }
+  }
+}
+```
+
+Current behavior:
+
+- Accepts no query parameters; use the component endpoints for custom ranges or filters.
+- Applies the configured URL privacy mode to `recent_web_activity`.
+- The outer response remains `200` when a component handler fails. The failed component is replaced with `{ "error": <component error envelope> }`; consumers must check each component before analysis.
+
 ### `GET /api/v1/apps`
 
 Curl:
@@ -656,6 +716,76 @@ Current behavior:
 
 - Updates in-memory AFK threshold.
 - Persists `idle_timeout_secs`.
+
+### `GET /api/v1/tools/snapshot`
+
+Curl:
+
+```bash
+curl -s "$PATINA_API_BASE/api/v1/tools/snapshot" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN"
+```
+
+Top-level fields:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `settings` | object | Default countdown and pomodoro durations |
+| `reminders` | array | Scheduled, fired, or cancelled reminders |
+| `software_reminder_rules` | array | Per-application daily usage reminder rules |
+| `current_timer` | object or `null` | Current stopwatch/countdown state |
+| `timer_laps` | array | Laps belonging to the current timer |
+| `current_pomodoro` | object or `null` | Current pomodoro run and phase |
+| `today_completed_pomodoros` | integer | Completed focus phases for the local day |
+| `next_reminder_at` | integer or `null` | Next reminder timestamp in milliseconds |
+| `sampled_at_ms` | integer | Snapshot sample timestamp in milliseconds |
+
+Nested fields:
+
+| Object | Fields |
+|---|---|
+| `settings` | `default_countdown_minutes`, `pomodoro_focus_minutes`, `pomodoro_short_break_minutes`, `pomodoro_long_break_minutes`, `pomodoro_long_break_every` |
+| reminder | `id`, `label`, `scheduled_at`, `created_at`, `status`, `fired_at`, `cancelled_at` |
+| software reminder rule | `id`, `app_name`, `exe_name`, `limit_ms`, `message`, `created_at`, `updated_at`, `disabled_at`, `last_fired_date_key` |
+| timer | `id`, `mode`, `label`, `duration_ms`, `accumulated_ms`, `started_at`, `paused_at`, `completed_at`, `status`, `created_at`, `updated_at` |
+| timer lap | `id`, `timer_id`, `lap_index`, `started_at`, `ended_at`, `duration_ms` |
+| pomodoro | `id`, `phase`, `status`, `cycle_index`, `focus_ms`, `short_break_ms`, `long_break_ms`, `long_break_every`, `phase_started_at`, `phase_paused_at`, `phase_remaining_ms`, `completed_focus_count`, `created_at`, `updated_at` |
+
+Enum values:
+
+- Reminder `status`: `scheduled`, `fired`, `cancelled`.
+- Timer `mode`: `stopwatch`, `countdown`.
+- Timer and pomodoro `status`: `idle`, `running`, `paused`, `completed`.
+- Pomodoro `phase`: `focus`, `short_break`, `long_break`.
+
+Schema:
+
+```json
+{
+  "data": {
+    "settings": {
+      "default_countdown_minutes": 25,
+      "pomodoro_focus_minutes": 25,
+      "pomodoro_short_break_minutes": 5,
+      "pomodoro_long_break_minutes": 15,
+      "pomodoro_long_break_every": 4
+    },
+    "reminders": [],
+    "software_reminder_rules": [],
+    "current_timer": null,
+    "timer_laps": [],
+    "current_pomodoro": null,
+    "today_completed_pomodoros": 0,
+    "next_reminder_at": null,
+    "sampled_at_ms": 1782528000000
+  }
+}
+```
+
+Current behavior:
+
+- This endpoint is read-only. Reminder, timer, and pomodoro write-side HTTP routes are not implemented.
+- Live elapsed or remaining time must be interpreted relative to `sampled_at_ms` and the current object's timestamps.
 
 ### Error responses
 

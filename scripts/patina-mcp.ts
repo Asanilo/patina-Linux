@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import process from "node:process";
+import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 type JsonRpcRequest = {
@@ -119,7 +120,7 @@ export const PATINA_MCP_TOOLS: PatinaMcpTool[] = [
     inputSchema: objectSchema({
       exeName: { type: "string", description: "Exact app exe_name to classify." },
       category: { type: "string", description: "Category name to assign." },
-    }),
+    }, ["exeName", "category"]),
   },
   {
     name: "rename_app",
@@ -127,7 +128,7 @@ export const PATINA_MCP_TOOLS: PatinaMcpTool[] = [
     inputSchema: objectSchema({
       exeName: { type: "string", description: "Exact app exe_name to rename." },
       displayName: { type: "string", description: "Display name to assign." },
-    }),
+    }, ["exeName", "displayName"]),
   },
   {
     name: "set_app_excluded",
@@ -135,15 +136,19 @@ export const PATINA_MCP_TOOLS: PatinaMcpTool[] = [
     inputSchema: objectSchema({
       exeName: { type: "string", description: "Exact app exe_name to update." },
       excluded: { type: "boolean", description: "Whether the app should be excluded." },
-    }),
+    }, ["exeName", "excluded"]),
   },
 ];
 
 export async function handleMcpRequest(
   request: JsonRpcRequest,
   deps: McpDeps,
-): Promise<JsonRpcResponse> {
+): Promise<JsonRpcResponse | null> {
   const id = request.id ?? null;
+
+  if (request.id === undefined) {
+    return null;
+  }
 
   if (request.method === "initialize") {
     return ok(id, {
@@ -186,11 +191,35 @@ export async function handleMcpRequest(
         ],
       });
     } catch (apiError) {
-      return error(id, -32000, apiError instanceof Error ? apiError.message : String(apiError));
+      return ok(id, {
+        content: [
+          {
+            type: "text",
+            text: apiError instanceof Error ? apiError.message : String(apiError),
+          },
+        ],
+        isError: true,
+      });
     }
   }
 
+  if (request.method === "ping") {
+    return ok(id, {});
+  }
+
   return error(id, -32601, `Unsupported method: ${request.method ?? "unknown"}`);
+}
+
+export async function handleMcpLine(line: string, deps: McpDeps) {
+  let message: JsonRpcRequest;
+  try {
+    message = JSON.parse(line) as JsonRpcRequest;
+  } catch {
+    return JSON.stringify(error(null, -32700, "Parse error"));
+  }
+
+  const response = await handleMcpRequest(message, deps);
+  return response ? JSON.stringify(response) : null;
 }
 
 async function callPatinaApi(
@@ -382,10 +411,11 @@ function error(id: string | number | null, code: number, message: string): JsonR
   };
 }
 
-function objectSchema(properties: Record<string, unknown>) {
+function objectSchema(properties: Record<string, unknown>, required: string[] = []) {
   return {
     type: "object",
     properties,
+    ...(required.length > 0 ? { required } : {}),
     additionalProperties: false,
   };
 }
@@ -418,32 +448,6 @@ function defaultTokenPath() {
   return join(dataHome, "Patina", "api_token");
 }
 
-function encodeMcpMessage(message: unknown) {
-  const json = JSON.stringify(message);
-  return `Content-Length: ${Buffer.byteLength(json, "utf8")}\r\n\r\n${json}`;
-}
-
-function decodeMcpMessages(buffer: string) {
-  const messages: unknown[] = [];
-  let cursor = 0;
-
-  while (cursor < buffer.length) {
-    const headerEnd = buffer.indexOf("\r\n\r\n", cursor);
-    if (headerEnd === -1) break;
-    const header = buffer.slice(cursor, headerEnd);
-    const lengthMatch = /Content-Length:\s*(\d+)/i.exec(header);
-    if (!lengthMatch) break;
-    const bodyStart = headerEnd + 4;
-    const bodyLength = Number(lengthMatch[1]);
-    const bodyEnd = bodyStart + bodyLength;
-    if (bodyEnd > buffer.length) break;
-    messages.push(JSON.parse(buffer.slice(bodyStart, bodyEnd)));
-    cursor = bodyEnd;
-  }
-
-  return messages;
-}
-
 async function main() {
   const deps: McpDeps = {
     apiBase: process.env.PATINA_API_BASE?.trim() || DEFAULT_API_BASE,
@@ -451,20 +455,17 @@ async function main() {
     callApi: callPatinaApi,
   };
 
-  let input = "";
-  process.stdin.setEncoding("utf8");
-  process.stdin.on("data", (chunk) => {
-    input += chunk;
-    void Promise.resolve().then(async () => {
-      for (const message of decodeMcpMessages(input)) {
-        const response = await handleMcpRequest(message as JsonRpcRequest, deps);
-        process.stdout.write(encodeMcpMessage(response));
-      }
-      input = "";
-    });
-  });
+  const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
+  for await (const line of lines) {
+    if (!line.trim()) continue;
+
+    const responseLine = await handleMcpLine(line, deps);
+    if (responseLine) {
+      process.stdout.write(`${responseLine}\n`);
+    }
+  }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (resolve(process.argv[1] || "") === fileURLToPath(import.meta.url)) {
   await main();
 }

@@ -257,6 +257,17 @@ Current tools include:
 
 See [docs/mcp-wrapper.md](docs/mcp-wrapper.md) for MCP client setup, tool-to-API mapping, and remaining write-side gaps.
 
+For MCP client configuration, invoke `scripts/patina-mcp.ts` directly with Node and an absolute path. `npm run mcp:patina` is intended for manual repository use.
+
+## Agent Skill
+
+[`skills/analyzing-patina-activity`](skills/analyzing-patina-activity/SKILL.md) provides two external-agent workflows:
+
+- MCP tools when the Patina MCP server is configured.
+- Direct localhost HTTP with bearer authentication as a fallback.
+
+Both workflows share rules for diagnostics-first analysis, local-time boundaries, active-session handling, URL privacy, and explicit confirmation before app-management writes.
+
 ## Useful Checks
 
 ```bash

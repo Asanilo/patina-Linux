@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { handleMcpRequest, PATINA_MCP_TOOLS } from "../scripts/patina-mcp.ts";
+import {
+  handleMcpLine,
+  handleMcpRequest,
+  PATINA_MCP_TOOLS,
+} from "../scripts/patina-mcp.ts";
 
 let passed = 0;
 
@@ -50,6 +54,29 @@ await runTest("Patina MCP tools/list returns tool metadata", async () => {
   assert.equal(response.id, 1);
   assert.equal(response.result.tools.length, 14);
   assert.equal(response.result.tools[0].name, "get_diagnostics");
+});
+
+await runTest("Patina MCP write tools declare required arguments", () => {
+  const requiredByTool = new Map(
+    PATINA_MCP_TOOLS.map((tool) => [tool.name, tool.inputSchema.required]),
+  );
+
+  assert.deepEqual(requiredByTool.get("classify_app"), ["exeName", "category"]);
+  assert.deepEqual(requiredByTool.get("rename_app"), ["exeName", "displayName"]);
+  assert.deepEqual(requiredByTool.get("set_app_excluded"), ["exeName", "excluded"]);
+});
+
+await runTest("Patina MCP ignores initialized notifications", async () => {
+  const response = await handleMcpRequest({
+    jsonrpc: "2.0",
+    method: "notifications/initialized",
+  }, {
+    apiBase: "http://127.0.0.1:14840",
+    apiToken: "token",
+    callApi: async () => ({ data: null }),
+  });
+
+  assert.equal(response, null);
 });
 
 await runTest("Patina MCP tools/call maps web activity args to query string", async () => {
@@ -236,6 +263,63 @@ await runTest("Patina MCP set_app_excluded sends POST body", async () => {
       },
     },
   ]);
+});
+
+await runTest("Patina MCP reports API failures as tool results", async () => {
+  const response = await handleMcpRequest({
+    jsonrpc: "2.0",
+    id: 8,
+    method: "tools/call",
+    params: {
+      name: "get_diagnostics",
+      arguments: {},
+    },
+  }, {
+    apiBase: "http://127.0.0.1:14840",
+    apiToken: "token",
+    callApi: async () => {
+      throw new Error("connection refused");
+    },
+  });
+
+  assert.equal(response.error, undefined);
+  assert.equal(response.result.isError, true);
+  assert.match(response.result.content[0].text, /connection refused/);
+});
+
+await runTest("Patina MCP stdio uses newline-delimited JSON and processes each message once", async () => {
+  const deps = {
+    apiBase: "http://127.0.0.1:14840",
+    apiToken: "token",
+    callApi: async () => ({ data: null }),
+  };
+  const lines = await Promise.all([
+    {
+      jsonrpc: "2.0",
+      id: 10,
+      method: "initialize",
+      params: {
+        protocolVersion: "2024-11-05",
+        capabilities: {},
+        clientInfo: { name: "test-client", version: "1.0.0" },
+      },
+    },
+    {
+      jsonrpc: "2.0",
+      method: "notifications/initialized",
+    },
+    {
+      jsonrpc: "2.0",
+      id: 11,
+      method: "tools/list",
+    },
+  ].map((message) => handleMcpLine(JSON.stringify(message), deps)));
+  const encodedResponses = lines.filter((line): line is string => line !== null);
+  const responses = encodedResponses.map((line) => JSON.parse(line));
+
+  assert.deepEqual(responses.map((response) => response.id), [10, 11]);
+  assert.equal(responses[1].result.tools.length, 14);
+  assert.equal(encodedResponses.every((line) => !line.startsWith("Content-Length:")), true);
 });
 
 console.log(`Passed ${passed} Patina MCP script tests`);

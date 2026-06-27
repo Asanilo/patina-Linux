@@ -12,7 +12,16 @@ pub fn get_openapi() -> RouteResponse {
                 "description": "Local-first Patina API for scripts, MCP wrappers, and external AI analysis."
             },
             "servers": [
-                { "url": "http://127.0.0.1:14840" }
+                {
+                    "url": "http://127.0.0.1:{port}",
+                    "description": "Patina localhost API. The port can be changed in Settings.",
+                    "variables": {
+                        "port": {
+                            "default": "14840",
+                            "description": "Configured Patina API port."
+                        }
+                    }
+                }
             ],
             "security": [
                 { "bearerAuth": [] }
@@ -159,6 +168,10 @@ fn schemas() -> Value {
             ("code", string_schema()),
             ("message", string_schema()),
         ]),
+    );
+    schemas.insert(
+        "ComponentFailure".to_string(),
+        object_schema(vec![("error", schema_ref("ApiError"))]),
     );
     schemas.insert(
         "OkResponse".to_string(),
@@ -388,11 +401,17 @@ fn schemas() -> Value {
     schemas.insert(
         "ActivityContextData".to_string(),
         object_schema(vec![
-            ("diagnostics", schema_ref("DiagnosticsData")),
-            ("active_session", nullable_ref_schema("ActiveSessionData")),
-            ("today_summary", schema_ref("SummaryData")),
-            ("week_summary", schema_ref("SummaryData")),
-            ("recent_web_activity", schema_ref("WebActivityData")),
+            ("diagnostics", fallible_ref_schema("DiagnosticsData")),
+            (
+                "active_session",
+                fallible_nullable_ref_schema("ActiveSessionData"),
+            ),
+            ("today_summary", fallible_ref_schema("SummaryData")),
+            ("week_summary", fallible_ref_schema("SummaryData")),
+            (
+                "recent_web_activity",
+                fallible_ref_schema("WebActivityData"),
+            ),
         ]),
     );
     schemas.insert(
@@ -692,6 +711,25 @@ fn nullable_ref_schema(name: &str) -> Value {
     })
 }
 
+fn fallible_ref_schema(name: &str) -> Value {
+    json!({
+        "oneOf": [
+            schema_ref(name),
+            schema_ref("ComponentFailure")
+        ]
+    })
+}
+
+fn fallible_nullable_ref_schema(name: &str) -> Value {
+    json!({
+        "oneOf": [
+            schema_ref(name),
+            { "type": "null" },
+            schema_ref("ComponentFailure")
+        ]
+    })
+}
+
 fn string_schema() -> Value {
     json!({ "type": "string" })
 }
@@ -777,6 +815,34 @@ mod tests {
                 .pointer("/paths/~1api~1v1~1apps~1{exe_name}~1rename/post/requestBody/content/application~1json/schema/$ref")
                 .and_then(|value| value.as_str()),
             Some("#/components/schemas/RenameRequest")
+        );
+        assert_eq!(
+            response
+                .body
+                .pointer("/servers/0/url")
+                .and_then(|value| value.as_str()),
+            Some("http://127.0.0.1:{port}")
+        );
+        assert_eq!(
+            response
+                .body
+                .pointer("/servers/0/variables/port/default")
+                .and_then(|value| value.as_str()),
+            Some("14840")
+        );
+        assert_eq!(
+            response
+                .body
+                .pointer("/components/schemas/ActivityContextData/properties/diagnostics/oneOf/1/$ref")
+                .and_then(|value| value.as_str()),
+            Some("#/components/schemas/ComponentFailure")
+        );
+        assert_eq!(
+            response
+                .body
+                .pointer("/components/schemas/ActivityContextData/properties/active_session/oneOf/2/$ref")
+                .and_then(|value| value.as_str()),
+            Some("#/components/schemas/ComponentFailure")
         );
     }
 }
