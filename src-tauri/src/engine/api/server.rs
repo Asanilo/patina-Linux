@@ -1,14 +1,13 @@
 use crate::engine::api::router;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 
 pub const DEFAULT_PORT: u16 = 14840;
 
-#[derive(Clone)]
 pub struct ApiServerState {
-    inner: Arc<Mutex<ApiServerRuntime>>,
+    inner: Mutex<ApiServerRuntime>,
 }
 
 #[derive(Default)]
@@ -31,23 +30,8 @@ impl PreparedApiListener {
 impl ApiServerState {
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(Mutex::new(ApiServerRuntime::default())),
+            inner: Mutex::new(ApiServerRuntime::default()),
         }
-    }
-
-    pub fn start(&self, app_handle: tauri::AppHandle, port: Option<u16>) {
-        let port = port.unwrap_or(DEFAULT_PORT);
-        let state = self.clone();
-        tauri::async_runtime::spawn(async move {
-            match state.prepare_listener(port).await {
-                Ok(prepared) => state.install_prepared(app_handle, prepared),
-                Err(error) => eprintln!("[api] server error: {error}"),
-            }
-        });
-    }
-
-    pub fn restart(&self, app_handle: tauri::AppHandle, port: u16) {
-        self.start(app_handle, Some(port));
     }
 
     pub fn shutdown(&self) {
@@ -122,10 +106,6 @@ impl ApiServerState {
             Ok(guard) => guard.port,
             Err(poisoned) => poisoned.into_inner().port,
         }
-    }
-
-    pub fn port(&self) -> u16 {
-        self.confirmed_port().unwrap_or(DEFAULT_PORT)
     }
 }
 

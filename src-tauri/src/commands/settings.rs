@@ -89,22 +89,50 @@ pub fn cmd_set_audio_participation_enabled(enabled: bool) -> Result<(), String> 
 }
 
 #[tauri::command]
-pub fn cmd_set_local_api_settings(
+pub async fn cmd_set_local_api_settings(
     port: u16,
     token: String,
     app: AppHandle,
-    api_server_state: State<crate::engine::api::server::ApiServerState>,
+    api_server_state: State<'_, crate::engine::api::server::ApiServerState>,
 ) -> Result<(), String> {
-    let Some(port) = crate::domain::settings::parse_local_api_port(&port.to_string()) else {
-        return Err("invalid local API port".to_string());
-    };
-
+    crate::engine::api::configuration::apply_port(&app, &api_server_state, port).await?;
     crate::engine::api::auth::replace_api_token(&token)?;
-    if api_server_state.port() != port {
-        api_server_state.restart(app, port);
-    }
-
     Ok(())
+}
+
+#[tauri::command]
+pub async fn cmd_apply_local_api_port(
+    port: u16,
+    app: AppHandle,
+    api_server_state: State<'_, crate::engine::api::server::ApiServerState>,
+) -> Result<crate::commands::diagnostics::LocalApiSettingsSnapshot, String> {
+    let settings =
+        crate::engine::api::configuration::apply_port(&app, &api_server_state, port).await?;
+    Ok(local_api_settings_snapshot(settings))
+}
+
+#[tauri::command]
+pub async fn cmd_rotate_local_api_token(
+    app: AppHandle,
+) -> Result<crate::commands::diagnostics::LocalApiSettingsSnapshot, String> {
+    let pool = crate::data::sqlite_pool::wait_for_sqlite_pool(&app).await?;
+    let stored = crate::data::repositories::app_settings::load_local_api_settings(&pool)
+        .await
+        .map_err(|error| format!("failed to load local API settings: {error}"))?;
+    let settings = crate::engine::api::configuration::rotate_token(stored.port)?;
+    Ok(local_api_settings_snapshot(settings))
+}
+
+fn local_api_settings_snapshot(
+    settings: crate::domain::settings::LocalApiSettings,
+) -> crate::commands::diagnostics::LocalApiSettingsSnapshot {
+    let token_path = crate::engine::api::auth::token_file_path();
+    crate::commands::diagnostics::LocalApiSettingsSnapshot {
+        port: settings.port,
+        token: settings.token,
+        token_path: token_path.display().to_string(),
+        base_url: format!("http://127.0.0.1:{}", settings.port),
+    }
 }
 
 #[tauri::command]

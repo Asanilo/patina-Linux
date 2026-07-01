@@ -80,17 +80,21 @@ pub fn cmd_get_local_api_diagnostics(
 }
 
 #[tauri::command]
-pub fn cmd_get_local_api_settings(
-    api_server_state: State<crate::engine::api::server::ApiServerState>,
-) -> LocalApiSettingsSnapshot {
-    let port = api_server_state.port();
+pub async fn cmd_get_local_api_settings(
+    app: tauri::AppHandle,
+) -> Result<LocalApiSettingsSnapshot, String> {
+    let pool = crate::data::sqlite_pool::wait_for_sqlite_pool(&app).await?;
+    let stored = crate::data::repositories::app_settings::load_local_api_settings(&pool)
+        .await
+        .map_err(|error| format!("failed to load local API settings: {error}"))?;
+    let port = stored.port;
     let token_path = crate::engine::api::auth::token_file_path();
-    LocalApiSettingsSnapshot {
+    Ok(LocalApiSettingsSnapshot {
         port,
         token: crate::engine::api::auth::get_api_token(),
         token_path: token_path.display().to_string(),
         base_url: format!("http://127.0.0.1:{port}"),
-    }
+    })
 }
 
 #[tauri::command]

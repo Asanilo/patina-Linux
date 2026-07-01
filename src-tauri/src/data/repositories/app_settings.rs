@@ -159,30 +159,48 @@ fn is_allowed_app_setting_key(key: &str) -> bool {
 }
 
 pub async fn load_local_api_settings(pool: &Pool<Sqlite>) -> Result<LocalApiSettings, sqlx::Error> {
-    let rows = sqlx::query("SELECT key, value FROM settings WHERE key IN (?, ?)")
+    let port = sqlx::query_scalar::<_, String>("SELECT value FROM settings WHERE key = ? LIMIT 1")
         .bind(LOCAL_API_PORT_KEY)
-        .bind(LOCAL_API_TOKEN_KEY)
-        .fetch_all(pool)
+        .fetch_optional(pool)
         .await?;
-
-    let mut port: Option<String> = None;
-    let mut token: Option<String> = None;
-
-    for row in rows {
-        let key: String = row.get("key");
-        let value: String = row.get("value");
-
-        match key.as_str() {
-            LOCAL_API_PORT_KEY => port = Some(value),
-            LOCAL_API_TOKEN_KEY => token = Some(value),
-            _ => {}
-        }
-    }
+    let token = load_legacy_local_api_token(pool).await?;
 
     Ok(LocalApiSettings::from_storage_values(
         port.as_deref(),
         token.as_deref(),
     ))
+}
+
+pub async fn save_local_api_port(pool: &Pool<Sqlite>, port: u16) -> Result<(), String> {
+    commit_app_setting_mutations(
+        pool,
+        &[AppSettingMutation {
+            key: LOCAL_API_PORT_KEY.to_string(),
+            value: port.to_string(),
+        }],
+    )
+    .await
+}
+
+pub async fn load_legacy_local_api_token(
+    pool: &Pool<Sqlite>,
+) -> Result<Option<String>, sqlx::Error> {
+    let value = sqlx::query_scalar::<_, String>("SELECT value FROM settings WHERE key = ? LIMIT 1")
+        .bind(LOCAL_API_TOKEN_KEY)
+        .fetch_optional(pool)
+        .await?;
+    Ok(value
+        .map(|token| token.trim().to_string())
+        .filter(|token| !token.is_empty()))
+}
+
+pub async fn delete_legacy_local_api_token(pool: &Pool<Sqlite>) -> Result<(), String> {
+    sqlx::query("DELETE FROM settings WHERE key = ?")
+        .bind(LOCAL_API_TOKEN_KEY)
+        .execute(pool)
+        .await
+        .map_err(|error| format!("failed to delete legacy local API token setting: {error}"))?;
+    Ok(())
 }
 
 pub async fn load_audio_participation_enabled(pool: &Pool<Sqlite>) -> Result<bool, sqlx::Error> {
@@ -498,6 +516,67 @@ mod tests {
             assert_eq!(
                 settings.url_privacy,
                 crate::domain::settings::WebActivityUrlPrivacyMode::DomainOnly
+            );
+        });
+    }
+
+    #[test]
+    fn local_api_port_persists_without_rewriting_legacy_token() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            commit_app_setting_mutations(
+                &pool,
+                &[AppSettingMutation {
+                    key: LOCAL_API_TOKEN_KEY.to_string(),
+                    value: "legacy-token".to_string(),
+                }],
+            )
+            .await
+            .unwrap();
+
+            save_local_api_port(&pool, 15_555).await.unwrap();
+
+            assert_eq!(
+                load_setting(&pool, LOCAL_API_PORT_KEY).await.as_deref(),
+                Some("15555")
+            );
+            assert_eq!(
+                load_setting(&pool, LOCAL_API_TOKEN_KEY).await.as_deref(),
+                Some("legacy-token")
+            );
+        });
+    }
+
+    #[test]
+    fn legacy_local_api_token_can_be_read_and_deleted_without_changing_port() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            commit_app_setting_mutations(
+                &pool,
+                &[
+                    AppSettingMutation {
+                        key: LOCAL_API_PORT_KEY.to_string(),
+                        value: "15555".to_string(),
+                    },
+                    AppSettingMutation {
+                        key: LOCAL_API_TOKEN_KEY.to_string(),
+                        value: " legacy-token ".to_string(),
+                    },
+                ],
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(
+                load_legacy_local_api_token(&pool).await.unwrap().as_deref(),
+                Some("legacy-token")
+            );
+            delete_legacy_local_api_token(&pool).await.unwrap();
+
+            assert_eq!(load_setting(&pool, LOCAL_API_TOKEN_KEY).await, None);
+            assert_eq!(
+                load_setting(&pool, LOCAL_API_PORT_KEY).await.as_deref(),
+                Some("15555")
             );
         });
     }

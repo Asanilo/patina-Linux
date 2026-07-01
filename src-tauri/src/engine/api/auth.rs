@@ -9,7 +9,11 @@ static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[allow(dead_code)]
 pub fn set_api_token(token: String) {
-    let lock = API_TOKEN.get_or_init(|| RwLock::new(load_or_generate_token()));
+    update_in_memory_token(token);
+}
+
+fn update_in_memory_token(token: String) {
+    let lock = API_TOKEN.get_or_init(|| RwLock::new(token.clone()));
     match lock.write() {
         Ok(mut guard) => {
             *guard = token;
@@ -35,8 +39,19 @@ pub fn replace_api_token(token: &str) -> Result<String, String> {
     }
 
     write_token_file_atomic(&token_file_path(), &normalized)?;
-    set_api_token(normalized.clone());
+    update_in_memory_token(normalized.clone());
     Ok(normalized)
+}
+
+pub fn initialize_api_token(legacy_token: Option<&str>) -> Result<String, String> {
+    let token = initialize_token_file(&token_file_path(), legacy_token)?;
+    update_in_memory_token(token.clone());
+    Ok(token)
+}
+
+pub fn rotate_api_token() -> Result<String, String> {
+    let token = generate_random_token()?;
+    replace_api_token(&token)
 }
 
 pub fn token_file_path() -> std::path::PathBuf {
@@ -50,19 +65,8 @@ pub fn token_file_path() -> std::path::PathBuf {
 }
 
 fn load_or_generate_token() -> String {
-    let path = token_file_path();
-    match load_token_file(&path) {
-        Ok(Some(token)) => return token,
-        Ok(None) => {}
-        Err(error) => eprintln!("[api] failed to load token file: {error}"),
-    }
-
-    let token = generate_random_token()
-        .unwrap_or_else(|error| panic!("failed to generate local API token: {error}"));
-    if let Err(error) = write_token_file_atomic(&path, &token) {
-        eprintln!("[api] failed to persist generated token: {error}");
-    }
-    token
+    initialize_token_file(&token_file_path(), None)
+        .unwrap_or_else(|error| panic!("failed to initialize local API token: {error}"))
 }
 
 pub fn validate_token(authorization: Option<&str>) -> bool {
@@ -100,6 +104,22 @@ fn load_token_file(path: &Path) -> Result<Option<String>, String> {
         return Ok(None);
     }
     Ok(Some(token))
+}
+
+fn initialize_token_file(path: &Path, legacy_token: Option<&str>) -> Result<String, String> {
+    if let Some(token) = load_token_file(path)? {
+        return Ok(token);
+    }
+
+    let legacy_token = legacy_token
+        .map(str::trim)
+        .filter(|token| !token.is_empty());
+    let token = match legacy_token {
+        Some(token) => token.to_string(),
+        None => generate_random_token()?,
+    };
+    write_token_file_atomic(path, &token)?;
+    Ok(token)
 }
 
 fn write_token_file_atomic(path: &Path, token: &str) -> Result<(), String> {
@@ -249,6 +269,28 @@ mod tests {
         );
         let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn missing_token_file_is_seeded_from_legacy_storage_once() {
+        let path = unique_test_path("legacy-seed");
+
+        let token = initialize_token_file(&path, Some(" legacy-token ")).unwrap();
+
+        assert_eq!(token, "legacy-token");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "legacy-token");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn existing_token_file_wins_over_legacy_storage() {
+        let path = unique_test_path("file-wins");
+        write_token_file_atomic(&path, "file-token").unwrap();
+
+        let token = initialize_token_file(&path, Some("legacy-token")).unwrap();
+
+        assert_eq!(token, "file-token");
         let _ = std::fs::remove_file(path);
     }
 }

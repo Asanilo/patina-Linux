@@ -69,12 +69,15 @@ pub fn setup(
     // Start HTTP API server for AI agent integration
     let api_server = crate::engine::api::server::ApiServerState::new();
     let local_api_settings = load_local_api_settings(app.handle().clone());
-    if !local_api_settings.token.trim().is_empty() {
-        if let Err(error) = crate::engine::api::auth::replace_api_token(&local_api_settings.token) {
-            eprintln!("[api] failed to apply stored API token: {error}");
-        }
+    if let Err(error) =
+        tauri::async_runtime::block_on(crate::engine::api::configuration::initialize(
+            &app.handle().clone(),
+            &api_server,
+            local_api_settings,
+        ))
+    {
+        eprintln!("[api] failed to initialize local API: {error}");
     }
-    api_server.start(app.handle().clone(), Some(local_api_settings.port));
     app.manage(api_server);
 
     let app_handle = app.handle().clone();
