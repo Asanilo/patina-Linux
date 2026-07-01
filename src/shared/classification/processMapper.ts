@@ -4,6 +4,7 @@ import {
   normalizeCustomCategory,
   USER_ASSIGNABLE_CATEGORIES,
   type AppCategory,
+  type CustomAppCategory,
   type UserAssignableAppCategory,
 } from "./categoryTokens.ts";
 import { DEFAULT_APP_MAPPINGS } from "./defaultMappings.ts";
@@ -124,6 +125,7 @@ function normalizeOverride(override: AppOverride | null | undefined): AppOverrid
 
 export class ProcessMapper {
   private static userOverrides: Record<string, AppOverride> = {};
+  private static categoryLabelOverrides: Record<string, string> = {};
   private static categoryColors = new CategoryColorRegistry();
 
   static getUserAssignableCategories() {
@@ -143,7 +145,28 @@ export class ProcessMapper {
   }
 
   static getCategoryLabel(category: AppCategory) {
-    return getCategoryToken(category).label;
+    return this.categoryLabelOverrides[category] ?? getCategoryToken(category).label;
+  }
+
+  static setCategoryLabelOverrides(overrides: Record<string, string>) {
+    this.categoryLabelOverrides = Object.fromEntries(
+      Object.entries(overrides)
+        .map(([category, label]) => [category, label.trim().replace(/\s+/g, " ")] as const)
+        .filter(([, label]) => label.length > 0),
+    );
+  }
+
+  static setCategoryLabelOverride(category: CustomAppCategory, labelValue?: string | null) {
+    const nextLabel = labelValue?.trim().replace(/\s+/g, " ");
+    if (!nextLabel) {
+      delete this.categoryLabelOverrides[category];
+      return;
+    }
+    this.categoryLabelOverrides[category] = nextLabel;
+  }
+
+  static clearCategoryLabelOverrides() {
+    this.categoryLabelOverrides = {};
   }
 
   static getCategoryColor(category: AppCategory) {

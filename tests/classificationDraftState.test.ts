@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   buildCustomCategory,
+  createCategoryId,
   resolveCustomCategoryLabel,
   USER_ASSIGNABLE_CATEGORIES,
   type UserAssignableAppCategory,
@@ -42,6 +43,7 @@ function buildDraftState(overrides: Partial<ClassificationDraftState> = {}): Cla
     overrides: {},
     webDomainOverrides: {},
     categoryColorOverrides: {},
+    categoryLabelOverrides: {},
     customCategories: [],
     deletedCategories: [],
     ...overrides,
@@ -278,6 +280,28 @@ await runTest("custom category ids are not repeatedly percent encoded", () => {
   );
 });
 
+await runTest("new custom category ids are stable and do not embed the display label", () => {
+  const category = createCategoryId();
+
+  assert.match(category, /^custom:category_[a-z0-9]+$/);
+  assert.equal(category.includes("Focus"), false);
+});
+
+await runTest("classification draft tracks category label overrides", () => {
+  const category = createCategoryId();
+  const saved = buildDraftState({
+    customCategories: [category],
+    categoryLabelOverrides: { [category]: "Focus" },
+  });
+  const draft = cloneClassificationDraftState(saved);
+  draft.categoryLabelOverrides[category] = "Deep Focus";
+
+  assert.equal(hasClassificationDraftChanges(saved, draft), true);
+  assert.deepEqual(buildClassificationDraftChangePlan(saved, draft).categoryLabelUpdates, [
+    { category, labelValue: "Deep Focus" },
+  ]);
+});
+
 await runTest("encoded custom category app override transitions back to canonical storage", () => {
   const category = buildCustomCategory("中文");
   const doubleEncodedCategory = buildCustomCategory(category.slice("custom:".length));
@@ -384,6 +408,7 @@ await runTest("buildClassificationDraftChangePlan captures state diffs", () => {
         colorValue: "#222222",
       },
     ],
+    categoryLabelUpdates: [],
     customCategoriesToAdd: [customDeepWork],
     customCategoriesToRemove: [customFocus],
     deletedCategoryUpdates: [
@@ -409,6 +434,9 @@ await runTest("createAppMappingDraftState clones bootstrap snapshots", () => {
     loadedCategoryColorOverrides: {
       development: "#111111",
     },
+    loadedCategoryLabelOverrides: {
+      [customCategory]: "Deep Work",
+    },
     loadedCustomCategories: [customCategory],
     loadedDeletedCategories: ["music" as const],
   };
@@ -417,11 +445,13 @@ await runTest("createAppMappingDraftState clones bootstrap snapshots", () => {
   const cloned = cloneClassificationDraftState(state);
   state.overrides["chrome.exe"]!.displayName = "Changed";
   state.categoryColorOverrides.development = "#222222";
+  state.categoryLabelOverrides[customCategory] = "Changed";
   state.customCategories.push(buildCustomCategory("Focus"));
   state.deletedCategories.push("video");
 
   assert.equal(snapshot.loadedOverrides["chrome.exe"]?.displayName, "Chrome");
   assert.equal(snapshot.loadedCategoryColorOverrides.development, "#111111");
+  assert.equal(snapshot.loadedCategoryLabelOverrides[customCategory], "Deep Work");
   assert.deepEqual(snapshot.loadedCustomCategories, [customCategory]);
   assert.deepEqual(snapshot.loadedDeletedCategories, ["music"]);
   assert.deepEqual(cloned, {
@@ -434,6 +464,9 @@ await runTest("createAppMappingDraftState clones bootstrap snapshots", () => {
     webDomainOverrides: {},
     categoryColorOverrides: {
       development: "#111111",
+    },
+    categoryLabelOverrides: {
+      [customCategory]: "Deep Work",
     },
     customCategories: [customCategory],
     deletedCategories: ["music"],
@@ -566,6 +599,9 @@ await runTest("commitDraftChangesWithDeps persists before syncing process mapper
     setCategoryColorOverrides: () => {
       events.push("sync:color");
     },
+    setCategoryLabelOverrides: () => {
+      events.push("sync:label");
+    },
     setDeletedCategories: () => {
       events.push("sync:deleted");
     },
@@ -577,6 +613,7 @@ await runTest("commitDraftChangesWithDeps persists before syncing process mapper
     "commit:1:1",
     "sync:user",
     "sync:color",
+    "sync:label",
     "sync:deleted",
   ]);
 });
@@ -584,6 +621,7 @@ await runTest("commitDraftChangesWithDeps persists before syncing process mapper
 await runTest("default classification commit deps keep ProcessMapper runtime sync bound", async () => {
   ProcessMapper.clearUserOverrides();
   ProcessMapper.clearCategoryColorOverrides();
+  ProcessMapper.clearCategoryLabelOverrides();
   ProcessMapper.setDeletedCategories([]);
 
   const saved = buildDraftState();
@@ -609,16 +647,20 @@ await runTest("default classification commit deps keep ProcessMapper runtime syn
 
   ProcessMapper.clearUserOverrides();
   ProcessMapper.clearCategoryColorOverrides();
+  ProcessMapper.clearCategoryLabelOverrides();
   ProcessMapper.setDeletedCategories([]);
 });
 
 await runTest("classification bootstrap sync applies saved process mapper state", () => {
   ProcessMapper.clearUserOverrides();
   ProcessMapper.clearCategoryColorOverrides();
+  ProcessMapper.clearCategoryLabelOverrides();
   ProcessMapper.setDeletedCategories([]);
 
+  const customCategory = createCategoryId();
   ClassificationService.applyBootstrapToProcessMapper({
     observed: [],
+    observedWebDomains: [],
     loadedOverrides: {
       "chrome.exe": {
         enabled: true,
@@ -628,16 +670,22 @@ await runTest("classification bootstrap sync applies saved process mapper state"
     loadedCategoryColorOverrides: {
       development: "#112233",
     },
-    loadedCustomCategories: [],
+    loadedWebDomainOverrides: {},
+    loadedCategoryLabelOverrides: {
+      [customCategory]: "Deep Work",
+    },
+    loadedCustomCategories: [customCategory],
     loadedDeletedCategories: ["music"],
   });
 
   assert.equal(ProcessMapper.getUserOverride("chrome.exe")?.displayName, "Work Browser");
   assert.equal(ProcessMapper.getCategoryColorOverride("development"), "#112233");
+  assert.equal(ProcessMapper.getCategoryLabel(customCategory), "Deep Work");
   assert.equal(ProcessMapper.isCategoryDeleted("music"), true);
 
   ProcessMapper.clearUserOverrides();
   ProcessMapper.clearCategoryColorOverrides();
+  ProcessMapper.clearCategoryLabelOverrides();
   ProcessMapper.setDeletedCategories([]);
 });
 
@@ -660,6 +708,7 @@ await runTest("classification bootstrap keeps app data when optional web reads f
     loadCategoryColorOverrides: async () => ({
       development: "#112233",
     }),
+    loadCategoryLabelOverrides: async () => ({}),
     loadCustomCategories: async () => [],
     loadDeletedCategories: async () => ["music"],
   };
@@ -705,6 +754,9 @@ await runTest("commitDraftChangesWithDeps does not sync process mapper state whe
     },
     setCategoryColorOverrides: () => {
       events.push("sync:color");
+    },
+    setCategoryLabelOverrides: () => {
+      events.push("sync:label");
     },
     setDeletedCategories: () => {
       events.push("sync:deleted");

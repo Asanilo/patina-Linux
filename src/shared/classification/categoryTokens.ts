@@ -141,6 +141,14 @@ export function buildCustomCategory(label: string): CustomAppCategory {
   return `${CUSTOM_CATEGORY_PREFIX}${encodedLabel}` as CustomAppCategory;
 }
 
+export function createCategoryId(): CustomAppCategory {
+  const randomUuid = globalThis.crypto?.randomUUID?.();
+  const idSegment = randomUuid
+    ? randomUuid.replace(/-/g, "")
+    : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+  return `${CUSTOM_CATEGORY_PREFIX}category_${idSegment}` as CustomAppCategory;
+}
+
 export function isCustomCategory(category: string): category is CustomAppCategory {
   return category.startsWith(CUSTOM_CATEGORY_PREFIX) && category.length > CUSTOM_CATEGORY_PREFIX.length;
 }

@@ -45,6 +45,7 @@ type ClassificationBootstrapSnapshot = {
   loadedOverrides: ClassificationDraftState["overrides"];
   loadedWebDomainOverrides: ClassificationDraftState["webDomainOverrides"];
   loadedCategoryColorOverrides: ClassificationDraftState["categoryColorOverrides"];
+  loadedCategoryLabelOverrides: ClassificationDraftState["categoryLabelOverrides"];
   loadedCustomCategories: ClassificationDraftState["customCategories"];
   loadedDeletedCategories: ClassificationDraftState["deletedCategories"];
 };
@@ -134,6 +135,7 @@ export function createAppMappingDraftState(
     overrides: bootstrap.loadedOverrides,
     webDomainOverrides: bootstrap.loadedWebDomainOverrides ?? {},
     categoryColorOverrides: bootstrap.loadedCategoryColorOverrides,
+    categoryLabelOverrides: bootstrap.loadedCategoryLabelOverrides,
     customCategories: bootstrap.loadedCustomCategories,
     deletedCategories: bootstrap.loadedDeletedCategories,
   });

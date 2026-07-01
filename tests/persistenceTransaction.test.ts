@@ -87,7 +87,9 @@ await runTest("classification batch operations stop on the first failed write", 
   const executor = new FakeWriteExecutor(2);
   const mutations = buildCommitDraftChangePlanSettingMutations(buildClassificationDraftChangePlan({
     overrides: {},
+    webDomainOverrides: {},
     categoryColorOverrides: {},
+    categoryLabelOverrides: {},
     customCategories: [],
     deletedCategories: [],
   }, {
@@ -97,9 +99,11 @@ await runTest("classification batch operations stop on the first failed write", 
         displayName: "Work Browser",
       },
     },
+    webDomainOverrides: {},
     categoryColorOverrides: {
       development: "#112233",
     },
+    categoryLabelOverrides: {},
     customCategories: [],
     deletedCategories: ["music"],
   }));
@@ -113,6 +117,39 @@ await runTest("classification batch operations stop on the first failed write", 
 
   assert.deepEqual(executor.executedStatements, [operations[0]]);
   assertNoTransactionControlStatements(executor);
+});
+
+await runTest("custom category definitions and labels share one mutation batch", () => {
+  const category = "custom:category_focus" as const;
+  const mutations = buildCommitDraftChangePlanSettingMutations(buildClassificationDraftChangePlan({
+    overrides: {},
+    webDomainOverrides: {},
+    categoryColorOverrides: {},
+    categoryLabelOverrides: {},
+    customCategories: [],
+    deletedCategories: [],
+  }, {
+    overrides: {},
+    webDomainOverrides: {},
+    categoryColorOverrides: {},
+    categoryLabelOverrides: { [category]: "Deep Focus" },
+    customCategories: [category],
+    deletedCategories: [],
+  }));
+
+  assert.equal(
+    mutations.some((mutation) => (
+      mutation.key === `__custom_category::${category}` && mutation.value !== null
+    )),
+    true,
+  );
+  assert.equal(
+    mutations.some((mutation) => (
+      mutation.key === `__category_label_override::${category}`
+      && mutation.value === "Deep Focus"
+    )),
+    true,
+  );
 });
 
 await runTest("settings batch operations stop on the first failed write", async () => {

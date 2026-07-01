@@ -462,6 +462,7 @@ export function useAppMappingState({
         loadedOverrides: { ...savedState.overrides },
         loadedWebDomainOverrides: { ...savedState.webDomainOverrides },
         loadedCategoryColorOverrides: { ...savedState.categoryColorOverrides },
+        loadedCategoryLabelOverrides: { ...savedState.categoryLabelOverrides },
         loadedCustomCategories: [...savedState.customCategories],
         loadedDeletedCategories: [...savedState.deletedCategories],
       });
@@ -479,6 +480,7 @@ export function useAppMappingState({
         loadedOverrides: { ...savedState.overrides },
         loadedWebDomainOverrides: { ...savedState.webDomainOverrides },
         loadedCategoryColorOverrides: { ...savedState.categoryColorOverrides },
+        loadedCategoryLabelOverrides: { ...savedState.categoryLabelOverrides },
         loadedCustomCategories: [...savedState.customCategories],
         loadedDeletedCategories: [...savedState.deletedCategories],
       });
@@ -725,6 +727,7 @@ export function useAppMappingState({
         overrides: {},
         webDomainOverrides: {},
         categoryColorOverrides: {},
+        categoryLabelOverrides: {},
         customCategories: [],
         deletedCategories: [],
       },
@@ -749,6 +752,7 @@ export function useAppMappingState({
         overrides: {},
         webDomainOverrides: {},
         categoryColorOverrides: {},
+        categoryLabelOverrides: {},
         customCategories: [],
         deletedCategories: [],
       },

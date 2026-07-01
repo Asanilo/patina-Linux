@@ -11,6 +11,7 @@ export interface ClassificationDraftState {
   overrides: Record<string, AppOverride>;
   webDomainOverrides: Record<string, WebDomainOverride>;
   categoryColorOverrides: Record<string, string>;
+  categoryLabelOverrides: Record<string, string>;
   customCategories: CustomAppCategory[];
   deletedCategories: AppCategory[];
 }
@@ -19,6 +20,7 @@ export interface ClassificationDraftChangePlan {
   overrideUpserts: Array<{ exeName: string; override: AppOverride | null }>;
   webDomainOverrideUpserts: Array<{ normalizedDomain: string; override: WebDomainOverride | null }>;
   categoryColorUpdates: Array<{ category: AppCategory; colorValue: string | null }>;
+  categoryLabelUpdates: Array<{ category: CustomAppCategory; labelValue: string | null }>;
   customCategoriesToAdd: CustomAppCategory[];
   customCategoriesToRemove: CustomAppCategory[];
   deletedCategoryUpdates: Array<{ category: AppCategory; deleted: boolean }>;
@@ -53,6 +55,7 @@ export function cloneClassificationDraftState(state: ClassificationDraftState): 
     overrides,
     webDomainOverrides,
     categoryColorOverrides: { ...state.categoryColorOverrides },
+    categoryLabelOverrides: { ...state.categoryLabelOverrides },
     customCategories: [...state.customCategories],
     deletedCategories: [...state.deletedCategories],
   };
@@ -142,6 +145,9 @@ export function hasClassificationDraftChanges(
   draft: ClassificationDraftState,
 ): boolean {
   if (!areStringMapsEqual(saved.categoryColorOverrides, draft.categoryColorOverrides)) {
+    return true;
+  }
+  if (!areStringMapsEqual(saved.categoryLabelOverrides, draft.categoryLabelOverrides)) {
     return true;
   }
   if (!areStringArraysEqual(saved.customCategories, draft.customCategories)) {
@@ -235,6 +241,22 @@ export function buildClassificationDraftChangePlan(
   const customCategoriesToAdd = draft.customCategories.filter((category) => !savedCustomCategories.has(category));
   const customCategoriesToRemove = saved.customCategories.filter((category) => !draftCustomCategories.has(category));
 
+  const categoryLabelUpdates: ClassificationDraftChangePlan["categoryLabelUpdates"] = [];
+  const labelKeys = new Set([
+    ...Object.keys(saved.categoryLabelOverrides),
+    ...Object.keys(draft.categoryLabelOverrides),
+  ]);
+  for (const category of labelKeys) {
+    if (!isCustomCategory(category)) continue;
+    const savedLabel = saved.categoryLabelOverrides[category];
+    const draftLabel = draft.categoryLabelOverrides[category];
+    if (savedLabel === draftLabel) continue;
+    categoryLabelUpdates.push({
+      category,
+      labelValue: draftLabel ?? null,
+    });
+  }
+
   const deletedCategoryUpdates: ClassificationDraftChangePlan["deletedCategoryUpdates"] = [];
   const assignableCategories = USER_ASSIGNABLE_CATEGORIES.filter((category) => (
     !isCustomCategory(category) && category !== "other"
@@ -252,6 +274,7 @@ export function buildClassificationDraftChangePlan(
     overrideUpserts,
     webDomainOverrideUpserts,
     categoryColorUpdates,
+    categoryLabelUpdates,
     customCategoriesToAdd,
     customCategoriesToRemove,
     deletedCategoryUpdates,
