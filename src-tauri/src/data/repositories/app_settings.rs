@@ -150,7 +150,6 @@ fn is_allowed_app_setting_key(key: &str) -> bool {
             | "web_activity_token"
             | "web_activity_url_privacy"
             | "local_api_port"
-            | "local_api_token"
             | "remote_status_bridge_enabled"
             | "remote_status_bridge_url"
             | "remote_status_bridge_token"
@@ -339,6 +338,15 @@ mod tests {
             .and_then(|row| row.try_get::<String, _>("value").ok())
     }
 
+    async fn seed_legacy_setting(pool: &SqlitePool, key: &str, value: &str) {
+        sqlx::query("INSERT INTO settings (key, value) VALUES (?, ?)")
+            .bind(key)
+            .bind(value)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
     #[test]
     fn commit_app_setting_mutations_upserts_in_one_transaction() {
         tauri::async_runtime::block_on(async {
@@ -524,15 +532,7 @@ mod tests {
     fn local_api_port_persists_without_rewriting_legacy_token() {
         tauri::async_runtime::block_on(async {
             let pool = setup_test_db().await;
-            commit_app_setting_mutations(
-                &pool,
-                &[AppSettingMutation {
-                    key: LOCAL_API_TOKEN_KEY.to_string(),
-                    value: "legacy-token".to_string(),
-                }],
-            )
-            .await
-            .unwrap();
+            seed_legacy_setting(&pool, LOCAL_API_TOKEN_KEY, "legacy-token").await;
 
             save_local_api_port(&pool, 15_555).await.unwrap();
 
@@ -553,19 +553,14 @@ mod tests {
             let pool = setup_test_db().await;
             commit_app_setting_mutations(
                 &pool,
-                &[
-                    AppSettingMutation {
-                        key: LOCAL_API_PORT_KEY.to_string(),
-                        value: "15555".to_string(),
-                    },
-                    AppSettingMutation {
-                        key: LOCAL_API_TOKEN_KEY.to_string(),
-                        value: " legacy-token ".to_string(),
-                    },
-                ],
+                &[AppSettingMutation {
+                    key: LOCAL_API_PORT_KEY.to_string(),
+                    value: "15555".to_string(),
+                }],
             )
             .await
             .unwrap();
+            seed_legacy_setting(&pool, LOCAL_API_TOKEN_KEY, " legacy-token ").await;
 
             assert_eq!(
                 load_legacy_local_api_token(&pool).await.unwrap().as_deref(),
@@ -578,6 +573,24 @@ mod tests {
                 load_setting(&pool, LOCAL_API_PORT_KEY).await.as_deref(),
                 Some("15555")
             );
+        });
+    }
+
+    #[test]
+    fn generic_setting_mutations_reject_local_api_tokens() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            let result = commit_app_setting_mutations(
+                &pool,
+                &[AppSettingMutation {
+                    key: LOCAL_API_TOKEN_KEY.to_string(),
+                    value: "must-use-dedicated-command".to_string(),
+                }],
+            )
+            .await;
+
+            assert!(result.is_err());
+            assert_eq!(load_setting(&pool, LOCAL_API_TOKEN_KEY).await, None);
         });
     }
 }

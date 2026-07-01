@@ -37,6 +37,9 @@ export default function Settings({
     handleSave,
     handleSaveColorScheme,
     handleChange,
+    localApiActionStatus,
+    handleApplyLocalApiPort,
+    handleRotateLocalApiToken,
     cleanupRange,
     setCleanupRange,
     restoreStrategy,
@@ -229,8 +232,9 @@ export default function Settings({
             remoteStatusBridgeToken={draftSettings.remoteStatusBridgeToken}
             remoteStatusBridgeMachineId={draftSettings.remoteStatusBridgeMachineId}
             onWebActivityEnabledChange={(nextChecked) => handleChange("webActivityEnabled", nextChecked)}
-            onLocalApiPortChange={(nextPort) => handleChange("localApiPort", nextPort)}
-            onLocalApiTokenChange={(nextToken) => handleChange("localApiToken", nextToken)}
+            localApiActionStatus={localApiActionStatus}
+            onApplyLocalApiPort={handleApplyLocalApiPort}
+            onRotateLocalApiToken={handleRotateLocalApiToken}
             onPortChange={(nextPort) => handleChange("webActivityPort", nextPort)}
             onWebActivityTokenChange={(nextToken) => handleChange("webActivityToken", nextToken)}
             onWebActivityUrlPrivacyChange={(nextMode) => handleChange("webActivityUrlPrivacy", nextMode)}

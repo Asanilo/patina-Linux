@@ -19,8 +19,11 @@ import { emitAppSettingsChanged } from "../../../platform/runtime/appSettingsEve
 import {
   setAfkThreshold,
   setAudioParticipationEnabled,
-  setLocalApiSettings,
 } from "../../../platform/runtime/trackingRuntimeGateway.ts";
+import {
+  applyLocalApiPort,
+  rotateLocalApiToken,
+} from "../../../platform/runtime/localApiDiagnosticsGateway.ts";
 import { getUiLocale, UI_TEXT } from "../../../shared/copy/uiText.ts";
 import type { CleanupRange } from "../types.ts";
 import {
@@ -49,7 +52,6 @@ interface SettingsCommitDeps {
   persistPatch: (patch: SettingsPatch) => Promise<void>;
   syncIdleTimeout: (seconds: number) => Promise<void>;
   syncAudioParticipation: (enabled: boolean) => Promise<void>;
-  syncLocalApiSettings: (port: number, token: string) => Promise<void>;
   notifySettingsChanged: (patch: SettingsPatch) => Promise<void>;
 }
 type ExportBackupDeps = {
@@ -91,7 +93,6 @@ const defaultSettingsCommitDeps: SettingsCommitDeps = {
   persistPatch: saveAppSettingsPatch,
   syncIdleTimeout: setAfkThreshold,
   syncAudioParticipation: setAudioParticipationEnabled,
-  syncLocalApiSettings: setLocalApiSettings,
   notifySettingsChanged: emitAppSettingsChanged,
 };
 
@@ -187,19 +188,26 @@ export class SettingsRuntimeAdapterService {
     const patchRecord = patch as Record<keyof AppSettings, AppSettings[keyof AppSettings]>;
     const keys = Object.keys(saved) as Array<keyof AppSettings>;
     for (const key of keys) {
+      if (key === "localApiPort" || key === "localApiToken") {
+        continue;
+      }
       if (saved[key] !== draft[key]) {
         patchRecord[key] = draft[key];
       }
-    }
-    if (patch.localApiPort !== undefined || patch.localApiToken !== undefined) {
-      patch.localApiPort = draft.localApiPort;
-      patch.localApiToken = draft.localApiToken;
     }
     return patch;
   }
 
   static async commitSettingsPatch(patch: SettingsPatch): Promise<SettingsCommitResult> {
     return commitSettingsPatchWithDeps(patch, defaultSettingsCommitDeps);
+  }
+
+  static async applyLocalApiPort(port: number) {
+    return applyLocalApiPort(port);
+  }
+
+  static async rotateLocalApiToken() {
+    return rotateLocalApiToken();
   }
 }
 
@@ -245,25 +253,11 @@ export async function commitSettingsPatchWithDeps(
     }
   }
 
-  const localApiPort = patch.localApiPort;
-  const localApiToken = patch.localApiToken;
-  const needsLocalApiRuntimeSync = typeof localApiPort === "number" || typeof localApiToken === "string";
-  if (needsLocalApiRuntimeSync) {
-    try {
-      if (typeof localApiPort !== "number" || typeof localApiToken !== "string") {
-        throw new Error("local API runtime sync requires port and token");
-      }
-      await deps.syncLocalApiSettings(localApiPort, localApiToken);
-    } catch (error) {
-      runtimeSyncErrors.push(error instanceof Error ? error.message : String(error));
-    }
-  }
-
   return {
     persisted: true,
     runtimeSync: runtimeSyncErrors.length > 0
         ? "failed"
-        : needsRuntimeSync || needsAudioRuntimeSync || needsLocalApiRuntimeSync
+        : needsRuntimeSync || needsAudioRuntimeSync
           ? "synced"
           : "not-needed",
     runtimeSyncErrors,

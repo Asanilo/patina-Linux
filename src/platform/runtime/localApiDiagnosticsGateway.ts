@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 
 const GET_LOCAL_API_DIAGNOSTICS_COMMAND = "cmd_get_local_api_diagnostics";
 const GET_LOCAL_API_SETTINGS_COMMAND = "cmd_get_local_api_settings";
+const APPLY_LOCAL_API_PORT_COMMAND = "cmd_apply_local_api_port";
+const ROTATE_LOCAL_API_TOKEN_COMMAND = "cmd_rotate_local_api_token";
 
 interface RawLocalApiDiagnosticsSnapshot {
   base_url: string;
@@ -90,4 +92,23 @@ export async function getLocalApiSettings(): Promise<LocalApiSettingsSnapshot> {
   }
 
   return mapRawLocalApiSettings(payload);
+}
+
+async function invokeLocalApiSettingsCommand(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<LocalApiSettingsSnapshot> {
+  const payload = await invoke<unknown>(command, args);
+  if (!isRawLocalApiSettings(payload)) {
+    throw new Error("Invalid local API settings payload");
+  }
+  return mapRawLocalApiSettings(payload);
+}
+
+export async function applyLocalApiPort(port: number): Promise<LocalApiSettingsSnapshot> {
+  return invokeLocalApiSettingsCommand(APPLY_LOCAL_API_PORT_COMMAND, { port });
+}
+
+export async function rotateLocalApiToken(): Promise<LocalApiSettingsSnapshot> {
+  return invokeLocalApiSettingsCommand(ROTATE_LOCAL_API_TOKEN_COMMAND);
 }

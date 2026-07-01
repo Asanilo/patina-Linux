@@ -23,6 +23,9 @@ import {
 import {
   createSettingsToken,
 } from "../src/features/settings/services/settingsTokenService.ts";
+import {
+  buildLocalApiConfigurationText,
+} from "../src/features/settings/services/settingsLocalApiService.ts";
 
 interface AppSettings {
   idleTimeoutSecs: number;
@@ -344,7 +347,7 @@ await runTest("commitSettingsPatchWithDeps does not attempt runtime sync when pe
   assert.deepEqual(events, ["persist"]);
 });
 
-await runTest("buildSettingsPatch keeps local API port and token together", () => {
+await runTest("buildSettingsPatch excludes dedicated local API fields", () => {
   const saved = buildSettings({
     localApiPort: 14840,
     localApiToken: "old-token",
@@ -354,10 +357,17 @@ await runTest("buildSettingsPatch keeps local API port and token together", () =
     localApiToken: "new-token",
   });
 
-  assert.deepEqual(SettingsRuntimeAdapterService.buildSettingsPatch(saved, draft), {
-    localApiPort: 14840,
-    localApiToken: "new-token",
-  });
+  assert.deepEqual(SettingsRuntimeAdapterService.buildSettingsPatch(saved, draft), {});
+});
+
+await runTest("local API configuration text uses HTTP and MCP environment names", () => {
+  assert.equal(
+    buildLocalApiConfigurationText({
+      baseUrl: "http://127.0.0.1:15555",
+      token: "patina_api_test",
+    }),
+    "PATINA_API_BASE=http://127.0.0.1:15555\nPATINA_API_TOKEN=patina_api_test",
+  );
 });
 
 await runTest("saveSettingsPageStateWithDeps normalizes service settings", async () => {

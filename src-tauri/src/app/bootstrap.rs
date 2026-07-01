@@ -86,7 +86,6 @@ fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Build
         commands::settings::cmd_set_launch_behavior,
         commands::settings::cmd_set_background_optimization,
         commands::settings::cmd_set_audio_participation_enabled,
-        commands::settings::cmd_set_local_api_settings,
         commands::settings::cmd_apply_local_api_port,
         commands::settings::cmd_rotate_local_api_token,
         commands::settings::cmd_commit_app_settings,

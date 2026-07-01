@@ -89,18 +89,6 @@ pub fn cmd_set_audio_participation_enabled(enabled: bool) -> Result<(), String> 
 }
 
 #[tauri::command]
-pub async fn cmd_set_local_api_settings(
-    port: u16,
-    token: String,
-    app: AppHandle,
-    api_server_state: State<'_, crate::engine::api::server::ApiServerState>,
-) -> Result<(), String> {
-    crate::engine::api::configuration::apply_port(&app, &api_server_state, port).await?;
-    crate::engine::api::auth::replace_api_token(&token)?;
-    Ok(())
-}
-
-#[tauri::command]
 pub async fn cmd_apply_local_api_port(
     port: u16,
     app: AppHandle,

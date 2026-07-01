@@ -1,4 +1,4 @@
-import { Copy, Dices, EthernetPort, ExternalLink, Eye, EyeOff, Fingerprint, KeyRound, Link2, Puzzle, Server } from "lucide-react";
+import { Copy, Dices, EthernetPort, ExternalLink, Eye, EyeOff, Fingerprint, KeyRound, Link2, Puzzle, RefreshCw, Server } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import QuietActionRow from "../../../shared/components/QuietActionRow";
@@ -21,9 +21,10 @@ type SettingsInterfacePanelProps = {
   remoteStatusBridgeUrl: string;
   remoteStatusBridgeToken: string;
   remoteStatusBridgeMachineId: string;
+  localApiActionStatus: "idle" | "applying-port" | "rotating-token";
   onWebActivityEnabledChange: (nextChecked: boolean) => void;
-  onLocalApiPortChange: (nextPort: number) => void;
-  onLocalApiTokenChange: (nextToken: string) => void;
+  onApplyLocalApiPort: (nextPort: number) => Promise<boolean>;
+  onRotateLocalApiToken: () => Promise<boolean>;
   onPortChange: (nextPort: number) => void;
   onWebActivityTokenChange: (nextToken: string) => void;
   onWebActivityUrlPrivacyChange: (nextMode: WebActivityUrlPrivacy) => void;
@@ -369,9 +370,10 @@ export default function SettingsInterfacePanel({
   remoteStatusBridgeUrl,
   remoteStatusBridgeToken,
   remoteStatusBridgeMachineId,
+  localApiActionStatus,
   onWebActivityEnabledChange,
-  onLocalApiPortChange,
-  onLocalApiTokenChange,
+  onApplyLocalApiPort,
+  onRotateLocalApiToken,
   onPortChange,
   onWebActivityTokenChange,
   onWebActivityUrlPrivacyChange,
@@ -385,6 +387,10 @@ export default function SettingsInterfacePanel({
   const [webActivityTokenVisible, setWebActivityTokenVisible] = useState(false);
   const [remoteStatusBridgeTokenVisible, setRemoteStatusBridgeTokenVisible] = useState(false);
   const [remoteStatusBridgeMachineIdVisible, setRemoteStatusBridgeMachineIdVisible] = useState(false);
+  const normalizedLocalApiPort = normalizePort(localApiPortDraft);
+  const localApiBusy = localApiActionStatus !== "idle";
+  const localApiPortChanged = normalizedLocalApiPort !== ""
+    && Number(normalizedLocalApiPort) !== localApiPort;
   const webActivityUrlPrivacyOptions: Array<{ value: WebActivityUrlPrivacy; label: string }> = [
     { value: "full", label: UI_TEXT.settings.webActivityUrlPrivacyOptions.full },
     { value: "strip_query", label: UI_TEXT.settings.webActivityUrlPrivacyOptions.stripQuery },
@@ -454,20 +460,35 @@ export default function SettingsInterfacePanel({
               icon={<EthernetPort size={14} className="text-[var(--qp-text-tertiary)]" />}
               title={UI_TEXT.settings.localApiPortLabel}
             >
-              <PortField
-                id="settings-local-api-port"
-                value={localApiPortDraft}
-                disabled={false}
-                onChange={(nextValue) => {
-                  if (PORT_DRAFT_PATTERN.test(nextValue)) setLocalApiPortDraft(nextValue);
-                }}
-                onCommit={() => commitPortDraft(
-                  localApiPortDraft,
-                  localApiPort,
-                  setLocalApiPortDraft,
-                  onLocalApiPortChange,
-                )}
-              />
+              <div className="flex min-w-0 items-center gap-2">
+                <PortField
+                  id="settings-local-api-port"
+                  value={localApiPortDraft}
+                  disabled={localApiBusy}
+                  onChange={(nextValue) => {
+                    if (PORT_DRAFT_PATTERN.test(nextValue)) setLocalApiPortDraft(nextValue);
+                  }}
+                  onCommit={() => {
+                    if (!normalizePort(localApiPortDraft)) {
+                      setLocalApiPortDraft(String(localApiPort));
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="qp-button-secondary inline-flex min-w-[92px] shrink-0 items-center justify-center gap-2 rounded-[8px] px-3 py-2 text-xs font-semibold"
+                  disabled={!localApiPortChanged || localApiBusy}
+                  onClick={() => {
+                    if (!normalizedLocalApiPort) return;
+                    void onApplyLocalApiPort(Number(normalizedLocalApiPort));
+                  }}
+                >
+                  {localApiActionStatus === "applying-port" && (
+                    <RefreshCw size={14} className="animate-spin" />
+                  )}
+                  <span>{UI_TEXT.settings.localApiApplyPortLabel}</span>
+                </button>
+              </div>
             </InterfaceInlineField>
 
             <InterfaceInlineField
@@ -475,22 +496,41 @@ export default function SettingsInterfacePanel({
               icon={<KeyRound size={14} className="text-[var(--qp-text-tertiary)]" />}
               title={UI_TEXT.settings.localApiTokenLabel}
             >
-              <TokenField
+              <RevealableTextField
                 id="settings-local-api-token"
                 value={localApiToken}
                 visible={localApiTokenVisible}
-                disabled={false}
-                onChange={onLocalApiTokenChange}
-                onGenerate={() => {
-                  onLocalApiTokenChange(`patina_api_${createSettingsToken()}`);
-                  setLocalApiTokenVisible(true);
-                }}
-                onCopy={() => void copyText(localApiToken.trim())}
+                disabled={localApiBusy}
+                readOnly
                 onToggleVisible={() => setLocalApiTokenVisible((current) => !current)}
                 showLabel={UI_TEXT.accessibility.settings.showServiceToken}
                 hideLabel={UI_TEXT.accessibility.settings.hideServiceToken}
               />
             </InterfaceInlineField>
+          </div>
+
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              className="qp-button-secondary inline-flex items-center gap-2 rounded-[8px] px-3 py-2 text-xs font-semibold"
+              disabled={localApiBusy || localApiToken.trim().length === 0}
+              onClick={() => void copyText(localApiToken.trim())}
+            >
+              <Copy size={14} />
+              <span>{UI_TEXT.settings.localApiCopyTokenLabel}</span>
+            </button>
+            <button
+              type="button"
+              className="qp-button-secondary inline-flex items-center gap-2 rounded-[8px] px-3 py-2 text-xs font-semibold"
+              disabled={localApiBusy}
+              onClick={() => void onRotateLocalApiToken()}
+            >
+              <RefreshCw
+                size={14}
+                className={localApiActionStatus === "rotating-token" ? "animate-spin" : undefined}
+              />
+              <span>{UI_TEXT.settings.localApiRotateTokenLabel}</span>
+            </button>
           </div>
         </QuietSubpanel>
 

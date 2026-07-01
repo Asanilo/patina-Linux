@@ -20,6 +20,8 @@ import type { ThemeLibrary } from "../../../shared/settings/colorSchemeOptions.t
 import type { CleanupRange } from "../types";
 import type { BackupRestorePreparation, BackupRestoreStrategy } from "../services/settingsRuntimeAdapterService.ts";
 import { useRemoteBackupState } from "./useRemoteBackupState.ts";
+import { buildLocalApiConfigurationText } from "../services/settingsLocalApiService.ts";
+import type { LocalApiSettingsSnapshot } from "../../../platform/runtime/localApiDiagnosticsGateway.ts";
 
 const buildCleanupOptions = (): Array<{ value: CleanupRange; label: string }> => [
   { value: 180, label: UI_TEXT.settings.cleanupRangeLabels[180] },
@@ -64,6 +66,9 @@ export function useSettingsPageState({
   );
   const [loading, setLoading] = useState(() => !initialBootstrap);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [localApiActionStatus, setLocalApiActionStatus] = useState<
+    "idle" | "applying-port" | "rotating-token"
+  >("idle");
   const [cleanupRange, setCleanupRange] = useState<CleanupRange>(30);
   const [isCleaning, setIsCleaning] = useState(false);
   const [exportPath, setExportPath] = useState("");
@@ -146,6 +151,72 @@ export function useSettingsPageState({
       return { ...current, [key]: value } as AppSettings;
     });
   }, []);
+
+  const applyLocalApiSnapshot = useCallback((snapshot: LocalApiSettingsSnapshot) => {
+    if (!savedSettings) return;
+    const nextSavedSettings: AppSettings = {
+      ...savedSettings,
+      localApiPort: snapshot.port,
+      localApiToken: snapshot.token,
+    };
+    setSavedSettings(nextSavedSettings);
+    setDraftSettings((current) => current ? {
+      ...current,
+      localApiPort: snapshot.port,
+      localApiToken: snapshot.token,
+    } : current);
+    const nextBootstrap = { settings: nextSavedSettings, appVersion };
+    setSettingsBootstrapCache(nextBootstrap);
+    onSettingsChanged(nextSavedSettings);
+  }, [appVersion, onSettingsChanged, savedSettings]);
+
+  const handleApplyLocalApiPort = useCallback(async (port: number): Promise<boolean> => {
+    if (!savedSettings || localApiActionStatus !== "idle") return false;
+    setLocalApiActionStatus("applying-port");
+    try {
+      const snapshot = await SettingsRuntimeAdapterService.applyLocalApiPort(port);
+      applyLocalApiSnapshot(snapshot);
+      notify(UI_TEXT.settings.localApiPortApplied, "success");
+      return true;
+    } catch (error) {
+      console.error("apply local API port failed", error);
+      notify(UI_TEXT.settings.localApiPortApplyFailed, "warning");
+      return false;
+    } finally {
+      setLocalApiActionStatus("idle");
+    }
+  }, [applyLocalApiSnapshot, localApiActionStatus, notify, savedSettings]);
+
+  const handleRotateLocalApiToken = useCallback(async (): Promise<boolean> => {
+    if (!savedSettings || localApiActionStatus !== "idle") return false;
+    const confirmed = await confirm({
+      title: UI_TEXT.settings.localApiRotateTokenTitle,
+      description: UI_TEXT.settings.localApiRotateTokenDetail,
+      confirmLabel: UI_TEXT.dialog.confirm,
+      danger: true,
+    });
+    if (!confirmed) return false;
+
+    setLocalApiActionStatus("rotating-token");
+    try {
+      const snapshot = await SettingsRuntimeAdapterService.rotateLocalApiToken();
+      applyLocalApiSnapshot(snapshot);
+      try {
+        await navigator.clipboard.writeText(buildLocalApiConfigurationText(snapshot));
+        notify(UI_TEXT.settings.localApiTokenRotated, "success");
+      } catch (error) {
+        console.error("copy local API configuration failed", error);
+        notify(UI_TEXT.settings.localApiTokenCopyFailed, "warning");
+      }
+      return true;
+    } catch (error) {
+      console.error("rotate local API token failed", error);
+      notify(UI_TEXT.settings.saveFailed, "warning");
+      return false;
+    } finally {
+      setLocalApiActionStatus("idle");
+    }
+  }, [applyLocalApiSnapshot, confirm, localApiActionStatus, notify, savedSettings]);
 
   const handleSave = useCallback(async (): Promise<boolean> => {
     if (!savedSettings || !draftSettings) return false;
@@ -376,6 +447,9 @@ export function useSettingsPageState({
     handleSave,
     handleSaveColorScheme,
     handleChange,
+    localApiActionStatus,
+    handleApplyLocalApiPort,
+    handleRotateLocalApiToken,
     cleanupRange,
     setCleanupRange,
     restoreStrategy,
