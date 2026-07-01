@@ -70,10 +70,11 @@ pub fn cmd_get_resource_diagnostics(app: tauri::AppHandle) -> ResourceDiagnostic
 pub fn cmd_get_local_api_diagnostics(
     api_server_state: State<crate::engine::api::server::ApiServerState>,
 ) -> LocalApiDiagnosticsSnapshot {
-    let port = api_server_state.port();
+    let confirmed_port = api_server_state.confirmed_port();
+    let port = confirmed_port.unwrap_or(crate::engine::api::server::DEFAULT_PORT);
     let token_path = crate::engine::api::auth::token_file_path();
     let token_present = !crate::engine::api::auth::get_api_token().trim().is_empty();
-    let listening = is_local_api_listening(port);
+    let listening = confirmed_port.map(is_local_api_listening).unwrap_or(false);
 
     build_local_api_diagnostics(port, token_path, token_present, listening)
 }
