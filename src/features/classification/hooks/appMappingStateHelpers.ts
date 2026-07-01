@@ -1,5 +1,9 @@
 import type { CandidateFilter, ObservedAppCandidate } from "../types.ts";
-import type { UserAssignableAppCategory } from "../../../shared/classification/categoryTokens.ts";
+import {
+  isCustomCategory,
+  type CustomAppCategory,
+  type UserAssignableAppCategory,
+} from "../../../shared/classification/categoryTokens.ts";
 import type { AppOverride } from "../services/classificationService.ts";
 import type { WebDomainOverride } from "../../../shared/types/webActivity.ts";
 import { getUiLocale } from "../../../shared/copy/uiText.ts";
@@ -139,6 +143,160 @@ export function createAppMappingDraftState(
     customCategories: bootstrap.loadedCustomCategories,
     deletedCategories: bootstrap.loadedDeletedCategories,
   });
+}
+
+export function normalizeCategoryNameInput(input: string): string {
+  return input.trim().replace(/\s+/g, " ");
+}
+
+export function categoryNameKey(input: string): string {
+  return normalizeCategoryNameInput(input).normalize("NFKC").toLowerCase();
+}
+
+export function createCategoryInDraftState(
+  current: ClassificationDraftState,
+  category: CustomAppCategory,
+  label: string,
+): ClassificationDraftState {
+  const normalizedLabel = normalizeCategoryNameInput(label);
+  if (!isCustomCategory(category) || !normalizedLabel) {
+    return current;
+  }
+
+  return {
+    ...current,
+    categoryLabelOverrides: {
+      ...current.categoryLabelOverrides,
+      [category]: normalizedLabel,
+    },
+    customCategories: current.customCategories.includes(category)
+      ? current.customCategories
+      : [...current.customCategories, category],
+    deletedCategories: current.deletedCategories.filter((item) => item !== category),
+  };
+}
+
+export function updateCategoryLabelInDraftState(
+  current: ClassificationDraftState,
+  category: CustomAppCategory,
+  label: string,
+): ClassificationDraftState {
+  const normalizedLabel = normalizeCategoryNameInput(label);
+  if (!isCustomCategory(category) || !normalizedLabel) {
+    return current;
+  }
+
+  return {
+    ...current,
+    categoryLabelOverrides: {
+      ...current.categoryLabelOverrides,
+      [category]: normalizedLabel,
+    },
+  };
+}
+
+export function deleteCustomCategoryFromDraftState(
+  current: ClassificationDraftState,
+  category: CustomAppCategory,
+): ClassificationDraftState {
+  if (!isCustomCategory(category)) {
+    return current;
+  }
+
+  const nextOverrides: Record<string, AppOverride> = {};
+  for (const [exeName, override] of Object.entries(current.overrides)) {
+    if (override.category !== category) {
+      nextOverrides[exeName] = override;
+      continue;
+    }
+    const nextOverride = buildAppMappingOverride({
+      color: override.color,
+      displayName: override.displayName,
+      track: override.track !== false,
+      captureTitle: override.captureTitle !== false,
+      updatedAt: override.updatedAt,
+    });
+    if (nextOverride) nextOverrides[exeName] = nextOverride;
+  }
+
+  const nextWebDomainOverrides: Record<string, WebDomainOverride> = {};
+  for (const [normalizedDomain, override] of Object.entries(current.webDomainOverrides)) {
+    if (override.category !== category) {
+      nextWebDomainOverrides[normalizedDomain] = override;
+      continue;
+    }
+    const nextOverride = buildWebDomainMappingOverride({
+      color: override.color,
+      displayName: override.displayName,
+      enabled: override.enabled !== false,
+      updatedAt: override.updatedAt,
+    });
+    if (nextOverride) nextWebDomainOverrides[normalizedDomain] = nextOverride;
+  }
+
+  const nextCategoryColorOverrides = { ...current.categoryColorOverrides };
+  delete nextCategoryColorOverrides[category];
+  const nextCategoryLabelOverrides = { ...current.categoryLabelOverrides };
+  delete nextCategoryLabelOverrides[category];
+
+  return {
+    ...current,
+    overrides: nextOverrides,
+    webDomainOverrides: nextWebDomainOverrides,
+    categoryColorOverrides: nextCategoryColorOverrides,
+    categoryLabelOverrides: nextCategoryLabelOverrides,
+    customCategories: current.customCategories.filter((item) => item !== category),
+    deletedCategories: current.deletedCategories.filter((item) => item !== category),
+  };
+}
+
+export function mergeCategoryIntoDraftState(
+  current: ClassificationDraftState,
+  fromCategory: CustomAppCategory,
+  toCategory: UserAssignableAppCategory,
+  fallbackColor?: string,
+): ClassificationDraftState {
+  if (!isCustomCategory(fromCategory) || fromCategory === toCategory || toCategory === "other") {
+    return current;
+  }
+
+  const nextOverrides = Object.fromEntries(
+    Object.entries(current.overrides).map(([exeName, override]) => [
+      exeName,
+      override.category === fromCategory ? { ...override, category: toCategory } : override,
+    ]),
+  );
+  const nextWebDomainOverrides = Object.fromEntries(
+    Object.entries(current.webDomainOverrides).map(([normalizedDomain, override]) => [
+      normalizedDomain,
+      override.category === fromCategory ? { ...override, category: toCategory } : override,
+    ]),
+  );
+
+  const nextCategoryColorOverrides = { ...current.categoryColorOverrides };
+  const movedColor = nextCategoryColorOverrides[fromCategory] ?? normalizeHexColor(fallbackColor);
+  delete nextCategoryColorOverrides[fromCategory];
+  if (movedColor && !nextCategoryColorOverrides[toCategory]) {
+    nextCategoryColorOverrides[toCategory] = movedColor;
+  }
+
+  const nextCategoryLabelOverrides = { ...current.categoryLabelOverrides };
+  delete nextCategoryLabelOverrides[fromCategory];
+
+  return {
+    ...current,
+    overrides: nextOverrides,
+    webDomainOverrides: nextWebDomainOverrides,
+    categoryColorOverrides: nextCategoryColorOverrides,
+    categoryLabelOverrides: nextCategoryLabelOverrides,
+    customCategories: Array.from(new Set([
+      ...current.customCategories.filter((item) => item !== fromCategory),
+      ...(isCustomCategory(toCategory) ? [toCategory] : []),
+    ])),
+    deletedCategories: current.deletedCategories.filter((item) => (
+      item !== fromCategory && item !== toCategory
+    )),
+  };
 }
 
 export function filterAndSortCandidates({

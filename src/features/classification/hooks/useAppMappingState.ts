@@ -20,10 +20,16 @@ import {
   buildAppMappingOverride,
   buildWebDomainCategoryOverride,
   buildWebDomainMappingOverride,
+  categoryNameKey,
   cloneObservedCandidates,
+  createCategoryInDraftState,
   createAppMappingDraftState,
+  deleteCustomCategoryFromDraftState,
   fallbackDisplayName,
   filterAndSortCandidates,
+  mergeCategoryIntoDraftState,
+  normalizeCategoryNameInput,
+  updateCategoryLabelInDraftState,
 } from "./appMappingStateHelpers.ts";
 import {
   cancelAppMappingNameEdit,
@@ -36,10 +42,11 @@ import {
   syncWebDomainNameDraft,
 } from "./appMappingInteractions.ts";
 import {
-  buildCustomCategory,
+  createCategoryId,
   isCustomCategory,
   USER_ASSIGNABLE_CATEGORIES,
   type AppCategory,
+  type CustomAppCategory,
   type UserAssignableAppCategory,
 } from "../../../shared/classification/categoryTokens";
 import type {
@@ -57,7 +64,7 @@ const CUSTOM_CATEGORY_NAME_LIMITS = {
 function normalizeCustomCategoryInput(input: string) {
   const language = getUiTextLanguage();
   const limit = CUSTOM_CATEGORY_NAME_LIMITS[language] ?? CUSTOM_CATEGORY_NAME_LIMITS["zh-CN"];
-  const normalized = input.trim().replace(/\s+/g, " ");
+  const normalized = normalizeCategoryNameInput(input);
   const value = language === "en-US" ? normalized.split(" ")[0] ?? "" : normalized;
   return Array.from(value).slice(0, limit).join("");
 }
@@ -197,6 +204,7 @@ export function useAppMappingState({
   const draftOverrides = draftState?.overrides ?? {};
   const draftWebDomainOverrides = draftState?.webDomainOverrides ?? {};
   const draftCategoryColorOverrides = draftState?.categoryColorOverrides ?? {};
+  const draftCategoryLabelOverrides = draftState?.categoryLabelOverrides ?? {};
   const draftCustomCategories = draftState?.customCategories ?? [];
   const draftDeletedCategories = draftState?.deletedCategories ?? [];
 
@@ -220,6 +228,10 @@ export function useAppMappingState({
   const resolveCategoryColor = useCallback((category: AppCategory) => (
     draftCategoryColorOverrides[category] ?? AppClassification.getCategoryColor(category)
   ), [draftCategoryColorOverrides]);
+
+  const resolveCategoryLabel = useCallback((category: AppCategory) => (
+    draftCategoryLabelOverrides[category] ?? AppClassification.getCategoryLabel(category)
+  ), [draftCategoryLabelOverrides]);
 
   const resolveAutoDisplayName = useCallback((candidate: ObservedAppCandidate) => {
     const appName = candidate.appName.trim();
@@ -336,9 +348,9 @@ export function useAppMappingState({
       searchQuery,
       resolveMappedCategory,
       resolveEffectiveDisplayName: resolveSortDisplayName,
-      resolveCategoryLabel: (category) => AppClassification.getCategoryLabel(category),
+      resolveCategoryLabel,
     }),
-    [candidates, filter, searchQuery, resolveMappedCategory, resolveSortDisplayName],
+    [candidates, filter, searchQuery, resolveCategoryLabel, resolveMappedCategory, resolveSortDisplayName],
   );
 
   const counts = useMemo(() => {
@@ -362,7 +374,7 @@ export function useAppMappingState({
       .filter((candidate) => {
         if (!normalizedQuery) return true;
         const category = resolveWebDomainCategory(candidate);
-        const categoryLabel = AppClassification.getCategoryLabel(category);
+        const categoryLabel = resolveCategoryLabel(category);
         const haystack = [
           resolveWebDomainSortDisplayName(candidate),
           candidate.domain,
@@ -385,6 +397,7 @@ export function useAppMappingState({
     searchQuery,
     resolveWebDomainCategory,
     resolveWebDomainSortDisplayName,
+    resolveCategoryLabel,
     webActivityEnabled,
     webDomainCandidates,
   ]);
@@ -418,8 +431,8 @@ export function useAppMappingState({
       if (isCustomCategory(category) && !deletedSet.has(category)) categories.add(category);
     }
     return Array.from(categories)
-      .sort((a, b) => AppClassification.getCategoryLabel(a).localeCompare(AppClassification.getCategoryLabel(b), "zh-CN"));
-  }, [draftCategoryColorOverrides, draftCustomCategories, draftDeletedCategories, draftOverrides, draftWebDomainOverrides]);
+      .sort((a, b) => resolveCategoryLabel(a).localeCompare(resolveCategoryLabel(b), "zh-CN"));
+  }, [draftCategoryColorOverrides, draftCustomCategories, draftDeletedCategories, draftOverrides, draftWebDomainOverrides, resolveCategoryLabel]);
 
   const activeBuiltinCategories = useMemo(
     () => CATEGORY_OPTIONS.filter((category) => !draftDeletedCategories.includes(category)),
@@ -435,9 +448,9 @@ export function useAppMappingState({
   const candidateCategoryOptions = useMemo(
     () => orderedAssignableCategories.map((category) => ({
       value: category,
-      label: AppClassification.getCategoryLabel(category),
+      label: resolveCategoryLabel(category),
     })),
-    [orderedAssignableCategories],
+    [orderedAssignableCategories, resolveCategoryLabel],
   );
 
   const categoryControlCategories = useMemo<AppCategory[]>(() => {
@@ -446,11 +459,11 @@ export function useAppMappingState({
       ...customCategoryOptions,
     ];
     return [...manageable]
-      .sort((a, b) => AppClassification.getCategoryLabel(a).localeCompare(
-        AppClassification.getCategoryLabel(b),
+      .sort((a, b) => resolveCategoryLabel(a).localeCompare(
+        resolveCategoryLabel(b),
         "zh-CN",
       ));
-  }, [activeBuiltinCategories, customCategoryOptions]);
+  }, [activeBuiltinCategories, customCategoryOptions, resolveCategoryLabel]);
 
   const refreshCandidates = useCallback(async () => {
     const observed = await ClassificationService.loadObservedAppCandidates();
@@ -527,24 +540,23 @@ export function useAppMappingState({
     if (!customCategoryName) return;
     const normalized = normalizeCustomCategoryInput(customCategoryName);
     if (!normalized) return;
-    const category = buildCustomCategory(normalized);
-    setDraftState((current) => {
-      if (!current) return current;
-      return {
-        ...current,
-        customCategories: current.customCategories.includes(category)
-          ? current.customCategories
-          : [...current.customCategories, category],
-        deletedCategories: current.deletedCategories.filter((item) => item !== category),
-      };
-    });
-  }, [prompt]);
-
-  const handleDeleteCategory = useCallback(async (category: AppCategory) => {
-    if (category === "other") {
+    const comparisonKey = categoryNameKey(normalized);
+    if (candidateCategoryOptions.some((option) => categoryNameKey(option.label) === comparisonKey)) {
       return;
     }
-    const categoryLabel = AppClassification.getCategoryLabel(category);
+    setDraftState((current) => {
+      if (!current) return current;
+      let category = createCategoryId();
+      while (current.customCategories.includes(category)) {
+        category = createCategoryId();
+      }
+      return createCategoryInDraftState(current, category, normalized);
+    });
+  }, [candidateCategoryOptions, prompt]);
+
+  const handleDeleteCategory = useCallback(async (category: CustomAppCategory) => {
+    if (!isCustomCategory(category)) return;
+    const categoryLabel = resolveCategoryLabel(category);
     const confirmed = await confirm({
       title: UI_TEXT.mapping.deleteCategoryTitle,
       description: UI_TEXT.mapping.deleteCategoryDetail(categoryLabel),
@@ -554,58 +566,53 @@ export function useAppMappingState({
     if (!confirmed) return;
     setDraftState((current) => {
       if (!current) return current;
-      const nextOverrides: Record<string, AppOverride> = {};
-      for (const [exeName, override] of Object.entries(current.overrides)) {
-        if (override.category !== category) {
-          nextOverrides[exeName] = override;
-          continue;
-        }
-        const nextOverride = buildAppMappingOverride({
-          category: undefined,
-          color: override.color,
-          displayName: override.displayName,
-          track: override.track !== false,
-          captureTitle: override.captureTitle !== false,
-          updatedAt: override.updatedAt,
-        });
-        if (nextOverride) nextOverrides[exeName] = nextOverride;
-      }
-      const nextWebDomainOverrides: Record<string, WebDomainOverride> = {};
-      for (const [normalizedDomain, override] of Object.entries(current.webDomainOverrides)) {
-        if (override.category !== category) {
-          nextWebDomainOverrides[normalizedDomain] = override;
-          continue;
-        }
-        const nextOverride = buildWebDomainMappingOverride({
-          category: undefined,
-          color: override.color,
-          displayName: override.displayName,
-          enabled: override.enabled !== false,
-          updatedAt: override.updatedAt,
-        });
-        if (nextOverride) nextWebDomainOverrides[normalizedDomain] = nextOverride;
-      }
-      const nextCategoryColorOverrides = { ...current.categoryColorOverrides };
-      delete nextCategoryColorOverrides[category];
-      if (isCustomCategory(category)) {
-        return {
-          ...current,
-          overrides: nextOverrides,
-          webDomainOverrides: nextWebDomainOverrides,
-          categoryColorOverrides: nextCategoryColorOverrides,
-          customCategories: current.customCategories.filter((item) => item !== category),
-          deletedCategories: current.deletedCategories.filter((item) => item !== category),
-        };
-      }
-      return {
-        ...current,
-        overrides: nextOverrides,
-        webDomainOverrides: nextWebDomainOverrides,
-        categoryColorOverrides: nextCategoryColorOverrides,
-        deletedCategories: Array.from(new Set([...current.deletedCategories, category])),
-      };
+      return deleteCustomCategoryFromDraftState(current, category);
     });
-  }, [confirm]);
+  }, [confirm, resolveCategoryLabel]);
+
+  const handleRenameCategory = useCallback(async (category: CustomAppCategory) => {
+    if (!draftState || !isCustomCategory(category)) return;
+
+    const currentLabel = resolveCategoryLabel(category);
+    const categoryName = await prompt({
+      title: UI_TEXT.mapping.renameCategoryTitle,
+      description: UI_TEXT.mapping.renameCategoryDescription,
+      placeholder: UI_TEXT.mapping.renameCategoryPlaceholder,
+      initialValue: currentLabel,
+    });
+    if (!categoryName) return;
+
+    const normalized = normalizeCustomCategoryInput(categoryName);
+    if (!normalized || normalized === currentLabel) return;
+    const nextKey = categoryNameKey(normalized);
+    const duplicateOption = candidateCategoryOptions.find((option) => (
+      option.value !== category && categoryNameKey(option.label) === nextKey
+    ));
+    if (duplicateOption?.value === "other") return;
+
+    if (duplicateOption) {
+      const confirmed = await confirm({
+        title: UI_TEXT.mapping.renameCategoryDuplicateTitle,
+        description: UI_TEXT.mapping.renameCategoryDuplicateDetail(duplicateOption.label),
+        confirmLabel: UI_TEXT.dialog.confirm,
+      });
+      if (!confirmed) return;
+      setDraftState((current) => {
+        if (!current) return current;
+        return mergeCategoryIntoDraftState(
+          current,
+          category,
+          duplicateOption.value,
+          resolveCategoryColor(category),
+        );
+      });
+      return;
+    }
+
+    setDraftState((current) => (
+      current ? updateCategoryLabelInDraftState(current, category, normalized) : current
+    ));
+  }, [candidateCategoryOptions, confirm, draftState, prompt, resolveCategoryColor, resolveCategoryLabel]);
 
   const handleCategoryAssign = useCallback((candidate: ObservedAppCandidate, categoryValue: string) => {
     const current = draftOverrides[candidate.exeName] ?? null;
@@ -1009,7 +1016,9 @@ export function useAppMappingState({
     categoryControlCategories,
     candidateCategoryOptions,
     resolveCategoryColor,
+    resolveCategoryLabel,
     handleCreateCustomCategory,
+    handleRenameCategory,
     handleDeleteCategory,
     resolveEffectiveDisplayName,
     resolveCandidateColor,

@@ -9,8 +9,13 @@ import {
 import {
   buildAppMappingCategoryOverride,
   buildAppMappingOverride,
+  categoryNameKey,
+  createCategoryInDraftState,
   createAppMappingDraftState,
+  deleteCustomCategoryFromDraftState,
   filterAndSortCandidates,
+  mergeCategoryIntoDraftState,
+  updateCategoryLabelInDraftState,
 } from "../src/features/classification/hooks/appMappingStateHelpers.ts";
 import {
   buildAppOverrideTransition,
@@ -300,6 +305,135 @@ await runTest("classification draft tracks category label overrides", () => {
   assert.deepEqual(buildClassificationDraftChangePlan(saved, draft).categoryLabelUpdates, [
     { category, labelValue: "Deep Focus" },
   ]);
+});
+
+await runTest("category comparison keys collapse whitespace and ignore case", () => {
+  assert.equal(categoryNameKey(" Focus  Work "), categoryNameKey("focus work"));
+  assert.equal(categoryNameKey("ＦＯＣＵＳ"), categoryNameKey("focus"));
+});
+
+await runTest("custom category creation and case-only rename keep the stable id", () => {
+  const category = createCategoryId();
+  const created = createCategoryInDraftState(buildDraftState(), category, "Focus");
+  const renamed = updateCategoryLabelInDraftState(created, category, "FOCUS");
+
+  assert.deepEqual(renamed.customCategories, [category]);
+  assert.equal(renamed.categoryLabelOverrides[category], "FOCUS");
+});
+
+await runTest("custom category merge rewrites app and web rules while target color wins", () => {
+  const source = createCategoryId();
+  const target = createCategoryId();
+  const state = buildDraftState({
+    overrides: {
+      "code.exe": { enabled: true, category: source, displayName: "Code" },
+      "mail.exe": { enabled: true, category: target },
+    },
+    webDomainOverrides: {
+      "docs.example": { category: source, displayName: "Docs" },
+    },
+    categoryColorOverrides: {
+      [source]: "#112233",
+      [target]: "#445566",
+    },
+    categoryLabelOverrides: {
+      [source]: "Focus",
+      [target]: "Deep Work",
+    },
+    customCategories: [source, target],
+  });
+
+  const merged = mergeCategoryIntoDraftState(state, source, target);
+
+  assert.equal(merged.overrides["code.exe"]?.category, target);
+  assert.equal(merged.webDomainOverrides["docs.example"]?.category, target);
+  assert.equal(merged.categoryColorOverrides[target], "#445566");
+  assert.equal(merged.categoryColorOverrides[source], undefined);
+  assert.equal(merged.categoryLabelOverrides[source], undefined);
+  assert.deepEqual(merged.customCategories, [target]);
+});
+
+await runTest("custom category can merge into a built-in category and inherit source color", () => {
+  const source = createCategoryId();
+  const state = buildDraftState({
+    overrides: {
+      "code.exe": { enabled: true, category: source },
+    },
+    webDomainOverrides: {
+      "docs.example": { category: source },
+    },
+    categoryColorOverrides: { [source]: "#112233" },
+    categoryLabelOverrides: { [source]: "Focus" },
+    customCategories: [source],
+  });
+
+  const merged = mergeCategoryIntoDraftState(state, source, "development");
+
+  assert.equal(merged.overrides["code.exe"]?.category, "development");
+  assert.equal(merged.webDomainOverrides["docs.example"]?.category, "development");
+  assert.equal(merged.categoryColorOverrides.development, "#112233");
+  assert.deepEqual(merged.customCategories, []);
+});
+
+await runTest("custom category deletion clears assignments but preserves other overrides", () => {
+  const category = createCategoryId();
+  const state = buildDraftState({
+    overrides: {
+      "code.exe": {
+        enabled: true,
+        category,
+        displayName: "Code",
+        track: false,
+        updatedAt: 42,
+      },
+    },
+    webDomainOverrides: {
+      "docs.example": {
+        category,
+        displayName: "Docs",
+        enabled: false,
+        updatedAt: 42,
+      },
+    },
+    categoryColorOverrides: { [category]: "#112233" },
+    categoryLabelOverrides: { [category]: "Focus" },
+    customCategories: [category],
+  });
+
+  const deleted = deleteCustomCategoryFromDraftState(state, category);
+
+  assert.deepEqual(deleted.overrides["code.exe"], {
+    enabled: true,
+    displayName: "Code",
+    track: false,
+    updatedAt: 42,
+  });
+  assert.deepEqual(deleted.webDomainOverrides["docs.example"], {
+    displayName: "Docs",
+    enabled: false,
+    updatedAt: 42,
+  });
+  assert.equal(deleted.categoryColorOverrides[category], undefined);
+  assert.equal(deleted.categoryLabelOverrides[category], undefined);
+  assert.deepEqual(deleted.customCategories, []);
+});
+
+await runTest("built-in categories cannot be deleted or merged away", () => {
+  const state = buildDraftState({
+    overrides: {
+      "code.exe": { enabled: true, category: "development" },
+    },
+    categoryColorOverrides: { development: "#112233" },
+  });
+
+  assert.equal(
+    deleteCustomCategoryFromDraftState(state, "development" as never),
+    state,
+  );
+  assert.equal(
+    mergeCategoryIntoDraftState(state, "development" as never, "office"),
+    state,
+  );
 });
 
 await runTest("encoded custom category app override transitions back to canonical storage", () => {

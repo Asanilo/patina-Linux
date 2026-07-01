@@ -57,7 +57,9 @@ export default function AppMapping(props: Props) {
     categoryControlCategories,
     candidateCategoryOptions,
     resolveCategoryColor,
+    resolveCategoryLabel,
     handleCreateCustomCategory,
+    handleRenameCategory,
     handleDeleteCategory,
     resolveEffectiveDisplayName,
     resolveCandidateColor,
@@ -366,9 +368,11 @@ export default function AppMapping(props: Props) {
           <CategoryColorControls
             categories={categoryControlCategories}
             colorFormat={colorFormat}
+            getCategoryLabel={resolveCategoryLabel}
             getCategoryColor={resolveCategoryColor}
             onColorFormatChange={setColorFormat}
             onApplyColor={applyCategoryColor}
+            onRenameCategory={handleRenameCategory}
             onDeleteCategory={handleDeleteCategory}
           />
         </div>
