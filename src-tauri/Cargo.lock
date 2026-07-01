@@ -3028,6 +3028,7 @@ dependencies = [
  "chrono",
  "crc32fast",
  "futures-util",
+ "getrandom 0.3.4",
  "image",
  "libpulse-binding",
  "notify-rust",

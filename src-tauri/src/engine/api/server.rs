@@ -25,7 +25,6 @@ impl ApiServerState {
 
     pub fn start(&self, app_handle: tauri::AppHandle, port: Option<u16>) {
         let port = port.unwrap_or(DEFAULT_PORT);
-        let token = super::auth::get_api_token().to_string();
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
         match self.inner.lock() {
@@ -45,8 +44,6 @@ impl ApiServerState {
                 guard.port = Some(port);
             }
         }
-
-        println!("[api] token: {token}");
 
         tauri::async_runtime::spawn(async move {
             if let Err(error) = run_server(app_handle, port, shutdown_rx).await {
