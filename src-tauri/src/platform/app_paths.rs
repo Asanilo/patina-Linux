@@ -35,20 +35,74 @@ impl AppProfile {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AppPathRoots {
+    pub config: PathBuf,
+    pub data: PathBuf,
+    pub local_data: PathBuf,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProfilePaths {
+    pub control_root: PathBuf,
+    pub data_root: PathBuf,
+    pub webview_root: PathBuf,
+}
+
 pub fn app_profile<R: Runtime>(app: &AppHandle<R>) -> AppProfile {
     AppProfile::from_identifier(&app.config().identifier)
 }
 
 pub fn product_roaming_data_dir<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    Ok(roaming_root(app)?.join(app_profile(app).product_folder()))
+    Ok(default_profile_paths(app)?.data_root)
 }
 
 pub fn product_local_data_dir<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    Ok(local_root(app)?.join(app_profile(app).product_folder()))
+    Ok(default_profile_paths(app)?.webview_root)
 }
 
 pub fn product_webview_data_dir<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     product_local_data_dir(app)
+}
+
+pub fn default_profile_paths<R: Runtime>(app: &AppHandle<R>) -> Result<ProfilePaths, String> {
+    Ok(profile_paths(&app_path_roots(app)?, app_profile(app)))
+}
+
+pub fn profile_paths(roots: &AppPathRoots, profile: AppProfile) -> ProfilePaths {
+    ProfilePaths {
+        control_root: derive_product_root(&roots.config, profile),
+        data_root: derive_product_root(&roots.data, profile),
+        webview_root: derive_product_root(&roots.local_data, profile),
+    }
+}
+
+pub fn derive_product_root(selected_root: &Path, profile: AppProfile) -> PathBuf {
+    let product_folder = profile.product_folder();
+    if selected_root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| product_folder_name_eq(name, product_folder))
+    {
+        return selected_root.to_path_buf();
+    }
+    selected_root.join(product_folder)
+}
+
+fn app_path_roots<R: Runtime>(app: &AppHandle<R>) -> Result<AppPathRoots, String> {
+    Ok(AppPathRoots {
+        config: config_root(app)?,
+        data: roaming_root(app)?,
+        local_data: local_root(app)?,
+    })
+}
+
+fn config_root<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
+    parent_of_identifier_dir(
+        app.path()
+            .app_config_dir()
+            .map_err(|error| format!("failed to resolve app config dir: {error}"))?,
+    )
 }
 
 fn roaming_root<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
@@ -77,6 +131,18 @@ fn parent_of_identifier_dir(path: PathBuf) -> Result<PathBuf, String> {
                 path.display()
             )
         })
+}
+
+fn product_folder_name_eq(left: &str, right: &str) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        left.eq_ignore_ascii_case(right)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        left == right
+    }
 }
 
 #[cfg(test)]
@@ -113,5 +179,38 @@ mod tests {
             assert!(!folder.contains("com.ceceliaee.patina"));
             assert!(!folder.contains("io.github"));
         }
+    }
+
+    #[test]
+    fn linux_profile_paths_keep_control_outside_movable_data() {
+        let roots = AppPathRoots {
+            config: PathBuf::from("/home/u/.config"),
+            data: PathBuf::from("/home/u/.local/share"),
+            local_data: PathBuf::from("/home/u/.local/share"),
+        };
+
+        let paths = profile_paths(&roots, AppProfile::Production);
+
+        assert_eq!(paths.control_root, PathBuf::from("/home/u/.config/Patina"));
+        assert_eq!(
+            paths.data_root,
+            PathBuf::from("/home/u/.local/share/Patina")
+        );
+        assert_eq!(
+            paths.webview_root,
+            PathBuf::from("/home/u/.local/share/Patina")
+        );
+    }
+
+    #[test]
+    fn custom_parent_derives_profile_owned_directory() {
+        assert_eq!(
+            derive_product_root(Path::new("/mnt/work"), AppProfile::Dev),
+            PathBuf::from("/mnt/work/Patina Dev")
+        );
+        assert_eq!(
+            derive_product_root(Path::new("/mnt/work/Patina Dev"), AppProfile::Dev),
+            PathBuf::from("/mnt/work/Patina Dev")
+        );
     }
 }
