@@ -1,5 +1,6 @@
 pub mod backup;
 pub mod settings;
+pub mod storage;
 pub mod tools;
 pub mod tracking;
 pub mod update;

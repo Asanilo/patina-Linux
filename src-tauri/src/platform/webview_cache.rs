@@ -39,6 +39,15 @@ pub fn webkit_cache_size(webview_root: &Path) -> Result<u64, String> {
     storage_usage::path_size(&webkit_cache_path(webview_root))
 }
 
+pub fn persistent_profile_size(webview_root: &Path) -> Result<u64, String> {
+    ensure_real_directory(webview_root, "active WebView root")?;
+    let mut total = 0_u64;
+    for name in PERSISTENT_WEBVIEW_ENTRIES {
+        total = total.saturating_add(storage_usage::path_size(&webview_root.join(name))?);
+    }
+    Ok(total)
+}
+
 pub fn clear_linux_webkit_cache(webview_root: &Path) -> Result<(), String> {
     ensure_real_directory(webview_root, "active WebView root")?;
     let cache_path = webkit_cache_path(webview_root);
@@ -304,5 +313,18 @@ mod tests {
         assert_eq!(report.skipped_unknown, vec!["unknown-entry"]);
         fs::remove_dir_all(source).unwrap();
         fs::remove_dir_all(target).unwrap();
+    }
+
+    #[test]
+    fn persistent_profile_size_only_counts_allowlisted_state() {
+        let root = temp_dir("persistent-size");
+        write_file(&root.join("localstorage/settings"), 10);
+        write_file(&root.join("IndexedDB/data"), 11);
+        write_file(&root.join("WebKitCache/cache"), 12);
+        write_file(&root.join("patina.db"), 13);
+        write_file(&root.join("unknown-entry"), 14);
+
+        assert_eq!(persistent_profile_size(&root).unwrap(), 21);
+        fs::remove_dir_all(root).unwrap();
     }
 }

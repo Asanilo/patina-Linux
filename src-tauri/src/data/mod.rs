@@ -6,4 +6,5 @@ pub mod remote_backup;
 pub mod repositories;
 pub mod schema;
 pub mod sqlite_pool;
+pub mod storage_migration;
 pub mod tracking_runtime;

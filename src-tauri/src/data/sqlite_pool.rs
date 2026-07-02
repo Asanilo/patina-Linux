@@ -790,6 +790,19 @@ pub async fn wait_for_sqlite_pool<R: Runtime>(app: &AppHandle<R>) -> Result<Pool
     }
 }
 
+pub async fn checkpoint_current_database<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    let pool = wait_for_sqlite_pool(app).await?;
+    checkpoint_sqlite_pool(&pool).await
+}
+
+async fn checkpoint_sqlite_pool(pool: &Pool<Sqlite>) -> Result<(), String> {
+    sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+        .fetch_all(pool)
+        .await
+        .map_err(|error| format!("failed to checkpoint the Patina database: {error}"))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1314,6 +1327,15 @@ mod tests {
                     .await
                     .unwrap();
             assert_eq!(description, "old_v1");
+        });
+    }
+
+    #[test]
+    fn checkpoint_helper_flushes_the_current_pool() {
+        tauri::async_runtime::block_on(async {
+            let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+
+            checkpoint_sqlite_pool(&pool).await.unwrap();
         });
     }
 }
