@@ -8,6 +8,7 @@ import QuietColorField from "../../../shared/components/QuietColorField";
 import QuietIconAction from "../../../shared/components/QuietIconAction";
 import type { ColorDisplayFormat } from "../../../shared/lib/colorFormatting";
 import { UI_TEXT } from "../../../shared/copy/uiText.ts";
+import { getCategoryManagementCopy } from "../classificationCategoryCopy.ts";
 
 interface Props {
   categories: AppCategory[];
@@ -30,6 +31,7 @@ export default function CategoryColorControls({
   onRenameCategory,
   onDeleteCategory,
 }: Props) {
+  const categoryManagementCopy = getCategoryManagementCopy();
   if (categories.length === 0) {
     return null;
   }
@@ -57,7 +59,7 @@ export default function CategoryColorControls({
                     icon={<PencilLine size={13} />}
                     className="qp-icon-action-dimmed"
                     onClick={() => onRenameCategory(category)}
-                    title={UI_TEXT.mapping.renameCategory(label)}
+                    title={categoryManagementCopy.renameAction(label)}
                   />
                 )}
               </div>

@@ -14,6 +14,7 @@ import {
   rememberClassificationObjectMode,
   type MappingObjectMode,
 } from "../services/classificationLayoutPreferenceStorage.ts";
+import { getCategoryManagementCopy } from "../classificationCategoryCopy.ts";
 
 interface Props {
   icons: Record<string, string>;
@@ -26,6 +27,7 @@ interface Props {
 
 export default function AppMapping(props: Props) {
   const { webActivityEnabled = false } = props;
+  const categoryManagementCopy = getCategoryManagementCopy();
   const [objectMode, setObjectMode] = useState<MappingObjectMode>(readClassificationObjectMode);
   const filterOptions: Array<{ value: CandidateFilter; label: string }> = [
     { value: "all", label: UI_TEXT.mapping.filters.all },
@@ -339,7 +341,7 @@ export default function AppMapping(props: Props) {
       <QuietDialog
         open={showCategoryDialog}
         title={UI_TEXT.mapping.categoryDialogTitle}
-        description={UI_TEXT.mapping.categoryDialogDescription}
+        description={categoryManagementCopy.dialogDescription}
         onClose={() => setShowCategoryDialog(false)}
         surfaceClassName="qp-category-dialog-surface"
         actions={(

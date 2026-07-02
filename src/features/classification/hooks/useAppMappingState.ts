@@ -22,6 +22,7 @@ import {
   buildWebDomainMappingOverride,
   categoryNameKey,
   cloneObservedCandidates,
+  createCategoryId,
   createCategoryInDraftState,
   createAppMappingDraftState,
   deleteCustomCategoryFromDraftState,
@@ -43,7 +44,6 @@ import {
   syncWebDomainNameDraft,
 } from "./appMappingInteractions.ts";
 import {
-  createCategoryId,
   isCustomCategory,
   USER_ASSIGNABLE_CATEGORIES,
   type AppCategory,
@@ -54,6 +54,7 @@ import type {
   ObservedWebDomainCandidate,
   WebDomainOverride,
 } from "../../../shared/types/webActivity.ts";
+import { getCategoryManagementCopy } from "../classificationCategoryCopy.ts";
 
 const CATEGORY_OPTIONS: UserAssignableAppCategory[] = USER_ASSIGNABLE_CATEGORIES;
 const USER_ASSIGNABLE_CATEGORY_SET = new Set<string>(USER_ASSIGNABLE_CATEGORIES);
@@ -116,6 +117,7 @@ export function useAppMappingState({
   webActivityEnabled = false,
 }: UseAppMappingStateOptions) {
   const { confirm, prompt, dialogs } = useQuietDialogs();
+  const categoryManagementCopy = getCategoryManagementCopy();
   const initialBootstrap = getClassificationBootstrapCache();
   const initialBootstrapRef = useRef(initialBootstrap);
   const [loading, setLoading] = useState(() => !initialBootstrap);
@@ -580,9 +582,9 @@ export function useAppMappingState({
 
     const currentLabel = resolveCategoryLabel(category);
     const categoryName = await prompt({
-      title: UI_TEXT.mapping.renameCategoryTitle,
-      description: UI_TEXT.mapping.renameCategoryDescription,
-      placeholder: UI_TEXT.mapping.renameCategoryPlaceholder,
+      title: categoryManagementCopy.renameTitle,
+      description: categoryManagementCopy.renameDescription,
+      placeholder: categoryManagementCopy.renamePlaceholder,
       initialValue: currentLabel,
     });
     if (!categoryName) return;
@@ -597,8 +599,8 @@ export function useAppMappingState({
 
     if (duplicateOption) {
       const confirmed = await confirm({
-        title: UI_TEXT.mapping.renameCategoryDuplicateTitle,
-        description: UI_TEXT.mapping.renameCategoryDuplicateDetail(duplicateOption.label),
+        title: categoryManagementCopy.mergeTitle,
+        description: categoryManagementCopy.mergeDetail(duplicateOption.label),
         confirmLabel: UI_TEXT.dialog.confirm,
       });
       if (!confirmed) return;
@@ -617,7 +619,7 @@ export function useAppMappingState({
     setDraftState((current) => (
       current ? updateCategoryLabelInDraftState(current, category, normalized) : current
     ));
-  }, [candidateCategoryOptions, confirm, draftState, prompt, resolveCategoryColor, resolveCategoryLabel]);
+  }, [candidateCategoryOptions, categoryManagementCopy, confirm, draftState, prompt, resolveCategoryColor, resolveCategoryLabel]);
 
   const handleCategoryAssign = useCallback((candidate: ObservedAppCandidate, categoryValue: string) => {
     const current = draftOverrides[candidate.exeName] ?? null;

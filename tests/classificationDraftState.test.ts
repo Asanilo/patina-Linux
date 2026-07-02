@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import {
   buildCustomCategory,
-  createCategoryId,
   resolveCustomCategoryLabel,
   USER_ASSIGNABLE_CATEGORIES,
   type UserAssignableAppCategory,
@@ -10,6 +9,7 @@ import {
   buildAppMappingCategoryOverride,
   buildAppMappingOverride,
   categoryNameKey,
+  createCategoryId,
   createCategoryInDraftState,
   createAppMappingDraftState,
   deleteCustomCategoryFromDraftState,
@@ -794,7 +794,7 @@ await runTest("commitDraftChangesWithDeps persists before syncing process mapper
 await runTest("default classification commit deps keep ProcessMapper runtime sync bound", async () => {
   ProcessMapper.clearUserOverrides();
   ProcessMapper.clearCategoryColorOverrides();
-  ProcessMapper.clearCategoryLabelOverrides();
+  ProcessMapper.setCategoryLabelOverrides({});
   ProcessMapper.setDeletedCategories([]);
 
   const saved = buildDraftState();
@@ -820,14 +820,14 @@ await runTest("default classification commit deps keep ProcessMapper runtime syn
 
   ProcessMapper.clearUserOverrides();
   ProcessMapper.clearCategoryColorOverrides();
-  ProcessMapper.clearCategoryLabelOverrides();
+  ProcessMapper.setCategoryLabelOverrides({});
   ProcessMapper.setDeletedCategories([]);
 });
 
 await runTest("classification bootstrap sync applies saved process mapper state", () => {
   ProcessMapper.clearUserOverrides();
   ProcessMapper.clearCategoryColorOverrides();
-  ProcessMapper.clearCategoryLabelOverrides();
+  ProcessMapper.setCategoryLabelOverrides({});
   ProcessMapper.setDeletedCategories([]);
 
   const customCategory = createCategoryId();
@@ -858,7 +858,7 @@ await runTest("classification bootstrap sync applies saved process mapper state"
 
   ProcessMapper.clearUserOverrides();
   ProcessMapper.clearCategoryColorOverrides();
-  ProcessMapper.clearCategoryLabelOverrides();
+  ProcessMapper.setCategoryLabelOverrides({});
   ProcessMapper.setDeletedCategories([]);
 });
 

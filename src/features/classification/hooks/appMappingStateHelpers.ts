@@ -154,6 +154,14 @@ export function categoryNameKey(input: string): string {
   return normalizeCategoryNameInput(input).normalize("NFKC").toLowerCase();
 }
 
+export function createCategoryId(): CustomAppCategory {
+  const randomUuid = globalThis.crypto?.randomUUID?.();
+  const idSegment = randomUuid
+    ? randomUuid.replace(/-/g, "")
+    : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+  return `custom:category_${idSegment}` as CustomAppCategory;
+}
+
 export function createCategoryInDraftState(
   current: ClassificationDraftState,
   category: CustomAppCategory,

@@ -4,7 +4,6 @@ import {
   normalizeCustomCategory,
   USER_ASSIGNABLE_CATEGORIES,
   type AppCategory,
-  type CustomAppCategory,
   type UserAssignableAppCategory,
 } from "./categoryTokens.ts";
 import { DEFAULT_APP_MAPPINGS } from "./defaultMappings.ts";
@@ -154,19 +153,6 @@ export class ProcessMapper {
         .map(([category, label]) => [category, label.trim().replace(/\s+/g, " ")] as const)
         .filter(([, label]) => label.length > 0),
     );
-  }
-
-  static setCategoryLabelOverride(category: CustomAppCategory, labelValue?: string | null) {
-    const nextLabel = labelValue?.trim().replace(/\s+/g, " ");
-    if (!nextLabel) {
-      delete this.categoryLabelOverrides[category];
-      return;
-    }
-    this.categoryLabelOverrides[category] = nextLabel;
-  }
-
-  static clearCategoryLabelOverrides() {
-    this.categoryLabelOverrides = {};
   }
 
   static getCategoryColor(category: AppCategory) {
