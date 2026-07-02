@@ -32,6 +32,7 @@ import {
 } from "./sessionCleanupPolicy.ts";
 
 export type { BackupPreview, BackupRestoreStrategy } from "../../../platform/backup/backupRuntimeGateway.ts";
+export type { LocalApiSettingsSnapshot } from "../../../platform/runtime/localApiDiagnosticsGateway.ts";
 
 export interface BackupRestorePreparation {
   path: string;

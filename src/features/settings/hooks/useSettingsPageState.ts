@@ -18,10 +18,13 @@ import {
 import type { AppSettings } from "../../../shared/settings/appSettings";
 import type { ThemeLibrary } from "../../../shared/settings/colorSchemeOptions.ts";
 import type { CleanupRange } from "../types";
-import type { BackupRestorePreparation, BackupRestoreStrategy } from "../services/settingsRuntimeAdapterService.ts";
+import type {
+  BackupRestorePreparation,
+  BackupRestoreStrategy,
+  LocalApiSettingsSnapshot,
+} from "../services/settingsRuntimeAdapterService.ts";
 import { useRemoteBackupState } from "./useRemoteBackupState.ts";
 import { buildLocalApiConfigurationText } from "../services/settingsLocalApiService.ts";
-import type { LocalApiSettingsSnapshot } from "../../../platform/runtime/localApiDiagnosticsGateway.ts";
 
 const buildCleanupOptions = (): Array<{ value: CleanupRange; label: string }> => [
   { value: 180, label: UI_TEXT.settings.cleanupRangeLabels[180] },
