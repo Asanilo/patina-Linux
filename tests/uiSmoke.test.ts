@@ -477,7 +477,8 @@ await runTest("web activity views are gated by saved web sync setting", () => {
   assert.match(mappingState, /webActivityEnabled = false/);
   assert.match(mappingState, /if \(!webActivityEnabled\) return \{\}/);
   assert.match(mappingState, /if \(!webActivityEnabled\) return \[\]/);
-  assert.match(mappingState, /if \(!webActivityEnabled\) return \{ all: 0, other: 0, classified: 0 \}/);
+  assert.match(mappingState, /if \(!webActivityEnabled\) return \{ all: 0, other: 0, classified: 0, excluded: 0 \}/);
+  assert.match(mapping, /value: "excluded", label: UI_TEXT\.mapping\.filters\.excluded/);
 });
 
 await runTest("classification web domain colors prefer favicon theme colors", () => {

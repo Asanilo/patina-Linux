@@ -27,6 +27,7 @@ import {
   deleteCustomCategoryFromDraftState,
   fallbackDisplayName,
   filterAndSortCandidates,
+  matchesClassificationFilter,
   mergeCategoryIntoDraftState,
   normalizeCategoryNameInput,
   updateCategoryLabelInDraftState,
@@ -349,16 +350,19 @@ export function useAppMappingState({
       resolveMappedCategory,
       resolveEffectiveDisplayName: resolveSortDisplayName,
       resolveCategoryLabel,
+      resolveTrackingEnabled,
     }),
-    [candidates, filter, searchQuery, resolveCategoryLabel, resolveMappedCategory, resolveSortDisplayName],
+    [candidates, filter, searchQuery, resolveCategoryLabel, resolveMappedCategory, resolveSortDisplayName, resolveTrackingEnabled],
   );
 
   const counts = useMemo(() => {
-    const all = candidates.length;
-    const other = candidates.filter((candidate) => resolveMappedCategory(candidate) === "other").length;
+    const activeCandidates = candidates.filter(resolveTrackingEnabled);
+    const all = activeCandidates.length;
+    const other = activeCandidates.filter((candidate) => resolveMappedCategory(candidate) === "other").length;
     const classified = Math.max(0, all - other);
-    return { all, other, classified };
-  }, [candidates, resolveMappedCategory]);
+    const excluded = Math.max(0, candidates.length - all);
+    return { all, other, classified, excluded };
+  }, [candidates, resolveMappedCategory, resolveTrackingEnabled]);
 
   const filteredWebDomainCandidates = useMemo(() => {
     if (!webActivityEnabled) return [];
@@ -367,9 +371,7 @@ export function useAppMappingState({
     return webDomainCandidates
       .filter((candidate) => {
         const category = resolveWebDomainCategory(candidate);
-        if (filter === "all") return true;
-        if (filter === "other") return category === "other";
-        return category !== "other";
+        return matchesClassificationFilter(filter, category, resolveWebDomainEnabled(candidate));
       })
       .filter((candidate) => {
         if (!normalizedQuery) return true;
@@ -396,6 +398,7 @@ export function useAppMappingState({
     filter,
     searchQuery,
     resolveWebDomainCategory,
+    resolveWebDomainEnabled,
     resolveWebDomainSortDisplayName,
     resolveCategoryLabel,
     webActivityEnabled,
@@ -403,13 +406,15 @@ export function useAppMappingState({
   ]);
 
   const webDomainCounts = useMemo(() => {
-    if (!webActivityEnabled) return { all: 0, other: 0, classified: 0 };
+    if (!webActivityEnabled) return { all: 0, other: 0, classified: 0, excluded: 0 };
 
-    const all = webDomainCandidates.length;
-    const other = webDomainCandidates.filter((candidate) => resolveWebDomainCategory(candidate) === "other").length;
+    const activeCandidates = webDomainCandidates.filter(resolveWebDomainEnabled);
+    const all = activeCandidates.length;
+    const other = activeCandidates.filter((candidate) => resolveWebDomainCategory(candidate) === "other").length;
     const classified = Math.max(0, all - other);
-    return { all, other, classified };
-  }, [resolveWebDomainCategory, webActivityEnabled, webDomainCandidates]);
+    const excluded = Math.max(0, webDomainCandidates.length - all);
+    return { all, other, classified, excluded };
+  }, [resolveWebDomainCategory, resolveWebDomainEnabled, webActivityEnabled, webDomainCandidates]);
 
   const customCategoryOptions = useMemo(() => {
     const deletedSet = new Set(draftDeletedCategories);

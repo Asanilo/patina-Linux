@@ -43,6 +43,7 @@ type FilterAndSortCandidatesParams = {
   resolveMappedCategory: (candidate: ObservedAppCandidate) => UserAssignableAppCategory;
   resolveEffectiveDisplayName: (candidate: ObservedAppCandidate) => string;
   resolveCategoryLabel?: (category: UserAssignableAppCategory) => string;
+  resolveTrackingEnabled?: (candidate: ObservedAppCandidate) => boolean;
 };
 
 type ClassificationBootstrapSnapshot = {
@@ -299,6 +300,18 @@ export function mergeCategoryIntoDraftState(
   };
 }
 
+export function matchesClassificationFilter(
+  filter: CandidateFilter,
+  category: UserAssignableAppCategory,
+  enabled: boolean,
+): boolean {
+  if (filter === "excluded") return !enabled;
+  if (!enabled) return false;
+  if (filter === "all") return true;
+  if (filter === "other") return category === "other";
+  return category !== "other";
+}
+
 export function filterAndSortCandidates({
   candidates,
   filter,
@@ -306,6 +319,7 @@ export function filterAndSortCandidates({
   resolveMappedCategory,
   resolveEffectiveDisplayName,
   resolveCategoryLabel,
+  resolveTrackingEnabled = () => true,
 }: FilterAndSortCandidatesParams): ObservedAppCandidate[] {
   const collator = createAppMappingCollator();
   const normalizedQuery = searchQuery?.trim().toLocaleLowerCase(getUiLocale()) ?? "";
@@ -313,9 +327,7 @@ export function filterAndSortCandidates({
   return candidates
     .filter((candidate) => {
       const category = resolveMappedCategory(candidate);
-      if (filter === "all") return true;
-      if (filter === "other") return category === "other";
-      return category !== "other";
+      return matchesClassificationFilter(filter, category, resolveTrackingEnabled(candidate));
     })
     .filter((candidate) => {
       if (!normalizedQuery) return true;

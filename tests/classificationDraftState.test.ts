@@ -14,6 +14,7 @@ import {
   createAppMappingDraftState,
   deleteCustomCategoryFromDraftState,
   filterAndSortCandidates,
+  matchesClassificationFilter,
   mergeCategoryIntoDraftState,
   updateCategoryLabelInDraftState,
 } from "../src/features/classification/hooks/appMappingStateHelpers.ts";
@@ -656,6 +657,44 @@ await runTest("filterAndSortCandidates filters by category and sorts by resolved
     filtered.map((candidate) => candidate.exeName),
     ["notes.exe", "alpha.exe", "zeta.exe"],
   );
+});
+
+await runTest("classification filters keep excluded apps out of normal views", () => {
+  const candidates = [
+    buildCandidate("notes.exe", "Notes"),
+    buildCandidate("code.exe", "Code"),
+    buildCandidate("blocked-notes.exe", "Blocked Notes"),
+    buildCandidate("blocked-code.exe", "Blocked Code"),
+  ];
+  const categories: Record<string, UserAssignableAppCategory> = {
+    "notes.exe": "other",
+    "code.exe": "development",
+    "blocked-notes.exe": "other",
+    "blocked-code.exe": "development",
+  };
+  const excluded = new Set(["blocked-notes.exe", "blocked-code.exe"]);
+  const runFilter = (filter: "all" | "other" | "classified" | "excluded") => (
+    filterAndSortCandidates({
+      candidates,
+      filter,
+      resolveMappedCategory: (candidate) => categories[candidate.exeName] ?? "other",
+      resolveEffectiveDisplayName: (candidate) => candidate.appName,
+      resolveTrackingEnabled: (candidate) => !excluded.has(candidate.exeName),
+    }).map((candidate) => candidate.exeName)
+  );
+
+  assert.deepEqual(runFilter("all"), ["code.exe", "notes.exe"]);
+  assert.deepEqual(runFilter("other"), ["notes.exe"]);
+  assert.deepEqual(runFilter("classified"), ["code.exe"]);
+  assert.deepEqual(runFilter("excluded"), ["blocked-code.exe", "blocked-notes.exe"]);
+});
+
+await runTest("web recording state uses the same excluded filter semantics", () => {
+  assert.equal(matchesClassificationFilter("all", "development", false), false);
+  assert.equal(matchesClassificationFilter("classified", "development", false), false);
+  assert.equal(matchesClassificationFilter("other", "other", false), false);
+  assert.equal(matchesClassificationFilter("excluded", "development", false), true);
+  assert.equal(matchesClassificationFilter("excluded", "other", true), false);
 });
 
 await runTest("filterAndSortCandidates searches display names and executable names", () => {

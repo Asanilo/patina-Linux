@@ -31,6 +31,7 @@ export default function AppMapping(props: Props) {
     { value: "all", label: UI_TEXT.mapping.filters.all },
     { value: "other", label: UI_TEXT.mapping.filters.other },
     { value: "classified", label: UI_TEXT.mapping.filters.classified },
+    { value: "excluded", label: UI_TEXT.mapping.filters.excluded },
   ];
   const {
     dialogs,
@@ -182,11 +183,7 @@ export default function AppMapping(props: Props) {
               value={filter}
               onChange={setFilter}
               options={filterOptions.map((item) => {
-                const count = item.value === "all"
-                  ? activeCounts.all
-                  : item.value === "other"
-                    ? activeCounts.other
-                    : activeCounts.classified;
+                const count = activeCounts[item.value];
                 return {
                   value: item.value,
                   label: `${item.label} (${count})`,
