@@ -73,6 +73,36 @@ curl -s "$PATINA_API_BASE/api/v1/diagnostics" \
 
 Settings -> Diagnostics also shows whether the API is listening and where the token file lives.
 
+## Local Storage Paths And Migration
+
+Production builds keep non-movable storage control metadata under:
+
+```text
+${XDG_CONFIG_HOME:-~/.config}/Patina
+```
+
+The default activity data and WebView profile root is:
+
+```text
+${XDG_DATA_HOME:-~/.local/share}/Patina
+```
+
+The stable control directory contains versioned data/WebView anchors, pending migration metadata, and maintenance state. The default data root contains `patina.db`, local backups, and the local API token. Moving activity data relocates the database and managed backup/temp directories; the API token remains at the stable default product data root. Activity data and WebView data can be moved independently from Settings -> Data Safety -> Local storage.
+
+Storage changes use a restart boundary:
+
+1. Settings previews the target and available space without mutating it.
+2. Confirmation writes a pending operation and backup metadata.
+3. Patina exits only when the user chooses to restart.
+4. On the next launch, migration runs before SQLite or either WebView is opened.
+5. The copied database must pass SQLite integrity, schema, and row-count checks before the target is promoted.
+
+Custom activity storage is fail-closed. If its anchor is invalid, its root is unavailable, or `patina.db` is missing, startup reports the storage error and does not create a database in the default directory. This prevents a missing mount from looking like an empty Patina installation.
+
+After a successful migration, previous source directories are retained and shown in Settings. Patina does not automatically delete them. Verify the active database and backups before removing an old directory manually.
+
+WebView maintenance deletes only the exact `WebKitCache` directory below the active WebView root, and only during restart maintenance. It does not expose a general recursive-delete command and does not remove cookies, local storage, configuration, or the whole WebView profile.
+
 ## Browser Web Sync
 
 Browser activity sync is configured from Settings -> Interface. The page can copy the extension configuration and shows separate Firefox/Zen and Chromium installation paths.
@@ -124,6 +154,8 @@ Before publishing a Linux tag, run the release-focused local checks:
 npm run release:validate-version-files -- <version>
 npm run release:validate-changelog -- <version>
 npm run test:release
+npm run test:storage
+npm run test:storage-docs
 npm run extension:gnome:check
 npm run extension:chromium:check
 npm run extension:firefox:check

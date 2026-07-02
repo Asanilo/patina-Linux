@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { setUiTextLanguage, UI_TEXT } from "../../../shared/copy/uiText.ts";
+import { getUiTextLanguage, setUiTextLanguage, UI_TEXT } from "../../../shared/copy/uiText.ts";
 import type { QuietToastTone } from "../../../shared/components/QuietToast";
 import { useQuietDialogs } from "../../../shared/hooks/useQuietDialogs";
 import { getSettingsBootstrapCache, setSettingsBootstrapCache } from "../services/settingsBootstrapCache";
@@ -89,7 +89,7 @@ export function useSettingsPageState({
     onToast?.(message, tone);
   }, [onToast]);
 
-  const storage = useStorageSettingsState({ confirm, notify });
+  const storage = useStorageSettingsState({ confirm, notify, language: getUiTextLanguage() });
 
   const remoteBackup = useRemoteBackupState({
     confirm,

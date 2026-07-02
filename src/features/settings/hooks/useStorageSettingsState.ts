@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { UI_TEXT } from "../../../shared/copy/uiText.ts";
 import type { QuietToastTone } from "../../../shared/components/QuietToast";
 import { formatStorageBytes } from "../services/storagePathDisplay.ts";
 import {
@@ -7,6 +6,8 @@ import {
   scheduleStorageMoveWithDeps,
   StorageSettingsService,
 } from "../services/storageSettingsActions.ts";
+import { getStorageSettingsCopy } from "../storageSettingsCopy.ts";
+import type { AppLanguage } from "../../../shared/settings/appSettings.ts";
 import type {
   StorageDirectoryKind,
   StorageMigrationPreview,
@@ -25,12 +26,15 @@ interface ConfirmOptions {
 export interface UseStorageSettingsStateOptions {
   confirm: (options: ConfirmOptions) => Promise<boolean>;
   notify: (message: string, tone?: QuietToastTone) => void;
+  language: AppLanguage;
 }
 
 export function useStorageSettingsState({
   confirm,
   notify,
+  language,
 }: UseStorageSettingsStateOptions) {
+  const copy = getStorageSettingsCopy(language);
   const [snapshot, setSnapshot] = useState<StorageSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -54,7 +58,7 @@ export function useStorageSettingsState({
         }
       } catch (loadError) {
         console.error("load storage settings failed", loadError);
-        if (!cancelled) setError(UI_TEXT.settings.storageLoadFailed);
+        if (!cancelled) setError(copy.storageLoadFailed);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -63,14 +67,14 @@ export function useStorageSettingsState({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [copy]);
 
   const confirmPreview = useCallback((preview: StorageMigrationPreview, restoreDefault: boolean) => (
     confirm({
       title: restoreDefault
-        ? UI_TEXT.settings.storageRestoreDefaultConfirmTitle
-        : UI_TEXT.settings.storageMoveConfirmTitle,
-      description: UI_TEXT.settings.storageMoveConfirmDetail(
+        ? copy.storageRestoreDefaultConfirmTitle
+        : copy.storageMoveConfirmTitle,
+      description: copy.storageMoveConfirmDetail(
         preview.currentDataRoot === preview.targetDataRoot
           ? preview.currentWebviewRoot
           : preview.currentDataRoot,
@@ -79,19 +83,9 @@ export function useStorageSettingsState({
           : preview.targetDataRoot,
         formatStorageBytes(preview.payloadSizeBytes),
       ),
-      confirmLabel: UI_TEXT.settings.storageScheduleAction,
+      confirmLabel: copy.storageScheduleAction,
     })
-  ), [confirm]);
-
-  const offerRestart = useCallback(async () => {
-    const restart = await confirm({
-      title: UI_TEXT.settings.storageRestartTitle,
-      description: UI_TEXT.settings.storageRestartDetail,
-      confirmLabel: UI_TEXT.settings.storageRestartNow,
-      cancelLabel: UI_TEXT.settings.storageRestartLater,
-    });
-    if (restart) await StorageSettingsService.restart();
-  }, [confirm]);
+  ), [confirm, copy]);
 
   const runAction = useCallback(async <T,>(name: string, action: () => Promise<T>): Promise<T | null> => {
     if (busyAction) return null;
@@ -103,12 +97,22 @@ export function useStorageSettingsState({
       console.error(`storage action ${name} failed`, actionError);
       const message = actionError instanceof Error ? actionError.message : String(actionError);
       setError(message);
-      notify(UI_TEXT.settings.storageActionFailed, "warning");
+      notify(copy.storageActionFailed, "warning");
       return null;
     } finally {
       setBusyAction(null);
     }
-  }, [busyAction, notify]);
+  }, [busyAction, copy, notify]);
+
+  const offerRestart = useCallback(async () => {
+    const restart = await confirm({
+      title: copy.storageRestartTitle,
+      description: copy.storageRestartDetail,
+      confirmLabel: copy.storageRestartNow,
+      cancelLabel: copy.storageRestartLater,
+    });
+    if (restart) await runAction("restart", StorageSettingsService.restart);
+  }, [confirm, copy, runAction]);
 
   const move = useCallback(async (kind: StorageTargetKind) => {
     const initialPath = kind === "data" ? snapshot?.paths.dataRoot : snapshot?.paths.webviewRoot;
@@ -126,9 +130,9 @@ export function useStorageSettingsState({
     if (!result || result.status !== "scheduled") return;
     const refreshed = await runAction("refresh", refresh);
     if (!refreshed) return;
-    notify(UI_TEXT.settings.storageScheduled, "success");
+    notify(copy.storageScheduled, "success");
     await offerRestart();
-  }, [confirmPreview, notify, offerRestart, refresh, runAction, snapshot]);
+  }, [confirmPreview, copy, notify, offerRestart, refresh, runAction, snapshot]);
 
   const restoreDefault = useCallback(async (kind: StorageTargetKind) => {
     const result = await runAction(`restore-${kind}`, () => restoreDefaultStorageWithDeps(kind, {
@@ -139,17 +143,17 @@ export function useStorageSettingsState({
     if (!result || result.status !== "scheduled") return;
     const refreshed = await runAction("refresh", refresh);
     if (!refreshed) return;
-    notify(UI_TEXT.settings.storageScheduled, "success");
+    notify(copy.storageScheduled, "success");
     await offerRestart();
-  }, [confirmPreview, notify, offerRestart, refresh, runAction]);
+  }, [confirmPreview, copy, notify, offerRestart, refresh, runAction]);
 
   const cancelPending = useCallback(async () => {
     const next = await runAction("cancel", StorageSettingsService.cancelPending);
     if (next) {
       setSnapshot(next);
-      notify(UI_TEXT.settings.storagePendingCancelled, "success");
+      notify(copy.storagePendingCancelled, "success");
     }
-  }, [notify, runAction]);
+  }, [copy, notify, runAction]);
 
   const setCacheClearOnRestart = useCallback(async (pending: boolean) => {
     const next = await runAction("cache", () => StorageSettingsService.setCacheClearOnRestart(pending));
@@ -180,6 +184,7 @@ export function useStorageSettingsState({
     setCacheClearOnRestart,
     openDirectory,
     restart,
+    copy,
   };
 }
 

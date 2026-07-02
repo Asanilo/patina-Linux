@@ -789,7 +789,9 @@ windows = { version = "0.62.2", features = [...] }
 tauri-winrt-notification = "0.7.2"
 ```
 
-### 7.3 前端无需变更
+### 7.3 前端平台能力
+
+平台相关的存储、诊断和桌面集成由 React 通过薄 Tauri gateway 使用。前端不直接解释锚点文件、不执行文件复制，也不拥有删除路径规则。
 
 ---
 
@@ -838,6 +840,18 @@ tauri-winrt-notification = "0.7.2"
 - WebSocket 实时推送（当前窗口变化通知）
 - 凭证存储（libsecret）
 
+### 本地存储迁移（已实现）
+
+本地存储管理是 Settings + Tauri IPC 能力，不属于 HTTP API，也不通过 MCP 暴露通用文件操作。Rust 是路径解析、校验、复制、回滚与缓存清理规则的唯一 owner。
+
+- 稳定控制元数据位于 `${XDG_CONFIG_HOME:-~/.config}/Patina`，不会随活动数据或 WebView 目录移动。
+- 活动数据与 WebView 持久目录可独立选择本机路径；目标目录按 Patina profile 派生并限制权限。
+- 迁移采用“重启前预约、启动时迁移”：预览不修改目标，确认后写入原子 pending metadata，下一次启动在 SQLite 和 WebView 初始化前执行。
+- 数据库复制后必须通过 SQLite integrity、schema 和行数校验；失败时不切换锚点，并保留可诊断状态。
+- 自定义活动目录无法挂载、锚点损坏或数据库缺失时 fail-closed，不静默回退默认数据库。
+- 成功迁移后保留旧目录，不提供自动删除；恢复默认位置同样经过隔离、校验与可回滚提升。
+- WebView 维护只允许删除活动 profile 下精确的 `WebKitCache`，不删除完整 WebView profile，且拒绝符号链接越界。
+
 ### 当前实现缺口（2026-06-26）
 
 本文最初按“未开始实现”编写；当前仓库已经有 Linux 原型和 API 原型，但仍未完成以下内容：
@@ -855,6 +869,7 @@ tauri-winrt-notification = "0.7.2"
 - GNOME 扩展源、校验、build 与本地安装脚本已进入仓库。
 - `npm run mcp:patina` 已提供 MCP wrapper，当前覆盖 diagnostics、current、sessions、active session、today/week summary、trend、web activity、AI context、Tools snapshot、apps 查询，以及 classify/rename/exclude app 轻量写侧。
 - 默认 CI 与 Release 已改为 Linux-only：Ubuntu runner 直接生成 AppImage、`.deb`、Linux updater manifest 和浏览器/GNOME 扩展，不再依赖 Windows job。
+- Settings 已提供本地存储状态、独立活动数据/WebView 迁移、恢复默认位置、保留旧目录入口和重启时精确清理 `WebKitCache`；Rust 启动阶段已接管迁移与 fail-closed 恢复语义。
 
 **部分实现但需要修正**：
 - `/summary/*` 已统一使用区间重叠与边界裁剪口径，并把活跃 session 计算到响应采样时刻。

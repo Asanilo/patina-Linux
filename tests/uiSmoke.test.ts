@@ -410,16 +410,15 @@ await runTest("operation-oriented pages keep explicit busy feedback", () => {
 
 await runTest("settings storage panel exposes safe local storage states and actions", () => {
   const storagePanel = readUtf8("src/features/settings/components/SettingsStoragePanel.tsx");
+  const storageCopy = readUtf8("src/features/settings/storageSettingsCopy.ts");
 
-  assert.match(storagePanel, /UI_TEXT\.settings\.storageLocalTitle/);
+  assert.match(storageCopy, /getStorageSettingsCopy/);
+  assert.match(storagePanel, /copy\.storageLocalTitle/);
   assert.match(storagePanel, /storageDefault/);
   assert.match(storagePanel, /storageCustom/);
   assert.match(storagePanel, /pendingMigration/);
   assert.match(storagePanel, /storageLoadFailed/);
-  assert.match(storagePanel, /storageOpenDataLabel/);
-  assert.match(storagePanel, /storageMoveDataLabel/);
-  assert.match(storagePanel, /storageOpenWebviewLabel/);
-  assert.match(storagePanel, /storageMoveWebviewLabel/);
+  assert.match(storagePanel, /storageActionLabel/);
   assert.match(storagePanel, /storageCacheClearOnRestart/);
   assert.doesNotMatch(storagePanel, /(?:disposable|可丢弃).{0,24}(?:WebView profile|WebView 数据)/i);
 });

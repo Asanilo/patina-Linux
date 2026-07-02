@@ -1,6 +1,6 @@
 # Linux Storage Migration Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add fail-closed custom data and WebView profile directories on Linux, with restart-time verified migration and narrowly allowlisted WebKit cache cleanup.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** Rust, Tauri 2, sqlx/SQLite, serde JSON, getrandom, fs2, React 19, TypeScript, existing Quiet Pro components, Node test runner.
 
-**Design:** `docs/superpowers/specs/2026-07-02-linux-storage-migration-design.md`
+**Design:** [`2026-07-02-linux-storage-migration-design.md`](./2026-07-02-linux-storage-migration-design.md)
 
 ---
 
@@ -72,7 +72,7 @@
 - Modify: `src-tauri/src/domain/mod.rs`
 - Modify: `src-tauri/src/platform/app_paths.rs`
 
-- [ ] **Step 1: Write failing path/profile tests**
+- [x] **Step 1: Write failing path/profile tests**
 
 Add pure tests that exercise path derivation without a live Tauri app:
 
@@ -99,13 +99,13 @@ fn custom_parent_derives_profile_owned_directory() {
 }
 ```
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml platform::app_paths::tests -- --nocapture`
 
 Expected: FAIL because `AppPathRoots`, `profile_paths`, and `derive_product_root` do not exist.
 
-- [ ] **Step 3: Implement the minimal path and DTO contract**
+- [x] **Step 3: Implement the minimal path and DTO contract**
 
 Add `AppProfile::key()`, pure path derivation helpers, and a `product_config_dir(app)` wrapper. Define camelCase-serialized DTOs in `domain/storage.rs`, including:
 
@@ -123,7 +123,7 @@ pub enum StorageTargetKind { Data, Webview }
 
 Do not add filesystem mutation to `app_paths.rs`.
 
-- [ ] **Step 4: Run focused tests and format**
+- [x] **Step 4: Run focused tests and format**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml platform::app_paths::tests -- --nocapture`
 
@@ -131,7 +131,7 @@ Expected: PASS.
 
 Run: `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src-tauri/src/domain/storage.rs src-tauri/src/domain/mod.rs src-tauri/src/platform/app_paths.rs
@@ -144,7 +144,7 @@ git commit -m "feat: define Linux storage path contract"
 - Create: `src-tauri/src/platform/storage_anchor.rs`
 - Modify: `src-tauri/src/platform/mod.rs`
 
-- [ ] **Step 1: Write failing anchor tests**
+- [x] **Step 1: Write failing anchor tests**
 
 Cover format/profile validation, optional reads, atomic replacement, file modes, pending operations, and maintenance state:
 
@@ -164,13 +164,13 @@ fn mismatched_profile_anchor_is_ignored() {
 }
 ```
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml storage_anchor::tests -- --nocapture`
 
 Expected: FAIL because the module does not exist.
 
-- [ ] **Step 3: Implement atomic metadata persistence**
+- [x] **Step 3: Implement atomic metadata persistence**
 
 Use typed structs with fixed formats:
 
@@ -183,13 +183,13 @@ pub const STORAGE_MAINTENANCE_FORMAT: &str = "patina.storage-maintenance.v1";
 
 Write to a same-directory random `.tmp` file using `getrandom`, set `0600`, call `sync_all`, rename, then sync the parent directory. Only remove exact known metadata files; never recursively delete the control directory.
 
-- [ ] **Step 4: Run anchor tests**
+- [x] **Step 4: Run anchor tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml storage_anchor::tests -- --nocapture`
 
 Expected: PASS, including Linux permission assertions.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src-tauri/src/platform/storage_anchor.rs src-tauri/src/platform/mod.rs
@@ -202,7 +202,7 @@ git commit -m "feat: persist storage anchors atomically"
 - Create: `src-tauri/src/platform/storage_paths.rs`
 - Modify: `src-tauri/src/platform/mod.rs`
 
-- [ ] **Step 1: Write failing resolver tests**
+- [x] **Step 1: Write failing resolver tests**
 
 Use a pure `resolve_storage_paths_from(...)` seam so tests do not need a Tauri `AppHandle`:
 
@@ -221,13 +221,13 @@ fn default_path_may_start_without_an_existing_database() {
 }
 ```
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml storage_paths::tests -- --nocapture`
 
 Expected: FAIL because resolver APIs do not exist.
 
-- [ ] **Step 3: Implement `StoragePaths` and strict resolution**
+- [x] **Step 3: Implement `StoragePaths` and strict resolution**
 
 The resolver must:
 
@@ -237,13 +237,13 @@ The resolver must:
 - Derive `backup_dir` and `remote_backup_temp_dir` from active data root.
 - Mark custom data and WebView roots independently.
 
-- [ ] **Step 4: Run resolver tests**
+- [x] **Step 4: Run resolver tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml storage_paths::tests -- --nocapture`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src-tauri/src/platform/storage_paths.rs src-tauri/src/platform/mod.rs
@@ -258,7 +258,7 @@ git commit -m "feat: resolve custom storage without fallback"
 - Create: `src-tauri/src/platform/webview_cache.rs`
 - Modify: `src-tauri/src/platform/mod.rs`
 
-- [ ] **Step 1: Write failing storage usage and deletion tests**
+- [x] **Step 1: Write failing storage usage and deletion tests**
 
 Cover byte counts, available-space results, exact allowlist behavior, persistent-state preservation, symlink rejection, and ownership-marker cleanup:
 
@@ -281,7 +281,7 @@ fn cache_clear_refuses_symlink_candidate() {
 }
 ```
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml storage_usage::tests -- --nocapture`
 
@@ -289,7 +289,7 @@ Run: `cargo test --manifest-path src-tauri/Cargo.toml webview_cache::tests -- --
 
 Expected: FAIL because both modules are missing.
 
-- [ ] **Step 3: Implement read-only usage and exact cache deletion**
+- [x] **Step 3: Implement read-only usage and exact cache deletion**
 
 Add `fs2 = "0.4"`. Use `fs2::available_space` for preflight. Keep all recursion private and symlink-aware. Cache removal accepts an already-resolved active WebView root and constructs exactly `root.join("WebKitCache")`; no caller-supplied delete path crosses the command boundary.
 
@@ -307,7 +307,7 @@ api_token
 
 Unknown or symlink entries must be reported, not overwritten or followed.
 
-- [ ] **Step 4: Run focused tests and clippy**
+- [x] **Step 4: Run focused tests and clippy**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml storage_usage::tests -- --nocapture`
 
@@ -317,7 +317,7 @@ Expected: PASS.
 
 Run: `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/src/platform/storage_usage.rs src-tauri/src/platform/webview_cache.rs src-tauri/src/platform/mod.rs
@@ -331,7 +331,7 @@ git commit -m "feat: add safe WebKit cache maintenance"
 - Modify: `src-tauri/src/data/mod.rs`
 - Modify: `src-tauri/src/data/sqlite_pool.rs`
 
-- [ ] **Step 1: Write failing planner tests**
+- [x] **Step 1: Write failing planner tests**
 
 Cover absolute-path normalization, conflicting roots, existing databases, free-space margin, read-only preview, pending merge, cancellation, backup-before-pending, and WAL checkpoint ordering.
 
@@ -351,13 +351,13 @@ fn preview_does_not_create_target() {
 }
 ```
 
-- [ ] **Step 2: Verify the planner tests fail**
+- [x] **Step 2: Verify the planner tests fail**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml storage_migration::planner_tests -- --nocapture`
 
 Expected: FAIL because migration planning is not implemented.
 
-- [ ] **Step 3: Implement preview and schedule with injected side effects**
+- [x] **Step 3: Implement preview and schedule with injected side effects**
 
 Keep pure validation/planning separate from Tauri-dependent orchestration. Scheduling must call, in order:
 
@@ -367,7 +367,7 @@ Keep pure validation/planning separate from Tauri-dependent orchestration. Sched
 
 Use a minimum free-space margin of `max(payload_bytes / 10, 64 MiB)`. A preview reports payload, available bytes, required bytes, source/target roots, and restart requirement.
 
-- [ ] **Step 4: Run planner and existing backup tests**
+- [x] **Step 4: Run planner and existing backup tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml storage_migration::planner_tests -- --nocapture`
 
@@ -375,7 +375,7 @@ Run: `cargo test --manifest-path src-tauri/Cargo.toml backup -- --nocapture`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src-tauri/src/data/storage_migration.rs src-tauri/src/data/mod.rs src-tauri/src/data/sqlite_pool.rs
@@ -388,7 +388,7 @@ git commit -m "feat: preview and schedule storage migration"
 - Modify: `src-tauri/src/data/storage_migration.rs`
 - Modify: `src-tauri/src/data/sqlite_pool.rs`
 
-- [ ] **Step 1: Write failing executor integration tests**
+- [x] **Step 1: Write failing executor integration tests**
 
 Build temporary real SQLite databases using the current migrations. Test:
 
@@ -412,13 +412,13 @@ fn failed_validation_keeps_source_and_does_not_write_anchor() {
 }
 ```
 
-- [ ] **Step 2: Verify executor tests fail**
+- [x] **Step 2: Verify executor tests fail**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml storage_migration::executor_tests -- --nocapture`
 
 Expected: FAIL because restart-time execution is missing.
 
-- [ ] **Step 3: Implement staged execution and rollback**
+- [x] **Step 3: Implement staged execution and rollback**
 
 Expose only the startup entry point publicly:
 
@@ -430,7 +430,7 @@ The executor must use a sibling staging directory, verify its marker before clea
 
 If an operation fails, record maintenance error, remove the pending operation to avoid a boot loop, and return `Ok(())` only when the unchanged active source can still be opened. Return `Err` when active custom storage itself is unavailable.
 
-- [ ] **Step 4: Run executor tests and full Rust tests**
+- [x] **Step 4: Run executor tests and full Rust tests**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml storage_migration::executor_tests -- --nocapture`
 
@@ -440,7 +440,7 @@ Run: `cargo test --manifest-path src-tauri/Cargo.toml --quiet`
 
 Expected: 0 failures.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src-tauri/src/data/storage_migration.rs src-tauri/src/data/sqlite_pool.rs
@@ -460,11 +460,11 @@ git commit -m "feat: migrate storage safely during startup"
 - Modify: `src-tauri/src/app/bootstrap.rs`
 - Modify: `scripts/check-rust-boundaries.ts`
 
-- [ ] **Step 1: Write failing integration-boundary tests**
+- [x] **Step 1: Write failing integration-boundary tests**
 
 Add tests that assert every persistent owner consumes `StoragePaths`, cache trim runs before WebView construction, and pending migration runs before SQLite initialization. Extend architecture checks if a source-level assertion is the practical boundary test.
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run: `npm run check:rust-boundaries`
 
@@ -472,13 +472,13 @@ Run: `cargo test --manifest-path src-tauri/Cargo.toml storage_paths -- --nocaptu
 
 Expected: at least one new assertion fails because old direct `app_paths` calls remain.
 
-- [ ] **Step 3: Integrate resolved paths and commands**
+- [x] **Step 3: Integrate resolved paths and commands**
 
 Commands include snapshot, directory picker, preview/schedule for data and WebView roots, restore defaults, cancel pending, schedule cache clear, open directory, and restart. Opening directories must use a Linux-safe platform boundary (`tauri-plugin-opener` or `xdg-open` wrapper), not a shell string.
 
 In bootstrap, call pending migration before `initialize_app_sqlite`. On unavailable anchored data, show a native `rfd::MessageDialog`, return the exact startup error, and do not initialize runtime services.
 
-- [ ] **Step 4: Run boundary checks and Rust suite**
+- [x] **Step 4: Run boundary checks and Rust suite**
 
 Run: `npm run check:rust-boundaries`
 
@@ -488,7 +488,7 @@ Run: `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings`
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src-tauri/src/commands src-tauri/src/data src-tauri/src/app src-tauri/src/platform src-tauri/src/domain scripts/check-rust-boundaries.ts
@@ -505,7 +505,7 @@ git commit -m "feat: wire custom storage into Linux runtime"
 - Create: `tests/storageSettings.test.ts`
 - Modify: `package.json`
 
-- [ ] **Step 1: Write failing service tests**
+- [x] **Step 1: Write failing service tests**
 
 Test formatting and dependency-injected flows without rendering React:
 
@@ -524,17 +524,17 @@ await runTest("schedule flow previews before confirmation and mutation", async (
 
 Also test canceled confirmation, preview errors, pending cancellation, restore default, cache clear scheduling, and byte formatting.
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run: `node --experimental-strip-types --experimental-specifier-resolution=node tests/storageSettings.test.ts`
 
 Expected: FAIL because modules are missing.
 
-- [ ] **Step 3: Implement the gateway, pure actions, and hook**
+- [x] **Step 3: Implement the gateway, pure actions, and hook**
 
 Keep Tauri command names inside `storageRuntimeGateway.ts`. The hook owns loading/busy/error/pending state and uses existing quiet confirm/toast facilities through injected callbacks. It must not merge storage actions into generic settings save state.
 
-- [ ] **Step 4: Run focused tests and TypeScript build**
+- [x] **Step 4: Run focused tests and TypeScript build**
 
 Run: `npm run test:storage`
 
@@ -542,7 +542,7 @@ Run: `npm run build`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/platform/storage src/features/settings/services/storagePathDisplay.ts src/features/settings/services/storageSettingsActions.ts src/features/settings/hooks/useStorageSettingsState.ts tests/storageSettings.test.ts package.json
@@ -561,11 +561,11 @@ git commit -m "feat: add storage settings runtime state"
 - Modify: `tests/uiSmoke.test.ts`
 - Modify: `tests/uiBrowserSmoke.test.ts`
 
-- [ ] **Step 1: Write failing UI smoke assertions**
+- [x] **Step 1: Write failing UI smoke assertions**
 
 Add fixture snapshots for default, custom, pending, and failure states. Assert that the panel exposes accessible action labels and never labels the whole WebView profile as disposable cache.
 
-- [ ] **Step 2: Verify UI tests fail**
+- [x] **Step 2: Verify UI tests fail**
 
 Run: `npm run test:ui-smoke`
 
@@ -573,11 +573,11 @@ Run: `npm run test:ui-browser-smoke`
 
 Expected: FAIL because the storage panel and copy are missing.
 
-- [ ] **Step 3: Implement the panel using existing primitives**
+- [x] **Step 3: Implement the panel using existing primitives**
 
 Use `QuietSubpanel`, `QuietActionRow`, existing buttons, status semantics, and Lucide icons. Provide clear default/custom badges, compact paths with tooltips, data/cache sizes, move/restore/open actions, pending cancellation, and cache-clear-on-restart. Do not nest cards, add new hardcoded colors, or make storage actions part of the main Settings save bar.
 
-- [ ] **Step 4: Run Settings and UI tests**
+- [x] **Step 4: Run Settings and UI tests**
 
 Run: `npm run test:settings`
 
@@ -591,7 +591,7 @@ Run: `npm run build`
 
 Expected: all pass with no overflow or overlap at tested desktop and compact widths.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/features/settings src/shared/copy/uiText.ts tests/uiSmoke.test.ts tests/uiBrowserSmoke.test.ts
@@ -608,21 +608,21 @@ git commit -m "feat: add Linux storage controls to settings"
 - Modify: `docs/linux-port-and-api-design.md`
 - Modify: `CHANGELOG.md` only when the release version is chosen.
 
-- [ ] **Step 1: Add documentation validation assertions first**
+- [x] **Step 1: Add documentation validation assertions first**
 
 Extend an existing documentation test or add focused assertions that active docs mention XDG defaults, fail-closed custom roots, retained old data, and exact `WebKitCache` cleanup.
 
-- [ ] **Step 2: Verify documentation tests fail**
+- [x] **Step 2: Verify documentation tests fail**
 
 Run: `npm run test:agent-skill` or the selected focused documentation test.
 
 Expected: FAIL until active docs are updated.
 
-- [ ] **Step 3: Update long-lived documentation**
+- [x] **Step 3: Update long-lived documentation**
 
 Update only active source-of-truth docs. Do not use or update archived Windows execution plans as current guidance. Record that custom storage is a Settings/Tauri capability, not an HTTP API endpoint.
 
-- [ ] **Step 4: Run destructive-operation tests against temporary roots only**
+- [x] **Step 4: Run destructive-operation tests against temporary roots only**
 
 Run focused Rust tests with temporary directories. Never point tests or smoke scripts at the real `${XDG_DATA_HOME}/Patina` directory.
 
@@ -635,7 +635,7 @@ Manually verify in a temporary development profile:
 5. Cache clear removes only test `WebKitCache`.
 6. Restore default quarantines an existing default test DB.
 
-- [ ] **Step 5: Run the full validation bar**
+- [x] **Step 5: Run the full validation bar**
 
 Run: `npm test`
 
@@ -649,11 +649,11 @@ Run: `npm run release:check`
 
 Expected: all checks pass; Rust reports no failed tests or clippy warnings; frontend and browser smoke suites pass.
 
-- [ ] **Step 6: Archive implementation documents after completion**
+- [x] **Step 6: Archive implementation documents after completion**
 
 After the feature is implemented and verified, move this plan and the approved design into `docs/archive/` in the final implementation commit, because they are one-off execution documents rather than long-lived source-of-truth docs.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add docs scripts tests package.json CHANGELOG.md

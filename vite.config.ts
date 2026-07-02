@@ -17,6 +17,17 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          if (
+            id.includes("/src/platform/storage/")
+            || id.includes("/src/features/settings/storageSettingsCopy.ts")
+            || id.includes("/src/features/settings/hooks/useStorageSettingsState.ts")
+            || id.includes("/src/features/settings/services/storagePathDisplay.ts")
+            || id.includes("/src/features/settings/services/storageSettingsActions.ts")
+            || id.includes("/src/features/settings/components/SettingsStoragePanel.tsx")
+          ) {
+            return "settings-storage";
+          }
+
           if (!id.includes("node_modules")) {
             return undefined;
           }
