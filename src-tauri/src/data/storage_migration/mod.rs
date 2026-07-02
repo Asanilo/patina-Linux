@@ -1,8 +1,10 @@
+mod executor;
 mod plan;
 
 use crate::data::{backup, sqlite_pool};
 use crate::domain::storage::{StorageMigrationPreview, StorageTargetKind};
 use crate::platform::{app_paths, storage_anchor, storage_paths, storage_usage, webview_cache};
+use std::fs;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Runtime};
@@ -79,6 +81,84 @@ pub async fn schedule_storage_migration(
 
 pub fn cancel_pending_storage_migration<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     storage_anchor::remove_pending_migration(app)
+}
+
+pub async fn run_pending_storage_migration<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    let Some(pending) = storage_anchor::read_pending_migration(app)? else {
+        return Ok(());
+    };
+    let current = storage_paths::resolve_storage_paths(app)?;
+    let execution = executor::execute_pending_with_deps(
+        &pending,
+        &current,
+        |next| match next {
+            Some(root) => storage_anchor::write_data_anchor(app, root),
+            None => storage_anchor::remove_data_anchor(app),
+        },
+        |next| match next {
+            Some(root) => storage_anchor::write_webview_anchor(app, root),
+            None => storage_anchor::remove_webview_anchor(app),
+        },
+    )
+    .await;
+
+    let maintenance = maintenance_state_after_execution(&pending, execution.clone());
+    storage_anchor::remove_pending_migration(app)
+        .map_err(|error| format!("failed to clear completed storage migration request: {error}"))?;
+    if let Err(error) = storage_anchor::write_maintenance_state(app, &maintenance) {
+        eprintln!("[storage] failed to persist migration maintenance state: {error}");
+    }
+
+    match execution {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            eprintln!("[storage] pending migration failed: {error}");
+            ensure_source_can_continue(&pending)?;
+            Ok(())
+        }
+    }
+}
+
+fn maintenance_state_after_execution(
+    pending: &storage_anchor::PendingStorageMigration,
+    execution: Result<(), String>,
+) -> storage_anchor::StorageMaintenanceState {
+    let mut state = storage_anchor::StorageMaintenanceState::new(&pending.profile);
+    match execution {
+        Ok(()) => {
+            state.last_migration_status = Some("succeeded".to_string());
+            if pending.source_data_root != pending.target_data_root {
+                state.retained_previous_data_root = Some(pending.source_data_root.clone());
+            }
+            if pending.source_webview_root != pending.target_webview_root {
+                state.retained_previous_webview_root = Some(pending.source_webview_root.clone());
+            }
+        }
+        Err(error) => {
+            state.last_migration_status = Some("failed".to_string());
+            state.last_maintenance_error = Some(error);
+        }
+    }
+    state
+}
+
+fn ensure_source_can_continue(
+    pending: &storage_anchor::PendingStorageMigration,
+) -> Result<(), String> {
+    let database = pending.source_data_root.join("patina.db");
+    let metadata = fs::symlink_metadata(&database).map_err(|error| {
+        format!(
+            "storage migration failed and active source database `{}` is unavailable: {error}",
+            database.display()
+        )
+    })?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(format!(
+            "storage migration failed and active source database `{}` is not a regular file",
+            database.display()
+        ));
+    }
+    Ok(())
 }
 
 fn target_root(
@@ -160,7 +240,25 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::platform::storage_anchor::{
+        PendingStorageMigration, STORAGE_MIGRATION_PENDING_FORMAT,
+    };
+    use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
+
+    fn pending() -> PendingStorageMigration {
+        PendingStorageMigration {
+            format: STORAGE_MIGRATION_PENDING_FORMAT.to_string(),
+            id: "migration-test".to_string(),
+            profile: "production".to_string(),
+            source_data_root: PathBuf::from("/source/data"),
+            target_data_root: PathBuf::from("/target/data"),
+            source_webview_root: PathBuf::from("/source/webview"),
+            target_webview_root: PathBuf::from("/target/webview"),
+            created_at_ms: 1,
+            state: "pending-restart".to_string(),
+        }
+    }
 
     #[test]
     fn schedule_preparation_orders_backup_checkpoint_then_pending_write() {
@@ -192,5 +290,30 @@ mod tests {
                 ["backup", "checkpoint", "pending"]
             );
         });
+    }
+
+    #[test]
+    fn successful_execution_state_records_retained_sources() {
+        let state = maintenance_state_after_execution(&pending(), Ok(()));
+
+        assert_eq!(state.last_migration_status.as_deref(), Some("succeeded"));
+        assert_eq!(
+            state.retained_previous_data_root,
+            Some(PathBuf::from("/source/data"))
+        );
+        assert_eq!(
+            state.retained_previous_webview_root,
+            Some(PathBuf::from("/source/webview"))
+        );
+        assert!(state.last_maintenance_error.is_none());
+    }
+
+    #[test]
+    fn failed_execution_state_keeps_the_concrete_error() {
+        let state = maintenance_state_after_execution(&pending(), Err("copy failed".to_string()));
+
+        assert_eq!(state.last_migration_status.as_deref(), Some("failed"));
+        assert_eq!(state.last_maintenance_error.as_deref(), Some("copy failed"));
+        assert!(state.retained_previous_data_root.is_none());
     }
 }

@@ -134,6 +134,16 @@ pub async fn initialize_app_sqlite<R: Runtime>(app: &AppHandle<R>) -> Result<(),
     let db_path = resolve_product_db_path(app)?;
     let pool = open_single_connection_sqlite_pool(&db_path, true).await?;
 
+    prepare_current_schema_for_pool(&pool)
+        .await
+        .map_err(|error| format!("{error} (`{}`)", db_path.display()))?;
+
+    register_sqlite_pool(app, pool).await?;
+
+    Ok(())
+}
+
+async fn prepare_current_schema_for_pool(pool: &Pool<Sqlite>) -> Result<(), String> {
     if repair_legacy_schema_before_baseline_normalization(&pool).await? {
         eprintln!("[sql] repaired legacy sqlite schema before baseline normalization");
     }
@@ -149,14 +159,23 @@ pub async fn initialize_app_sqlite<R: Runtime>(app: &AppHandle<R>) -> Result<(),
     }
 
     if !has_current_baseline_schema(&pool).await? {
-        return Err(format!(
-            "sqlite schema validation failed for `{}`",
-            db_path.display()
-        ));
+        return Err("sqlite schema validation failed for prepared database".to_string());
     }
+    Ok(())
+}
 
-    register_sqlite_pool(app, pool).await?;
-
+async fn prepare_staged_schema_for_pool(pool: &Pool<Sqlite>) -> Result<(), String> {
+    if !has_current_baseline_schema(pool).await?
+        && repair_legacy_schema_before_baseline_normalization(pool).await?
+    {
+        eprintln!("[sql] repaired legacy sqlite schema in staged migration database");
+    }
+    normalize_current_baseline_migration_history_for_pool(pool).await?;
+    run_current_migrations(pool).await?;
+    normalize_current_baseline_migration_history_for_pool(pool).await?;
+    if !has_current_baseline_schema(pool).await? {
+        return Err("sqlite schema validation failed for staged migration database".to_string());
+    }
     Ok(())
 }
 
@@ -801,6 +820,72 @@ async fn checkpoint_sqlite_pool(pool: &Pool<Sqlite>) -> Result<(), String> {
         .await
         .map_err(|error| format!("failed to checkpoint the Patina database: {error}"))?;
     Ok(())
+}
+
+pub(crate) async fn validate_migrated_database_copy(
+    source_path: &Path,
+    staged_path: &Path,
+) -> Result<(), String> {
+    let source = open_single_connection_sqlite_pool(source_path, false).await?;
+    let staged = open_single_connection_sqlite_pool(staged_path, false).await?;
+
+    let result = async {
+        let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
+            .fetch_one(&staged)
+            .await
+            .map_err(|error| {
+                format!(
+                    "failed to run integrity check on staged database `{}`: {error}",
+                    staged_path.display()
+                )
+            })?;
+        if integrity != "ok" {
+            return Err(format!(
+                "staged database `{}` failed integrity check: {integrity}",
+                staged_path.display()
+            ));
+        }
+
+        prepare_staged_schema_for_pool(&staged).await?;
+        for table in [
+            "sessions",
+            "session_title_samples",
+            "settings",
+            "icon_cache",
+            "web_activity_segments",
+            "tool_reminders",
+            "tool_timers",
+            "tool_timer_laps",
+            "tool_pomodoro_runs",
+            "tool_daily_stats",
+            "tool_software_reminder_rules",
+        ] {
+            let source_count = table_row_count_if_present(&source, table).await?;
+            let staged_count = table_row_count_if_present(&staged, table).await?;
+            if source_count != staged_count {
+                return Err(format!(
+                    "{table} row count changed during storage migration: source={source_count}, staged={staged_count}"
+                ));
+            }
+        }
+        Ok(())
+    }
+    .await;
+
+    source.close().await;
+    staged.close().await;
+    result
+}
+
+async fn table_row_count_if_present(pool: &Pool<Sqlite>, table_name: &str) -> Result<i64, String> {
+    if !table_exists(pool, table_name).await? {
+        return Ok(0);
+    }
+    let query = format!("SELECT COUNT(*) FROM {table_name}");
+    sqlx::query_scalar(&query)
+        .fetch_one(pool)
+        .await
+        .map_err(|error| format!("failed to count sqlite table `{table_name}`: {error}"))
 }
 
 #[cfg(test)]
