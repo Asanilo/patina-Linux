@@ -33,6 +33,14 @@ impl AppProfile {
             Self::Dev => PRODUCT_FOLDER_DEV,
         }
     }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Production => "production",
+            Self::Local => "local",
+            Self::Dev => "dev",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -63,6 +71,10 @@ pub fn product_local_data_dir<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf,
 
 pub fn product_webview_data_dir<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     product_local_data_dir(app)
+}
+
+pub fn product_config_dir<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
+    Ok(default_profile_paths(app)?.control_root)
 }
 
 pub fn default_profile_paths<R: Runtime>(app: &AppHandle<R>) -> Result<ProfilePaths, String> {

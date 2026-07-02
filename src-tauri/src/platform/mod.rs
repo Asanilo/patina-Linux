@@ -1,5 +1,6 @@
 pub mod app_paths;
 pub mod credentials;
+pub mod storage_anchor;
 pub mod tracking_diagnostics;
 pub mod web_activity_bridge;
 pub mod webdav;
