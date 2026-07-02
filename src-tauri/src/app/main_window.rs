@@ -1,9 +1,9 @@
 use crate::app::state::{DesktopBehaviorState, MainWindowLifecycleState};
 use crate::app::widget;
 use crate::domain::settings::MinimizeBehavior;
-use crate::platform::app_paths;
 #[cfg(target_os = "linux")]
 use crate::platform::linux::window_activation;
+use crate::platform::storage_paths;
 #[cfg(target_os = "windows")]
 use crate::platform::windows::window_activation;
 use std::time::Duration;
@@ -108,7 +108,7 @@ pub(crate) fn ensure_main_window_with_initial_visibility<R: Runtime>(
         .transparent(true)
         .center()
         .visible(visible)
-        .data_directory(app_paths::product_webview_data_dir(app)?)
+        .data_directory(storage_paths::resolve_storage_paths(app)?.webview_root)
         .build()
         .map_err(|error| format!("failed to create main window: {error}"))
 }

@@ -90,6 +90,16 @@ fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Build
         commands::settings::cmd_rotate_local_api_token,
         commands::settings::cmd_commit_app_settings,
         commands::settings::cmd_commit_classification_settings,
+        commands::storage::cmd_get_storage_snapshot,
+        commands::storage::cmd_pick_storage_parent,
+        commands::storage::cmd_preview_storage_migration,
+        commands::storage::cmd_preview_restore_default_storage,
+        commands::storage::cmd_schedule_storage_migration,
+        commands::storage::cmd_schedule_restore_default_storage,
+        commands::storage::cmd_cancel_pending_storage_migration,
+        commands::storage::cmd_schedule_webview_cache_clear,
+        commands::storage::cmd_open_storage_directory,
+        commands::storage::cmd_restart_for_storage_maintenance,
         commands::tools::cmd_get_tools_snapshot,
         commands::tools::cmd_get_tool_alerts,
         commands::tools::cmd_dismiss_tool_alert,
@@ -156,6 +166,20 @@ fn register_runtime_hooks(
         .on_tray_icon_event(tray::handle_tray_icon_event)
         .on_window_event(tray::handle_window_event)
         .setup(move |app| {
+            if let Err(error) = tauri::async_runtime::block_on(
+                data::storage_migration::run_startup_storage_maintenance(app.handle()),
+            ) {
+                eprintln!("[storage] startup storage maintenance failed: {error}");
+                rfd::MessageDialog::new()
+                    .set_level(rfd::MessageLevel::Error)
+                    .set_title("Patina storage unavailable")
+                    .set_description(format!(
+                        "Patina could not open its configured storage. Restore the configured mount or directory, then start Patina again.\n\n{error}"
+                    ))
+                    .set_buttons(rfd::MessageButtons::Ok)
+                    .show();
+                return Err(std::io::Error::other(error).into());
+            }
             tauri::async_runtime::block_on(data::sqlite_pool::initialize_app_sqlite(app.handle()))
                 .map_err(std::io::Error::other)?;
             Ok(runtime::setup(
@@ -180,5 +204,25 @@ pub(crate) fn handle_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
             app.state::<crate::engine::api::server::ApiServerState>()
                 .shutdown();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn startup_storage_maintenance_precedes_sqlite_initialization() {
+        let source = include_str!("bootstrap.rs");
+        let setup = source
+            .split(".setup(move |app|")
+            .nth(1)
+            .expect("runtime setup hook");
+        let storage = setup
+            .find("run_startup_storage_maintenance")
+            .expect("startup storage maintenance call");
+        let sqlite = setup
+            .find("initialize_app_sqlite")
+            .expect("sqlite initialization call");
+
+        assert!(storage < sqlite);
     }
 }

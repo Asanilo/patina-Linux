@@ -3,6 +3,7 @@ pub mod backup;
 pub mod diagnostics;
 pub mod persistence;
 pub mod settings;
+pub mod storage;
 pub mod tools;
 pub mod tracking;
 pub mod update;

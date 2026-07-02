@@ -1,7 +1,7 @@
 use crate::app::state::WidgetWindowLifecycleState;
 use crate::domain::widget::{WidgetPlacement, WidgetSide};
 use crate::engine::widget as widget_engine;
-use crate::platform::app_paths;
+use crate::platform::storage_paths;
 use std::time::Duration;
 use tauri::{
     AppHandle, Emitter, Manager, Monitor, PhysicalPosition, PhysicalSize, Position, Runtime, Size,
@@ -209,7 +209,7 @@ async fn apply_widget_layout_internal<R: Runtime + 'static>(
     .focusable(true)
     .focused(false)
     .visible(false)
-    .data_directory(app_paths::product_webview_data_dir(app)?)
+    .data_directory(storage_paths::resolve_storage_paths(app)?.webview_root)
     .build()
     .map_err(|error| {
         let _ = lifecycle.finish_show();

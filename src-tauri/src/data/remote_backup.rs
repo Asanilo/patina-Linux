@@ -1,7 +1,7 @@
 use crate::data::backup;
 use crate::domain::backup::BackupPreview;
-use crate::platform::app_paths;
 use crate::platform::credentials;
+use crate::platform::storage_paths;
 use crate::platform::webdav::{normalize_remote_dir, WebDavClient, WebDavConfig};
 use chrono::Local;
 use serde::{Deserialize, Serialize};
@@ -148,7 +148,7 @@ async fn save_index(
 }
 
 fn temp_backup_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app_paths::product_roaming_data_dir(app)?.join("remote-backup-temp");
+    let dir = storage_paths::resolve_storage_paths(app)?.remote_backup_temp_dir;
     fs::create_dir_all(&dir)
         .map_err(|error| format!("failed to create temp backup dir: {error}"))?;
     Ok(dir)

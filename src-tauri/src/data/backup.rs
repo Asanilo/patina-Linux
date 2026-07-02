@@ -5,7 +5,7 @@ use crate::domain::backup::{
     BackupTitleSample, BackupWebActivitySegment, CURRENT_BACKUP_SCHEMA_VERSION,
     CURRENT_BACKUP_VERSION,
 };
-use crate::platform::app_paths;
+use crate::platform::storage_paths;
 use crc32fast::Hasher;
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Sqlite};
@@ -92,7 +92,7 @@ struct BackupArchiveChecksums {
 }
 
 fn default_backup_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    let backup_dir = app_paths::product_roaming_data_dir(app)?.join("backups");
+    let backup_dir = storage_paths::resolve_storage_paths(app)?.backup_dir;
     fs::create_dir_all(&backup_dir)
         .map_err(|error| format!("failed to create backup dir: {error}"))?;
 

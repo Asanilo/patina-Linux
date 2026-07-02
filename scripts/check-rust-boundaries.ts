@@ -10,6 +10,18 @@ const SCAN_ROOTS = [
 
 const EXTRA_FILES = ["src-tauri/src/lib.rs"] as const;
 
+const STORAGE_PATH_OWNER_FILES = new Set([
+  "src-tauri/src/data/sqlite_pool.rs",
+  "src-tauri/src/data/backup.rs",
+  "src-tauri/src/data/remote_backup.rs",
+  "src-tauri/src/app/main_window.rs",
+  "src-tauri/src/app/widget.rs",
+]);
+
+const STORAGE_PATH_OWNER_EXTRA_FILES = [...STORAGE_PATH_OWNER_FILES].filter(
+  (path) => !path.startsWith("src-tauri/src/app/"),
+);
+
 interface SourceFile {
   path: string;
   content: string;
@@ -135,6 +147,18 @@ function findRustBoundaryViolations(files: SourceFile[]): BoundaryViolation[] {
           text: line,
         });
       }
+
+      if (
+        STORAGE_PATH_OWNER_FILES.has(file.path) &&
+        /app_paths::product_(?:roaming|local|webview)_data_dir/.test(line)
+      ) {
+        violations.push({
+          path: file.path,
+          line: index + 1,
+          rule: "persistent-owner-must-use-storage-paths",
+          text: line,
+        });
+      }
     });
   }
 
@@ -165,7 +189,8 @@ function runSelfTest() {
     },
     {
       path: "src-tauri/src/data/sqlite_pool.rs",
-      content: "let row = sqlx::query(\"SELECT 1\");",
+      content:
+        "let row = sqlx::query(\"SELECT 1\");\nlet root = app_paths::product_roaming_data_dir(app)?;",
     },
   ]);
 
@@ -178,6 +203,7 @@ function runSelfTest() {
     "entry-layer-no-direct-sql-query",
     "entry-layer-no-direct-sql-query",
     "platform-no-data-import",
+    "persistent-owner-must-use-storage-paths",
   ].sort();
 
   if (JSON.stringify(rules) !== JSON.stringify(expectedRules)) {
@@ -194,7 +220,7 @@ function main() {
 
   const files = [
     ...SCAN_ROOTS.flatMap((root) => collectRustFiles(root)),
-    ...EXTRA_FILES.map((path) => ({
+    ...[...EXTRA_FILES, ...STORAGE_PATH_OWNER_EXTRA_FILES].map((path) => ({
       path,
       content: readFileSync(path, "utf8"),
     })),

@@ -137,8 +137,37 @@ where
     Payload: FnOnce() -> Result<u64, String>,
     Available: FnOnce(&Path) -> Result<u64, String>,
 {
+    preview_with_policy(current, kind, target, payload_size, available_space, false)
+}
+
+pub(crate) fn preview_restore_with_deps<Payload, Available>(
+    current: &StoragePaths,
+    kind: TargetKind,
+    target: PathBuf,
+    payload_size: Payload,
+    available_space: Available,
+) -> Result<StorageMigrationPreview, String>
+where
+    Payload: FnOnce() -> Result<u64, String>,
+    Available: FnOnce(&Path) -> Result<u64, String>,
+{
+    preview_with_policy(current, kind, target, payload_size, available_space, true)
+}
+
+fn preview_with_policy<Payload, Available>(
+    current: &StoragePaths,
+    kind: TargetKind,
+    target: PathBuf,
+    payload_size: Payload,
+    available_space: Available,
+    allow_existing_database: bool,
+) -> Result<StorageMigrationPreview, String>
+where
+    Payload: FnOnce() -> Result<u64, String>,
+    Available: FnOnce(&Path) -> Result<u64, String>,
+{
     validate_target_relationships(current, &target, kind)?;
-    validate_preview_target(&target, kind)?;
+    validate_preview_target(&target, kind, allow_existing_database)?;
 
     let payload_size_bytes = payload_size()?;
     let available_space_bytes = available_space(&target)?;
@@ -162,7 +191,11 @@ where
     Ok(preview)
 }
 
-fn validate_preview_target(target: &Path, kind: TargetKind) -> Result<(), String> {
+fn validate_preview_target(
+    target: &Path,
+    kind: TargetKind,
+    allow_existing_database: bool,
+) -> Result<(), String> {
     let metadata = match fs::symlink_metadata(target) {
         Ok(metadata) => Some(metadata),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
@@ -188,7 +221,7 @@ fn validate_preview_target(target: &Path, kind: TargetKind) -> Result<(), String
         }
     }
 
-    if kind == TargetKind::Data {
+    if kind == TargetKind::Data && !allow_existing_database {
         let database = target.join("patina.db");
         if fs::symlink_metadata(&database).is_ok() {
             return Err(format!(
@@ -426,6 +459,26 @@ mod tests {
         .unwrap_err();
 
         assert!(error.contains("existing Patina database"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn restore_preview_allows_an_existing_default_database() {
+        let root = temp_dir("restore-default");
+        let target = root.join("default/Patina");
+        fs::create_dir_all(&target).unwrap();
+        fs::write(target.join("patina.db"), b"retained default").unwrap();
+
+        let preview = preview_restore_with_deps(
+            &current(),
+            TargetKind::Data,
+            target.clone(),
+            || Ok(12),
+            |_| Ok(256 * 1024 * 1024),
+        )
+        .unwrap();
+
+        assert_eq!(preview.target_data_root, target);
         fs::remove_dir_all(root).unwrap();
     }
 }

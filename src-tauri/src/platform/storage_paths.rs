@@ -96,14 +96,6 @@ pub fn resolve_storage_paths_from(
     ))
 }
 
-pub fn db_path_for_data_root(data_root: &Path) -> PathBuf {
-    data_root.join(SQLITE_DB_FILE_NAME)
-}
-
-pub fn backup_dir_for_data_root(data_root: &Path) -> PathBuf {
-    data_root.join(BACKUP_DIR_NAME)
-}
-
 fn validate_custom_directory(path: &Path, label: &str) -> Result<(), String> {
     let metadata = fs::symlink_metadata(path)
         .map_err(|error| format!("{label} `{}` is unavailable: {error}", path.display()))?;

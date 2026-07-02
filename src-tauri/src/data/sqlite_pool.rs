@@ -1,5 +1,5 @@
 use crate::data::schema;
-use crate::platform::app_paths;
+use crate::platform::storage_paths;
 use futures_util::future::BoxFuture;
 use sqlx::error::BoxDynError;
 use sqlx::migrate::{Migration as SqlxMigration, MigrationSource, MigrationType, Migrator};
@@ -12,7 +12,6 @@ use tauri_plugin_sql::{DbInstances, DbPool, MigrationKind};
 use tokio::time::{sleep, Duration};
 
 pub const SQLITE_DB_NAME: &str = "sqlite:patina.db";
-const SQLITE_DB_FILE_NAME: &str = "patina.db";
 
 #[derive(Debug)]
 struct InlineMigrationList(Vec<tauri_plugin_sql::Migration>);
@@ -58,14 +57,16 @@ fn expected_migration_metadata() -> Vec<(i64, &'static str, Vec<u8>)> {
 }
 
 fn resolve_product_db_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    let app_path = app_paths::product_roaming_data_dir(app)?;
-    create_dir_all(&app_path).map_err(|error| {
-        format!(
-            "failed to create app data dir `{}`: {error}",
-            app_path.display()
-        )
-    })?;
-    Ok(app_path.join(SQLITE_DB_FILE_NAME))
+    let paths = storage_paths::resolve_storage_paths(app)?;
+    if paths.database_creation_allowed {
+        create_dir_all(&paths.data_root).map_err(|error| {
+            format!(
+                "failed to create app data dir `{}`: {error}",
+                paths.data_root.display()
+            )
+        })?;
+    }
+    Ok(paths.db_path)
 }
 
 async fn open_single_connection_sqlite_pool(
@@ -144,21 +145,21 @@ pub async fn initialize_app_sqlite<R: Runtime>(app: &AppHandle<R>) -> Result<(),
 }
 
 async fn prepare_current_schema_for_pool(pool: &Pool<Sqlite>) -> Result<(), String> {
-    if repair_legacy_schema_before_baseline_normalization(&pool).await? {
+    if repair_legacy_schema_before_baseline_normalization(pool).await? {
         eprintln!("[sql] repaired legacy sqlite schema before baseline normalization");
     }
 
-    if normalize_current_baseline_migration_history_for_pool(&pool).await? {
+    if normalize_current_baseline_migration_history_for_pool(pool).await? {
         eprintln!("[sql] normalized sqlite migration history to the current baseline");
     }
 
-    run_current_migrations(&pool).await?;
+    run_current_migrations(pool).await?;
 
-    if normalize_current_baseline_migration_history_for_pool(&pool).await? {
+    if normalize_current_baseline_migration_history_for_pool(pool).await? {
         eprintln!("[sql] normalized sqlite migration history to the current baseline");
     }
 
-    if !has_current_baseline_schema(&pool).await? {
+    if !has_current_baseline_schema(pool).await? {
         return Err("sqlite schema validation failed for prepared database".to_string());
     }
     Ok(())

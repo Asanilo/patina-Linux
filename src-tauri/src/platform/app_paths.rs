@@ -61,18 +61,6 @@ pub fn app_profile<R: Runtime>(app: &AppHandle<R>) -> AppProfile {
     AppProfile::from_identifier(&app.config().identifier)
 }
 
-pub fn product_roaming_data_dir<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    Ok(default_profile_paths(app)?.data_root)
-}
-
-pub fn product_local_data_dir<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    Ok(default_profile_paths(app)?.webview_root)
-}
-
-pub fn product_webview_data_dir<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    product_local_data_dir(app)
-}
-
 pub fn product_config_dir<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     Ok(default_profile_paths(app)?.control_root)
 }

@@ -2,7 +2,11 @@ mod executor;
 mod plan;
 
 use crate::data::{backup, sqlite_pool};
-use crate::domain::storage::{StorageMigrationPreview, StorageTargetKind};
+use crate::domain::storage::{
+    StorageDirectoryKind, StorageMaintenanceSnapshot, StorageMigrationPreview, StoragePathSnapshot,
+    StoragePendingMigrationSnapshot, StorageSizeSnapshot, StorageSnapshot, StorageTargetKind,
+    WebviewCacheSnapshot,
+};
 use crate::platform::{app_paths, storage_anchor, storage_paths, storage_usage, webview_cache};
 use std::fs;
 use std::future::Future;
@@ -14,16 +18,20 @@ pub fn preview_storage_migration<R: Runtime>(
     kind: StorageTargetKind,
     selected_parent: PathBuf,
 ) -> Result<StorageMigrationPreview, String> {
-    let current = storage_paths::resolve_storage_paths(app)?;
     let target = target_root(app_paths::app_profile(app), kind, &selected_parent);
-    let plan_kind = target_kind(kind);
-    plan::preview_with_deps(
-        &current,
-        plan_kind,
-        target,
-        || payload_size(&current, kind),
-        storage_usage::available_space_for,
-    )
+    preview_storage_migration_to_root(app, kind, target, false)
+}
+
+pub fn preview_restore_default_storage<R: Runtime>(
+    app: &AppHandle<R>,
+    kind: StorageTargetKind,
+) -> Result<StorageMigrationPreview, String> {
+    let defaults = storage_paths::default_storage_paths(app)?;
+    let target = match kind {
+        StorageTargetKind::Data => defaults.data_root,
+        StorageTargetKind::Webview => defaults.webview_root,
+    };
+    preview_storage_migration_to_root(app, kind, target, true)
 }
 
 pub async fn schedule_storage_migration(
@@ -31,13 +39,35 @@ pub async fn schedule_storage_migration(
     kind: StorageTargetKind,
     selected_parent: PathBuf,
 ) -> Result<storage_anchor::PendingStorageMigration, String> {
-    let preview = preview_storage_migration(&app, kind, selected_parent)?;
+    let target = target_root(app_paths::app_profile(&app), kind, &selected_parent);
+    schedule_storage_migration_to_root(app, kind, target, false).await
+}
+
+pub async fn schedule_restore_default_storage(
+    app: AppHandle,
+    kind: StorageTargetKind,
+) -> Result<storage_anchor::PendingStorageMigration, String> {
+    let defaults = storage_paths::default_storage_paths(&app)?;
+    let target = match kind {
+        StorageTargetKind::Data => defaults.data_root,
+        StorageTargetKind::Webview => defaults.webview_root,
+    };
+    schedule_storage_migration_to_root(app, kind, target, true).await
+}
+
+async fn schedule_storage_migration_to_root(
+    app: AppHandle,
+    kind: StorageTargetKind,
+    target: PathBuf,
+    restore_default: bool,
+) -> Result<storage_anchor::PendingStorageMigration, String> {
+    let preview = preview_storage_migration_to_root(&app, kind, target, restore_default)?;
     let current = storage_paths::resolve_storage_paths(&app)?;
     let existing = storage_anchor::read_pending_migration(&app)?;
-    let id = existing
-        .as_ref()
-        .map(|pending| pending.id.clone())
-        .unwrap_or_else(new_migration_id);
+    let id = match existing.as_ref() {
+        Some(pending) => pending.id.clone(),
+        None => new_migration_id()?,
+    };
     let profile = app_paths::app_profile(&app).key();
     let (requested_data_root, requested_webview_root) = match kind {
         StorageTargetKind::Data => (Some(preview.target_data_root), None),
@@ -79,8 +109,141 @@ pub async fn schedule_storage_migration(
     Ok(pending)
 }
 
+fn preview_storage_migration_to_root<R: Runtime>(
+    app: &AppHandle<R>,
+    kind: StorageTargetKind,
+    target: PathBuf,
+    restore_default: bool,
+) -> Result<StorageMigrationPreview, String> {
+    let current = storage_paths::resolve_storage_paths(app)?;
+    let payload = || payload_size(&current, kind);
+    if restore_default {
+        plan::preview_restore_with_deps(
+            &current,
+            target_kind(kind),
+            target,
+            payload,
+            storage_usage::available_space_for,
+        )
+    } else {
+        plan::preview_with_deps(
+            &current,
+            target_kind(kind),
+            target,
+            payload,
+            storage_usage::available_space_for,
+        )
+    }
+}
+
+pub fn storage_snapshot<R: Runtime>(app: &AppHandle<R>) -> Result<StorageSnapshot, String> {
+    let current = storage_paths::resolve_storage_paths(app)?;
+    let defaults = storage_paths::default_storage_paths(app)?;
+    let maintenance = storage_anchor::read_maintenance_state(app)?;
+    let pending = storage_anchor::read_pending_migration(app)?;
+    let data_bytes = payload_size(&current, StorageTargetKind::Data)?;
+    let persistent_webview_bytes = webview_cache::persistent_profile_size(&current.webview_root)?;
+    let cache_size_bytes = webview_cache::webkit_cache_size(&current.webview_root)?;
+
+    Ok(StorageSnapshot {
+        paths: StoragePathSnapshot {
+            data_root: current.data_root,
+            default_data_root: defaults.data_root,
+            database_path: current.db_path,
+            backup_dir: current.backup_dir,
+            webview_root: current.webview_root.clone(),
+            default_webview_root: defaults.webview_root,
+            is_custom_data_root: current.is_custom_data_root,
+            is_custom_webview_root: current.is_custom_webview_root,
+        },
+        sizes: StorageSizeSnapshot {
+            data_bytes,
+            webview_profile_bytes: persistent_webview_bytes.saturating_add(cache_size_bytes),
+        },
+        webview_cache: WebviewCacheSnapshot {
+            path: webview_cache::webkit_cache_path(&current.webview_root),
+            size_bytes: cache_size_bytes,
+            clear_on_restart: maintenance.pending_webview_cache_clear,
+        },
+        maintenance: StorageMaintenanceSnapshot {
+            last_webview_cache_clear_at_ms: maintenance.last_webview_cache_clear_at_ms,
+            last_error: maintenance.last_maintenance_error,
+            last_migration_status: maintenance.last_migration_status,
+            retained_previous_data_root: maintenance.retained_previous_data_root,
+            retained_previous_webview_root: maintenance.retained_previous_webview_root,
+        },
+        pending_migration: pending.map(pending_snapshot),
+    })
+}
+
+pub fn storage_directory<R: Runtime>(
+    app: &AppHandle<R>,
+    kind: StorageDirectoryKind,
+) -> Result<PathBuf, String> {
+    let snapshot = storage_snapshot(app)?;
+    match kind {
+        StorageDirectoryKind::Data => Ok(snapshot.paths.data_root),
+        StorageDirectoryKind::Backups => Ok(snapshot.paths.backup_dir),
+        StorageDirectoryKind::Webview => Ok(snapshot.paths.webview_root),
+        StorageDirectoryKind::RetainedData => snapshot
+            .maintenance
+            .retained_previous_data_root
+            .ok_or_else(|| "no retained previous data directory is recorded".to_string()),
+        StorageDirectoryKind::RetainedWebview => snapshot
+            .maintenance
+            .retained_previous_webview_root
+            .ok_or_else(|| "no retained previous WebView directory is recorded".to_string()),
+    }
+}
+
+pub fn pending_snapshot(
+    pending: storage_anchor::PendingStorageMigration,
+) -> StoragePendingMigrationSnapshot {
+    StoragePendingMigrationSnapshot {
+        id: pending.id,
+        source_data_root: pending.source_data_root,
+        target_data_root: pending.target_data_root,
+        source_webview_root: pending.source_webview_root,
+        target_webview_root: pending.target_webview_root,
+        created_at_ms: pending.created_at_ms,
+    }
+}
+
 pub fn cancel_pending_storage_migration<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     storage_anchor::remove_pending_migration(app)
+}
+
+pub fn schedule_webview_cache_clear<R: Runtime>(
+    app: &AppHandle<R>,
+    pending: bool,
+) -> Result<storage_anchor::StorageMaintenanceState, String> {
+    let mut state = storage_anchor::read_maintenance_state(app)?;
+    state.pending_webview_cache_clear = pending;
+    storage_anchor::write_maintenance_state(app, &state)?;
+    Ok(state)
+}
+
+pub async fn run_startup_storage_maintenance<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    run_pending_storage_migration(app).await?;
+
+    let mut state = storage_anchor::read_maintenance_state(app)?;
+    if !state.pending_webview_cache_clear {
+        return Ok(());
+    }
+
+    let paths = storage_paths::resolve_storage_paths(app)?;
+    state.pending_webview_cache_clear = false;
+    match webview_cache::clear_linux_webkit_cache(&paths.webview_root) {
+        Ok(()) => {
+            state.last_webview_cache_clear_at_ms = Some(storage_anchor::now_ms());
+            state.last_maintenance_error = None;
+        }
+        Err(error) => {
+            state.last_maintenance_error = Some(format!("WebKit cache clear failed: {error}"));
+            eprintln!("[storage] failed to clear WebKit cache: {error}");
+        }
+    }
+    storage_anchor::write_maintenance_state(app, &state)
 }
 
 pub async fn run_pending_storage_migration<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
@@ -102,7 +265,11 @@ pub async fn run_pending_storage_migration<R: Runtime>(app: &AppHandle<R>) -> Re
     )
     .await;
 
-    let maintenance = maintenance_state_after_execution(&pending, execution.clone());
+    let previous_maintenance = storage_anchor::read_maintenance_state(app)?;
+    let mut maintenance = maintenance_state_after_execution(&pending, execution.clone());
+    maintenance.pending_webview_cache_clear = previous_maintenance.pending_webview_cache_clear;
+    maintenance.last_webview_cache_clear_at_ms =
+        previous_maintenance.last_webview_cache_clear_at_ms;
     storage_anchor::remove_pending_migration(app)
         .map_err(|error| format!("failed to clear completed storage migration request: {error}"))?;
     if let Err(error) = storage_anchor::write_maintenance_state(app, &maintenance) {
@@ -200,16 +367,15 @@ fn payload_size(
     }
 }
 
-fn new_migration_id() -> String {
+fn new_migration_id() -> Result<String, String> {
     let mut bytes = [0_u8; 16];
-    if getrandom::fill(&mut bytes).is_err() {
-        return format!("migration-{}", storage_anchor::now_ms());
-    }
+    getrandom::fill(&mut bytes)
+        .map_err(|error| format!("failed to generate storage migration id: {error}"))?;
     let encoded = bytes
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
-    format!("migration-{encoded}")
+    Ok(format!("migration-{encoded}"))
 }
 
 async fn schedule_preparation_with<
