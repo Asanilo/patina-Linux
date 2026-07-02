@@ -16,13 +16,25 @@ const STORAGE_DEFAULTS = {
 
 let pendingActiveTabTimer = null;
 
-function browserKind() {
-  const ua = navigator.userAgent.toLowerCase();
-  if (ua.includes("firefox/")) return "firefox";
-  if (ua.includes("edg/")) return "edge";
-  if (ua.includes("opr/") || ua.includes("opera")) return "opera";
-  if (ua.includes("vivaldi")) return "vivaldi";
-  if (ua.includes("brave")) return "brave";
+async function browserKind() {
+  let identity = navigator.userAgent.toLowerCase();
+  if (typeof chrome.runtime.getBrowserInfo === "function") {
+    try {
+      const info = await chrome.runtime.getBrowserInfo();
+      identity = `${info?.name || ""} ${info?.vendor || ""} ${identity}`.toLowerCase();
+    } catch {
+      // User-agent fallback remains available on Firefox-compatible forks.
+    }
+  }
+  if (identity.includes("zen")) return "zen";
+  if (identity.includes("floorp")) return "floorp";
+  if (identity.includes("iceweasel")) return "iceweasel";
+  if (identity.includes("librewolf")) return "librewolf";
+  if (identity.includes("firefox")) return "firefox";
+  if (identity.includes("edg/")) return "edge";
+  if (identity.includes("opr/") || identity.includes("opera")) return "opera";
+  if (identity.includes("vivaldi")) return "vivaldi";
+  if (identity.includes("brave")) return "brave";
   return "chrome";
 }
 
@@ -126,7 +138,7 @@ async function sendActiveTab(eventReason = "refresh") {
   const payload = {
     protocolVersion: PROTOCOL_VERSION,
     browserClientId: settings.clientId,
-    browserKind: browserKind(),
+    browserKind: await browserKind(),
     extensionVersion: EXTENSION_VERSION,
     tabId: tab.id,
     windowId: tab.windowId,

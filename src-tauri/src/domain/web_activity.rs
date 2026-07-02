@@ -54,6 +54,12 @@ pub struct WebDomainOverrideStorageValue {
     pub enabled: Option<bool>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WebActivityBrowserFamily {
+    Chromium,
+    Firefox,
+}
+
 pub fn sanitize_browser_client_id(value: Option<&str>) -> String {
     truncate_chars(
         value
@@ -124,33 +130,50 @@ pub fn normalize_domain(value: &str) -> Option<String> {
     Some(normalized)
 }
 
-pub fn is_supported_browser_exe(exe_name: &str) -> bool {
-    matches!(
-        exe_name.trim().to_ascii_lowercase().as_str(),
+pub fn resolve_web_activity_browser_family(exe_name: &str) -> Option<WebActivityBrowserFamily> {
+    match exe_name.trim().to_ascii_lowercase().as_str() {
         "chrome.exe"
-            | "chrome"
-            | "google-chrome"
-            | "google-chrome-stable"
-            | "msedge.exe"
-            | "microsoft-edge"
-            | "microsoft-edge-stable"
-            | "brave.exe"
-            | "brave-browser"
-            | "brave-browser-stable"
-            | "opera.exe"
-            | "opera"
-            | "opera_gx.exe"
-            | "vivaldi.exe"
-            | "vivaldi"
-            | "arc.exe"
-            | "chromium.exe"
-            | "chromium"
-            | "chromium-browser"
-            | "firefox"
-            | "zen"
-            | "zen-bin"
-            | "zen-browser"
-    )
+        | "chrome"
+        | "google-chrome"
+        | "google-chrome-stable"
+        | "google-chrome-beta"
+        | "google-chrome-unstable"
+        | "msedge.exe"
+        | "msedge"
+        | "microsoft-edge"
+        | "microsoft-edge-stable"
+        | "microsoft-edge-beta"
+        | "brave.exe"
+        | "brave-browser"
+        | "brave-browser-stable"
+        | "brave-browser-beta"
+        | "brave-browser-nightly"
+        | "opera.exe"
+        | "opera"
+        | "opera-stable"
+        | "opera-beta"
+        | "opera-developer"
+        | "opera_gx.exe"
+        | "vivaldi.exe"
+        | "vivaldi"
+        | "vivaldi-bin"
+        | "vivaldi-stable"
+        | "arc.exe"
+        | "chromium.exe"
+        | "chromium"
+        | "chromium-browser"
+        | "thorium"
+        | "thorium-browser" => Some(WebActivityBrowserFamily::Chromium),
+        "firefox" | "firefox-bin" | "firefox-esr" | "zen" | "zen-bin" | "zen-browser"
+        | "floorp" | "floorp-bin" | "iceweasel" | "librewolf" | "librewolf-bin" => {
+            Some(WebActivityBrowserFamily::Firefox)
+        }
+        _ => None,
+    }
+}
+
+pub fn is_supported_browser_exe(exe_name: &str) -> bool {
+    resolve_web_activity_browser_family(exe_name).is_some()
 }
 
 pub fn parse_domain_override_enabled(raw_value: &str) -> bool {
@@ -227,24 +250,35 @@ mod tests {
     }
 
     #[test]
-    fn supported_browser_exe_covers_linux_browser_process_names() {
-        for exe_name in [
-            "chrome",
-            "google-chrome",
-            "google-chrome-stable",
-            "chromium",
-            "chromium-browser",
-            "brave-browser",
-            "brave-browser-stable",
-            "microsoft-edge",
-            "firefox",
-            "zen",
-            "zen-bin",
-            "zen-browser",
+    fn supported_browser_exe_resolves_linux_browser_families() {
+        for (exe_name, expected_family) in [
+            ("chrome", WebActivityBrowserFamily::Chromium),
+            ("google-chrome-stable", WebActivityBrowserFamily::Chromium),
+            ("chromium-browser", WebActivityBrowserFamily::Chromium),
+            ("brave-browser", WebActivityBrowserFamily::Chromium),
+            ("microsoft-edge", WebActivityBrowserFamily::Chromium),
+            ("opera", WebActivityBrowserFamily::Chromium),
+            ("opera_gx.exe", WebActivityBrowserFamily::Chromium),
+            ("vivaldi-bin", WebActivityBrowserFamily::Chromium),
+            ("thorium-browser", WebActivityBrowserFamily::Chromium),
+            ("firefox", WebActivityBrowserFamily::Firefox),
+            ("firefox-esr", WebActivityBrowserFamily::Firefox),
+            ("zen", WebActivityBrowserFamily::Firefox),
+            ("zen-bin", WebActivityBrowserFamily::Firefox),
+            ("zen-browser", WebActivityBrowserFamily::Firefox),
+            ("floorp", WebActivityBrowserFamily::Firefox),
+            ("iceweasel", WebActivityBrowserFamily::Firefox),
+            ("librewolf", WebActivityBrowserFamily::Firefox),
         ] {
+            assert_eq!(
+                resolve_web_activity_browser_family(exe_name),
+                Some(expected_family),
+                "{exe_name}",
+            );
             assert!(is_supported_browser_exe(exe_name), "{exe_name}");
         }
 
+        assert_eq!(resolve_web_activity_browser_family("ghostty"), None);
         assert!(!is_supported_browser_exe("ghostty"));
     }
 

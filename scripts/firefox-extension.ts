@@ -119,6 +119,22 @@ async function checkExtension() {
   if (!options.startsWith("const chrome = browser;") || !popup.startsWith("const chrome = browser;")) {
     fail("Firefox extension check failed. options.js and popup.js must use the browser API compatibility alias.");
   }
+  if (!background.includes("chrome.runtime.getBrowserInfo")) {
+    fail("Firefox extension check failed. Browser identity must prefer runtime.getBrowserInfo().");
+  }
+  if (!background.includes("await browserKind()")) {
+    fail("Firefox extension check failed. Active-tab payload must await browser identity.");
+  }
+  const genericFirefoxIndex = background.indexOf('identity.includes("firefox")');
+  if (genericFirefoxIndex < 0) {
+    fail("Firefox extension check failed. Generic Firefox identity detection is required.");
+  }
+  for (const fork of ["zen", "floorp", "iceweasel", "librewolf"]) {
+    const forkIndex = background.indexOf(`identity.includes("${fork}")`);
+    if (forkIndex < 0 || forkIndex > genericFirefoxIndex) {
+      fail(`Firefox extension check failed. ${fork} identity must be detected before generic Firefox.`);
+    }
+  }
 
   console.log("Firefox extension check passed.");
 }
