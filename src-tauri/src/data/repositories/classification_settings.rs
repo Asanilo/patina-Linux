@@ -207,7 +207,10 @@ mod tests {
             .await
             .unwrap();
 
-            assert_eq!(load_setting(&pool, key).await, Some("Deep Focus".to_string()));
+            assert_eq!(
+                load_setting(&pool, key).await,
+                Some("Deep Focus".to_string())
+            );
         });
     }
 

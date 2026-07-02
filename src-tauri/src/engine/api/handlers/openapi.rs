@@ -833,7 +833,9 @@ mod tests {
         assert_eq!(
             response
                 .body
-                .pointer("/components/schemas/ActivityContextData/properties/diagnostics/oneOf/1/$ref")
+                .pointer(
+                    "/components/schemas/ActivityContextData/properties/diagnostics/oneOf/1/$ref"
+                )
                 .and_then(|value| value.as_str()),
             Some("#/components/schemas/ComponentFailure")
         );
