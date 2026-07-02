@@ -11,6 +11,8 @@ import type { CleanupRange } from "../types";
 import type { BackupRestoreStrategy } from "../services/settingsRuntimeAdapterService.ts";
 import type { RemoteBackupEntry, RemoteBackupState } from "../hooks/useRemoteBackupState.ts";
 import SettingsRemoteBackupPanel from "./SettingsRemoteBackupPanel";
+import SettingsStoragePanel from "./SettingsStoragePanel";
+import type { StorageSettingsState } from "../hooks/useStorageSettingsState.ts";
 
 type CleanupOption = { value: CleanupRange; label: string };
 
@@ -29,6 +31,7 @@ type SettingsDataSafetyPanelProps = {
   onRestoreBackup: (restoreStrategy: BackupRestoreStrategy) => void;
   onClearPendingRestoreBackup: () => void;
   remoteBackup: RemoteBackupState;
+  storage: StorageSettingsState;
 };
 
 export default function SettingsDataSafetyPanel({
@@ -46,6 +49,7 @@ export default function SettingsDataSafetyPanel({
   onRestoreBackup,
   onClearPendingRestoreBackup,
   remoteBackup,
+  storage,
 }: SettingsDataSafetyPanelProps) {
   const [strategyDialogOpen, setStrategyDialogOpen] = useState(false);
   const [restoreStrategySource, setRestoreStrategySource] = useState<"local" | "remote">("local");
@@ -128,6 +132,8 @@ export default function SettingsDataSafetyPanel({
         </div>
 
         <div className="space-y-5">
+          <SettingsStoragePanel storage={storage} />
+
           <QuietSubpanel>
             <div>
               <p className="text-sm font-semibold text-[var(--qp-text-primary)]">{UI_TEXT.settings.backupRestoreTitle}</p>

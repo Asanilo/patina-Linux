@@ -124,7 +124,8 @@ export function useStorageSettingsState({
       },
     ));
     if (!result || result.status !== "scheduled") return;
-    await refresh();
+    const refreshed = await runAction("refresh", refresh);
+    if (!refreshed) return;
     notify(UI_TEXT.settings.storageScheduled, "success");
     await offerRestart();
   }, [confirmPreview, notify, offerRestart, refresh, runAction, snapshot]);
@@ -136,7 +137,8 @@ export function useStorageSettingsState({
       schedule: StorageSettingsService.scheduleRestoreDefault,
     }));
     if (!result || result.status !== "scheduled") return;
-    await refresh();
+    const refreshed = await runAction("refresh", refresh);
+    if (!refreshed) return;
     notify(UI_TEXT.settings.storageScheduled, "success");
     await offerRestart();
   }, [confirmPreview, notify, offerRestart, refresh, runAction]);
@@ -158,17 +160,27 @@ export function useStorageSettingsState({
     await runAction(`open-${kind}`, () => StorageSettingsService.openDirectory(kind));
   }, [runAction]);
 
+  const reload = useCallback(async () => {
+    await runAction("refresh", refresh);
+  }, [refresh, runAction]);
+
+  const restart = useCallback(async () => {
+    await runAction("restart", StorageSettingsService.restart);
+  }, [runAction]);
+
   return {
     snapshot,
     loading,
     busyAction,
     error,
-    refresh,
+    refresh: reload,
     move,
     restoreDefault,
     cancelPending,
     setCacheClearOnRestart,
     openDirectory,
-    restart: StorageSettingsService.restart,
+    restart,
   };
 }
+
+export type StorageSettingsState = ReturnType<typeof useStorageSettingsState>;

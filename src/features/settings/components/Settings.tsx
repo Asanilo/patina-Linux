@@ -53,6 +53,7 @@ export default function Settings({
     handleRestoreBackup,
     clearPendingRestoreBackup,
     remoteBackup,
+    storage,
     idleTimeoutMinutes,
     timelineMergeGapMinutes,
     minSessionMinutes,
@@ -270,6 +271,7 @@ export default function Settings({
             onRestoreBackup={handleRestoreBackup}
             onClearPendingRestoreBackup={clearPendingRestoreBackup}
             remoteBackup={remoteBackup}
+            storage={storage}
           />
         </div>
       </div>

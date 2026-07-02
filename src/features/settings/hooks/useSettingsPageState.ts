@@ -25,6 +25,7 @@ import type {
 } from "../services/settingsRuntimeAdapterService.ts";
 import { useRemoteBackupState } from "./useRemoteBackupState.ts";
 import { buildLocalApiConfigurationText } from "../services/settingsLocalApiService.ts";
+import { useStorageSettingsState } from "./useStorageSettingsState.ts";
 
 const buildCleanupOptions = (): Array<{ value: CleanupRange; label: string }> => [
   { value: 180, label: UI_TEXT.settings.cleanupRangeLabels[180] },
@@ -87,6 +88,8 @@ export function useSettingsPageState({
   const notify = useCallback((message: string, tone: QuietToastTone = "info") => {
     onToast?.(message, tone);
   }, [onToast]);
+
+  const storage = useStorageSettingsState({ confirm, notify });
 
   const remoteBackup = useRemoteBackupState({
     confirm,
@@ -466,6 +469,7 @@ export function useSettingsPageState({
     handleRestoreBackup,
     clearPendingRestoreBackup,
     remoteBackup,
+    storage,
     handleOpenReleaseNotes,
     handleOpenFeedback,
     idleTimeoutMinutes,

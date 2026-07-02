@@ -103,7 +103,42 @@ function tauriStubFor(path: string) {
         }
       }
 
+      function storageSnapshot() {
+        return {
+          paths: {
+            dataRoot: "/home/smoke/.local/share/Patina",
+            defaultDataRoot: "/home/smoke/.local/share/Patina",
+            databasePath: "/home/smoke/.local/share/Patina/patina.db",
+            backupDir: "/home/smoke/.local/share/Patina/backups",
+            webviewRoot: "/home/smoke/.local/share/Patina",
+            defaultWebviewRoot: "/home/smoke/.local/share/Patina",
+            isCustomDataRoot: false,
+            isCustomWebviewRoot: false,
+          },
+          sizes: {
+            dataBytes: 7340032,
+            webviewProfileBytes: 12582912,
+          },
+          webviewCache: {
+            path: "/home/smoke/.local/share/Patina/WebKitCache",
+            sizeBytes: 2097152,
+            clearOnRestart: false,
+          },
+          maintenance: {
+            lastWebviewCacheClearAtMs: null,
+            lastError: null,
+            lastMigrationStatus: null,
+            retainedPreviousDataRoot: null,
+            retainedPreviousWebviewRoot: null,
+          },
+          pendingMigration: null,
+        };
+      }
+
       export async function invoke(command, payload = {}) {
+        if (command === "cmd_get_storage_snapshot") {
+          return storageSnapshot();
+        }
         if (command === "cmd_commit_app_settings") {
           const settings = loadStoredSettings();
           for (const mutation of payload.mutations ?? []) {
@@ -1454,6 +1489,49 @@ try {
     await waitForExpression(client!, sessionId, "!document.querySelector('[role=\"dialog\"]')");
   });
 
+  await runTest("settings local storage controls fit a compact viewport", async () => {
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const node = document.querySelector('[aria-label=' + ${jsonString(JSON.stringify("设置"))} + ']');
+          if (!node) return false;
+          node.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(client!, sessionId, `document.body.innerText.includes(${jsonString("本地存储")})`);
+    assert.equal(
+      await evaluate(client!, sessionId, `Boolean(document.querySelector('[aria-label="移动活动数据"]'))`),
+      true,
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `Boolean(document.querySelector('[aria-label="移动 WebView 数据"]'))`),
+      true,
+    );
+
+    await client!.command("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+    }, sessionId);
+    await delay(100);
+    assert.equal(
+      await evaluate(client!, sessionId, "document.documentElement.scrollWidth <= window.innerWidth + 1"),
+      true,
+      "Settings local storage controls overflowed at 390px",
+    );
+
+    await client!.command("Emulation.setDeviceMetricsOverride", {
+      width: 1280,
+      height: 820,
+      deviceScaleFactor: 1,
+      mobile: false,
+    }, sessionId);
+  });
+
   await runTest("app mapping only offers explicit manual categories", async () => {
     assert.equal(
       await evaluate(client!, sessionId, `
@@ -1757,8 +1835,10 @@ try {
       sessionId,
       `document.querySelector(".history-app-distribution-card")?.textContent?.includes("当日分布")`,
     );
-    assert.equal(
-      await evaluate(client!, sessionId, `
+    await waitForExpression(
+      client!,
+      sessionId,
+      `
         (() => {
           const card = document.querySelector(".history-app-distribution-card");
           if (!card) return false;
@@ -1773,8 +1853,9 @@ try {
             && card.textContent?.includes("Extremely Long Research Workbench Application Name")
           );
         })()
-      `),
-      true,
+      `,
+      DEFAULT_TIMEOUT_MS,
+      "history app distribution controls",
     );
     assert.equal(
       await evaluate(client!, sessionId, `
@@ -2040,8 +2121,10 @@ try {
       sessionId,
       `Boolean(document.querySelector(".history-timeline-dialog-surface"))`,
     );
-    assert.equal(
-      await evaluate(client!, sessionId, `
+    await waitForExpression(
+      client!,
+      sessionId,
+      `
         (() => {
           const dialog = document.querySelector(".history-timeline-dialog-surface");
           const dialogList = document.querySelector(".history-timeline-dialog-body .history-timeline-list");
@@ -2058,8 +2141,9 @@ try {
             && !document.querySelector(".history-timeline-dialog-body .history-timeline-zoom-switch")
           );
         })()
-      `),
-      true,
+      `,
+      DEFAULT_TIMEOUT_MS,
+      "complete history timeline dialog",
     );
     assert.equal(
       await evaluate(client!, sessionId, `

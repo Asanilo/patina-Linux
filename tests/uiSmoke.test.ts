@@ -408,6 +408,22 @@ await runTest("operation-oriented pages keep explicit busy feedback", () => {
   assert.match(updateDialog, /UI_TEXT\.update\.processing/);
 });
 
+await runTest("settings storage panel exposes safe local storage states and actions", () => {
+  const storagePanel = readUtf8("src/features/settings/components/SettingsStoragePanel.tsx");
+
+  assert.match(storagePanel, /UI_TEXT\.settings\.storageLocalTitle/);
+  assert.match(storagePanel, /storageDefault/);
+  assert.match(storagePanel, /storageCustom/);
+  assert.match(storagePanel, /pendingMigration/);
+  assert.match(storagePanel, /storageLoadFailed/);
+  assert.match(storagePanel, /storageOpenDataLabel/);
+  assert.match(storagePanel, /storageMoveDataLabel/);
+  assert.match(storagePanel, /storageOpenWebviewLabel/);
+  assert.match(storagePanel, /storageMoveWebviewLabel/);
+  assert.match(storagePanel, /storageCacheClearOnRestart/);
+  assert.doesNotMatch(storagePanel, /(?:disposable|可丢弃).{0,24}(?:WebView profile|WebView 数据)/i);
+});
+
 await runTest("settings leaves web activity connection status to the extension", () => {
   const extensionBackground = readUtf8("extensions/chromium/background.js");
   const webActivityDomain = readUtf8("src-tauri/src/domain/web_activity.rs");
