@@ -3,7 +3,7 @@ set -e
 
 cd "$(dirname "$0")"
 
-OUT="dist/patina-web-sync.xpi"
+OUT="dist/patina-web-sync-unsigned.xpi"
 VERSION=$(node -p "require('./manifest.json').version")
 
 mkdir -p dist

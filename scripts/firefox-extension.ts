@@ -1,9 +1,11 @@
 import { readFile, stat } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const SOURCE_DIR = join(REPO_ROOT, "extensions", "firefox");
+const SIGNED_XPI_PATH = join(SOURCE_DIR, "dist", "patina-web-sync.xpi");
 const REQUIRED_ICON_FILES = {
   "32": "icons/icon-32.png",
   "64": "icons/icon-64.png",
@@ -139,9 +141,54 @@ async function checkExtension() {
   console.log("Firefox extension check passed.");
 }
 
-const command = process.argv[2] ?? "check";
-if (command !== "check") {
-  fail(`Unknown Firefox extension command: ${command}`);
+function readSignedXpiEntry(entry: string): string {
+  try {
+    return execFileSync("unzip", ["-p", SIGNED_XPI_PATH, entry], { encoding: "utf8" });
+  } catch {
+    fail(`Firefox signed extension check failed. Cannot read ${entry} from the signed XPI.`);
+  }
 }
 
-await checkExtension();
+async function verifySignedExtension() {
+  await ensureFile("dist/patina-web-sync.xpi");
+  let entries = "";
+  try {
+    entries = execFileSync("unzip", ["-Z1", SIGNED_XPI_PATH], { encoding: "utf8" });
+  } catch {
+    fail("Firefox signed extension check failed. The signed XPI is not a readable ZIP archive.");
+  }
+  if (!entries.includes("META-INF/cose.sig") && !entries.includes("META-INF/mozilla.rsa")) {
+    fail("Firefox signed extension check failed. Mozilla signature metadata is missing.");
+  }
+
+  const sourceManifest = await readManifest();
+  let signedManifest: FirefoxManifest;
+  try {
+    signedManifest = JSON.parse(readSignedXpiEntry("manifest.json")) as FirefoxManifest;
+  } catch (error) {
+    fail(`Firefox signed extension check failed. Signed manifest is invalid: ${String(error)}`);
+  }
+  if (signedManifest.version !== sourceManifest.version) {
+    fail(
+      `Firefox signed extension check failed. Signed version ${signedManifest.version ?? "missing"} does not match source ${sourceManifest.version ?? "missing"}.`,
+    );
+  }
+
+  const sourceBackground = await readFile(join(SOURCE_DIR, "background.js"), "utf8");
+  const signedBackground = readSignedXpiEntry("background.js");
+  if (signedBackground.replace(/\r\n/g, "\n") !== sourceBackground.replace(/\r\n/g, "\n")) {
+    fail("Firefox signed extension check failed. Signed background.js does not match the current source.");
+  }
+
+  console.log("Firefox signed extension check passed.");
+}
+
+const command = process.argv[2] ?? "check";
+if (command === "check") {
+  await checkExtension();
+} else if (command === "verify-signed") {
+  await checkExtension();
+  await verifySignedExtension();
+} else {
+  fail(`Unknown Firefox extension command: ${command}`);
+}

@@ -275,6 +275,7 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   assert.match(workflow, /Cleanup updater signing key/);
   assert.match(workflow, /rm -f "\$RUNNER_TEMP\/tauri-signing\.key"/);
   assert.match(workflow, /Package Chromium extension/);
+  assert.match(workflow, /npm run extension:firefox:verify-signed/);
   assert.match(workflow, /Publish Linux release/);
   assert.doesNotMatch(
     workflow,

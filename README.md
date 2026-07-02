@@ -200,7 +200,7 @@ Then load `extensions/firefox/manifest.json`.
 
 For persistent Firefox/Zen installation, install the signed `.xpi` package.
 
-If you rebuild the extension locally, use `extensions/firefox/package.sh` to create an unsigned package first, then sign it before distribution.
+If you rebuild the extension locally, use `extensions/firefox/package.sh` to create `dist/patina-web-sync-unsigned.xpi`, then sign it and replace `dist/patina-web-sync.xpi` before distribution. `npm run extension:firefox:verify-signed` checks the signature metadata, version, and packaged background source.
 
 ## Local API
 

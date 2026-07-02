@@ -42,6 +42,7 @@
     "extension:chromium:build": "node --experimental-strip-types scripts/chromium-extension.ts build",
     "extension:chromium:package": "node --experimental-strip-types scripts/chromium-extension.ts package",
     "extension:firefox:check": "node --experimental-strip-types scripts/firefox-extension.ts check",
+    "extension:firefox:verify-signed": "node --experimental-strip-types scripts/firefox-extension.ts verify-signed",
     "extension:gnome:check": "node --experimental-strip-types scripts/gnome-shell-extension.ts check",
     "extension:gnome:build": "node --experimental-strip-types scripts/gnome-shell-extension.ts build",
     "extension:gnome:install": "node --experimental-strip-types scripts/gnome-shell-extension.ts install",
@@ -53,7 +54,7 @@
     "release:validate-version-files": "node --experimental-strip-types scripts/release.ts validate-version-files",
     "release:validate-changelog": "node --experimental-strip-types scripts/release.ts validate-changelog",
     "release:notes": "node --experimental-strip-types scripts/release.ts print-release-notes",
-    "release:check": "npm run check:full && npm run extension:gnome:check && npm run extension:chromium:check && npm run extension:firefox:check && npm run release:validate-changelog",
+    "release:check": "npm run check:full && npm run extension:gnome:check && npm run extension:chromium:check && npm run extension:firefox:verify-signed && npm run release:validate-changelog",
     "preview": "vite preview",
     "tauri": "tauri"
   },
