@@ -21,7 +21,7 @@ English · [简体中文](README.zh-CN.md)
 
 This fork is the Linux-first edition of Patina. It focuses on GNOME/Linux foreground tracking, browser webpage activity, and a localhost API/MCP surface for external AI analysis. Windows platform sources remain as historical compatibility code, but they are outside the default CI, release pipeline, and current support commitment.
 
-The Linux port is usable as a development prototype, but it is not release-stable yet.
+The Linux port is usable as a Linux-first desktop release. GNOME Wayland is the primary supported environment; KDE and wlroots compositors still need dedicated adapters.
 
 ## Current Fork Focus
 
@@ -33,6 +33,8 @@ The Linux port is usable as a development prototype, but it is not release-stabl
 - Firefox/Zen extension support.
 - Settings diagnostics for window tracking, local API, browser bridge, and Linux autostart.
 - Repair action for Linux `~/.config/autostart/Patina.desktop`.
+- Stable custom categories with rename, merge, delete, and excluded-item filtering.
+- HTTP and MCP Agent Skill guidance for external local analysis.
 
 ## Upstream Tracking Policy
 
@@ -42,6 +44,7 @@ Already synced from upstream v1.8 work:
 
 - History timeline zoom.
 - History category distribution fix when Web Sync is disabled.
+- Custom-category rename/merge and excluded filtering, restricted so built-in categories cannot be renamed or deleted.
 
 Upstream-inspired work still needs Linux-specific design before porting:
 
@@ -64,11 +67,11 @@ Upstream-inspired work still needs Linux-specific design before porting:
 | X11 tracking | Implemented fallback / limited verification | Used on X11 sessions; GNOME Wayland does not silently fall back to X11. |
 | KDE / wlroots Wayland | Not promised | Needs compositor-specific work later. |
 | Local API | Implemented | Binds to `127.0.0.1:14840` and uses a bearer token. |
-| MCP wrapper | Implemented, query-first | `npm run mcp:patina`; write side currently covers app classify/rename/exclude. |
+| MCP wrapper and Agent Skill | Implemented, query-first | `npm run mcp:patina`; write side currently covers app classify/rename/exclude, with HTTP and MCP skill references. |
 | Chromium Web Sync | Implemented | `extensions/chromium`. |
-| Firefox / Zen Web Sync | Prototype implemented | The signed XPI can be installed directly. |
+| Firefox / Zen Web Sync | Implemented | The signed `0.1.1` XPI can be installed directly and identifies Firefox-family forks before generic Firefox. |
 | Linux packaging | Release pipeline configured | Future version tags build x86_64 AppImage, `.deb`, browser/desktop extension assets, and a Linux-only updater manifest. |
-| Local API token/port UI | Implemented | Settings manages the local API port/token separately from browser Web Sync. |
+| Local API token/port UI | Implemented | Settings applies ports atomically and rotates the owner-only API Token separately from browser Web Sync. |
 
 ## Quick Start On Linux
 

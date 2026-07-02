@@ -52,6 +52,18 @@ function fail(message: string): never {
   process.exit(1);
 }
 
+function runUnzip(args: string[], failureMessage: string): string {
+  try {
+    return execFileSync("unzip", args, { encoding: "utf8" });
+  } catch (error) {
+    const result = error as { status?: number | null; stdout?: string | Buffer };
+    if (result.status === 0 && result.stdout) {
+      return result.stdout.toString();
+    }
+    fail(failureMessage);
+  }
+}
+
 async function ensureFile(relativePath: string) {
   try {
     const fileStat = await stat(join(SOURCE_DIR, relativePath));
@@ -142,21 +154,18 @@ async function checkExtension() {
 }
 
 function readSignedXpiEntry(entry: string): string {
-  try {
-    return execFileSync("unzip", ["-p", SIGNED_XPI_PATH, entry], { encoding: "utf8" });
-  } catch {
-    fail(`Firefox signed extension check failed. Cannot read ${entry} from the signed XPI.`);
-  }
+  return runUnzip(
+    ["-p", SIGNED_XPI_PATH, entry],
+    `Firefox signed extension check failed. Cannot read ${entry} from the signed XPI.`,
+  );
 }
 
 async function verifySignedExtension() {
   await ensureFile("dist/patina-web-sync.xpi");
-  let entries = "";
-  try {
-    entries = execFileSync("unzip", ["-Z1", SIGNED_XPI_PATH], { encoding: "utf8" });
-  } catch {
-    fail("Firefox signed extension check failed. The signed XPI is not a readable ZIP archive.");
-  }
+  const entries = runUnzip(
+    ["-Z1", SIGNED_XPI_PATH],
+    "Firefox signed extension check failed. The signed XPI is not a readable ZIP archive.",
+  );
   if (!entries.includes("META-INF/cose.sig") && !entries.includes("META-INF/mozilla.rsa")) {
     fail("Firefox signed extension check failed. Mozilla signature metadata is missing.");
   }

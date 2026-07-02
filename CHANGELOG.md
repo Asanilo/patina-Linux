@@ -36,6 +36,36 @@ App note en: TBD.
 
 - 暂无。
 
+## [1.8.2] - 2026-07-02
+
+Release: 本地 API 配置更安全，分类管理更完整，并扩展 Linux 浏览器支持。
+App note: 改进本地 API 安全、分类管理与 Linux 浏览器识别。
+App note en: Improves local API safety, category management, and Linux browser detection.
+
+### Added
+
+- 新增面向外接 Agent 的 Patina Skill，分别提供 HTTP 与 MCP 使用路径、分析建议和写操作安全边界。
+- 自定义分类支持稳定 ID、重命名、删除，以及合并到其他自定义分类或内置分类；新增“已排除”筛选，单独查看停止统计的应用和网页。
+
+### Changed
+
+- Settings 中的本地 API 改为显式应用端口和轮换 Token；Token 文件成为唯一凭据来源，Linux 下使用仅当前用户可读写的权限，并可直接复制 HTTP/MCP 配置。
+- 扩充 Chrome、Chromium、Brave、Edge、Opera、Vivaldi、Thorium、Firefox、Zen、Floorp、Iceweasel 与 LibreWolf 的 Linux 进程识别；Firefox 系扩展优先识别具体浏览器身份。
+
+### Fixed
+
+- 修复切换到已占用 API 端口时可能影响原监听状态的问题；新端口绑定或持久化失败时继续保留原可用端口。
+- 修复分类名称只按原始大小写比较导致重复分类的问题；现在会折叠空白并按 Unicode 兼容形式进行大小写无关比较。
+
+### Removed
+
+- 暂无。
+
+### Internal
+
+- 发布流程新增已签名 Firefox XPI 的签名、版本与源码一致性检查，避免旧扩展包被重命名后随新版本发布。
+- 分类专用 ID 生成与管理文案留在懒加载 feature 内，保持主 bundle 预算不回退。
+
 ## [1.8.0] - 2026-06-27
 
 Release: 新增 Linux API/MCP 外接能力、历史缩放和更清晰的发布验证。
