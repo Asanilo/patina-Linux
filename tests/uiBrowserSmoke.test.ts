@@ -2279,13 +2279,16 @@ try {
     assert.ok(zoomedTimelineState.windowStart);
     assert.ok(zoomedTimelineState.windowEnd);
     const panStartBefore = zoomedTimelineState.windowStart;
+    const panStartDate = new Date(Number(panStartBefore));
+    panStartDate.setHours(0, 0, 0, 0);
+    const panDeltaY = Number(panStartBefore) > panStartDate.getTime() ? -120 : 120;
     assert.equal(
       await evaluate(client!, sessionId, `
         (() => {
           const target = document.querySelector(".history-timeline-zoom-dialog-timeline");
           if (!target) return false;
           target.dispatchEvent(new WheelEvent("wheel", {
-            deltaY: 120,
+            deltaY: ${panDeltaY},
             bubbles: true,
             cancelable: true,
           }));
