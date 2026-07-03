@@ -549,34 +549,38 @@ async function writeLatestJson(version, assetUrl, signature, outputPath, target 
 
 async function findLinuxBundles(bundleDir) {
   const entries = await readDirRecursive(bundleDir);
-  const signatureFilePath = entries.find((entry) =>
+  const appImageSignatureFilePath = entries.find((entry) =>
     entry.endsWith(".AppImage.sig")
   );
-  const portableFilePath = entries.find((entry) => entry.endsWith(".AppImage"));
-  const installerFilePath = entries.find((entry) => entry.endsWith(".deb"));
+  const debSignatureFilePath = entries.find((entry) =>
+    entry.endsWith(".deb.sig")
+  );
 
-  if (!signatureFilePath) {
+  if (!appImageSignatureFilePath) {
     fail(`Could not find updater .AppImage.sig artifact under ${bundleDir}.`);
   }
-  if (!portableFilePath) {
-    fail(`Could not find portable .AppImage artifact under ${bundleDir}.`);
-  }
-  if (!installerFilePath) {
-    fail(`Could not find Debian .deb artifact under ${bundleDir}.`);
+  if (!debSignatureFilePath) {
+    fail(`Could not find updater .deb.sig artifact under ${bundleDir}.`);
   }
 
-  const updaterFilePath = signatureFilePath.replace(/\.sig$/i, "");
+  const appImageFilePath = appImageSignatureFilePath.replace(/\.sig$/i, "");
+  const debFilePath = debSignatureFilePath.replace(/\.sig$/i, "");
   try {
-    await readFile(updaterFilePath);
+    await readFile(appImageFilePath);
   } catch {
-    fail(`Could not find AppImage matching ${signatureFilePath}.`);
+    fail(`Could not find AppImage matching ${appImageSignatureFilePath}.`);
+  }
+  try {
+    await readFile(debFilePath);
+  } catch {
+    fail(`Could not find Debian package matching ${debSignatureFilePath}.`);
   }
 
   return {
-    installerFilePath,
-    portableFilePath,
-    signatureFilePath,
-    updaterFilePath,
+    appImageFilePath,
+    appImageSignatureFilePath,
+    debFilePath,
+    debSignatureFilePath,
   };
 }
 
@@ -608,14 +612,18 @@ async function prepareLinuxReleaseAssets(version, bundleDir, outputDir, reposito
   }
 
   const {
-    installerFilePath,
-    portableFilePath,
-    signatureFilePath,
-    updaterFilePath,
+    appImageFilePath,
+    appImageSignatureFilePath,
+    debFilePath,
+    debSignatureFilePath,
   } = await findLinuxBundles(bundleDir);
-  const signature = (await readText(signatureFilePath)).trim();
-  if (!signature) {
-    fail(`updater signature file is empty: ${signatureFilePath}`);
+  const appImageSignature = (await readText(appImageSignatureFilePath)).trim();
+  if (!appImageSignature) {
+    fail(`updater signature file is empty: ${appImageSignatureFilePath}`);
+  }
+  const debSignature = (await readText(debSignatureFilePath)).trim();
+  if (!debSignature) {
+    fail(`updater signature file is empty: ${debSignatureFilePath}`);
   }
 
   const names = releaseAssetNames(resolvedVersion, "linux-x86_64");
@@ -624,15 +632,12 @@ async function prepareLinuxReleaseAssets(version, bundleDir, outputDir, reposito
     `https://github.com/${repository}/releases/download/${tagName}/${encodeURIComponent(names.updater)}`;
 
   await mkdir(outputDir, { recursive: true });
-  await copyFile(updaterFilePath, path.join(outputDir, names.updater));
-  if (portableFilePath !== updaterFilePath || names.portable !== names.updater) {
-    await copyFile(portableFilePath, path.join(outputDir, names.portable));
-  }
-  await copyFile(installerFilePath, path.join(outputDir, names.installer));
+  await copyFile(appImageFilePath, path.join(outputDir, names.updater));
+  await copyFile(debFilePath, path.join(outputDir, names.installer));
   await writeLatestJson(
     resolvedVersion,
     updaterUrl,
-    signature,
+    appImageSignature,
     path.join(outputDir, "latest.json"),
     "linux-x86_64",
   );

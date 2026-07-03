@@ -321,6 +321,11 @@ async function testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest()
       "debian",
       "utf8",
     );
+    await writeFile(
+      path.join(bundleDir, "deb", `${debName}.sig`),
+      "deb-signature\n",
+      "utf8",
+    );
 
     await execFileAsync(process.execPath, [
       "--experimental-strip-types",
@@ -357,6 +362,80 @@ async function testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest()
   }
 }
 
+async function testPrepareLinuxReleaseAssetsRejectsMissingDebSignature() {
+  const tempRoot = await mkdtemp(path.join(tmpdir(), "patina-linux-release-missing-deb-signature-"));
+  const bundleDir = path.join(tempRoot, "bundle");
+  const outputDir = path.join(tempRoot, "output");
+  const appImageName = `Patina_${currentPackageVersion}_amd64.AppImage`;
+  const appImagePath = path.join(bundleDir, "appimage", appImageName);
+  const debName = `Patina_${currentPackageVersion}_amd64.deb`;
+
+  try {
+    await mkdir(path.dirname(appImagePath), { recursive: true });
+    await mkdir(path.join(bundleDir, "deb"), { recursive: true });
+    await writeFile(appImagePath, "appimage", "utf8");
+    await writeFile(`${appImagePath}.sig`, "appimage-signature\n", "utf8");
+    await writeFile(path.join(bundleDir, "deb", debName), "debian", "utf8");
+
+    let failure: unknown = null;
+    try {
+      await execFileAsync(process.execPath, [
+        "--experimental-strip-types",
+        "scripts/release.ts",
+        "prepare-linux-release-assets",
+        currentPackageVersion,
+        bundleDir,
+        outputDir,
+        "Asanilo/patina-Linux",
+      ]);
+    } catch (error) {
+      failure = error;
+    }
+
+    assert.ok(failure, "release preparation must reject a DEB without .deb.sig");
+  } finally {
+    await rm(tempRoot, { force: true, recursive: true });
+  }
+}
+
+async function testPrepareLinuxReleaseAssetsRejectsEmptyDebSignature() {
+  const tempRoot = await mkdtemp(path.join(tmpdir(), "patina-linux-release-empty-deb-signature-"));
+  const bundleDir = path.join(tempRoot, "bundle");
+  const outputDir = path.join(tempRoot, "output");
+  const appImageName = `Patina_${currentPackageVersion}_amd64.AppImage`;
+  const appImagePath = path.join(bundleDir, "appimage", appImageName);
+  const debName = `Patina_${currentPackageVersion}_amd64.deb`;
+  const debPath = path.join(bundleDir, "deb", debName);
+
+  try {
+    await mkdir(path.dirname(appImagePath), { recursive: true });
+    await mkdir(path.dirname(debPath), { recursive: true });
+    await writeFile(appImagePath, "appimage", "utf8");
+    await writeFile(`${appImagePath}.sig`, "appimage-signature\n", "utf8");
+    await writeFile(debPath, "debian", "utf8");
+    await writeFile(`${debPath}.sig`, "\n", "utf8");
+
+    let failure: unknown = null;
+    try {
+      await execFileAsync(process.execPath, [
+        "--experimental-strip-types",
+        "scripts/release.ts",
+        "prepare-linux-release-assets",
+        currentPackageVersion,
+        bundleDir,
+        outputDir,
+        "Asanilo/patina-Linux",
+      ]);
+    } catch (error) {
+      failure = error;
+    }
+
+    assert.ok(failure, "release preparation must reject an empty .deb.sig");
+  } finally {
+    await rm(tempRoot, { force: true, recursive: true });
+  }
+}
+
 testSyncsCurrentCodeVersion();
 testSupportsPrereleaseVersion();
 testMissingPolicyVersionIsNull();
@@ -375,6 +454,8 @@ testVersionFilesValidationCatchesPolicyMismatch();
 testVersionFilesValidationCatchesMissingChangelogSection();
 testVersionFilesValidationRejectsInvalidVersion();
 await testLinuxReleaseWorkflowAndBundleContract();
+await testPrepareLinuxReleaseAssetsRejectsEmptyDebSignature();
+await testPrepareLinuxReleaseAssetsRejectsMissingDebSignature();
 await testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest();
 
-console.log("Passed 19 release policy tests");
+console.log("Passed 21 release policy tests");
