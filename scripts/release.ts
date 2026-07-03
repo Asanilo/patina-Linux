@@ -519,28 +519,19 @@ async function printReleaseNotes(version) {
   process.stdout.write(renderReleaseNotes(parsed));
 }
 
-async function writeLatestJson(version, assetUrl, signature, outputPath, target = "linux-x86_64") {
+async function writeLatestJson(version, platforms, outputPath) {
   const parsed = await parseChangelog(version);
   await validateChangelog(version);
 
-  if (!assetUrl) {
-    fail("missing updater asset URL");
-  }
-
-  if (!signature) {
-    fail("missing updater signature");
+  if (!platforms || Object.keys(platforms).length === 0) {
+    fail("missing updater platforms");
   }
 
   const latest = {
     version,
     notes: renderUpdaterNotes(parsed),
     pub_date: new Date().toISOString(),
-    platforms: {
-      [target]: {
-        signature,
-        url: assetUrl,
-      },
-    },
+    platforms,
   };
 
   await mkdir(path.dirname(outputPath), { recursive: true });
@@ -628,18 +619,31 @@ async function prepareLinuxReleaseAssets(version, bundleDir, outputDir, reposito
 
   const names = releaseAssetNames(resolvedVersion, "linux-x86_64");
   const tagName = `v${resolvedVersion}`;
-  const updaterUrl =
+  const appImageUrl =
     `https://github.com/${repository}/releases/download/${tagName}/${encodeURIComponent(names.updater)}`;
+  const debUrl =
+    `https://github.com/${repository}/releases/download/${tagName}/${encodeURIComponent(names.installer)}`;
 
   await mkdir(outputDir, { recursive: true });
   await copyFile(appImageFilePath, path.join(outputDir, names.updater));
   await copyFile(debFilePath, path.join(outputDir, names.installer));
   await writeLatestJson(
     resolvedVersion,
-    updaterUrl,
-    appImageSignature,
+    {
+      "linux-x86_64": {
+        signature: appImageSignature,
+        url: appImageUrl,
+      },
+      "linux-x86_64-appimage": {
+        signature: appImageSignature,
+        url: appImageUrl,
+      },
+      "linux-x86_64-deb": {
+        signature: debSignature,
+        url: debUrl,
+      },
+    },
     path.join(outputDir, "latest.json"),
-    "linux-x86_64",
   );
 }
 

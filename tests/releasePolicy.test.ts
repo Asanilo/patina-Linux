@@ -315,7 +315,7 @@ async function testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest()
     await mkdir(path.dirname(appImagePath), { recursive: true });
     await mkdir(path.join(bundleDir, "deb"), { recursive: true });
     await writeFile(appImagePath, "appimage", "utf8");
-    await writeFile(`${appImagePath}.sig`, "linux-signature\n", "utf8");
+    await writeFile(`${appImagePath}.sig`, "appimage-signature\n", "utf8");
     await writeFile(
       path.join(bundleDir, "deb", debName),
       "debian",
@@ -349,14 +349,22 @@ async function testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest()
     const latest = JSON.parse(
       await readFile(path.join(outputDir, "latest.json"), "utf8"),
     );
-    assert.equal(
-      latest.platforms["linux-x86_64"].url,
-      `https://github.com/Asanilo/patina-Linux/releases/download/v${currentPackageVersion}/Patina_${currentPackageVersion}_amd64.AppImage`,
-    );
-    assert.equal(
-      latest.platforms["linux-x86_64"].signature,
-      "linux-signature",
-    );
+    const appImageUrl =
+      `https://github.com/Asanilo/patina-Linux/releases/download/v${currentPackageVersion}/Patina_${currentPackageVersion}_amd64.AppImage`;
+    const debUrl =
+      `https://github.com/Asanilo/patina-Linux/releases/download/v${currentPackageVersion}/Patina_${currentPackageVersion}_amd64.deb`;
+    assert.deepEqual(latest.platforms["linux-x86_64"], {
+      signature: "appimage-signature",
+      url: appImageUrl,
+    });
+    assert.deepEqual(latest.platforms["linux-x86_64-appimage"], {
+      signature: "appimage-signature",
+      url: appImageUrl,
+    });
+    assert.deepEqual(latest.platforms["linux-x86_64-deb"], {
+      signature: "deb-signature",
+      url: debUrl,
+    });
   } finally {
     await rm(tempRoot, { force: true, recursive: true });
   }
