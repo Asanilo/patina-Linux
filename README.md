@@ -125,7 +125,6 @@ ${XDG_DATA_HOME:-~/.local/share}/Patina/api_token
 The release workflow produces:
 
 - `Patina_<version>_amd64.AppImage`
-- `Patina_<version>_amd64.AppImage.tar.gz`
 - `Patina_<version>_amd64.deb`
 - `patina-gnome-shell-extension-v<version>.zip`
 - `patina-chromium-extension-v<version>.zip`
@@ -139,6 +138,8 @@ gnome-extensions enable patina-window-tracker@patina
 ```
 
 Log out and back in if GNOME Shell has cached an older extension.
+
+In-app updates preserve the installed package type. AppImage installations download the signed AppImage, while `.deb` installations download the signed Debian package and request system authorization before installation. The updater manifest keeps a generic AppImage fallback for older clients.
 
 The AppImage does not modify system directories:
 
@@ -167,7 +168,7 @@ npm run extension:chromium:check
 npm run extension:firefox:check
 ```
 
-`npm run test:release` verifies that the release workflow builds Linux-only bundles, that `prepare-linux-release-assets` copies the `.deb` into `dist-release`, and that `latest.json` points to the signed AppImage updater archive.
+`npm run test:release` verifies that the release workflow builds Linux-only bundles, that both AppImage and `.deb` artifacts have matching signatures, and that `latest.json` routes each installation to its signed package type.
 
 ## Browser Web Sync
 

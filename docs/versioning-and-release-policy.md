@@ -316,14 +316,17 @@ Linux x86_64 附件统一使用：
 - `Patina_1.0.1_amd64.deb`
 - `patina-gnome-shell-extension-vX.zip`
 
-Linux updater 使用 Tauri 生成并签名的 AppImage；`.deb` 作为 Debian / Ubuntu 手动安装包。Windows 平台源码暂时保留，但当前发布线不生成、上传或承诺 Windows 安装包。
+Linux updater 使用 Tauri 生成并签名的 AppImage 与 `.deb`，并按当前安装包类型选择更新目标。Windows 平台源码暂时保留，但当前发布线不生成、上传或承诺 Windows 安装包。
 
 Linux 发布资产契约：
 
-- `Patina_X.Y.Z_amd64.AppImage` 是可手动运行的便携包，也是 `latest.json` 使用的 Tauri updater 下载目标。
+- `Patina_X.Y.Z_amd64.AppImage` 是可手动运行的便携包，也是 AppImage 安装对应的 Tauri updater 下载目标。
 - `Patina_X.Y.Z_amd64.AppImage.sig` 是 AppImage 对应的 updater 签名文件，由 Tauri 生成；签名内容写入 `latest.json`，不作为 Release 附件上传。
-- `Patina_X.Y.Z_amd64.deb` 是 Debian / Ubuntu 用户的必需手动安装包。
-- 如果任何必需 Linux 资产缺失，包括 `.deb`，`prepare-linux-release-assets` 必须失败。
+- `Patina_X.Y.Z_amd64.deb` 是 Debian / Ubuntu 用户的安装包，也是 `.deb` 安装对应的 Tauri updater 下载目标；应用更新时允许系统显示管理员授权提示。
+- `Patina_X.Y.Z_amd64.deb.sig` 是 `.deb` 对应的 updater 签名文件；签名内容写入 `latest.json`，不作为 Release 附件上传。
+- `latest.json` 必须包含 `linux-x86_64-appimage` 与 `linux-x86_64-deb`，并分别使用对应软件包的 URL 和签名。
+- `latest.json` 必须继续包含指向 AppImage 的 `linux-x86_64` 通用回退项，兼容尚未按安装包类型选取目标的旧客户端；不得把通用回退改为 `.deb`。
+- 如果任何必需 Linux 软件包或其配对签名缺失、为空，`prepare-linux-release-assets` 必须失败。
 - `npm run test:release` 必须持续覆盖 workflow bundle 请求、`.deb` 准备逻辑和 Linux-only updater manifest。
 
 GitHub Release 中的浏览器扩展附件使用带扩展版本号的稳定命名模式：
@@ -340,7 +343,7 @@ Chromium zip 内部必须包含同名扩展目录，例如 `patina-chromium-exte
 
 GitHub Release 继续作为正式发布源、主下载入口和主更新清单来源。
 
-应用内 updater 读取 GitHub Release asset 上的 Linux-only `latest.json`，其中只包含 `linux-x86_64`。当前发布线不维护 R2 镜像，避免更新源与主发布事实分叉。
+应用内 updater 读取 GitHub Release asset 上的 Linux-only `latest.json`。清单包含 `linux-x86_64`、`linux-x86_64-appimage` 和 `linux-x86_64-deb` 三个目标；当前发布线不维护 R2 镜像，避免更新源与主发布事实分叉。
 
 ---
 

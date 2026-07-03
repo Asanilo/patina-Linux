@@ -259,6 +259,9 @@ function testVersionFilesValidationRejectsInvalidVersion() {
 async function testLinuxReleaseWorkflowAndBundleContract() {
   const workflow = await readFile(".github/workflows/prepare-release.yml", "utf8");
   const verifyWorkflow = await readFile(".github/workflows/verify.yml", "utf8");
+  const readme = await readFile("README.md", "utf8");
+  const chineseReadme = await readFile("README.zh-CN.md", "utf8");
+  const versionPolicy = await readFile("docs/versioning-and-release-policy.md", "utf8");
   const tauriConfig = JSON.parse(await readFile("src-tauri/tauri.conf.json", "utf8"));
   const { stdout: trackedFirefoxAssets } = await execFileAsync("git", [
     "ls-files",
@@ -285,6 +288,10 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   assert.doesNotMatch(workflow, /--bundles nsis/);
   assert.doesNotMatch(workflow, /windows-x86_64/);
   assert.doesNotMatch(workflow, /merge-latest-json/);
+  assert.doesNotMatch(readme, /Patina_<version>_amd64\.AppImage\.tar\.gz/);
+  assert.doesNotMatch(chineseReadme, /Patina_<version>_amd64\.AppImage\.tar\.gz/);
+  assert.match(versionPolicy, /linux-x86_64-appimage/);
+  assert.match(versionPolicy, /linux-x86_64-deb/);
   assert.match(verifyWorkflow, /runs-on: ubuntu-22\.04/);
   assert.match(verifyWorkflow, /workflow_dispatch:/);
   assert.doesNotMatch(verifyWorkflow, /windows-latest/);

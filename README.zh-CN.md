@@ -123,7 +123,6 @@ ${XDG_DATA_HOME:-~/.local/share}/Patina/api_token
 正式发布工作流会生成：
 
 - `Patina_<version>_amd64.AppImage`
-- `Patina_<version>_amd64.AppImage.tar.gz`
 - `Patina_<version>_amd64.deb`
 - `patina-gnome-shell-extension-v<version>.zip`
 - `patina-chromium-extension-v<version>.zip`
@@ -137,6 +136,8 @@ gnome-extensions enable patina-window-tracker@patina
 ```
 
 如果 GNOME Shell 已缓存旧版本，注销后重新登录。
+
+应用内更新会保持当前安装包类型：AppImage 安装会下载已签名的 AppImage，`.deb` 安装会下载已签名的 Debian 软件包，并在安装前请求系统授权。更新清单仍保留通用 AppImage 回退项，以兼容旧客户端。
 
 AppImage 不会修改系统目录。下载后运行：
 
@@ -165,7 +166,7 @@ npm run extension:chromium:check
 npm run extension:firefox:check
 ```
 
-`npm run test:release` 会验证发布工作流只构建 Linux 包、`prepare-linux-release-assets` 会把 `.deb` 复制进 `dist-release`，并确认 `latest.json` 指向签名后的 AppImage updater archive。
+`npm run test:release` 会验证发布工作流只构建 Linux 包、AppImage 与 `.deb` 都有匹配签名，并确认 `latest.json` 会按当前安装包类型路由到对应的签名软件包。
 
 ## 浏览器网页同步
 
