@@ -14,7 +14,7 @@ use tauri::{
 };
 
 pub(crate) use crate::app::main_window::MAIN_WINDOW_LABEL;
-const TRAY_ID: &str = "main";
+const TRAY_ID: &str = "patina-main";
 const TRAY_MENU_SHOW_ID: &str = "tray-show-main";
 const TRAY_MENU_TOGGLE_PAUSE_ID: &str = "tray-toggle-pause";
 const TRAY_MENU_QUIT_ID: &str = "tray-quit";
@@ -188,6 +188,12 @@ mod tests {
             .await
             .unwrap();
         pool
+    }
+
+    #[test]
+    fn tray_id_is_product_scoped_to_avoid_linux_temp_icon_collisions() {
+        assert_ne!(TRAY_ID, "main");
+        assert!(TRAY_ID.contains("patina"));
     }
 
     #[test]

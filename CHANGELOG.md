@@ -56,6 +56,7 @@ App note en: Improves local API safety, category management, and Linux browser d
 
 - 修复切换到已占用 API 端口时可能影响原监听状态的问题；新端口绑定或持久化失败时继续保留原可用端口。
 - 修复分类名称只按原始大小写比较导致重复分类的问题；现在会折叠空白并按 Unicode 兼容形式进行大小写无关比较。
+- 修复 Linux 托盘使用通用 ID 导致临时图标路径与其他应用碰撞、顶栏显示占位图标的问题。
 
 ### Removed
 
