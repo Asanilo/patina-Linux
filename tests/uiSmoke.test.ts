@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import ts from "typescript";
+import { allocateToastId } from "../src/app/hooks/useAppShellToasts.ts";
 import { COPY } from "../src/shared/copy/uiText.ts";
 
 const EXPECTED_VIEWS = [
@@ -747,6 +748,19 @@ await runTest("update snapshot listener disposes if subscription resolves after 
   const hook = readUtf8("src/app/hooks/useUpdateState.ts");
 
   assert.match(hook, /if \(cancelled\) \{\s*dispose\(\);\s*return;\s*\}/);
+});
+
+await runTest("app shell toast IDs stay unique during same-tick bursts", () => {
+  const ids: number[] = [];
+  let previousId = 0;
+
+  for (let index = 0; index < 20; index += 1) {
+    previousId = allocateToastId(previousId);
+    ids.push(previousId);
+  }
+
+  assert.equal(new Set(ids).size, ids.length);
+  assert.deepEqual(ids, Array.from({ length: 20 }, (_, index) => index + 1));
 });
 
 await runTest("window foreground watcher composes and releases Tauri listeners", () => {
