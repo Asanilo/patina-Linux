@@ -1,4 +1,5 @@
 use crate::app::state::WidgetWindowLifecycleState;
+use crate::domain::product_identity::WIDGET_DISPLAY_NAME;
 use crate::domain::widget::{WidgetPlacement, WidgetSide};
 use crate::engine::widget as widget_engine;
 use crate::platform::storage_paths;
@@ -11,7 +12,6 @@ use tauri::{
 pub(crate) const WIDGET_WINDOW_LABEL: &str = "widget";
 pub(crate) const WIDGET_RUNTIME_COLLAPSED_EVENT: &str = "widget-runtime-collapsed";
 pub(crate) const WIDGET_RUNTIME_SHOWN_EVENT: &str = "widget-runtime-shown";
-const WIDGET_TITLE: &str = "Patina Widget";
 const WIDGET_EXPANDED_WIDTH_WITH_OBJECT: u32 = 228;
 const WIDGET_EXPANDED_WIDTH_COMPACT: u32 = 184;
 const WIDGET_EXPANDED_HEIGHT: u32 = 48;
@@ -194,7 +194,7 @@ async fn apply_widget_layout_internal<R: Runtime + 'static>(
         WIDGET_WINDOW_LABEL,
         WebviewUrl::App("index.html".into()),
     )
-    .title(WIDGET_TITLE)
+    .title(WIDGET_DISPLAY_NAME)
     .position(logical_x, logical_y)
     .inner_size(logical_width, logical_height)
     .resizable(false)

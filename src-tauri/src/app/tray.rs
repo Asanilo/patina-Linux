@@ -5,6 +5,7 @@ use crate::app::widget;
 use crate::data::repositories::tracker_settings;
 use crate::data::sqlite_pool::wait_for_sqlite_pool;
 use crate::domain::settings::{CloseBehavior, DesktopBehaviorSettings};
+use crate::domain::product_identity::DISPLAY_NAME;
 use crate::engine::tracking::runtime as tracking_runtime;
 use sqlx::{Pool, Sqlite};
 use tauri::{
@@ -165,7 +166,7 @@ pub(crate) fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
 
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
-        .tooltip("Patina")
+        .tooltip(DISPLAY_NAME)
         .show_menu_on_left_click(false);
 
     if let Some(icon) = app.default_window_icon().cloned() {

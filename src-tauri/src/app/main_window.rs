@@ -1,5 +1,6 @@
 use crate::app::state::{DesktopBehaviorState, MainWindowLifecycleState};
 use crate::app::widget;
+use crate::domain::product_identity::DISPLAY_NAME;
 use crate::domain::settings::MinimizeBehavior;
 #[cfg(target_os = "linux")]
 use crate::platform::linux::window_activation;
@@ -11,7 +12,6 @@ use tauri::{AppHandle, Manager, Runtime, WebviewUrl, WebviewWindow, WebviewWindo
 
 pub(crate) const MAIN_WINDOW_LABEL: &str = "main";
 
-const MAIN_WINDOW_TITLE: &str = "Patina";
 const MAIN_WINDOW_WIDTH: f64 = 1100.0;
 const MAIN_WINDOW_HEIGHT: f64 = 736.0;
 const MAIN_WINDOW_MIN_WIDTH: f64 = 900.0;
@@ -100,7 +100,7 @@ pub(crate) fn ensure_main_window_with_initial_visibility<R: Runtime>(
     }
 
     WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, main_window_url())
-        .title(MAIN_WINDOW_TITLE)
+        .title(DISPLAY_NAME)
         .inner_size(MAIN_WINDOW_WIDTH, MAIN_WINDOW_HEIGHT)
         .min_inner_size(MAIN_WINDOW_MIN_WIDTH, MAIN_WINDOW_MIN_HEIGHT)
         .resizable(true)

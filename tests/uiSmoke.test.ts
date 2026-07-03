@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import ts from "typescript";
 import { allocateToastId } from "../src/app/hooks/useAppShellToasts.ts";
 import { COPY } from "../src/shared/copy/uiText.ts";
+import { PRODUCT_DISPLAY_NAME } from "../src/shared/productIdentity.ts";
 
 const EXPECTED_VIEWS = [
   "dashboard",
@@ -748,6 +749,17 @@ await runTest("update snapshot listener disposes if subscription resolves after 
   const hook = readUtf8("src/app/hooks/useUpdateState.ts");
 
   assert.match(hook, /if \(cancelled\) \{\s*dispose\(\);\s*return;\s*\}/);
+});
+
+await runTest("product surfaces use the Patina Linux display identity", () => {
+  const titleBar = readUtf8("src/app/components/AppTitleBar.tsx");
+  const aboutPanel = readUtf8("src/features/about/components/AboutPanel.tsx");
+
+  assert.equal(PRODUCT_DISPLAY_NAME, "Patina Linux");
+  assert.match(titleBar, /PRODUCT_DISPLAY_NAME/);
+  assert.doesNotMatch(titleBar, /const APP_TITLE = "Patina"/);
+  assert.match(aboutPanel, /PRODUCT_DISPLAY_NAME/);
+  assert.doesNotMatch(aboutPanel, /<h2>Patina<\/h2>/);
 });
 
 await runTest("app shell toast IDs stay unique during same-tick bursts", () => {
