@@ -3,7 +3,7 @@
   "productName": "Patina Local",
   "mainBinaryName": "PatinaLocal",
   "version": "1.8.3",
-  "identifier": "com.ceceliaee.patina.local",
+  "identifier": "io.github.asanilo.patinalinux.local",
   "build": {
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"

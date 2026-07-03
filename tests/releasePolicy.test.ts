@@ -264,6 +264,8 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   const linuxSetup = await readFile("docs/linux-development-setup.md", "utf8");
   const versionPolicy = await readFile("docs/versioning-and-release-policy.md", "utf8");
   const tauriConfig = JSON.parse(await readFile("src-tauri/tauri.conf.json", "utf8"));
+  const tauriLocalConfig = JSON.parse(await readFile("src-tauri/tauri.local.conf.json", "utf8"));
+  const tauriDevConfig = JSON.parse(await readFile("src-tauri/tauri.dev.conf.json", "utf8"));
   const { stdout: trackedFirefoxAssets } = await execFileAsync("git", [
     "ls-files",
     "extensions/firefox/dist/patina-web-sync.xpi",
@@ -303,6 +305,11 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
     trackedFirefoxAssets.trim(),
     "extensions/firefox/dist/patina-web-sync.xpi",
   );
+  assert.equal(tauriConfig.identifier, "io.github.asanilo.patinalinux");
+  assert.equal(tauriLocalConfig.identifier, "io.github.asanilo.patinalinux.local");
+  assert.equal(tauriDevConfig.identifier, "io.github.asanilo.patinalinux.dev");
+  assert.equal(tauriConfig.productName, "Patina");
+  assert.equal(tauriConfig.mainBinaryName, "Patina");
   assert.deepEqual(tauriConfig.plugins.updater.endpoints, [
     "https://github.com/Asanilo/patina-Linux/releases/latest/download/latest.json",
   ]);

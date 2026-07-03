@@ -3,7 +3,7 @@
   "productName": "Patina Dev",
   "mainBinaryName": "PatinaDev",
   "version": "1.8.3",
-  "identifier": "com.ceceliaee.patina.dev",
+  "identifier": "io.github.asanilo.patinalinux.dev",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://127.0.0.1:1420",
