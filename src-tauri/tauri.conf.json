@@ -35,6 +35,7 @@
     },
     "linux": {
       "deb": {
+        "desktopTemplate": "patina.desktop.hbs",
         "files": {
           "/usr/share/gnome-shell/extensions/patina-window-tracker@patina/extension.js": "../extensions/gnome-shell/patina-window-tracker@patina/extension.js",
           "/usr/share/gnome-shell/extensions/patina-window-tracker@patina/metadata.json": "../extensions/gnome-shell/patina-window-tracker@patina/metadata.json"

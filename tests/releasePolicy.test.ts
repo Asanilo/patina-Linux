@@ -263,6 +263,7 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   const chineseReadme = await readFile("README.zh-CN.md", "utf8");
   const linuxSetup = await readFile("docs/linux-development-setup.md", "utf8");
   const versionPolicy = await readFile("docs/versioning-and-release-policy.md", "utf8");
+  const desktopTemplate = await readFile("src-tauri/patina.desktop.hbs", "utf8");
   const tauriConfig = JSON.parse(await readFile("src-tauri/tauri.conf.json", "utf8"));
   const tauriLocalConfig = JSON.parse(await readFile("src-tauri/tauri.local.conf.json", "utf8"));
   const tauriDevConfig = JSON.parse(await readFile("src-tauri/tauri.dev.conf.json", "utf8"));
@@ -283,6 +284,7 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   assert.match(workflow, /Package Chromium extension/);
   assert.match(workflow, /npm run extension:firefox:verify-signed/);
   assert.match(workflow, /Publish Linux release/);
+  assert.match(workflow, /name: Patina Linux v\$\{\{ steps\.release\.outputs\.version \}\}/);
   assert.doesNotMatch(
     workflow,
     /Build AppImage and Debian bundles[\s\S]*TAURI_SIGNING_PRIVATE_KEY:\s*\$\{\{\s*secrets\.TAURI_SIGNING_PRIVATE_KEY\s*\}\}/,
@@ -310,6 +312,9 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   assert.equal(tauriDevConfig.identifier, "io.github.asanilo.patinalinux.dev");
   assert.equal(tauriConfig.productName, "Patina");
   assert.equal(tauriConfig.mainBinaryName, "Patina");
+  assert.equal(tauriConfig.bundle.linux.deb.desktopTemplate, "patina.desktop.hbs");
+  assert.match(desktopTemplate, /^Name=Patina Linux$/m);
+  assert.match(desktopTemplate, /^Exec=\{\{exec\}\}$/m);
   assert.deepEqual(tauriConfig.plugins.updater.endpoints, [
     "https://github.com/Asanilo/patina-Linux/releases/latest/download/latest.json",
   ]);
