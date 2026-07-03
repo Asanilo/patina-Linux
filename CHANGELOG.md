@@ -36,6 +36,35 @@ App note en: TBD.
 
 - 暂无。
 
+## [1.8.3] - 2026-07-03
+
+Release: 新增安全的 Linux 本地数据目录迁移与 WebView 缓存管理。
+App note: 新增可验证、可回滚的 Linux 本地数据迁移。
+App note en: Adds verified, rollback-safe Linux local data migration.
+
+### Added
+
+- Settings 的“数据安全”新增 Linux 存储管理，可分别查看活动数据与 WebView 数据位置、占用空间和当前状态，并可预约迁移到本机稳定挂载目录。
+- 新增默认目录恢复、目录打开、迁移预览和待重启提示；迁移在下次启动且数据库与 WebView 初始化前执行。
+
+### Changed
+
+- Linux 数据路径改由独立控制锚点解析；自定义目录不可用或配置损坏时拒绝静默回退，避免在不同位置产生分叉数据。
+- 数据库、备份、远程备份和 WebView 初始化统一使用已解析的运行时存储路径。
+
+### Fixed
+
+- 迁移会校验 SQLite 完整性、schema 与记录数，并在校验或切换失败时保留原目录、恢复控制状态。
+- WebView 缓存清理仅允许删除已验证目录中的精确 `WebKitCache`，拒绝符号链接和越界路径。
+
+### Removed
+
+- 暂无。
+
+### Internal
+
+- 新增 Linux 存储路径、控制锚点、迁移执行器和 Settings 状态的 Rust/前端测试，并为存储 feature chunk 设置独立预算。
+
 ## [1.8.2] - 2026-07-02
 
 Release: 本地 API 配置更安全，分类管理更完整，并扩展 Linux 浏览器支持。
