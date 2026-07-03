@@ -261,6 +261,7 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   const verifyWorkflow = await readFile(".github/workflows/verify.yml", "utf8");
   const readme = await readFile("README.md", "utf8");
   const chineseReadme = await readFile("README.zh-CN.md", "utf8");
+  const linuxSetup = await readFile("docs/linux-development-setup.md", "utf8");
   const versionPolicy = await readFile("docs/versioning-and-release-policy.md", "utf8");
   const tauriConfig = JSON.parse(await readFile("src-tauri/tauri.conf.json", "utf8"));
   const { stdout: trackedFirefoxAssets } = await execFileAsync("git", [
@@ -290,6 +291,9 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   assert.doesNotMatch(workflow, /merge-latest-json/);
   assert.doesNotMatch(readme, /Patina_<version>_amd64\.AppImage\.tar\.gz/);
   assert.doesNotMatch(chineseReadme, /Patina_<version>_amd64\.AppImage\.tar\.gz/);
+  assert.doesNotMatch(linuxSetup, /\.deb` remains the Debian \/ Ubuntu manual installation path/);
+  assert.match(linuxSetup, /linux-x86_64-appimage/);
+  assert.match(linuxSetup, /linux-x86_64-deb/);
   assert.match(versionPolicy, /linux-x86_64-appimage/);
   assert.match(versionPolicy, /linux-x86_64-deb/);
   assert.match(verifyWorkflow, /runs-on: ubuntu-22\.04/);
