@@ -301,6 +301,14 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   assert.doesNotMatch(workflow, /merge-latest-json/);
   assert.doesNotMatch(readme, /Patina_<version>_amd64\.AppImage\.tar\.gz/);
   assert.doesNotMatch(chineseReadme, /Patina_<version>_amd64\.AppImage\.tar\.gz/);
+  assert.match(readme, /^# Patina Linux$/m);
+  assert.match(chineseReadme, /^# Patina Linux$/m);
+  assert.doesNotMatch(readme, /Patina Linux Fork/);
+  assert.doesNotMatch(chineseReadme, /Patina Linux Fork/);
+  for (const projectReadme of [readme, chineseReadme]) {
+    assert.match(projectReadme, /https:\/\/github\.com\/Ceceliaee\/patina/);
+    assert.match(projectReadme, /MIT/);
+  }
   assert.doesNotMatch(linuxSetup, /\.deb` remains the Debian \/ Ubuntu manual installation path/);
   assert.match(linuxSetup, /linux-x86_64-appimage/);
   assert.match(linuxSetup, /linux-x86_64-deb/);

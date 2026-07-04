@@ -42,7 +42,7 @@ assert.match(analysis, /explicit user intent/i);
 assert.match(analysis, /URL/i);
 assert.match(analysis, /do not infer/i);
 
-assert.match(metadata, /display_name: "Analyze Patina Activity"/);
+assert.match(metadata, /display_name: "Analyze Patina Linux Activity"/);
 assert.match(metadata, /\$analyzing-patina-activity/);
 assert.match(packageJson.scripts["check:frontend"], /npm run test:mcp/);
 assert.match(packageJson.scripts["check:frontend"], /npm run test:agent-skill/);

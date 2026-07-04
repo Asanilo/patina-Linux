@@ -2,9 +2,9 @@
 
 <img src="src-tauri/icons/128x128.png" width="72" height="72" alt="Patina icon">
 
-# Patina Linux Fork
+# Patina Linux
 
-Patina 的 Linux 移植与本地 AI/API 集成 fork。
+独立维护、Linux-first 的个人时间追踪工具，支持本地 AI/API 集成。
 
 [English](README.md) · 简体中文
 
@@ -19,11 +19,11 @@ Patina 的 Linux 移植与本地 AI/API 集成 fork。
 ![Patina dashboard](.github/assets/readme.zh-CN/dashboard.png)
 
 
-这个 fork 是 Patina 的 Linux-first 版本，重点放在 GNOME/Linux 前台窗口识别、浏览器网页活动记录、本地 HTTP API，以及面向外部 AI/MCP 的数据接口。Windows 平台源码暂时保留作为历史兼容实现，但不进入默认 CI、Release 或当前支持承诺。
+Patina Linux 重点支持 GNOME/Linux 前台窗口识别、浏览器网页活动记录、本地 HTTP API，以及面向外部 AI/MCP 的数据接口。项目基于 MIT 许可的 [Ceceliaee/Patina](https://github.com/Ceceliaee/patina) 独立维护。Windows 平台源码暂时保留作为历史兼容实现，但不进入默认 CI、Release 或当前支持承诺。
 
-Linux 版本当前是可用的开发原型，还不是稳定发行版。
+当前版本已经可以作为 Linux-first 桌面应用使用。GNOME Wayland 是首要支持环境，KDE 与 wlroots 仍需单独适配。
 
-## 当前 fork 重点
+## 当前重点
 
 - GNOME Wayland 下通过 GNOME Shell 扩展和 session D-Bus 获取前台窗口。
 - 保留 Linux X11 fallback 方向。
@@ -36,7 +36,7 @@ Linux 版本当前是可用的开发原型，还不是稳定发行版。
 
 ## 上游跟进策略
 
-这个 fork 会选择性跟进上游 Patina：跨平台 UI、数据、追踪一致性和质量修复，只要符合 Linux-first 产品边界，就应该评估并移植。Windows 平台专属的发布、安装和系统集成工作，不默认进入 Linux 发布线。
+Patina Linux 会选择性跟进上游 Patina：跨平台 UI、数据、追踪一致性和质量修复，只要符合 Linux-first 产品边界，就会评估并移植。Windows 平台专属的发布、安装和系统集成工作，不默认进入 Linux 发布线。
 
 已经从上游 v1.8 工作同步：
 
@@ -274,7 +274,9 @@ cargo check --manifest-path src-tauri/Cargo.toml --quiet
 
 Patina 是一个面向个人桌面的本地优先时间追踪工具。它会自动记录前台应用，处理 AFK、锁屏、睡眠、崩溃恢复等边界，数据保存在本地 SQLite，并提供 Dashboard、History、Data、App Mapping 等回看和管理界面。
 
-这个 fork 的当前产品与发布方向是 Linux/GNOME 优先，并为外部 AI 分析暴露稳定的本地结构化数据。其他桌面平台只有在形成独立维护能力后才会重新进入支持范围。
+Patina Linux 的产品与发布方向是 Linux/GNOME 优先，并为外部 AI 分析暴露稳定的本地结构化数据。其他桌面平台只有在形成独立维护能力后才会重新进入支持范围。
+
+本项目派生自 [Ceceliaee/Patina](https://github.com/Ceceliaee/patina)，按 MIT 许可证保留并致谢原项目作者及版权声明。
 
 ## 文档
 
@@ -284,6 +286,6 @@ Patina 是一个面向个人桌面的本地优先时间追踪工具。它会自�
 - 产品范围：[docs/product-principles-and-scope.md](docs/product-principles-and-scope.md)
 - 架构规则：[docs/architecture.md](docs/architecture.md)
 
-## 许可证
+## 许可证与致谢
 
-[MIT](LICENSE)
+Patina Linux 使用 [MIT 许可证](LICENSE)，并保留对原 Patina 项目的署名。

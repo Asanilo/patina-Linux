@@ -2,9 +2,9 @@
 
 <img src="src-tauri/icons/128x128.png" width="72" height="72" alt="Patina icon">
 
-# Patina Linux Fork
+# Patina Linux
 
-Linux port and local AI/API integration fork of Patina.
+An independently maintained, Linux-first personal time tracker with local AI/API integration.
 
 English · [简体中文](README.zh-CN.md)
 
@@ -19,11 +19,11 @@ English · [简体中文](README.zh-CN.md)
 ![Patina dashboard](.github/assets/readme/dashboard.png)
 
 
-This fork is the Linux-first edition of Patina. It focuses on GNOME/Linux foreground tracking, browser webpage activity, and a localhost API/MCP surface for external AI analysis. Windows platform sources remain as historical compatibility code, but they are outside the default CI, release pipeline, and current support commitment.
+Patina Linux focuses on GNOME/Linux foreground tracking, browser webpage activity, and a localhost API/MCP surface for external AI analysis. It is independently maintained from [Ceceliaee/Patina](https://github.com/Ceceliaee/patina) under the MIT license. Windows platform sources remain as historical compatibility code, but they are outside the default CI, release pipeline, and current support commitment.
 
-The Linux port is usable as a Linux-first desktop release. GNOME Wayland is the primary supported environment; KDE and wlroots compositors still need dedicated adapters.
+The application is usable as a Linux-first desktop release. GNOME Wayland is the primary supported environment; KDE and wlroots compositors still need dedicated adapters.
 
-## Current Fork Focus
+## Current Focus
 
 - GNOME Wayland foreground-window tracking through a GNOME Shell extension and session D-Bus.
 - Linux X11 fallback path where available.
@@ -38,7 +38,7 @@ The Linux port is usable as a Linux-first desktop release. GNOME Wayland is the 
 
 ## Upstream Tracking Policy
 
-The fork follows upstream Patina selectively: cross-platform UI, data, tracking-consistency, and quality fixes should be reviewed and ported when they fit the Linux-first product boundary. Platform-specific Windows release work is not copied into the Linux release line by default.
+Patina Linux follows upstream Patina selectively: cross-platform UI, data, tracking-consistency, and quality fixes are reviewed when they fit the Linux-first product boundary. Platform-specific Windows release work is not copied into the Linux release line by default.
 
 Already synced from upstream v1.8 work:
 
@@ -289,7 +289,9 @@ cargo check --manifest-path src-tauri/Cargo.toml --quiet
 
 Patina is a personal, local-first desktop time tracker. It automatically records foreground apps, handles AFK/lock/sleep/crash boundaries, stores data locally in SQLite, and provides dashboard/history/data/app-management views.
 
-This fork now treats Linux/GNOME as its product and release priority while exposing stable local structured data for external AI analysis. Other desktop platforms will only return to the support scope when they have a dedicated maintenance path.
+Patina Linux treats Linux/GNOME as its product and release priority while exposing stable local structured data for external AI analysis. Other desktop platforms will only return to the support scope when they have a dedicated maintenance path.
+
+This project is derived from [Ceceliaee/Patina](https://github.com/Ceceliaee/patina). Upstream authorship and copyright notices remain acknowledged under the MIT license.
 
 ## Documentation
 
@@ -299,6 +301,6 @@ This fork now treats Linux/GNOME as its product and release priority while expos
 - Product scope: [docs/product-principles-and-scope.md](docs/product-principles-and-scope.md)
 - Architecture rules: [docs/architecture.md](docs/architecture.md)
 
-## License
+## License And Attribution
 
-[MIT](LICENSE)
+Patina Linux is distributed under the [MIT license](LICENSE) and retains attribution to the original Patina project.
