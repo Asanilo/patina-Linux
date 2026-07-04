@@ -184,7 +184,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.release.outputs.tag }}
-          name: Patina Linux v${{ steps.release.outputs.version }}
+          name: Patina v${{ steps.release.outputs.version }}
           body_path: dist-release/release-notes.md
           draft: false
           prerelease: ${{ contains(steps.release.outputs.version, '-') }}

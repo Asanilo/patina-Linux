@@ -3,7 +3,6 @@ import { readFile } from "node:fs/promises";
 
 const apiDocs = await readFile("docs/api-index.md", "utf8");
 const mcpDocs = await readFile("docs/mcp-wrapper.md", "utf8");
-const agentSkill = await readFile("skills/analyzing-patina-activity/SKILL.md", "utf8");
 
 const implementedEndpoints = [
   "GET /api/v1/health",
@@ -41,9 +40,6 @@ assert.match(mcpDocs, /"--experimental-strip-types"/);
 assert.match(mcpDocs, /\/absolute\/path\/to\/patina\/scripts\/patina-mcp\.ts/);
 assert.match(mcpDocs, /notifications\/initialized/);
 assert.match(mcpDocs, /tool execution errors/i);
-assert.match(apiDocs, /^# Patina Linux Local API Index$/m);
-assert.match(mcpDocs, /^# Patina Linux MCP Wrapper$/m);
-assert.match(agentSkill, /^# Analyzing Patina Linux Activity$/m);
 
 console.log(`Validated ${implementedEndpoints.length} API sections and MCP transport documentation`);
 

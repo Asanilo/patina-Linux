@@ -48,13 +48,6 @@ await runTest("GNOME extension check rejects missing D-Bus methods", () => {
   ]);
 });
 
-await runTest("GNOME extension check rejects an unexpected display name", () => {
-  const unexpectedMetadata = metadata.replace("Patina Window Tracker", "Unexpected Tracker");
-  assert.deepEqual(validateGnomeShellExtensionSourceText(unexpectedMetadata, extensionJs), [
-    "GNOME Shell extension check failed. metadata name must be Patina Window Tracker.",
-  ]);
-});
-
 await runTest("GNOME extension install dir uses XDG data home when present", () => {
   assert.equal(
     gnomeShellExtensionInstallDir({

@@ -53,13 +53,13 @@
 
 - 代码版本号使用不带前缀的 `SemVer` 字符串，例如 `1.0.1`
 - Git tag 使用带 `v` 前缀的形式，例如 `v1.0.1`
-- GitHub Release 标题使用 `Patina Linux vX.Y.Z`
+- GitHub Release 标题使用 `Patina vX.Y.Z`
 
 示例：
 
 - 代码版本：`1.0.1`
 - Git tag：`v1.0.1`
-- GitHub Release 标题：`Patina Linux v1.0.1`
+- GitHub Release 标题：`Patina v1.0.1`
 
 ---
 
@@ -281,8 +281,8 @@ App note: 一句话概括应用内更新提示要显示的变化。
 
 统一使用：
 
-- `Patina Linux v1.0.1`
-- `Patina Linux v1.1.0-beta.1`
+- `Patina v1.0.1`
+- `Patina v1.1.0-beta.1`
 
 ## 9.2 正文来源
 

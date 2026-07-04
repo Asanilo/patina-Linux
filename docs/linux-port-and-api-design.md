@@ -1,7 +1,7 @@
-# Patina Linux 平台 + HTTP API 设计文档
+# Patina Linux 移植 + HTTP API 设计文档
 
 > 状态：当前实现对照 + 剩余路线。早期设计内容保留为背景，当前承诺以本文件的“当前实现对照”和 [`api-index.md`](./api-index.md) 为准。
-> 目标：持续完善 Patina Linux 的本地时间追踪能力，并提供 HTTP API / MCP 外接面用于后续 AI 分析
+> 目标：将 Patina 收敛为 Linux-first 本地时间追踪工具，并添加 HTTP API / MCP 外接面用于后续 AI 分析
 > 当前 API 索引：见 [`api-index.md`](./api-index.md)
 
 ---
@@ -29,7 +29,7 @@
 - X11 环境下 fallback 路径可用，并在验证后再提升为稳定承诺
 - HTTP API 能被 `curl`、MCP server、或任意 AI agent 调用
 - Settings 能显示窗口追踪、本地 API、浏览器扩展、桌面集成的诊断状态
-- Windows 源码保留为历史兼容代码，但当前项目的默认验证、打包和支持承诺以 Linux 为主
+- Windows 源码保留为历史兼容代码，但当前 fork 的默认验证、打包和支持承诺以 Linux 为主
 
 ---
 

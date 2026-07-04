@@ -1,4 +1,4 @@
-# Patina Linux Local API Index
+# Patina Local API Index
 
 > Status: active reference for the local HTTP API.
 > Purpose: track what endpoints exist, their current scope, and known gaps for external AI/MCP integration.

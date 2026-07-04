@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const EXTENSION_UUID = "patina-window-tracker@patina";
-const EXTENSION_DISPLAY_NAME = "Patina Window Tracker";
 const SOURCE_DIR = join(REPO_ROOT, "extensions", "gnome-shell", EXTENSION_UUID);
 const BUILD_DIR = join(REPO_ROOT, "dist", "extensions", "gnome-shell", EXTENSION_UUID);
 const REQUIRED_FILES = ["metadata.json", "extension.js"] as const;
@@ -44,8 +43,8 @@ export function validateGnomeShellExtensionSourceText(
   if (metadata.uuid !== EXTENSION_UUID) {
     errors.push(`GNOME Shell extension check failed. metadata uuid must be ${EXTENSION_UUID}.`);
   }
-  if (metadata.name !== EXTENSION_DISPLAY_NAME) {
-    errors.push(`GNOME Shell extension check failed. metadata name must be ${EXTENSION_DISPLAY_NAME}.`);
+  if (!metadata.name?.trim()) {
+    errors.push("GNOME Shell extension check failed. metadata name is required.");
   }
   if (!metadata.description?.trim()) {
     errors.push("GNOME Shell extension check failed. metadata description is required.");

@@ -3,7 +3,7 @@
   "productName": "Patina",
   "mainBinaryName": "Patina",
   "version": "1.8.3",
-  "identifier": "io.github.asanilo.patinalinux",
+  "identifier": "com.ceceliaee.patina",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://127.0.0.1:1420",
@@ -35,7 +35,6 @@
     },
     "linux": {
       "deb": {
-        "desktopTemplate": "patina.desktop.hbs",
         "files": {
           "/usr/share/gnome-shell/extensions/patina-window-tracker@patina/extension.js": "../extensions/gnome-shell/patina-window-tracker@patina/extension.js",
           "/usr/share/gnome-shell/extensions/patina-window-tracker@patina/metadata.json": "../extensions/gnome-shell/patina-window-tracker@patina/metadata.json"

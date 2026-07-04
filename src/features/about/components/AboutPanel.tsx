@@ -5,7 +5,6 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import appIconUrl from "../../../../src-tauri/icons/icon.png";
-import { PRODUCT_DISPLAY_NAME } from "../../../shared/productIdentity";
 import type { UpdateSnapshot } from "../../../shared/types/update";
 import UpdateStatusPanel from "../../update/components/UpdateStatusPanel";
 import { UI_TEXT } from "../../../shared/copy/uiText.ts";
@@ -74,7 +73,7 @@ export default function AboutPanel({
             <img src={appIconUrl} alt="" draggable={false} />
           </div>
           <div className="about-center-title-row">
-            <h2>{PRODUCT_DISPLAY_NAME}</h2>
+            <h2>Patina</h2>
             <span className="about-center-version-chip">{`v${appVersion}`}</span>
           </div>
           <p>{UI_TEXT.about.description}</p>

@@ -1,5 +1,3 @@
-#[cfg(windows)]
-use crate::domain::product_identity::DISPLAY_NAME;
 use tauri::{AppHandle, Runtime};
 use tauri_plugin_notification::NotificationExt;
 
@@ -30,9 +28,10 @@ fn send_windows_toast<R: Runtime>(
     body: &str,
 ) -> Result<(), String> {
     let config = app.config();
+    let app_name = config.product_name.as_deref().unwrap_or("Patina");
     crate::platform::windows::notifications::send(
         config.identifier.as_str(),
-        DISPLAY_NAME,
+        app_name,
         title,
         body,
         None,

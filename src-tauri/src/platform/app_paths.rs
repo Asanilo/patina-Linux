@@ -5,9 +5,9 @@ pub const PRODUCT_FOLDER: &str = "Patina";
 pub const PRODUCT_FOLDER_LOCAL: &str = "Patina Local";
 pub const PRODUCT_FOLDER_DEV: &str = "Patina Dev";
 
-pub const IDENTIFIER_PROD: &str = "io.github.asanilo.patinalinux";
-pub const IDENTIFIER_LOCAL: &str = "io.github.asanilo.patinalinux.local";
-pub const IDENTIFIER_DEV: &str = "io.github.asanilo.patinalinux.dev";
+pub const IDENTIFIER_PROD: &str = "com.ceceliaee.patina";
+pub const IDENTIFIER_LOCAL: &str = "com.ceceliaee.patina.local";
+pub const IDENTIFIER_DEV: &str = "com.ceceliaee.patina.dev";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AppProfile {
@@ -152,15 +152,15 @@ mod tests {
     #[test]
     fn resolves_profile_from_current_identifiers() {
         assert_eq!(
-            AppProfile::from_identifier("io.github.asanilo.patinalinux"),
+            AppProfile::from_identifier("com.ceceliaee.patina"),
             AppProfile::Production
         );
         assert_eq!(
-            AppProfile::from_identifier("io.github.asanilo.patinalinux.local"),
+            AppProfile::from_identifier("com.ceceliaee.patina.local"),
             AppProfile::Local
         );
         assert_eq!(
-            AppProfile::from_identifier("io.github.asanilo.patinalinux.dev"),
+            AppProfile::from_identifier("com.ceceliaee.patina.dev"),
             AppProfile::Dev
         );
     }

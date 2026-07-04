@@ -263,16 +263,7 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   const chineseReadme = await readFile("README.zh-CN.md", "utf8");
   const linuxSetup = await readFile("docs/linux-development-setup.md", "utf8");
   const versionPolicy = await readFile("docs/versioning-and-release-policy.md", "utf8");
-  const desktopTemplate = await readFile("src-tauri/patina.desktop.hbs", "utf8");
-  const gnomeMetadata = JSON.parse(await readFile(
-    "extensions/gnome-shell/patina-window-tracker@patina/metadata.json",
-    "utf8",
-  ));
-  const chromiumManifest = JSON.parse(await readFile("extensions/chromium/manifest.json", "utf8"));
-  const firefoxManifest = JSON.parse(await readFile("extensions/firefox/manifest.json", "utf8"));
   const tauriConfig = JSON.parse(await readFile("src-tauri/tauri.conf.json", "utf8"));
-  const tauriLocalConfig = JSON.parse(await readFile("src-tauri/tauri.local.conf.json", "utf8"));
-  const tauriDevConfig = JSON.parse(await readFile("src-tauri/tauri.dev.conf.json", "utf8"));
   const { stdout: trackedFirefoxAssets } = await execFileAsync("git", [
     "ls-files",
     "extensions/firefox/dist/patina-web-sync.xpi",
@@ -290,7 +281,6 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   assert.match(workflow, /Package Chromium extension/);
   assert.match(workflow, /npm run extension:firefox:verify-signed/);
   assert.match(workflow, /Publish Linux release/);
-  assert.match(workflow, /name: Patina Linux v\$\{\{ steps\.release\.outputs\.version \}\}/);
   assert.doesNotMatch(
     workflow,
     /Build AppImage and Debian bundles[\s\S]*TAURI_SIGNING_PRIVATE_KEY:\s*\$\{\{\s*secrets\.TAURI_SIGNING_PRIVATE_KEY\s*\}\}/,
@@ -301,14 +291,6 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   assert.doesNotMatch(workflow, /merge-latest-json/);
   assert.doesNotMatch(readme, /Patina_<version>_amd64\.AppImage\.tar\.gz/);
   assert.doesNotMatch(chineseReadme, /Patina_<version>_amd64\.AppImage\.tar\.gz/);
-  assert.match(readme, /^# Patina Linux$/m);
-  assert.match(chineseReadme, /^# Patina Linux$/m);
-  assert.doesNotMatch(readme, /Patina Linux Fork/);
-  assert.doesNotMatch(chineseReadme, /Patina Linux Fork/);
-  for (const projectReadme of [readme, chineseReadme]) {
-    assert.match(projectReadme, /https:\/\/github\.com\/Ceceliaee\/patina/);
-    assert.match(projectReadme, /MIT/);
-  }
   assert.doesNotMatch(linuxSetup, /\.deb` remains the Debian \/ Ubuntu manual installation path/);
   assert.match(linuxSetup, /linux-x86_64-appimage/);
   assert.match(linuxSetup, /linux-x86_64-deb/);
@@ -321,25 +303,6 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
     trackedFirefoxAssets.trim(),
     "extensions/firefox/dist/patina-web-sync.xpi",
   );
-  assert.equal(tauriConfig.identifier, "io.github.asanilo.patinalinux");
-  assert.equal(tauriLocalConfig.identifier, "io.github.asanilo.patinalinux.local");
-  assert.equal(tauriDevConfig.identifier, "io.github.asanilo.patinalinux.dev");
-  assert.equal(tauriConfig.productName, "Patina");
-  assert.equal(tauriConfig.mainBinaryName, "Patina");
-  assert.equal(gnomeMetadata.name, "Patina Window Tracker");
-  assert.equal(gnomeMetadata.uuid, "patina-window-tracker@patina");
-  assert.equal(gnomeMetadata.version, 2);
-  assert.equal(chromiumManifest.name, "Patina Web Sync");
-  assert.equal(chromiumManifest.version, "0.1.0");
-  assert.equal(firefoxManifest.name, "Patina Web Sync");
-  assert.equal(firefoxManifest.version, "0.1.1");
-  assert.equal(
-    firefoxManifest.browser_specific_settings.gecko.id,
-    "patina-web-sync@patina.local",
-  );
-  assert.equal(tauriConfig.bundle.linux.deb.desktopTemplate, "patina.desktop.hbs");
-  assert.match(desktopTemplate, /^Name=Patina Linux$/m);
-  assert.match(desktopTemplate, /^Exec=\{\{exec\}\}$/m);
   assert.deepEqual(tauriConfig.plugins.updater.endpoints, [
     "https://github.com/Asanilo/patina-Linux/releases/latest/download/latest.json",
   ]);

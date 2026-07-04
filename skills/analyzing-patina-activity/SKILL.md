@@ -3,7 +3,7 @@ name: analyzing-patina-activity
 description: Use when a user asks to inspect, summarize, compare, or diagnose personal activity recorded by Patina, including desktop sessions, browser activity, focus trends, current tracking health, Tools state, or explicit app classification changes through Patina MCP or its localhost HTTP API.
 ---
 
-# Analyzing Patina Linux Activity
+# Analyzing Patina Activity
 
 ## Overview
 

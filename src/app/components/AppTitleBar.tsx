@@ -8,7 +8,8 @@ import {
   toggleCurrentWindowMaximized,
 } from "../../platform/desktop/windowControlGateway";
 import { UI_TEXT } from "../../shared/copy/uiText";
-import { PRODUCT_DISPLAY_NAME } from "../../shared/productIdentity";
+
+const APP_TITLE = "Patina";
 
 type AppTitleBarProps = {
   isMaximized: boolean;
@@ -34,12 +35,12 @@ export default function AppTitleBar({ isMaximized }: AppTitleBarProps) {
   };
 
   return (
-    <header className="app-titlebar" aria-label={PRODUCT_DISPLAY_NAME}>
+    <header className="app-titlebar" aria-label={APP_TITLE}>
       <div className="app-titlebar-brand">
         <span className="app-titlebar-mark" aria-hidden>
           <img className="app-titlebar-icon" src={appIconUrl} alt="" draggable={false} />
         </span>
-        <span className="app-titlebar-name">{PRODUCT_DISPLAY_NAME}</span>
+        <span className="app-titlebar-name">{APP_TITLE}</span>
       </div>
 
       <div

@@ -1,7 +1,7 @@
-# Patina Linux MCP Wrapper
+# Patina MCP Wrapper
 
 > Status: active reference for the local MCP wrapper.
-> Scope: stdio MCP bridge from external agents to the Patina Linux local HTTP API.
+> Scope: stdio MCP bridge from external agents to the Patina local HTTP API.
 
 ---
 
@@ -34,7 +34,7 @@ The npm script runs:
 node --experimental-strip-types scripts/patina-mcp.ts
 ```
 
-The Patina Linux desktop app must be running, and the local API must be listening.
+The Patina desktop app must be running, and the local API must be listening.
 
 For an MCP client, launch the Node script directly with an absolute path. Do not put `npm run` between the client and server because package-manager output can contaminate the stdio protocol stream.
 
