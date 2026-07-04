@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const SOURCE_DIR = join(REPO_ROOT, "extensions", "chromium");
+const EXTENSION_DISPLAY_NAME = "Patina Web Sync";
 const BUILD_DIR = join(REPO_ROOT, "dist", "extensions", "chromium", "unpacked");
 const PACKAGE_DIR = join(REPO_ROOT, "dist", "extensions", "chromium");
 const REQUIRED_ICON_FILES = {
@@ -126,8 +127,8 @@ async function checkExtension() {
   if (manifest.manifest_version !== 3) {
     fail("Chromium extension check failed. manifest_version must be 3.");
   }
-  if (!manifest.name?.trim()) {
-    fail("Chromium extension check failed. manifest name is required.");
+  if (manifest.name !== EXTENSION_DISPLAY_NAME) {
+    fail(`Chromium extension check failed. manifest name must be ${EXTENSION_DISPLAY_NAME}.`);
   }
   getExtensionVersion(manifest);
   if (manifest.background?.service_worker !== "background.js") {

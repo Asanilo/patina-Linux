@@ -43,7 +43,7 @@
 | Dev identifier | `io.github.asanilo.patinalinux.dev` |
 | 首个独立版本 | `1.9.0` |
 
-用户可见名称需要在 README、窗口标题、About、托盘、通知、Release 标题、Linux 桌面菜单、GNOME 扩展和浏览器扩展中统一为 `Patina Linux`。
+用户可见名称需要在 README、窗口标题、About、托盘、通知、Release 标题和 Linux 桌面菜单中统一为 `Patina Linux`。GNOME 与浏览器扩展属于可复用的协议配套组件，继续使用现有 `Patina Window Tracker` 与 `Patina Web Sync` 名称。
 
 品牌文字应由明确 owner 管理，避免继续在前端和 Rust 中散落新的硬编码名称。不能借此新增无 owner 的通用 `shared` 常量桶。
 
@@ -67,7 +67,7 @@ Linux 桌面菜单使用自定义 desktop template 将显示名称设为 `Patina
 
 ### 3.3 保持稳定的协议身份
 
-以下协议和扩展 ID 保持不变，仅修改用户可见名称：
+以下协议、扩展 ID 和扩展显示名保持不变：
 
 - GNOME Shell UUID：`patina-window-tracker@patina`
 - D-Bus bus/interface：`org.patina.WindowTracker`

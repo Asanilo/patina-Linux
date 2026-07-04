@@ -191,19 +191,17 @@ git add src-tauri/patina.desktop.hbs src-tauri/tauri.conf.json .github/workflows
 git commit -m "feat: brand Linux releases as Patina Linux"
 ```
 
-### Task 4: Update Extension Display Names Without Changing IDs
+### Task 4: Lock Stable Extension Names And IDs
 
 **Files:**
 - Modify: `extensions/gnome-shell/patina-window-tracker@patina/metadata.json`
 - Modify: `extensions/chromium/manifest.json`
 - Modify: `extensions/firefox/manifest.json`
-- Modify: extension HTML, localization, README, store-listing, and privacy files containing the old display name
-- Modify after signing: `extensions/firefox/dist/patina-web-sync.xpi`
 - Test: extension check scripts and existing extension tests
 
-- [ ] **Step 1: Add failing checks for display names, stable IDs, and new versions**
+- [ ] **Step 1: Add checks for stable display names, IDs, and versions**
 
-Require `Patina Linux Window Tracker` and `Patina Linux Web Sync`, while asserting the GNOME UUID and Firefox Gecko ID are unchanged. Require version bumps to GNOME `3`, Chromium `0.1.1`, and Firefox `0.1.2` so installed extensions can receive the renamed packages.
+Require `Patina Window Tracker` and `Patina Web Sync`, while asserting the GNOME UUID and Firefox Gecko ID are unchanged. Keep GNOME `2`, Chromium `0.1.0`, and Firefox `0.1.1` because this transition does not change extension behavior or package identity.
 
 - [ ] **Step 2: Run extension checks and verify RED**
 
@@ -215,13 +213,13 @@ npm run extension:chromium:check
 npm run extension:firefox:check
 ```
 
-- [ ] **Step 3: Update source display strings and extension versions**
+- [ ] **Step 3: Lock source display strings and extension identities**
 
-Do not change local ports, permissions, UUIDs, Gecko ID, or request payloads. Version changes are limited to the three values defined by the failing tests.
+Do not change display names, versions, local ports, permissions, UUIDs, Gecko ID, or request payloads.
 
-- [ ] **Step 4: Rebuild and sign Firefox XPI**
+- [ ] **Step 4: Verify the existing signed Firefox XPI**
 
-Build the unsigned XPI, sign it through the existing signing process, and replace the tracked signed XPI. Never commit signing credentials.
+Verify that the tracked signed XPI matches the source manifest name, version, Gecko ID, and background implementation. Do not re-sign an unchanged extension.
 
 - [ ] **Step 5: Verify packaged extensions**
 
@@ -235,7 +233,7 @@ npm run extension:firefox:verify-signed
 
 - [ ] **Step 6: Commit**
 
-Commit source and verified signed XPI together so the release cannot publish mismatched Firefox metadata.
+Commit the stronger validation scripts and tests. The tracked signed XPI remains unchanged.
 
 ### Task 5: Replace Fork Language and Preserve Attribution
 

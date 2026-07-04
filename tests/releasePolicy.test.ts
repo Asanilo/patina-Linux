@@ -264,6 +264,12 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   const linuxSetup = await readFile("docs/linux-development-setup.md", "utf8");
   const versionPolicy = await readFile("docs/versioning-and-release-policy.md", "utf8");
   const desktopTemplate = await readFile("src-tauri/patina.desktop.hbs", "utf8");
+  const gnomeMetadata = JSON.parse(await readFile(
+    "extensions/gnome-shell/patina-window-tracker@patina/metadata.json",
+    "utf8",
+  ));
+  const chromiumManifest = JSON.parse(await readFile("extensions/chromium/manifest.json", "utf8"));
+  const firefoxManifest = JSON.parse(await readFile("extensions/firefox/manifest.json", "utf8"));
   const tauriConfig = JSON.parse(await readFile("src-tauri/tauri.conf.json", "utf8"));
   const tauriLocalConfig = JSON.parse(await readFile("src-tauri/tauri.local.conf.json", "utf8"));
   const tauriDevConfig = JSON.parse(await readFile("src-tauri/tauri.dev.conf.json", "utf8"));
@@ -312,6 +318,17 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   assert.equal(tauriDevConfig.identifier, "io.github.asanilo.patinalinux.dev");
   assert.equal(tauriConfig.productName, "Patina");
   assert.equal(tauriConfig.mainBinaryName, "Patina");
+  assert.equal(gnomeMetadata.name, "Patina Window Tracker");
+  assert.equal(gnomeMetadata.uuid, "patina-window-tracker@patina");
+  assert.equal(gnomeMetadata.version, 2);
+  assert.equal(chromiumManifest.name, "Patina Web Sync");
+  assert.equal(chromiumManifest.version, "0.1.0");
+  assert.equal(firefoxManifest.name, "Patina Web Sync");
+  assert.equal(firefoxManifest.version, "0.1.1");
+  assert.equal(
+    firefoxManifest.browser_specific_settings.gecko.id,
+    "patina-web-sync@patina.local",
+  );
   assert.equal(tauriConfig.bundle.linux.deb.desktopTemplate, "patina.desktop.hbs");
   assert.match(desktopTemplate, /^Name=Patina Linux$/m);
   assert.match(desktopTemplate, /^Exec=\{\{exec\}\}$/m);

@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const SOURCE_DIR = join(REPO_ROOT, "extensions", "firefox");
 const SIGNED_XPI_PATH = join(SOURCE_DIR, "dist", "patina-web-sync.xpi");
+const EXTENSION_DISPLAY_NAME = "Patina Web Sync";
+const EXTENSION_ID = "patina-web-sync@patina.local";
 const REQUIRED_ICON_FILES = {
   "32": "icons/icon-32.png",
   "64": "icons/icon-64.png",
@@ -104,11 +106,11 @@ async function checkExtension() {
   if (manifest.manifest_version !== 2) {
     fail("Firefox extension check failed. manifest_version must be 2 for Zen/Firefox compatibility.");
   }
-  if (!manifest.name?.trim() || !manifest.version?.trim()) {
-    fail("Firefox extension check failed. manifest name and version are required.");
+  if (manifest.name !== EXTENSION_DISPLAY_NAME || !manifest.version?.trim()) {
+    fail(`Firefox extension check failed. manifest name must be ${EXTENSION_DISPLAY_NAME} and version is required.`);
   }
-  if (!manifest.browser_specific_settings?.gecko?.id?.trim()) {
-    fail("Firefox extension check failed. gecko extension id is required.");
+  if (manifest.browser_specific_settings?.gecko?.id !== EXTENSION_ID) {
+    fail(`Firefox extension check failed. gecko extension id must be ${EXTENSION_ID}.`);
   }
   if (!manifest.background?.scripts?.includes("background.js")) {
     fail("Firefox extension check failed. background.scripts must include background.js.");
@@ -181,6 +183,15 @@ async function verifySignedExtension() {
     fail(
       `Firefox signed extension check failed. Signed version ${signedManifest.version ?? "missing"} does not match source ${sourceManifest.version ?? "missing"}.`,
     );
+  }
+  if (signedManifest.name !== sourceManifest.name) {
+    fail("Firefox signed extension check failed. Signed display name does not match the current source.");
+  }
+  if (
+    signedManifest.browser_specific_settings?.gecko?.id
+    !== sourceManifest.browser_specific_settings?.gecko?.id
+  ) {
+    fail("Firefox signed extension check failed. Signed Gecko ID does not match the current source.");
   }
 
   const sourceBackground = await readFile(join(SOURCE_DIR, "background.js"), "utf8");
