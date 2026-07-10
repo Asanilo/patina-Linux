@@ -19,9 +19,9 @@ English · [简体中文](README.zh-CN.md)
 ![Patina dashboard](.github/assets/readme/dashboard.png)
 
 
-This fork is the Linux-first edition of Patina. It focuses on GNOME/Linux foreground tracking, browser webpage activity, and a localhost API/MCP surface for external AI analysis. Windows platform sources remain as historical compatibility code, but they are outside the default CI, release pipeline, and current support commitment.
+This fork is the Linux-only edition of Patina. It focuses on GNOME/Linux foreground tracking, browser webpage activity, and a localhost API/MCP surface for external AI analysis. Windows platform sources remain temporarily as frozen compatibility code, but upstream Windows features are no longer tracked and Windows is outside the default CI, release pipeline, validation matrix, and support commitment.
 
-The Linux port is usable as a Linux-first desktop release. GNOME Wayland is the primary supported environment; KDE and wlroots compositors still need dedicated adapters.
+The Linux port is a usable development prototype, but it is not yet a stable release. GNOME Wayland is the primary supported environment; KDE and wlroots compositors still need dedicated adapters.
 
 ## Current Fork Focus
 
@@ -35,22 +35,18 @@ The Linux port is usable as a Linux-first desktop release. GNOME Wayland is the 
 - Repair action for Linux `~/.config/autostart/Patina.desktop`.
 - Stable custom categories with rename, merge, delete, and excluded-item filtering.
 - HTTP and MCP Agent Skill guidance for external local analysis.
+- An in-progress `patinad` background runtime so tracking can continue without the desktop UI and future TUI clients can share one owner.
+- A planned ActivityWatch-style local browser UI served by `patinad`; Tauri remains the desktop client and can be evaluated independently against future Linux UI frameworks.
 
-## Upstream Tracking Policy
+## Linux-only Development Policy
 
-The fork follows upstream Patina selectively: cross-platform UI, data, tracking-consistency, and quality fixes should be reviewed and ported when they fit the Linux-first product boundary. Platform-specific Windows release work is not copied into the Linux release line by default.
+This repository no longer participates in or continuously tracks the upstream Windows line. External implementations can still be used as ordinary technical references, but there is no feature-parity obligation.
 
-Already synced from upstream v1.8 work:
+Windows code follows a freeze-then-remove policy:
 
-- History timeline zoom.
-- History category distribution fix when Web Sync is disabled.
-- Custom-category rename/merge and excluded filtering, restricted so built-in categories cannot be renamed or deleted.
-
-Upstream-inspired work still needs Linux-specific design before porting:
-
-- Local data directory and WebView cache management.
-- Web Sync setup guide polish.
-- Engineering cleanup around copy modules, quality hotspot checks, and bundle budget checks.
+- Existing conditional code remains while `patinad` is stabilized, but receives no new Windows features, tests, or release work.
+- Windows cfgs, dependencies, and sources will be removed in a separate release after daemon ownership is stable.
+- Linux tracking correctness, data safety, desktop usability, and release reliability take priority over platform parity.
 
 ## Interface Preview
 |  |  |
@@ -66,6 +62,8 @@ Upstream-inspired work still needs Linux-specific design before porting:
 | GNOME Wayland window tracking | Working prototype | Uses `org.patina.WindowTracker` from the GNOME Shell extension. |
 | X11 tracking | Implemented fallback / limited verification | Used on X11 sessions; GNOME Wayland does not silently fall back to X11. |
 | KDE / wlroots Wayland | Not promised | Needs compositor-specific work later. |
+| `patinad` | Stage 1 in development | SQLite/API skeleton only; it does not own tracking yet and is not a released background service. |
+| Local browser UI | Planned | Will be served by `patinad` on loopback; not implemented yet. |
 | Local API | Implemented | Binds to `127.0.0.1:14840` and uses a bearer token. |
 | MCP wrapper and Agent Skill | Implemented, query-first | `npm run mcp:patina`; write side currently covers app classify/rename/exclude, with HTTP and MCP skill references. |
 | Chromium Web Sync | Implemented | `extensions/chromium`. |
@@ -285,18 +283,19 @@ node --experimental-strip-types --experimental-specifier-resolution=node tests/p
 cargo check --manifest-path src-tauri/Cargo.toml --quiet
 ```
 
-## Upstream Product Background
+## Project Background
 
 Patina is a personal, local-first desktop time tracker. It automatically records foreground apps, handles AFK/lock/sleep/crash boundaries, stores data locally in SQLite, and provides dashboard/history/data/app-management views.
 
-This fork now treats Linux/GNOME as its product and release priority while exposing stable local structured data for external AI analysis. Other desktop platforms will only return to the support scope when they have a dedicated maintenance path.
+This fork targets Linux exclusively for product development, validation, and releases while exposing stable local structured data for external AI analysis.
 
 ## Documentation
 
 - Linux setup: [docs/linux-development-setup.md](docs/linux-development-setup.md)
+- Linux platform support: [docs/linux-platform-support.md](docs/linux-platform-support.md)
 - API index: [docs/api-index.md](docs/api-index.md)
-- Linux/API design notes: [docs/linux-port-and-api-design.md](docs/linux-port-and-api-design.md)
 - Product scope: [docs/product-principles-and-scope.md](docs/product-principles-and-scope.md)
+- Roadmap: [docs/roadmap-and-prioritization.md](docs/roadmap-and-prioritization.md)
 - Architecture rules: [docs/architecture.md](docs/architecture.md)
 
 ## License

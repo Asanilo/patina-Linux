@@ -168,7 +168,7 @@ Rust 默认门槛包含 `npm run check:rust-boundaries`、`cargo check`、Rust �
 - 必须给出前后可比依据
 - 必须证明收益大于复杂度
 - 默认先做无感优化，再做体验取舍；不得为了降低任务管理器数字牺牲启动、切页、widget 唤出与 tracking 可信度
-- Linux 平台 owned resource 应明确表达释放责任，包括 D-Bus/X11 连接、PulseAudio mainloop、文件描述符和后台任务；保留的 Windows 平台资源继续使用 RAII guard 管理
+- Linux 平台 owned resource 应明确表达释放责任，包括 D-Bus/X11 连接、PulseAudio mainloop、文件描述符和后台任务；冻结期保留的 Windows 平台资源只维持现有 RAII guard，不再扩展能力
 - 高频平台查询应优先考虑短 TTL 缓存、negative cache、in-flight 合并和退避，避免后台采样对同一资源重复开销
 - widget WebView 生命周期、启动暖机收缩、透明窗口策略和 foreground event hook 属于体验敏感实验项；未证明收益明显且手感无损前，不应默认启用
 - widget 隐藏路径如果启用资源回收，应先保持即时 park 以保护收起手感，再通过 generation/token 防护做延迟销毁，避免旧 timer 销毁新唤出的 widget

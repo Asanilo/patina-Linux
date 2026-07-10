@@ -1,4 +1,6 @@
-# Patina Linux 移植 + HTTP API 设计文档
+# Patina Linux 移植 + HTTP API 设计文档（历史归档）
+
+> 本文件记录早期 Linux 移植与 API 设计背景，不再作为当前执行依据。当前产品范围、实施顺序、运行时架构和平台承诺分别见 `docs/product-principles-and-scope.md`、`docs/roadmap-and-prioritization.md`、`docs/architecture.md` 与 `docs/linux-platform-support.md`。
 
 > 状态：当前实现对照 + 剩余路线。早期设计内容保留为背景，当前承诺以本文件的“当前实现对照”和 [`api-index.md`](./api-index.md) 为准。
 > 目标：将 Patina 收敛为 Linux-first 本地时间追踪工具，并添加 HTTP API / MCP 外接面用于后续 AI 分析

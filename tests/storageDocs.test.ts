@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 const product = await readFile("docs/product-principles-and-scope.md", "utf8");
 const roadmap = await readFile("docs/roadmap-and-prioritization.md", "utf8");
 const setup = await readFile("docs/linux-development-setup.md", "utf8");
-const linuxDesign = await readFile("docs/linux-port-and-api-design.md", "utf8");
+const architecture = await readFile("docs/architecture.md", "utf8");
 
 assert.match(product, /自定义本地存储位置/);
 assert.match(product, /WebKitCache/);
@@ -17,8 +17,8 @@ assert.match(setup, /does not create a database in the default directory/i);
 assert.match(setup, /previous source directories.*retained/is);
 assert.match(setup, /deletes only.*WebKitCache/is);
 
-assert.match(linuxDesign, /Settings.*Tauri/s);
-assert.match(linuxDesign, /不属于 HTTP API/);
-assert.match(linuxDesign, /重启前预约.*启动时迁移/s);
+assert.match(architecture, /Tauri-free storage bootstrap/);
+assert.match(architecture, /pending migration/);
+assert.match(setup, /Storage changes use a restart boundary/);
 
 console.log("Validated Linux storage migration documentation contract");

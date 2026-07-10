@@ -28,6 +28,7 @@
 
 - `1.x` 稳定阶段
 - 以个人、本地优先、Linux 桌面时间追踪为稳定产品边界，当前优先支持 GNOME Wayland
+- 正在把后台追踪主链从 Tauri 桌面宿主渐进迁入 `patinad`
 - 在兼容性与可维护性前提下继续围绕“可信、可长期使用、可持续演进”收口
 
 因此当前路线不按“大扩张期”管理，而按“稳定维护期 + 核心体验打磨”管理。
@@ -119,6 +120,9 @@
 - 防止 Rust `lib.rs`、`commands/*` 重新承接厚逻辑
 - 防止已退出的根层 `src/lib/`、`src/types/` 被重新引入
 - 让兼容壳继续变薄，而不是变成新主路径
+- 建立不依赖 `AppHandle` 的共享运行内核、事件出口与数据上下文
+- 让 tracking、watchdog、平台信号、本地 API 和浏览器桥接最终拥有唯一 daemon owner
+- 让桌面 UI 逐步成为后台运行时的客户端，而不是继续拥有第二套 tracker
 
 只有当结构问题已经开始影响修复效率、稳定性或正确性时，这个主题才应被明显提升优先级。
 
@@ -133,11 +137,29 @@
 - 安装、运行、验证路径清晰
 - 回归检查可重复
 
-上游 Windows 主线的功能更新可以作为输入来源，但当前 fork 的默认判断是“选择性跟进”，不是重新回到多平台发布线：
+当前仓库不再参与或持续跟踪上游 Windows 主线。外部项目和上游实现仍可作为普通技术参考，但不建立功能追平义务，也不以版本差异驱动路线图。
 
-- 跨平台 UI、数据、追踪一致性和质量修复，如果符合 Linux-first 产品边界，应评估并尽量跟上。
-- 涉及 Windows 安装、Windows 平台 API、Windows updater 或 Windows 发布资产的改动，不默认进入当前发布线。
-- 需要本机路径、桌面集成或平台缓存策略的上游功能，应先按 Linux 路径和 GNOME 现实重新设计，再决定是否移植。
+仓库中保留的 Windows 源码进入冻结兼容期：
+
+- 不新增 Windows 功能、测试、安装和发布工作
+- 不把 Windows 平台行为作为 Linux 设计的兼容约束
+- 不在 `patinad` 稳定前并行开展大规模删除
+- daemon 稳定后，以独立阶段删除 Windows cfg、依赖、源码和历史文档
+
+### 5.6 当前实施主线：`patinad`
+
+当前结构主线按以下顺序推进：
+
+1. 修正 Stage 1 骨架的数据 profile、存储锚点、运行时唯一 owner、API transport 和 OpenAPI 一致性。
+2. 建立共享 `RuntimeContext`、`RuntimeEventSink`、`RuntimeLease` 与 API runtime context，让核心行为摆脱 `AppHandle`。
+3. 先让 daemon 提供完整只读 API 和本机 event stream，再接管 tracking、watchdog、电源、音频、MPRIS 和浏览器活动桥接。
+4. 复用现有 React feature 建立由 `patinad` 在 loopback 提供的浏览器 UI，先覆盖 Dashboard、History、Data、当前会话和诊断。
+5. 让 Tauri UI 成为 daemon 桌面客户端，保留 tray、通知、文件选择和 updater，验证关闭 UI 后继续记录、重开恢复和版本兼容诊断。
+6. 完成 systemd user service、`.deb` / AppImage 安装差异、日志、升级和恢复验证。
+7. 在 daemon 契约稳定后开发 TUI / CLI，并开始 KDE Wayland 适配；桌面端是否从 Tauri 迁往 GPUI 只按实测收益单独评估。
+8. `patinad` 稳定后，单独分阶段删除冻结的 Windows 平台代码。
+
+每一阶段必须保持当前桌面主路径可用，不以一次性切换换取架构完成感。
 
 ---
 

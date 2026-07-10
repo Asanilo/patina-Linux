@@ -174,6 +174,58 @@ Raw DTO 只能停留在明确边界：
 - `src/shared/lib/**` 的通用业务函数入参和返回值默认使用前端模型字段
 - 例外必须有明确 owner，要么留在允许目录，要么类型名带 `Raw` 并保持变薄
 
+### 4.5 运行时宿主与长期所有权
+
+当前 Tauri desktop 仍拥有 tracking、watchdog、本地 API 和部分 Linux 平台信号。长期目标是把这些后台能力渐进迁入 `patinad`，但迁移期间不得复制出第二套业务实现。
+
+迁移期共享运行时结构为：
+
+```text
+platform/linux ─┐
+data/sqlite ────┼─> engine runtime ─> RuntimeEventSink
+domain ─────────┘          │
+                           ├─ patinad host
+                           ├─ Tauri desktop host
+                           └─ tests
+```
+
+所有权规则：
+
+- `engine / domain / data / platform` 承载共享能力，不能依赖某个具体 UI 宿主
+- `patinad` 最终唯一拥有 tracking、watchdog、SQLite 运行时写侧、Linux 平台信号、浏览器桥接和本地 API
+- 桌面客户端当前由 Tauri 实现，并拥有窗口、tray、WebView、用户交互和桌面 updater；它通过稳定客户端边界访问 daemon
+- browser UI 由 `patinad` 在 loopback 提供，通过 HTTP API 和本机 event stream 访问同一运行时，不直接打开 SQLite
+- 未来 TUI / CLI 只能作为 daemon 客户端，不建立第二套 tracking 或数据库写侧
+- 迁移完成前允许 desktop 继续内嵌运行时，但必须通过显式模式和 `RuntimeLease` 保证同一 profile 只有一个后台 owner
+
+共享运行内核至少需要以下窄边界：
+
+- `RuntimeContext`：数据库、设置、clock 与运行状态
+- `RuntimeEventSink`：Tauri event、daemon event stream 与测试 sink 的统一出口
+- `RuntimeLease`：按 Production / Local / Dev profile 保证唯一写侧 owner
+- API runtime context：让 handler 依赖明确数据与状态，不依赖 `AppHandle`
+- Tauri-free storage bootstrap：统一解析默认路径、锚点、pending migration 与 fail-closed 规则
+
+这些名字表达的是职责，不要求一次性建立大而全 trait 系统。只有真实调用方出现时才提取最小接口。
+
+浏览器 UI 与桌面 UI 默认复用现有 React feature 和 read model，但外部数据访问必须经过 transport-neutral gateway：
+
+- browser gateway 使用 localhost HTTP API 和 event stream
+- Tauri gateway 在迁移期可以保留 IPC，最终同样以 daemon client 为主
+- feature components 不直接判断自己运行在浏览器还是 Tauri
+- tray、系统通知、文件选择、安装更新和窗口激活仍属于桌面客户端能力
+- 浏览器端遇到桌面专属操作时应显示明确不可用状态或请求桌面客户端处理，不复制不安全的文件系统能力
+
+浏览器 UI 不是公开 Web 部署面。daemon 默认只监听 loopback，不允许把长期 API token 放进 URL、浏览器历史或普通持久化日志。浏览器写侧开放前，必须建立本机配对或短期会话机制，并验证跨站请求和来源边界。
+
+Tauri 是当前桌面客户端实现，不是长期协议 owner。未来可以在不改变 daemon、数据库、浏览器 UI、TUI 和 MCP 契约的前提下评估 GPUI 或其他 Linux 桌面 UI 框架；框架替换必须作为独立项目，以实测内存、启动速度、桌面集成完整性和维护成本决定。
+
+### 4.6 Linux-only 与 Windows 冻结边界
+
+当前产品、CI、Release 和验证矩阵只承诺 Linux。`platform/windows/*` 是迁移期冻结代码，不再承接新功能，也不继续约束共享 runtime 的接口形状。
+
+Windows 删除必须发生在 `patinad` 稳定之后，并作为独立架构清理：先证明 Linux 构建、数据库升级、release 和 updater 不依赖对应 cfg 或依赖，再分批删除。不得在 daemon 接管、tracking 正确性修复或数据迁移改动中顺带清除 Windows 路径。
+
 ---
 
 ## 5. 前端长期结构
@@ -322,6 +374,7 @@ src/
 src-tauri/src/
   main.rs
   lib.rs
+  bin/
   app/
   commands/
   platform/
@@ -329,6 +382,8 @@ src-tauri/src/
   domain/
   data/
 ```
+
+`bin/*` 只放可执行入口。`patinad` 的装配属于 `app/*`，tracking、API、数据和平台实现仍分别归 `engine / data / platform`。不新增长期根层 `daemon/*` 作为第二套业务 owner。
 
 ### 6.1 `main.rs` 与 `lib.rs`
 
@@ -386,7 +441,7 @@ src-tauri/src/
 
 - Linux D-Bus / X11 细节与保留的 Windows API 细节
 - 前台窗口、图标、电源事件等平台能力
-- 未来其他平台的隔离落点
+- Linux 桌面环境和 compositor provider 的隔离落点
 
 目标是：
 

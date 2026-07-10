@@ -316,7 +316,7 @@ Linux x86_64 附件统一使用：
 - `Patina_1.0.1_amd64.deb`
 - `patina-gnome-shell-extension-vX.zip`
 
-Linux updater 使用 Tauri 生成并签名的 AppImage 与 `.deb`，并按当前安装包类型选择更新目标。Windows 平台源码暂时保留，但当前发布线不生成、上传或承诺 Windows 安装包。
+Linux updater 使用 Tauri 生成并签名的 AppImage 与 `.deb`，并按当前安装包类型选择更新目标。Windows 平台源码在 `patinad` 稳定前作为冻结兼容代码暂时保留；当前发布线不生成、上传或承诺 Windows 安装包，也不新增 Windows 发布工作。
 
 Linux 发布资产契约：
 

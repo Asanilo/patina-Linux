@@ -19,7 +19,7 @@ Patina 的 Linux 移植与本地 AI/API 集成 fork。
 ![Patina dashboard](.github/assets/readme.zh-CN/dashboard.png)
 
 
-这个 fork 是 Patina 的 Linux-first 版本，重点放在 GNOME/Linux 前台窗口识别、浏览器网页活动记录、本地 HTTP API，以及面向外部 AI/MCP 的数据接口。Windows 平台源码暂时保留作为历史兼容实现，但不进入默认 CI、Release 或当前支持承诺。
+这个 fork 是 Patina 的 Linux-only 版本，重点放在 GNOME/Linux 前台窗口识别、浏览器网页活动记录、本地 HTTP API，以及面向外部 AI/MCP 的数据接口。Windows 平台源码暂时保留为冻结兼容代码，但不再跟踪上游功能，也不进入默认 CI、Release、验证矩阵或当前支持承诺。
 
 Linux 版本当前是可用的开发原型，还不是稳定发行版。
 
@@ -33,21 +33,18 @@ Linux 版本当前是可用的开发原型，还不是稳定发行版。
 - 支持 Firefox / Zen 扩展。
 - 设置页提供窗口追踪、本地 API、浏览器桥接、Linux 自启动诊断。
 - 可以修复 Linux `~/.config/autostart/Patina.desktop` 的错误 `Exec`。
+- 正在开发独立后台进程 `patinad`，目标是关闭桌面 UI 后仍能可靠记录，并为未来 TUI 提供统一运行时。
+- 规划由 `patinad` 在本机提供浏览器 UI，类似 ActivityWatch；Tauri 保留为桌面客户端，未来可独立评估其他 Linux UI 框架。
 
-## 上游跟进策略
+## Linux-only 开发策略
 
-这个 fork 会选择性跟进上游 Patina：跨平台 UI、数据、追踪一致性和质量修复，只要符合 Linux-first 产品边界，就应该评估并移植。Windows 平台专属的发布、安装和系统集成工作，不默认进入 Linux 发布线。
+当前仓库不再参与或持续跟踪上游 Windows 主线。外部实现仍可作为普通技术参考，但不会建立功能追平义务。
 
-已经从上游 v1.8 工作同步：
+Windows 代码采用冻结后删除策略：
 
-- 历史页时间轴缩放。
-- 网页同步关闭时的历史页分类分布修复。
-
-仍需要 Linux 设计后再跟进的上游方向：
-
-- 本机数据目录管理与 WebView cache 管理。
-- 网页同步安装向导体验。
-- copy 模块拆分、quality hotspot 检查、bundle budget 检查等工程整理。
+- `patinad` 稳定前保留现有条件编译代码，不再增加 Windows 功能、测试和发布工作。
+- `patinad` 完成后台接管后，再用独立版本分阶段删除 Windows cfg、依赖和源码。
+- Linux tracking、数据安全、桌面体验和发布可靠性优先于平台追平。
 
 ## 界面预览
 
@@ -64,6 +61,8 @@ Linux 版本当前是可用的开发原型，还不是稳定发行版。
 | GNOME Wayland 窗口追踪 | 原型可用 | 依赖 GNOME Shell 扩展提供的 `org.patina.WindowTracker`。 |
 | X11 追踪 | 已实现 fallback / 验证有限 | X11 session 可走 fallback；GNOME Wayland 不会静默降级到 X11。 |
 | KDE / wlroots Wayland | 暂不承诺 | 后续需要按桌面环境分别适配。 |
+| `patinad` | Stage 1 开发中 | 当前仅有 SQLite/API 骨架，尚未接管 tracking，不作为正式后台服务发布。 |
+| 本机浏览器 UI | 已规划 | 将由 `patinad` 在 loopback 提供；当前尚未实现。 |
 | 本地 API | 已实现 | 监听 `127.0.0.1:14840`，使用 bearer token。 |
 | MCP wrapper | 已实现，查询优先 | `npm run mcp:patina`；写侧当前覆盖应用分类、重命名和排除。 |
 | Chromium 网页同步 | 已实现 | `extensions/chromium`。 |
@@ -270,18 +269,19 @@ node --experimental-strip-types --experimental-specifier-resolution=node tests/p
 cargo check --manifest-path src-tauri/Cargo.toml --quiet
 ```
 
-## 上游产品背景
+## 项目背景
 
 Patina 是一个面向个人桌面的本地优先时间追踪工具。它会自动记录前台应用，处理 AFK、锁屏、睡眠、崩溃恢复等边界，数据保存在本地 SQLite，并提供 Dashboard、History、Data、App Mapping 等回看和管理界面。
 
-这个 fork 的当前产品与发布方向是 Linux/GNOME 优先，并为外部 AI 分析暴露稳定的本地结构化数据。其他桌面平台只有在形成独立维护能力后才会重新进入支持范围。
+这个 fork 的产品、开发、验证和发布方向只面向 Linux，并为外部 AI 分析暴露稳定的本地结构化数据。
 
 ## 文档
 
 - Linux 设置：[docs/linux-development-setup.md](docs/linux-development-setup.md)
+- Linux 平台支持：[docs/linux-platform-support.md](docs/linux-platform-support.md)
 - API 索引：[docs/api-index.md](docs/api-index.md)
-- Linux/API 设计：[docs/linux-port-and-api-design.md](docs/linux-port-and-api-design.md)
 - 产品范围：[docs/product-principles-and-scope.md](docs/product-principles-and-scope.md)
+- 路线图：[docs/roadmap-and-prioritization.md](docs/roadmap-and-prioritization.md)
 - 架构规则：[docs/architecture.md](docs/architecture.md)
 
 ## 许可证
