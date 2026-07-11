@@ -69,6 +69,9 @@ The final code must remove `src-tauri/src/daemon/`. Unit tests should live with 
 - Modify: `src-tauri/src/app/mod.rs`
 - Modify: `src-tauri/src/bin/patinad.rs`
 - Modify: `src-tauri/src/lib.rs`
+- Preserve and include: `src-tauri/src/data/sqlite_pool.rs`
+- Preserve and include: `src-tauri/src/engine/api/handlers/health.rs`
+- Preserve and include: `src-tauri/src/engine/api/router.rs`
 - Delete: `src-tauri/src/daemon/mod.rs`
 - Modify or delete: `src-tauri/tests/daemon_status.rs`
 
@@ -112,7 +115,7 @@ Expected: PASS; both `patina` and `patinad` binaries compile.
 - [ ] **Step 4: Commit the owner relocation**
 
 ```bash
-git add src-tauri/src/app/mod.rs src-tauri/src/app/daemon/mod.rs src-tauri/src/app/daemon/status.rs src-tauri/src/bin/patinad.rs src-tauri/src/lib.rs src-tauri/tests/daemon_status.rs
+git add src-tauri/src/app/mod.rs src-tauri/src/app/daemon/mod.rs src-tauri/src/app/daemon/status.rs src-tauri/src/bin/patinad.rs src-tauri/src/lib.rs src-tauri/src/data/sqlite_pool.rs src-tauri/src/engine/api/handlers/health.rs src-tauri/src/engine/api/router.rs src-tauri/tests/daemon_status.rs
 git diff --cached --stat
 git diff --cached --check
 git commit -m "refactor: place patinad assembly under app owner"
