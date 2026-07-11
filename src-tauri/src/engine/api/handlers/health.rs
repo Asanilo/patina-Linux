@@ -8,13 +8,20 @@ pub fn get_health(app: &tauri::AppHandle) -> RouteResponse {
     let version = app.package_info().version.to_string();
     let platform = std::env::consts::OS.to_string();
 
+    get_health_for_runtime(version, platform)
+}
+
+pub fn get_health_for_runtime(
+    version: impl Into<String>,
+    platform: impl Into<String>,
+) -> RouteResponse {
     RouteResponse {
         status: 200,
         body: serde_json::to_value(ApiResponse {
             data: HealthResponse {
                 status: "ok".to_string(),
-                version,
-                platform,
+                version: version.into(),
+                platform: platform.into(),
             },
         })
         .unwrap_or_default(),

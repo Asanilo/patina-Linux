@@ -86,6 +86,32 @@ async fn open_single_connection_sqlite_pool(
         .map_err(|error| format!("failed to open sqlite db `{}`: {error}", db_path.display()))
 }
 
+pub async fn open_prepared_sqlite_pool_at_path(
+    db_path: &Path,
+    create_if_missing: bool,
+) -> Result<Pool<Sqlite>, String> {
+    if create_if_missing {
+        let parent = db_path.parent().ok_or_else(|| {
+            format!(
+                "sqlite database path `{}` has no parent directory",
+                db_path.display()
+            )
+        })?;
+        create_dir_all(parent).map_err(|error| {
+            format!(
+                "failed to create sqlite database directory `{}`: {error}",
+                parent.display()
+            )
+        })?;
+    }
+
+    let pool = open_single_connection_sqlite_pool(db_path, create_if_missing).await?;
+    prepare_current_schema_for_pool(&pool)
+        .await
+        .map_err(|error| format!("{error} (`{}`)", db_path.display()))?;
+    Ok(pool)
+}
+
 pub fn is_recoverable_sqlite_error(error: &str) -> bool {
     let normalized = error.to_ascii_lowercase();
     normalized.contains("database is locked")
@@ -98,7 +124,7 @@ pub fn is_recoverable_sqlite_error(error: &str) -> bool {
 
 pub async fn reopen_sqlite_pool<R: Runtime>(app: &AppHandle<R>) -> Result<Pool<Sqlite>, String> {
     let db_path = resolve_product_db_path(app)?;
-    let next_pool = open_single_connection_sqlite_pool(&db_path, true).await?;
+    let next_pool = open_prepared_sqlite_pool_at_path(&db_path, true).await?;
 
     register_sqlite_pool(app, next_pool.clone()).await?;
 
@@ -133,11 +159,7 @@ async fn register_sqlite_pool<R: Runtime>(
 
 pub async fn initialize_app_sqlite<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let db_path = resolve_product_db_path(app)?;
-    let pool = open_single_connection_sqlite_pool(&db_path, true).await?;
-
-    prepare_current_schema_for_pool(&pool)
-        .await
-        .map_err(|error| format!("{error} (`{}`)", db_path.display()))?;
+    let pool = open_prepared_sqlite_pool_at_path(&db_path, true).await?;
 
     register_sqlite_pool(app, pool).await?;
 

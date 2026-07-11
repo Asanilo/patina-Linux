@@ -1,4 +1,4 @@
-mod app;
+pub mod app;
 mod commands;
 mod data;
 mod domain;
@@ -6,6 +6,10 @@ mod engine;
 mod platform;
 
 use std::sync::Arc;
+
+pub fn run_daemon(args: impl IntoIterator<Item = impl AsRef<str>>) -> Result<(), String> {
+    app::daemon::run(args)
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

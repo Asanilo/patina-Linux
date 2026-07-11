@@ -1,6 +1,7 @@
 pub mod autostart;
 pub mod backup;
 pub mod bootstrap;
+pub mod daemon;
 pub mod desktop_behavior;
 pub mod main_window;
 pub mod runtime;

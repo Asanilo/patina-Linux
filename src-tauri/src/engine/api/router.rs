@@ -101,6 +101,23 @@ pub async fn handle_connection(mut stream: TcpStream, app: tauri::AppHandle) {
     write_json_response(&mut writer, response.status, &response.body).await;
 }
 
+pub fn route_minimal_request(method: &str, path: &str) -> RouteResponse {
+    match (method, path) {
+        ("GET", "/api/v1/health") => handlers::health::get_health_for_runtime(
+            env!("CARGO_PKG_VERSION"),
+            std::env::consts::OS,
+        ),
+        ("GET", "/api/v1/openapi.json") => handlers::openapi::get_openapi(),
+        _ => RouteResponse {
+            status: 404,
+            body: serde_json::to_value(ApiError::not_found(
+                "endpoint not available in patinad stage-1",
+            ))
+            .unwrap_or_default(),
+        },
+    }
+}
+
 async fn route_request(
     method: &str,
     path: &str,
