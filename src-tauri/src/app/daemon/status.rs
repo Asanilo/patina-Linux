@@ -44,3 +44,34 @@ pub fn build_startup_status(
         ],
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn daemon_status_identifies_stage_one_runtime() {
+        let status = build_startup_status(
+            "1.8.3",
+            14_840,
+            PathBuf::from("/tmp/api_token"),
+            PathBuf::from("/tmp/Patina"),
+            PathBuf::from("/tmp/Patina/patina.db"),
+            PathBuf::from("/tmp/Patina"),
+        );
+
+        assert_eq!(status.service_name, "patinad");
+        assert_eq!(status.mode, "daemon");
+        assert_eq!(status.version, "1.8.3");
+        assert_eq!(status.stage, "stage-1");
+        assert!(status.sqlite_enabled);
+        assert!(!status.tracking_enabled);
+        assert!(!status.local_api_enabled);
+        assert_eq!(status.local_api_port, 14_840);
+        assert!(status.api_token_path.ends_with("api_token"));
+        assert!(status.data_root.ends_with("Patina"));
+        assert!(status.db_path.ends_with("patina.db"));
+        assert!(status.webview_root.ends_with("Patina"));
+        assert!(status.notes.iter().any(|note| note.contains("skeleton")));
+    }
+}

@@ -1,4 +1,4 @@
-pub mod app;
+mod app;
 mod commands;
 mod data;
 mod domain;

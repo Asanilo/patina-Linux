@@ -118,6 +118,60 @@ pub fn route_minimal_request(method: &str, path: &str) -> RouteResponse {
     }
 }
 
+pub(crate) async fn handle_minimal_connection(stream: TcpStream, auth_token: String) {
+    let (reader, mut writer) = stream.into_split();
+    let mut reader = BufReader::new(reader);
+    let mut request_line = String::new();
+    if reader.read_line(&mut request_line).await.is_err() {
+        return;
+    }
+    let parts = request_line.split_whitespace().collect::<Vec<_>>();
+    let mut authorized = false;
+    loop {
+        let mut header_line = String::new();
+        match reader.read_line(&mut header_line).await {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {
+                let trimmed = header_line.trim();
+                if trimmed.is_empty() {
+                    break;
+                }
+                if let Some(value) = trimmed.strip_prefix("Authorization:") {
+                    let token = value.trim().strip_prefix("Bearer ").unwrap_or(value.trim());
+                    authorized = token == auth_token;
+                }
+            }
+        }
+    }
+
+    let response = if !authorized {
+        RouteResponse {
+            status: 401,
+            body: serde_json::to_value(ApiError::unauthorized()).unwrap_or_default(),
+        }
+    } else if parts.len() >= 2 {
+        route_minimal_request(parts[0], parts[1])
+    } else {
+        route_minimal_request("", "")
+    };
+
+    let body = serde_json::to_string(&response.body).unwrap_or_else(|_| "{}".to_string());
+    let status_text = match response.status {
+        200 => "OK",
+        401 => "Unauthorized",
+        404 => "Not Found",
+        _ => "Unknown",
+    };
+    let raw = format!(
+        "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        response.status,
+        status_text,
+        body.len(),
+        body
+    );
+    let _ = writer.write_all(raw.as_bytes()).await;
+}
+
 async fn route_request(
     method: &str,
     path: &str,

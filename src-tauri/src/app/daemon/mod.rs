@@ -3,16 +3,14 @@ mod status;
 use std::path::PathBuf;
 
 use sqlx::{Pool, Sqlite};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tokio::sync::watch;
-
-use crate::engine::api::types::RouteResponse;
 
 pub use status::DaemonStartupStatus;
 
 #[derive(Debug)]
 pub struct DaemonSqliteRuntime {
+    #[cfg_attr(not(test), allow(dead_code))]
     pub db_path: PathBuf,
     pub pool: Pool<Sqlite>,
 }
@@ -34,15 +32,18 @@ pub struct MinimalApiServer {
     port: u16,
     listener: TcpListener,
     auth_token: String,
+    #[cfg_attr(not(test), allow(dead_code))]
     shutdown_tx: watch::Sender<bool>,
     shutdown_rx: watch::Receiver<bool>,
 }
 
 #[derive(Clone)]
+#[cfg(test)]
 pub struct MinimalApiShutdown {
     shutdown_tx: watch::Sender<bool>,
 }
 
+#[cfg(test)]
 impl MinimalApiShutdown {
     pub fn shutdown(&self) {
         let _ = self.shutdown_tx.send(true);
@@ -54,6 +55,7 @@ impl MinimalApiServer {
         self.port
     }
 
+    #[cfg(test)]
     pub fn shutdown_handle(&self) -> MinimalApiShutdown {
         MinimalApiShutdown {
             shutdown_tx: self.shutdown_tx.clone(),
@@ -68,7 +70,11 @@ impl MinimalApiServer {
                         Ok((stream, _peer_addr)) => {
                             let auth_token = self.auth_token.clone();
                             tokio::spawn(async move {
-                                handle_minimal_api_connection(stream, auth_token).await;
+                                crate::engine::api::router::handle_minimal_connection(
+                                    stream,
+                                    auth_token,
+                                )
+                                .await;
                             });
                         }
                         Err(error) => {
@@ -188,10 +194,6 @@ pub async fn prepare_sqlite_runtime_at_path(
     Ok(DaemonSqliteRuntime { db_path, pool })
 }
 
-pub fn route_minimal_api_request(method: &str, path: &str) -> RouteResponse {
-    crate::engine::api::router::route_minimal_request(method, path)
-}
-
 pub async fn prepare_minimal_api_server(
     port: u16,
     auth_token: impl Into<String>,
@@ -213,57 +215,107 @@ pub async fn prepare_minimal_api_server(
     })
 }
 
-async fn handle_minimal_api_connection(stream: TcpStream, auth_token: String) {
-    let (reader, mut writer) = stream.into_split();
-    let mut reader = BufReader::new(reader);
-    let mut request_line = String::new();
-    if reader.read_line(&mut request_line).await.is_err() {
-        return;
-    }
-    let parts = request_line.split_whitespace().collect::<Vec<_>>();
-    let mut authorized = false;
-    loop {
-        let mut header_line = String::new();
-        match reader.read_line(&mut header_line).await {
-            Ok(0) | Err(_) => break,
-            Ok(_) => {
-                let trimmed = header_line.trim();
-                if trimmed.is_empty() {
-                    break;
-                }
-                if let Some(value) = trimmed.strip_prefix("Authorization:") {
-                    let token = value.trim().strip_prefix("Bearer ").unwrap_or(value.trim());
-                    authorized = token == auth_token;
-                }
-            }
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn daemon_sqlite_runtime_prepares_database_without_tauri_app_handle() {
+        let root = std::env::temp_dir().join(format!(
+            "patina-daemon-sqlite-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let db_path = root.join("Patina").join("patina.db");
+
+        let runtime = prepare_sqlite_runtime_at_path(&db_path).await.unwrap();
+
+        assert_eq!(runtime.db_path, db_path);
+        assert!(runtime.db_path.is_file());
+        let connection = runtime.pool.acquire().await.unwrap();
+        drop(connection);
+
+        runtime.pool.close().await;
+        std::fs::remove_dir_all(root).unwrap();
     }
 
-    let response = if !authorized {
-        RouteResponse {
-            status: 401,
-            body: serde_json::to_value(crate::engine::api::types::ApiError::unauthorized())
-                .unwrap_or_default(),
-        }
-    } else if parts.len() >= 2 {
-        route_minimal_api_request(parts[0], parts[1])
-    } else {
-        crate::engine::api::router::route_minimal_request("", "")
-    };
+    #[test]
+    fn daemon_minimal_api_routes_health_and_openapi_without_tauri_app_handle() {
+        let health = crate::engine::api::router::route_minimal_request("GET", "/api/v1/health");
+        assert_eq!(health.status, 200);
+        assert_eq!(health.body["data"]["status"], "ok");
+        assert_eq!(health.body["data"]["version"], env!("CARGO_PKG_VERSION"));
 
-    let body = serde_json::to_string(&response.body).unwrap_or_else(|_| "{}".to_string());
-    let status_text = match response.status {
-        200 => "OK",
-        401 => "Unauthorized",
-        404 => "Not Found",
-        _ => "Unknown",
-    };
-    let raw = format!(
-        "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-        response.status,
-        status_text,
-        body.len(),
-        body
-    );
-    let _ = writer.write_all(raw.as_bytes()).await;
+        let openapi =
+            crate::engine::api::router::route_minimal_request("GET", "/api/v1/openapi.json");
+        assert_eq!(openapi.status, 200);
+        assert_eq!(openapi.body["openapi"], "3.1.0");
+
+        let missing = crate::engine::api::router::route_minimal_request("GET", "/api/v1/current");
+        assert_eq!(missing.status, 404);
+    }
+
+    #[test]
+    fn daemon_run_options_enable_minimal_api_from_flag() {
+        let options = DaemonRunOptions::from_args(["patinad", "--serve-api"]);
+        assert!(options.serve_minimal_api);
+
+        let default_options = DaemonRunOptions::from_args(["patinad"]);
+        assert!(!default_options.serve_minimal_api);
+    }
+
+    #[tokio::test]
+    async fn daemon_minimal_api_server_serves_health_without_tauri_app_handle() {
+        let server = prepare_minimal_api_server(0, "test-token").await.unwrap();
+        let port = server.port();
+        let shutdown = server.shutdown_handle();
+        let task = tokio::spawn(server.run());
+
+        let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
+        let request = "GET /api/v1/health HTTP/1.1\r\nAuthorization: Bearer test-token\r\n\r\n";
+        tokio::io::AsyncWriteExt::write_all(&mut stream, request.as_bytes())
+            .await
+            .unwrap();
+        let mut response = String::new();
+        tokio::io::AsyncReadExt::read_to_string(&mut stream, &mut response)
+            .await
+            .unwrap();
+
+        assert!(response.contains("HTTP/1.1 200 OK"));
+        assert!(response.contains("\"status\":\"ok\""));
+
+        shutdown.shutdown();
+        task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn daemon_minimal_api_server_rejects_missing_token() {
+        let server = prepare_minimal_api_server(0, "test-token").await.unwrap();
+        let port = server.port();
+        let shutdown = server.shutdown_handle();
+        let task = tokio::spawn(server.run());
+
+        let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
+        let request = "GET /api/v1/health HTTP/1.1\r\n\r\n";
+        tokio::io::AsyncWriteExt::write_all(&mut stream, request.as_bytes())
+            .await
+            .unwrap();
+        let mut response = String::new();
+        tokio::io::AsyncReadExt::read_to_string(&mut stream, &mut response)
+            .await
+            .unwrap();
+
+        assert!(response.contains("HTTP/1.1 401 Unauthorized"));
+        assert!(response.contains("unauthorized"));
+
+        shutdown.shutdown();
+        task.await.unwrap();
+    }
 }
