@@ -48,32 +48,11 @@ impl StoragePaths {
     }
 }
 
-pub fn default_production_storage_paths_from_environment() -> StoragePaths {
-    let home = std::env::var_os("HOME")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
-    let config = std::env::var_os("XDG_CONFIG_HOME")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home.join(".config"));
-    let data = std::env::var_os("XDG_DATA_HOME")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home.join(".local/share"));
-    let roots = app_paths::AppPathRoots {
-        config,
-        data: data.clone(),
-        local_data: data,
-    };
-
-    default_production_storage_paths_from_roots(&roots)
-}
-
-pub fn default_production_storage_paths_from_roots(
+pub fn default_storage_paths_for_profile(
     roots: &app_paths::AppPathRoots,
+    profile: app_paths::AppProfile,
 ) -> StoragePaths {
-    let paths = app_paths::profile_paths(roots, app_paths::AppProfile::Production);
+    let paths = app_paths::profile_paths(roots, profile);
     StoragePaths::from_roots(
         paths.control_root,
         paths.data_root.clone(),
@@ -82,6 +61,29 @@ pub fn default_production_storage_paths_from_roots(
         false,
         false,
     )
+}
+
+pub fn resolve_storage_paths_for_profile(
+    roots: &app_paths::AppPathRoots,
+    profile: app_paths::AppProfile,
+) -> Result<StoragePaths, String> {
+    let defaults = default_storage_paths_for_profile(roots, profile);
+    if let Some(pending) =
+        storage_anchor::read_pending_migration_from_dir(&defaults.control_root, profile.key())?
+    {
+        return Err(format!(
+            "storage migration `{}` is pending; start the desktop app to finish maintenance",
+            pending.id
+        ));
+    }
+    let data_root =
+        storage_anchor::read_data_anchor_from_dir(&defaults.control_root, profile.key())?
+            .map(|anchor| anchor.data_root);
+    let webview_root =
+        storage_anchor::read_webview_anchor_from_dir(&defaults.control_root, profile.key())?
+            .map(|anchor| anchor.webview_root);
+
+    resolve_storage_paths_from(&defaults, data_root, webview_root)
 }
 
 pub fn default_storage_paths<R: Runtime>(app: &AppHandle<R>) -> Result<StoragePaths, String> {
@@ -218,7 +220,7 @@ mod tests {
             local_data: PathBuf::from("/home/test/.local/share"),
         };
 
-        let paths = default_production_storage_paths_from_roots(&roots);
+        let paths = default_storage_paths_for_profile(&roots, app_paths::AppProfile::Production);
 
         assert_eq!(
             paths.control_root,

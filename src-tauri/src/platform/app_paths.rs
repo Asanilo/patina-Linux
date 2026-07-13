@@ -77,6 +77,23 @@ pub fn profile_paths(roots: &AppPathRoots, profile: AppProfile) -> ProfilePaths 
     }
 }
 
+pub fn environment_roots() -> AppPathRoots {
+    let home = environment_path("HOME").unwrap_or_else(|| PathBuf::from("."));
+    let data =
+        environment_path("XDG_DATA_HOME").unwrap_or_else(|| home.join(".local").join("share"));
+    AppPathRoots {
+        config: environment_path("XDG_CONFIG_HOME").unwrap_or_else(|| home.join(".config")),
+        data: data.clone(),
+        local_data: data,
+    }
+}
+
+fn environment_path(key: &str) -> Option<PathBuf> {
+    std::env::var_os(key)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
 pub fn derive_product_root(selected_root: &Path, profile: AppProfile) -> PathBuf {
     let product_folder = profile.product_folder();
     if selected_root

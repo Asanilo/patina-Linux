@@ -1,4 +1,6 @@
+mod options;
 mod status;
+mod storage;
 
 use std::path::PathBuf;
 
@@ -6,6 +8,7 @@ use sqlx::{Pool, Sqlite};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 
+pub use options::DaemonRunOptions;
 pub use status::DaemonStartupStatus;
 
 #[derive(Debug)]
@@ -13,19 +16,6 @@ pub struct DaemonSqliteRuntime {
     #[cfg_attr(not(test), allow(dead_code))]
     pub db_path: PathBuf,
     pub pool: Pool<Sqlite>,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct DaemonRunOptions {
-    pub serve_minimal_api: bool,
-}
-
-impl DaemonRunOptions {
-    pub fn from_args(args: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
-        Self {
-            serve_minimal_api: args.into_iter().any(|arg| arg.as_ref() == "--serve-api"),
-        }
-    }
 }
 
 pub struct MinimalApiServer {
@@ -92,33 +82,39 @@ impl MinimalApiServer {
     }
 }
 
-pub fn build_startup_status(version: impl Into<String>) -> DaemonStartupStatus {
-    let storage_paths = default_daemon_storage_paths();
+pub fn build_startup_status(
+    version: impl Into<String>,
+    options: DaemonRunOptions,
+    storage_paths: &crate::platform::storage_paths::StoragePaths,
+) -> DaemonStartupStatus {
     status::build_startup_status(
         version,
-        crate::engine::api::server::DEFAULT_PORT,
-        crate::engine::api::auth::token_file_path(),
-        storage_paths.data_root,
-        storage_paths.db_path,
-        storage_paths.webview_root,
+        options.profile,
+        options.serve_minimal_api,
+        options
+            .port_override
+            .unwrap_or(crate::engine::api::server::DEFAULT_PORT),
+        storage_paths.api_token_path.clone(),
+        storage_paths.data_root.clone(),
+        storage_paths.db_path.clone(),
+        storage_paths.webview_root.clone(),
     )
 }
 
-fn default_daemon_storage_paths() -> crate::platform::storage_paths::StoragePaths {
-    crate::platform::storage_paths::default_production_storage_paths_from_environment()
-}
-
 pub fn run(args: impl IntoIterator<Item = impl AsRef<str>>) -> Result<(), String> {
-    run_with_options(DaemonRunOptions::from_args(args))
+    run_with_options(DaemonRunOptions::from_args(args)?)
 }
 
 pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     let runtime = tokio::runtime::Runtime::new()
         .map_err(|error| format!("failed to create daemon async runtime: {error}"))?;
-    let status = build_startup_status(env!("CARGO_PKG_VERSION"));
+    let storage_paths = storage::resolve_from_environment(options.profile)?;
+    let status = build_startup_status(env!("CARGO_PKG_VERSION"), options, &storage_paths);
     crate::engine::api::auth::initialize_api_token(None)?;
-    let sqlite_runtime =
-        runtime.block_on(prepare_sqlite_runtime_at_path(status.db_path.clone()))?;
+    let sqlite_runtime = runtime.block_on(prepare_sqlite_runtime_at_path(
+        status.db_path.clone(),
+        storage_paths.database_creation_allowed,
+    ))?;
     println!(
         "[{}] {} {} ({})",
         status.service_name, status.mode, status.version, status.stage
@@ -160,9 +156,14 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
 
 pub async fn prepare_sqlite_runtime_at_path(
     db_path: impl Into<PathBuf>,
+    database_creation_allowed: bool,
 ) -> Result<DaemonSqliteRuntime, String> {
     let db_path = db_path.into();
-    let pool = crate::data::sqlite_pool::open_prepared_sqlite_pool_at_path(&db_path, true).await?;
+    let pool = crate::data::sqlite_pool::open_prepared_sqlite_pool_at_path(
+        &db_path,
+        database_creation_allowed,
+    )
+    .await?;
     Ok(DaemonSqliteRuntime { db_path, pool })
 }
 
@@ -203,7 +204,9 @@ mod tests {
         ));
         let db_path = root.join("Patina").join("patina.db");
 
-        let runtime = prepare_sqlite_runtime_at_path(&db_path).await.unwrap();
+        let runtime = prepare_sqlite_runtime_at_path(&db_path, true)
+            .await
+            .unwrap();
 
         assert_eq!(runtime.db_path, db_path);
         assert!(runtime.db_path.is_file());
@@ -212,6 +215,27 @@ mod tests {
 
         runtime.pool.close().await;
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn daemon_sqlite_runtime_does_not_create_disallowed_database() {
+        let root = std::env::temp_dir().join(format!(
+            "patina-daemon-sqlite-closed-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let db_path = root.join("mounted/Patina/patina.db");
+
+        let error = prepare_sqlite_runtime_at_path(&db_path, false)
+            .await
+            .unwrap_err();
+
+        assert!(error.contains("failed to open sqlite db"));
+        assert!(!db_path.exists());
+        std::fs::remove_dir_all(root).ok();
     }
 
     #[test]
@@ -232,10 +256,10 @@ mod tests {
 
     #[test]
     fn daemon_run_options_enable_minimal_api_from_flag() {
-        let options = DaemonRunOptions::from_args(["patinad", "--serve-api"]);
+        let options = DaemonRunOptions::from_args(["patinad", "--serve-api"]).unwrap();
         assert!(options.serve_minimal_api);
 
-        let default_options = DaemonRunOptions::from_args(["patinad"]);
+        let default_options = DaemonRunOptions::from_args(["patinad"]).unwrap();
         assert!(!default_options.serve_minimal_api);
     }
 

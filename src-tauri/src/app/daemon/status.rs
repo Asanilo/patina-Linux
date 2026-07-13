@@ -4,6 +4,7 @@ use std::path::PathBuf;
 pub struct DaemonStartupStatus {
     pub service_name: &'static str,
     pub mode: &'static str,
+    pub profile: crate::platform::app_paths::AppProfile,
     pub version: String,
     pub stage: &'static str,
     pub sqlite_enabled: bool,
@@ -19,6 +20,8 @@ pub struct DaemonStartupStatus {
 
 pub fn build_startup_status(
     version: impl Into<String>,
+    profile: crate::platform::app_paths::AppProfile,
+    local_api_enabled: bool,
     local_api_port: u16,
     api_token_path: PathBuf,
     data_root: PathBuf,
@@ -28,11 +31,12 @@ pub fn build_startup_status(
     DaemonStartupStatus {
         service_name: "patinad",
         mode: "daemon",
+        profile,
         version: version.into(),
         stage: "stage-1",
         sqlite_enabled: true,
         tracking_enabled: false,
-        local_api_enabled: false,
+        local_api_enabled,
         local_api_port,
         api_token_path,
         data_root,
@@ -53,6 +57,8 @@ mod tests {
     fn daemon_status_identifies_stage_one_runtime() {
         let status = build_startup_status(
             "1.8.3",
+            crate::platform::app_paths::AppProfile::Dev,
+            false,
             14_840,
             PathBuf::from("/tmp/api_token"),
             PathBuf::from("/tmp/Patina"),
@@ -62,6 +68,7 @@ mod tests {
 
         assert_eq!(status.service_name, "patinad");
         assert_eq!(status.mode, "daemon");
+        assert_eq!(status.profile, crate::platform::app_paths::AppProfile::Dev);
         assert_eq!(status.version, "1.8.3");
         assert_eq!(status.stage, "stage-1");
         assert!(status.sqlite_enabled);
