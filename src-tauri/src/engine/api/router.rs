@@ -41,11 +41,13 @@ pub fn route_minimal_request(method: &str, path: &str) -> RouteResponse {
             env!("CARGO_PKG_VERSION"),
             std::env::consts::OS,
         ),
-        ("GET", "/api/v1/openapi.json") => handlers::openapi::get_openapi(),
+        ("GET", "/api/v1/openapi.json") => {
+            handlers::openapi::get_openapi(crate::engine::api::surface::ApiSurface::DaemonStage0)
+        }
         _ => RouteResponse {
             status: 404,
             body: serde_json::to_value(ApiError::not_found(
-                "endpoint not available in patinad stage-1",
+                "endpoint not available in patinad stage-0",
             ))
             .unwrap_or_default(),
         },
@@ -66,7 +68,9 @@ async fn route_request(request: ApiRequest, app: &tauri::AppHandle) -> RouteResp
     let body = request.body.as_slice();
     match (method, path) {
         ("GET", "/api/v1/health") => handlers::health::get_health(app),
-        ("GET", "/api/v1/openapi.json") => handlers::openapi::get_openapi(),
+        ("GET", "/api/v1/openapi.json") => {
+            handlers::openapi::get_openapi(crate::engine::api::surface::ApiSurface::Desktop)
+        }
         ("GET", "/api/v1/diagnostics") => handlers::diagnostics::get_diagnostics(app).await,
         ("GET", "/api/v1/current") => handlers::health::get_current(app),
         ("GET", "/api/v1/sessions") => handlers::sessions::get_sessions(app, query).await,

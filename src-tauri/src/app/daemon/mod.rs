@@ -20,14 +20,13 @@ pub fn build_startup_status(
     version: impl Into<String>,
     options: DaemonRunOptions,
     storage_paths: &crate::platform::storage_paths::StoragePaths,
+    local_api_port: u16,
 ) -> DaemonStartupStatus {
     status::build_startup_status(
         version,
         options.profile,
         options.serve_minimal_api,
-        options
-            .port_override
-            .unwrap_or(crate::engine::api::server::DEFAULT_PORT),
+        local_api_port,
         storage_paths.api_token_path.clone(),
         storage_paths.data_root.clone(),
         storage_paths.db_path.clone(),
@@ -56,13 +55,35 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
         runtime_lease.owner.profile, runtime_lease.owner.role
     );
     let storage_paths = storage::resolve(&roots, options.profile)?;
-    let status = build_startup_status(env!("CARGO_PKG_VERSION"), options, &storage_paths);
     let api_credentials = crate::engine::api::auth::ApiCredentialStore::new();
     api_credentials.initialize_at(&storage_paths.api_token_path, None)?;
     let sqlite_runtime = runtime.block_on(prepare_sqlite_runtime_at_path(
-        status.db_path.clone(),
+        storage_paths.db_path.clone(),
         storage_paths.database_creation_allowed,
     ))?;
+    let requested_port = options
+        .port_override
+        .unwrap_or(crate::engine::api::server::DEFAULT_PORT);
+    let api_server = if options.serve_minimal_api {
+        Some(runtime.block_on(
+            crate::engine::api::server::prepare_standalone_minimal_server(
+                requested_port,
+                api_credentials.clone(),
+            ),
+        )?)
+    } else {
+        None
+    };
+    let confirmed_port = api_server
+        .as_ref()
+        .map(|server| server.port())
+        .unwrap_or(requested_port);
+    let status = build_startup_status(
+        env!("CARGO_PKG_VERSION"),
+        options,
+        &storage_paths,
+        confirmed_port,
+    );
     println!(
         "[{}] {} {} ({})",
         status.service_name, status.mode, status.version, status.stage
@@ -70,10 +91,14 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     for note in &status.notes {
         println!("[{}] {note}", status.service_name);
     }
-    println!(
-        "[{}] planned local API http://127.0.0.1:{}",
-        status.service_name, status.local_api_port
-    );
+    if status.local_api_enabled {
+        println!(
+            "[{}] local API prepared at http://127.0.0.1:{}",
+            status.service_name, status.local_api_port
+        );
+    } else {
+        println!("[{}] local API disabled", status.service_name);
+    }
     println!(
         "[{}] API token file {}",
         status.service_name,
@@ -86,13 +111,7 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     );
     println!("[{}] db {}", status.service_name, status.db_path.display());
     println!("[{}] sqlite ready", status.service_name);
-    if options.serve_minimal_api {
-        let server = runtime.block_on(
-            crate::engine::api::server::prepare_standalone_minimal_server(
-                status.local_api_port,
-                api_credentials.clone(),
-            ),
-        )?;
+    if let Some(server) = api_server {
         println!(
             "[{}] minimal API listening on http://127.0.0.1:{}",
             status.service_name,

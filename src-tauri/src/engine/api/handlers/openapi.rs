@@ -1,7 +1,8 @@
+use crate::engine::api::surface::ApiSurface;
 use crate::engine::api::types::RouteResponse;
 use serde_json::{json, Value};
 
-pub fn get_openapi() -> RouteResponse {
+pub fn get_openapi(surface: ApiSurface) -> RouteResponse {
     RouteResponse {
         status: 200,
         body: json!({
@@ -35,13 +36,13 @@ pub fn get_openapi() -> RouteResponse {
                 },
                 "schemas": schemas()
             },
-            "paths": paths()
+            "paths": paths(surface)
         }),
     }
 }
 
-fn paths() -> Value {
-    json!({
+fn paths(surface: ApiSurface) -> Value {
+    let mut paths = json!({
         "/api/v1/health": {
             "get": get_operation("API health, app version, and platform.", "HealthResponse")
         },
@@ -151,7 +152,16 @@ fn paths() -> Value {
         "/api/v1/tools/snapshot": {
             "get": get_operation("Current Tools runtime snapshot.", "ToolsSnapshotResponse")
         }
-    })
+    });
+    let object = paths.as_object_mut().expect("OpenAPI paths object");
+    object.retain(|path, operations| {
+        let Some(operations) = operations.as_object_mut() else {
+            return false;
+        };
+        operations.retain(|method, _| surface.allows(&method.to_ascii_uppercase(), path));
+        !operations.is_empty()
+    });
+    paths
 }
 
 fn schemas() -> Value {
@@ -765,7 +775,7 @@ fn enum_schema(values: Vec<&str>) -> Value {
 mod tests {
     #[test]
     fn openapi_exposes_field_level_schemas_and_parameters() {
-        let response = super::get_openapi();
+        let response = super::get_openapi(crate::engine::api::surface::ApiSurface::Desktop);
         assert_eq!(response.status, 200);
 
         let schemas = response

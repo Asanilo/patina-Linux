@@ -33,7 +33,7 @@ pub fn build_startup_status(
         mode: "daemon",
         profile,
         version: version.into(),
-        stage: "stage-1",
+        stage: "stage-0",
         sqlite_enabled: true,
         tracking_enabled: false,
         local_api_enabled,
@@ -54,7 +54,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn daemon_status_identifies_stage_one_runtime() {
+    fn daemon_status_identifies_stage_zero_runtime() {
         let status = build_startup_status(
             "1.8.3",
             crate::platform::app_paths::AppProfile::Dev,
@@ -70,7 +70,7 @@ mod tests {
         assert_eq!(status.mode, "daemon");
         assert_eq!(status.profile, crate::platform::app_paths::AppProfile::Dev);
         assert_eq!(status.version, "1.8.3");
-        assert_eq!(status.stage, "stage-1");
+        assert_eq!(status.stage, "stage-0");
         assert!(status.sqlite_enabled);
         assert!(!status.tracking_enabled);
         assert!(!status.local_api_enabled);
@@ -80,5 +80,23 @@ mod tests {
         assert!(status.db_path.ends_with("patina.db"));
         assert!(status.webview_root.ends_with("Patina"));
         assert!(status.notes.iter().any(|note| note.contains("skeleton")));
+    }
+
+    #[test]
+    fn daemon_status_reports_confirmed_enabled_api_port() {
+        let status = build_startup_status(
+            "1.8.3",
+            crate::platform::app_paths::AppProfile::Dev,
+            true,
+            42_321,
+            PathBuf::from("/tmp/api_token"),
+            PathBuf::from("/tmp/Patina Dev"),
+            PathBuf::from("/tmp/Patina Dev/patina.db"),
+            PathBuf::from("/tmp/Patina Dev"),
+        );
+
+        assert!(status.local_api_enabled);
+        assert_eq!(status.local_api_port, 42_321);
+        assert!(!status.tracking_enabled);
     }
 }
