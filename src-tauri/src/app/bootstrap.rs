@@ -166,6 +166,16 @@ fn register_runtime_hooks(
         .on_tray_icon_event(tray::handle_tray_icon_event)
         .on_window_event(tray::handle_window_event)
         .setup(move |app| {
+            let profile = crate::platform::app_paths::app_profile(app.handle());
+            let control_root = crate::platform::storage_paths::default_storage_paths(app.handle())?
+                .control_root;
+            let runtime_lease = crate::app::runtime_lease::acquire_runtime_lease(
+                &control_root,
+                profile,
+                crate::app::runtime_lease::RuntimeRole::Desktop,
+            )
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+            app.manage(runtime_lease);
             if let Err(error) = tauri::async_runtime::block_on(
                 data::storage_migration::run_startup_storage_maintenance(app.handle()),
             ) {
@@ -216,6 +226,9 @@ mod tests {
             .split(".setup(move |app|")
             .nth(1)
             .expect("runtime setup hook");
+        let lease = setup
+            .find("acquire_runtime_lease")
+            .expect("runtime lease acquisition");
         let storage = setup
             .find("run_startup_storage_maintenance")
             .expect("startup storage maintenance call");
@@ -223,6 +236,7 @@ mod tests {
             .find("initialize_app_sqlite")
             .expect("sqlite initialization call");
 
+        assert!(lease < storage);
         assert!(storage < sqlite);
     }
 }

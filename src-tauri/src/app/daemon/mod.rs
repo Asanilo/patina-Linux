@@ -108,7 +108,20 @@ pub fn run(args: impl IntoIterator<Item = impl AsRef<str>>) -> Result<(), String
 pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     let runtime = tokio::runtime::Runtime::new()
         .map_err(|error| format!("failed to create daemon async runtime: {error}"))?;
-    let storage_paths = storage::resolve_from_environment(options.profile)?;
+    let roots = crate::platform::app_paths::environment_roots();
+    let default_paths =
+        crate::platform::storage_paths::default_storage_paths_for_profile(&roots, options.profile);
+    let runtime_lease = crate::app::runtime_lease::acquire_runtime_lease(
+        &default_paths.control_root,
+        options.profile,
+        crate::app::runtime_lease::RuntimeRole::Daemon,
+    )
+    .map_err(|error| error.to_string())?;
+    println!(
+        "[patinad] runtime lease acquired for profile {} as {:?}",
+        runtime_lease.owner.profile, runtime_lease.owner.role
+    );
+    let storage_paths = storage::resolve(&roots, options.profile)?;
     let status = build_startup_status(env!("CARGO_PKG_VERSION"), options, &storage_paths);
     let api_credentials = crate::engine::api::auth::ApiCredentialStore::new();
     api_credentials.initialize_at(&storage_paths.api_token_path, None)?;
@@ -262,6 +275,25 @@ mod tests {
 
         let default_options = DaemonRunOptions::from_args(["patinad"]).unwrap();
         assert!(!default_options.serve_minimal_api);
+    }
+
+    #[test]
+    fn daemon_acquires_lease_before_storage_and_sqlite() {
+        let source = include_str!("mod.rs");
+        let run = source
+            .split("pub fn run_with_options")
+            .nth(1)
+            .expect("daemon run function");
+        let lease = run
+            .find("acquire_runtime_lease")
+            .expect("runtime lease acquisition");
+        let storage = run.find("storage::resolve").expect("storage resolution");
+        let sqlite = run
+            .find("prepare_sqlite_runtime_at_path")
+            .expect("sqlite initialization");
+
+        assert!(lease < storage);
+        assert!(storage < sqlite);
     }
 
     #[tokio::test]

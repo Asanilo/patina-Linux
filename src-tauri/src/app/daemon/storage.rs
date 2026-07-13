@@ -7,10 +7,6 @@ pub fn resolve(
     crate::platform::storage_paths::resolve_storage_paths_for_profile(roots, profile)
 }
 
-pub fn resolve_from_environment(profile: AppProfile) -> Result<StoragePaths, String> {
-    resolve(&crate::platform::app_paths::environment_roots(), profile)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

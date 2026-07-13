@@ -5,6 +5,7 @@ pub mod daemon;
 pub mod desktop_behavior;
 pub mod main_window;
 pub mod runtime;
+pub mod runtime_lease;
 pub mod runtime_tasks;
 pub mod state;
 pub mod tray;
