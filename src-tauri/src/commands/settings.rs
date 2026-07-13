@@ -93,34 +93,42 @@ pub async fn cmd_apply_local_api_port(
     port: u16,
     app: AppHandle,
     api_server_state: State<'_, crate::engine::api::server::ApiServerState>,
+    api_credentials: State<'_, crate::engine::api::auth::ApiCredentialStore>,
 ) -> Result<crate::commands::diagnostics::LocalApiSettingsSnapshot, String> {
-    let settings =
-        crate::engine::api::configuration::apply_port(&app, &api_server_state, port).await?;
-    Ok(local_api_settings_snapshot(settings))
+    let settings = crate::engine::api::configuration::apply_port(
+        &app,
+        &api_server_state,
+        &api_credentials,
+        port,
+    )
+    .await?;
+    local_api_settings_snapshot(&api_credentials, settings)
 }
 
 #[tauri::command]
 pub async fn cmd_rotate_local_api_token(
     app: AppHandle,
+    api_credentials: State<'_, crate::engine::api::auth::ApiCredentialStore>,
 ) -> Result<crate::commands::diagnostics::LocalApiSettingsSnapshot, String> {
     let pool = crate::data::sqlite_pool::wait_for_sqlite_pool(&app).await?;
     let stored = crate::data::repositories::app_settings::load_local_api_settings(&pool)
         .await
         .map_err(|error| format!("failed to load local API settings: {error}"))?;
-    let settings = crate::engine::api::configuration::rotate_token(stored.port)?;
-    Ok(local_api_settings_snapshot(settings))
+    let settings = crate::engine::api::configuration::rotate_token(&api_credentials, stored.port)?;
+    local_api_settings_snapshot(&api_credentials, settings)
 }
 
 fn local_api_settings_snapshot(
+    api_credentials: &crate::engine::api::auth::ApiCredentialStore,
     settings: crate::domain::settings::LocalApiSettings,
-) -> crate::commands::diagnostics::LocalApiSettingsSnapshot {
-    let token_path = crate::engine::api::auth::token_file_path();
-    crate::commands::diagnostics::LocalApiSettingsSnapshot {
+) -> Result<crate::commands::diagnostics::LocalApiSettingsSnapshot, String> {
+    let token_path = api_credentials.token_path()?;
+    Ok(crate::commands::diagnostics::LocalApiSettingsSnapshot {
         port: settings.port,
         token: settings.token,
         token_path: token_path.display().to_string(),
         base_url: format!("http://127.0.0.1:{}", settings.port),
-    }
+    })
 }
 
 #[tauri::command]

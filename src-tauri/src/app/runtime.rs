@@ -68,16 +68,23 @@ pub fn setup(
 
     // Start HTTP API server for AI agent integration
     let api_server = crate::engine::api::server::ApiServerState::new();
+    let api_credentials = crate::engine::api::auth::ApiCredentialStore::new();
+    let api_token_path = crate::platform::storage_paths::resolve_storage_paths(app.handle())
+        .map_err(std::io::Error::other)?
+        .api_token_path;
     let local_api_settings = load_local_api_settings(app.handle().clone());
     if let Err(error) =
         tauri::async_runtime::block_on(crate::engine::api::configuration::initialize(
             &app.handle().clone(),
             &api_server,
+            &api_credentials,
+            &api_token_path,
             local_api_settings,
         ))
     {
         eprintln!("[api] failed to initialize local API: {error}");
     }
+    app.manage(api_credentials);
     app.manage(api_server);
 
     let app_handle = app.handle().clone();

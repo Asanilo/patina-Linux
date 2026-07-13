@@ -2,82 +2,90 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{OnceLock, RwLock};
+use std::sync::{Arc, RwLock};
 
-static API_TOKEN: OnceLock<RwLock<String>> = OnceLock::new();
 static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-#[allow(dead_code)]
-pub fn set_api_token(token: String) {
-    update_in_memory_token(token);
+#[derive(Clone, Debug)]
+pub struct ApiCredentialStore {
+    inner: Arc<RwLock<Option<ApiCredentialState>>>,
 }
 
-fn update_in_memory_token(token: String) {
-    let lock = API_TOKEN.get_or_init(|| RwLock::new(token.clone()));
-    match lock.write() {
-        Ok(mut guard) => {
-            *guard = token;
+#[derive(Clone, Debug)]
+struct ApiCredentialState {
+    token: String,
+    path: PathBuf,
+}
+
+impl Default for ApiCredentialStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ApiCredentialStore {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(None)),
         }
-        Err(poisoned) => {
-            *poisoned.into_inner() = token;
-        }
-    }
-}
-
-pub fn get_api_token() -> String {
-    let lock = API_TOKEN.get_or_init(|| RwLock::new(load_or_generate_token()));
-    match lock.read() {
-        Ok(guard) => guard.clone(),
-        Err(poisoned) => poisoned.into_inner().clone(),
-    }
-}
-
-pub fn replace_api_token(token: &str) -> Result<String, String> {
-    let normalized = token.trim().to_string();
-    if normalized.is_empty() {
-        return Err("API token cannot be empty".to_string());
     }
 
-    write_token_file_atomic(&token_file_path(), &normalized)?;
-    update_in_memory_token(normalized.clone());
-    Ok(normalized)
-}
-
-pub fn initialize_api_token(legacy_token: Option<&str>) -> Result<String, String> {
-    let token = initialize_token_file(&token_file_path(), legacy_token)?;
-    update_in_memory_token(token.clone());
-    Ok(token)
-}
-
-pub fn rotate_api_token() -> Result<String, String> {
-    let token = generate_random_token()?;
-    replace_api_token(&token)
-}
-
-pub fn token_file_path() -> std::path::PathBuf {
-    let data_dir = std::env::var("XDG_DATA_HOME")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| {
-            let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-            std::path::PathBuf::from(home).join(".local/share")
+    pub fn initialize_at(&self, path: &Path, legacy_token: Option<&str>) -> Result<String, String> {
+        let token = initialize_token_file(path, legacy_token)?;
+        self.replace_state(ApiCredentialState {
+            token: token.clone(),
+            path: path.to_path_buf(),
         });
-    data_dir.join("Patina").join("api_token")
-}
+        Ok(token)
+    }
 
-fn load_or_generate_token() -> String {
-    initialize_token_file(&token_file_path(), None)
-        .unwrap_or_else(|error| panic!("failed to initialize local API token: {error}"))
-}
+    pub fn token(&self) -> Result<String, String> {
+        self.with_state(|state| state.token.clone())
+    }
 
-pub fn validate_token(authorization: Option<&str>) -> bool {
-    let expected = get_api_token();
-    let Some(auth_header) = authorization else {
-        return false;
-    };
+    pub fn token_path(&self) -> Result<PathBuf, String> {
+        self.with_state(|state| state.path.clone())
+    }
 
-    let token = auth_header.strip_prefix("Bearer ").unwrap_or(auth_header);
+    pub fn rotate(&self) -> Result<String, String> {
+        let path = self.token_path()?;
+        let token = generate_random_token()?;
+        write_token_file_atomic(&path, &token)?;
+        self.replace_state(ApiCredentialState {
+            token: token.clone(),
+            path,
+        });
+        Ok(token)
+    }
 
-    token == expected
+    pub fn validate(&self, authorization: Option<&str>) -> bool {
+        let Ok(expected) = self.token() else {
+            return false;
+        };
+        let Some(auth_header) = authorization else {
+            return false;
+        };
+        auth_header.strip_prefix("Bearer ").unwrap_or(auth_header) == expected
+    }
+
+    fn with_state<T>(&self, read: impl FnOnce(&ApiCredentialState) -> T) -> Result<T, String> {
+        let guard = match self.inner.read() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        guard
+            .as_ref()
+            .map(read)
+            .ok_or_else(|| "API credential store is not initialized".to_string())
+    }
+
+    fn replace_state(&self, state: ApiCredentialState) {
+        let mut guard = match self.inner.write() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        *guard = Some(state);
+    }
 }
 
 fn generate_random_token() -> Result<String, String> {
@@ -291,6 +299,44 @@ mod tests {
         let token = initialize_token_file(&path, Some("legacy-token")).unwrap();
 
         assert_eq!(token, "file-token");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn independent_credential_stores_never_cross_write() {
+        let production_path = unique_test_path("store-production");
+        let dev_path = unique_test_path("store-dev");
+        let production = ApiCredentialStore::new();
+        let dev = ApiCredentialStore::new();
+
+        production
+            .initialize_at(&production_path, Some("production-token"))
+            .unwrap();
+        dev.initialize_at(&dev_path, Some("dev-token")).unwrap();
+        let rotated_dev = dev.rotate().unwrap();
+
+        assert_eq!(production.token().unwrap(), "production-token");
+        assert_eq!(
+            std::fs::read_to_string(&production_path).unwrap(),
+            "production-token"
+        );
+        assert_eq!(std::fs::read_to_string(&dev_path).unwrap(), rotated_dev);
+        assert_ne!(rotated_dev, "production-token");
+        let _ = std::fs::remove_file(production_path);
+        let _ = std::fs::remove_file(dev_path);
+    }
+
+    #[test]
+    fn rotation_reuses_the_active_token_path() {
+        let path = unique_test_path("store-rotation");
+        let store = ApiCredentialStore::new();
+        let initial = store.initialize_at(&path, None).unwrap();
+
+        let rotated = store.rotate().unwrap();
+
+        assert_ne!(initial, rotated);
+        assert_eq!(store.token_path().unwrap(), path);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), rotated);
         let _ = std::fs::remove_file(path);
     }
 }

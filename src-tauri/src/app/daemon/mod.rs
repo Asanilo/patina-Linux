@@ -110,7 +110,8 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
         .map_err(|error| format!("failed to create daemon async runtime: {error}"))?;
     let storage_paths = storage::resolve_from_environment(options.profile)?;
     let status = build_startup_status(env!("CARGO_PKG_VERSION"), options, &storage_paths);
-    crate::engine::api::auth::initialize_api_token(None)?;
+    let api_credentials = crate::engine::api::auth::ApiCredentialStore::new();
+    api_credentials.initialize_at(&storage_paths.api_token_path, None)?;
     let sqlite_runtime = runtime.block_on(prepare_sqlite_runtime_at_path(
         status.db_path.clone(),
         storage_paths.database_creation_allowed,
@@ -139,7 +140,7 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     println!("[{}] db {}", status.service_name, status.db_path.display());
     println!("[{}] sqlite ready", status.service_name);
     if options.serve_minimal_api {
-        let token = crate::engine::api::auth::get_api_token();
+        let token = api_credentials.token()?;
         let server = runtime.block_on(prepare_minimal_api_server(status.local_api_port, token))?;
         println!(
             "[{}] minimal API listening on http://127.0.0.1:{}",

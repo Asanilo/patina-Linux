@@ -67,14 +67,19 @@ impl ApiServerState {
         })
     }
 
-    pub fn install_prepared(&self, app_handle: tauri::AppHandle, prepared: PreparedApiListener) {
+    pub fn install_prepared(
+        &self,
+        app_handle: tauri::AppHandle,
+        credentials: crate::engine::api::auth::ApiCredentialStore,
+        prepared: PreparedApiListener,
+    ) {
         let port = prepared.port();
         let listener = prepared.listener;
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let previous = self.replace_runtime(port, shutdown_tx);
 
         tauri::async_runtime::spawn(async move {
-            run_server(app_handle, port, listener, shutdown_rx).await;
+            run_server(app_handle, credentials, port, listener, shutdown_rx).await;
         });
         if let Some(previous) = previous {
             let _ = previous.send(true);
@@ -111,6 +116,7 @@ impl ApiServerState {
 
 async fn run_server(
     app_handle: tauri::AppHandle,
+    credentials: crate::engine::api::auth::ApiCredentialStore,
     port: u16,
     listener: TcpListener,
     mut shutdown_rx: watch::Receiver<bool>,
@@ -124,8 +130,9 @@ async fn run_server(
                 match accept_result {
                     Ok((stream, _peer_addr)) => {
                         let app = app_handle.clone();
+                        let credentials = credentials.clone();
                         tauri::async_runtime::spawn(async move {
-                            router::handle_connection(stream, app).await;
+                            router::handle_connection(stream, app, credentials).await;
                         });
                     }
                     Err(error) => {

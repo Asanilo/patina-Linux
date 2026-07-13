@@ -69,29 +69,40 @@ pub fn cmd_get_resource_diagnostics(app: tauri::AppHandle) -> ResourceDiagnostic
 #[tauri::command]
 pub fn cmd_get_local_api_diagnostics(
     api_server_state: State<crate::engine::api::server::ApiServerState>,
+    api_credentials: State<crate::engine::api::auth::ApiCredentialStore>,
 ) -> LocalApiDiagnosticsSnapshot {
     let confirmed_port = api_server_state.confirmed_port();
     let port = confirmed_port.unwrap_or(crate::engine::api::server::DEFAULT_PORT);
-    let token_path = crate::engine::api::auth::token_file_path();
-    let token_present = !crate::engine::api::auth::get_api_token().trim().is_empty();
+    let (token_path, token_present) = local_api_credential_diagnostics(&api_credentials);
     let listening = confirmed_port.map(is_local_api_listening).unwrap_or(false);
 
     build_local_api_diagnostics(port, token_path, token_present, listening)
 }
 
+fn local_api_credential_diagnostics(
+    credentials: &crate::engine::api::auth::ApiCredentialStore,
+) -> (PathBuf, bool) {
+    let token_path = credentials.token_path().unwrap_or_default();
+    let token_present = credentials
+        .token()
+        .is_ok_and(|token| !token.trim().is_empty());
+    (token_path, token_present)
+}
+
 #[tauri::command]
 pub async fn cmd_get_local_api_settings(
     app: tauri::AppHandle,
+    api_credentials: State<'_, crate::engine::api::auth::ApiCredentialStore>,
 ) -> Result<LocalApiSettingsSnapshot, String> {
     let pool = crate::data::sqlite_pool::wait_for_sqlite_pool(&app).await?;
     let stored = crate::data::repositories::app_settings::load_local_api_settings(&pool)
         .await
         .map_err(|error| format!("failed to load local API settings: {error}"))?;
     let port = stored.port;
-    let token_path = crate::engine::api::auth::token_file_path();
+    let token_path = api_credentials.token_path()?;
     Ok(LocalApiSettingsSnapshot {
         port,
-        token: crate::engine::api::auth::get_api_token(),
+        token: api_credentials.token()?,
         token_path: token_path.display().to_string(),
         base_url: format!("http://127.0.0.1:{port}"),
     })
@@ -175,5 +186,22 @@ mod tests {
         assert_eq!(snapshot.token_path, "/tmp/patina/api_token");
         assert!(snapshot.token_present);
         assert!(!snapshot.listening);
+    }
+
+    #[test]
+    fn active_token_path_is_reported_to_diagnostics() {
+        let root =
+            std::env::temp_dir().join(format!("patina-diagnostics-token-{}", std::process::id()));
+        let path = root.join("Patina Dev/api_token");
+        let credentials = crate::engine::api::auth::ApiCredentialStore::new();
+        credentials
+            .initialize_at(&path, Some("diagnostics-token"))
+            .unwrap();
+
+        let (reported_path, token_present) = super::local_api_credential_diagnostics(&credentials);
+
+        assert_eq!(reported_path, path);
+        assert!(token_present);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

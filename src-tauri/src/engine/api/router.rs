@@ -1,11 +1,17 @@
-use crate::engine::api::{auth, handlers, types::ApiError, types::RouteResponse};
+use crate::engine::api::{
+    auth::ApiCredentialStore, handlers, types::ApiError, types::RouteResponse,
+};
 use futures_util::FutureExt;
 use serde::Serialize;
 use std::panic::AssertUnwindSafe;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 
-pub async fn handle_connection(mut stream: TcpStream, app: tauri::AppHandle) {
+pub async fn handle_connection(
+    mut stream: TcpStream,
+    app: tauri::AppHandle,
+    credentials: ApiCredentialStore,
+) {
     let (reader, mut writer) = stream.split();
     let mut buf_reader = BufReader::new(reader);
     let mut request_line = String::new();
@@ -61,7 +67,7 @@ pub async fn handle_connection(mut stream: TcpStream, app: tauri::AppHandle) {
     }
 
     // Validate auth token
-    if !auth::validate_token(authorization.as_deref()) {
+    if !credentials.validate(authorization.as_deref()) {
         write_json_response(&mut writer, 401, &ApiError::unauthorized()).await;
         return;
     }
