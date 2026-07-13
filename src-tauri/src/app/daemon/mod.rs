@@ -29,10 +29,7 @@ pub fn build_startup_status(
         options.profile,
         options.serve_minimal_api,
         local_api_port,
-        storage_paths.api_token_path.clone(),
-        storage_paths.data_root.clone(),
-        storage_paths.db_path.clone(),
-        storage_paths.webview_root.clone(),
+        storage_paths,
     )
 }
 

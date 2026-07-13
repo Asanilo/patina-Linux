@@ -69,6 +69,7 @@ pub fn acquire_runtime_lease(
         .read(true)
         .write(true)
         .create(true)
+        .truncate(false)
         .open(&path)
         .map_err(|error| RuntimeLeaseError {
             owner: None,

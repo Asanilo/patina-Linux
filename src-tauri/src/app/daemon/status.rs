@@ -23,10 +23,7 @@ pub fn build_startup_status(
     profile: crate::platform::app_paths::AppProfile,
     local_api_enabled: bool,
     local_api_port: u16,
-    api_token_path: PathBuf,
-    data_root: PathBuf,
-    db_path: PathBuf,
-    webview_root: PathBuf,
+    storage_paths: &crate::platform::storage_paths::StoragePaths,
 ) -> DaemonStartupStatus {
     DaemonStartupStatus {
         service_name: "patinad",
@@ -38,13 +35,13 @@ pub fn build_startup_status(
         tracking_enabled: false,
         local_api_enabled,
         local_api_port,
-        api_token_path,
-        data_root,
-        db_path,
-        webview_root,
+        api_token_path: storage_paths.api_token_path.clone(),
+        data_root: storage_paths.data_root.clone(),
+        db_path: storage_paths.db_path.clone(),
+        webview_root: storage_paths.webview_root.clone(),
         notes: vec![
             "daemon skeleton only",
-            "tracking and local API stay owned by the desktop runtime in this stage",
+            "tracking stays owned by the desktop runtime in this stage",
         ],
     }
 }
@@ -53,17 +50,26 @@ pub fn build_startup_status(
 mod tests {
     use super::*;
 
+    fn storage_paths(root: &str) -> crate::platform::storage_paths::StoragePaths {
+        crate::platform::storage_paths::StoragePaths::from_roots(
+            PathBuf::from(format!("{root}/config")),
+            PathBuf::from(root),
+            PathBuf::from(root),
+            PathBuf::from(root),
+            false,
+            false,
+        )
+    }
+
     #[test]
     fn daemon_status_identifies_stage_zero_runtime() {
+        let paths = storage_paths("/tmp/Patina");
         let status = build_startup_status(
             "1.8.3",
             crate::platform::app_paths::AppProfile::Dev,
             false,
             14_840,
-            PathBuf::from("/tmp/api_token"),
-            PathBuf::from("/tmp/Patina"),
-            PathBuf::from("/tmp/Patina/patina.db"),
-            PathBuf::from("/tmp/Patina"),
+            &paths,
         );
 
         assert_eq!(status.service_name, "patinad");
@@ -84,15 +90,13 @@ mod tests {
 
     #[test]
     fn daemon_status_reports_confirmed_enabled_api_port() {
+        let paths = storage_paths("/tmp/Patina Dev");
         let status = build_startup_status(
             "1.8.3",
             crate::platform::app_paths::AppProfile::Dev,
             true,
             42_321,
-            PathBuf::from("/tmp/api_token"),
-            PathBuf::from("/tmp/Patina Dev"),
-            PathBuf::from("/tmp/Patina Dev/patina.db"),
-            PathBuf::from("/tmp/Patina Dev"),
+            &paths,
         );
 
         assert!(status.local_api_enabled);

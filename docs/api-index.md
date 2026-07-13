@@ -10,7 +10,7 @@
 - Base URL: `http://127.0.0.1:14840`
 - Protocol: local HTTP/1.1 JSON
 - Auth: `Authorization: Bearer <token>`
-- Token file: `${XDG_DATA_HOME:-~/.local/share}/Patina/api_token`
+- Production token file: `${XDG_DATA_HOME:-~/.local/share}/Patina/api_token`; Local and Dev use their matching profile directories.
 - Token generation: created on first API startup if the token file is missing or empty.
 - Response envelope: successful responses use `{ "data": ... }`.
 - Error envelope: failed responses use `{ "error": { "code": "...", "message": "..." } }`.
@@ -33,6 +33,7 @@ Current caveats:
 - `/api/v1/openapi.json` exposes the machine-readable OpenAPI 3.1 schema with paths, query/path parameters, request bodies, response envelopes, auth, error envelopes, and field-level component schemas.
 - The OpenAPI server URL uses a configurable `{port}` variable whose default is `14840`.
 - This document remains the human-maintained reference for behavior notes and implementation caveats.
+- The desktop runtime exposes the endpoint set below. Development-only `patinad` Stage 0 exposes only authenticated `GET /api/v1/health` and `GET /api/v1/openapi.json`; its OpenAPI document is filtered to exactly those routes.
 
 ---
 

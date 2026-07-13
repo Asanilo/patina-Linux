@@ -1,6 +1,6 @@
 # `patinad` 后台运行时设计
 
-> 状态：已确认设计，等待分阶段实施。
+> 状态：Stage 0 已完成并验证；Stage 1 及后续阶段待实施。
 > 生命周期：本设计是当前 `patinad` 实施依据；后台接管稳定完成后移入 `docs/archive/`。
 
 ## 1. 目标
@@ -18,25 +18,27 @@
 - 不扩大 KDE、wlroots 或移动端支持
 - 不为 MCP 提供任意文件操作能力
 
-## 3. 当前 Stage 1 状态
+## 3. 当前 Stage 0 状态
 
-当前分支已经提供：
+当前分支已经提供并验证：
 
 - `patinad` 二进制入口
 - 不依赖 `AppHandle` 的 SQLite pool 打开与 schema 准备
-- API token 初始化
+- Production / Local / Dev profile 隔离和 Tauri-free storage anchor 解析
+- pending migration 与缺失自定义挂载的 fail-closed 行为
+- desktop / daemon 按 profile 唯一 owner 的 `RuntimeLease`
+- 按 profile 隔离、owner-only 的 API credential store
+- desktop / daemon 共用的 bounded HTTP transport
 - 可选的最小 localhost API
-- `/api/v1/health` 与 `/api/v1/openapi.json`
-- daemon 专项测试
+- 与实际能力一致的 `/api/v1/health`、`/api/v1/openapi.json`
+- listener、连接任务、SQLite pool 和 lease 的显式关闭顺序
+- daemon 专项、生命周期和架构边界测试
 
-当前实现不能发布为正式后台服务，原因包括：
+当前实现仍不能发布为正式后台服务，原因包括：
 
-- 固定使用 Production profile，开发运行可能触碰生产数据
-- 没有读取自定义数据目录锚点和 pending migration 状态
-- 没有 desktop / daemon 唯一 owner 机制
-- 最小 HTTP server 与桌面 API transport 重复
-- OpenAPI 描述的 endpoint 多于 daemon 实际提供的 endpoint
 - tracking、watchdog、power、audio、MPRIS 和 browser bridge 仍依赖 Tauri runtime
+- daemon 尚无完整只读 API、event stream、systemd user service 和浏览器 UI
+- Tauri desktop 尚未改为 daemon client
 
 ## 4. 目标结构
 
