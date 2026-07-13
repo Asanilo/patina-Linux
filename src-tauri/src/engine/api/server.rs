@@ -31,6 +31,18 @@ pub struct StandaloneApiServer {
     shutdown_rx: watch::Receiver<bool>,
 }
 
+pub struct ApiServerHandle {
+    shutdown_tx: watch::Sender<bool>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl ApiServerHandle {
+    pub async fn shutdown(self) {
+        let _ = self.shutdown_tx.send(true);
+        let _ = self.task.await;
+    }
+}
+
 #[cfg(test)]
 #[derive(Clone)]
 pub struct StandaloneApiShutdown {
@@ -47,6 +59,12 @@ impl StandaloneApiShutdown {
 impl StandaloneApiServer {
     pub fn port(&self) -> u16 {
         self.port
+    }
+
+    pub fn start(self) -> ApiServerHandle {
+        let shutdown_tx = self.shutdown_tx.clone();
+        let task = tokio::spawn(self.run());
+        ApiServerHandle { shutdown_tx, task }
     }
 
     #[cfg(test)]

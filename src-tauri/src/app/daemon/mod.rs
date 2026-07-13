@@ -1,4 +1,5 @@
 mod options;
+mod runtime;
 mod status;
 mod storage;
 
@@ -7,6 +8,7 @@ use std::path::PathBuf;
 use sqlx::{Pool, Sqlite};
 
 pub use options::DaemonRunOptions;
+pub use runtime::DaemonRuntime;
 pub use status::DaemonStartupStatus;
 
 #[derive(Debug)]
@@ -111,17 +113,26 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     );
     println!("[{}] db {}", status.service_name, status.db_path.display());
     println!("[{}] sqlite ready", status.service_name);
-    if let Some(server) = api_server {
+    let api_handle = if let Some(server) = api_server {
         println!(
             "[{}] minimal API listening on http://127.0.0.1:{}",
             status.service_name,
             server.port()
         );
-        runtime.block_on(server.run());
-    }
+        Some(runtime.block_on(async move { server.start() }))
+    } else {
+        None
+    };
+    let daemon_runtime = DaemonRuntime::new(api_handle, sqlite_runtime, runtime_lease);
     runtime.block_on(async move {
-        sqlite_runtime.pool.close().await;
-    });
+        if options.serve_minimal_api {
+            tokio::signal::ctrl_c()
+                .await
+                .map_err(|error| format!("failed to wait for shutdown signal: {error}"))?;
+        }
+        daemon_runtime.shutdown().await;
+        Ok::<(), String>(())
+    })?;
     Ok(())
 }
 
