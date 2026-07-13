@@ -1,110 +1,38 @@
 use crate::engine::api::{
-    auth::ApiCredentialStore, handlers, types::ApiError, types::RouteResponse,
+    auth::ApiCredentialStore,
+    handlers,
+    http::{self, ApiRequest},
+    types::ApiError,
+    types::RouteResponse,
 };
 use futures_util::FutureExt;
-use serde::Serialize;
 use std::panic::AssertUnwindSafe;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 
 pub async fn handle_connection(
-    mut stream: TcpStream,
+    stream: TcpStream,
     app: tauri::AppHandle,
     credentials: ApiCredentialStore,
 ) {
-    let (reader, mut writer) = stream.split();
-    let mut buf_reader = BufReader::new(reader);
-    let mut request_line = String::new();
-
-    if let Err(error) = buf_reader.read_line(&mut request_line).await {
-        eprintln!("[api] failed to read request line: {error}");
-        return;
-    }
-
-    let parts: Vec<&str> = request_line.split_whitespace().collect();
-    if parts.len() < 2 {
-        write_error_response(
-            &mut writer,
-            400,
-            &ApiError::bad_request("malformed request"),
-        )
-        .await;
-        return;
-    }
-
-    let method = parts[0];
-    let path_with_query = parts[1];
-
-    // Read headers to find Authorization and Content-Length
-    let mut headers = Vec::new();
-    let mut content_length: usize = 0;
-    let mut authorization: Option<String> = None;
-
-    loop {
-        let mut header_line = String::new();
-        match buf_reader.read_line(&mut header_line).await {
-            Ok(0) | Err(_) => break,
-            Ok(_) => {
-                let trimmed = header_line.trim();
-                if trimmed.is_empty() {
-                    break;
+    http::serve_connection(stream, credentials, move |request| async move {
+        let method = request.method.clone();
+        let path = request.path.clone();
+        match AssertUnwindSafe(route_request(request, &app))
+            .catch_unwind()
+            .await
+        {
+            Ok(response) => response,
+            Err(_) => {
+                eprintln!("[api] handler panicked while serving {method} {path}");
+                RouteResponse {
+                    status: 500,
+                    body: serde_json::to_value(ApiError::internal("handler panicked"))
+                        .unwrap_or_default(),
                 }
-                if let Some(value) = trimmed.strip_prefix("Content-Length:") {
-                    content_length = value.trim().parse().unwrap_or(0);
-                }
-                if let Some(value) = trimmed.strip_prefix("Authorization:") {
-                    authorization = Some(value.trim().to_string());
-                }
-                headers.push(header_line);
             }
         }
-    }
-
-    // Read body if present
-    let mut body = vec![0u8; content_length.min(65536)];
-    if content_length > 0 && content_length <= 65536 {
-        let _ = tokio::io::AsyncReadExt::read_exact(&mut buf_reader, &mut body).await;
-    }
-
-    // Validate auth token
-    if !credentials.validate(authorization.as_deref()) {
-        write_json_response(&mut writer, 401, &ApiError::unauthorized()).await;
-        return;
-    }
-
-    // Split path and query
-    let (path, query) = match path_with_query.split_once('?') {
-        Some((p, q)) => (p, Some(q)),
-        None => (path_with_query, None),
-    };
-
-    // Handle CORS preflight
-    if method == "OPTIONS" {
-        let response = "HTTP/1.1 204 No Content\r\n\
-                        Access-Control-Allow-Origin: *\r\n\
-                        Access-Control-Allow-Headers: Authorization, Content-Type\r\n\
-                        Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\n\
-                        Access-Control-Max-Age: 86400\r\n\
-                        \r\n";
-        let _ = writer.write_all(response.as_bytes()).await;
-        return;
-    }
-
-    let response = match AssertUnwindSafe(route_request(method, path, query, &body, &app))
-        .catch_unwind()
-        .await
-    {
-        Ok(response) => response,
-        Err(_) => {
-            eprintln!("[api] handler panicked while serving {method} {path}");
-            RouteResponse {
-                status: 500,
-                body: serde_json::to_value(ApiError::internal("handler panicked"))
-                    .unwrap_or_default(),
-            }
-        }
-    };
-    write_json_response(&mut writer, response.status, &response.body).await;
+    })
+    .await;
 }
 
 pub fn route_minimal_request(method: &str, path: &str) -> RouteResponse {
@@ -124,67 +52,18 @@ pub fn route_minimal_request(method: &str, path: &str) -> RouteResponse {
     }
 }
 
-pub(crate) async fn handle_minimal_connection(stream: TcpStream, auth_token: String) {
-    let (reader, mut writer) = stream.into_split();
-    let mut reader = BufReader::new(reader);
-    let mut request_line = String::new();
-    if reader.read_line(&mut request_line).await.is_err() {
-        return;
-    }
-    let parts = request_line.split_whitespace().collect::<Vec<_>>();
-    let mut authorized = false;
-    loop {
-        let mut header_line = String::new();
-        match reader.read_line(&mut header_line).await {
-            Ok(0) | Err(_) => break,
-            Ok(_) => {
-                let trimmed = header_line.trim();
-                if trimmed.is_empty() {
-                    break;
-                }
-                if let Some(value) = trimmed.strip_prefix("Authorization:") {
-                    let token = value.trim().strip_prefix("Bearer ").unwrap_or(value.trim());
-                    authorized = token == auth_token;
-                }
-            }
-        }
-    }
-
-    let response = if !authorized {
-        RouteResponse {
-            status: 401,
-            body: serde_json::to_value(ApiError::unauthorized()).unwrap_or_default(),
-        }
-    } else if parts.len() >= 2 {
-        route_minimal_request(parts[0], parts[1])
-    } else {
-        route_minimal_request("", "")
-    };
-
-    let body = serde_json::to_string(&response.body).unwrap_or_else(|_| "{}".to_string());
-    let status_text = match response.status {
-        200 => "OK",
-        401 => "Unauthorized",
-        404 => "Not Found",
-        _ => "Unknown",
-    };
-    let raw = format!(
-        "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-        response.status,
-        status_text,
-        body.len(),
-        body
-    );
-    let _ = writer.write_all(raw.as_bytes()).await;
+pub(crate) async fn handle_minimal_connection(stream: TcpStream, credentials: ApiCredentialStore) {
+    http::serve_connection(stream, credentials, |request| async move {
+        route_minimal_request(&request.method, &request.path)
+    })
+    .await;
 }
 
-async fn route_request(
-    method: &str,
-    path: &str,
-    query: Option<&str>,
-    body: &[u8],
-    app: &tauri::AppHandle,
-) -> RouteResponse {
+async fn route_request(request: ApiRequest, app: &tauri::AppHandle) -> RouteResponse {
+    let method = request.method.as_str();
+    let path = request.path.as_str();
+    let query = request.query.as_deref();
+    let body = request.body.as_slice();
     match (method, path) {
         ("GET", "/api/v1/health") => handlers::health::get_health(app),
         ("GET", "/api/v1/openapi.json") => handlers::openapi::get_openapi(),
@@ -215,43 +94,4 @@ async fn route_request(
                 .unwrap_or_default(),
         },
     }
-}
-
-async fn write_json_response<T: Serialize>(
-    writer: &mut (impl AsyncWriteExt + Unpin),
-    status: u16,
-    body: &T,
-) {
-    let body_json = serde_json::to_string(body).unwrap_or_else(|_| "{}".to_string());
-    let status_text = match status {
-        200 => "OK",
-        400 => "Bad Request",
-        401 => "Unauthorized",
-        404 => "Not Found",
-        500 => "Internal Server Error",
-        _ => "Unknown",
-    };
-
-    let response = format!(
-        "HTTP/1.1 {status} {status_text}\r\n\
-         Content-Type: application/json\r\n\
-         Content-Length: {}\r\n\
-         Connection: close\r\n\
-         Access-Control-Allow-Origin: *\r\n\
-         Access-Control-Allow-Headers: Authorization, Content-Type\r\n\
-         Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\n\
-         \r\n\
-         {body_json}",
-        body_json.len()
-    );
-
-    let _ = writer.write_all(response.as_bytes()).await;
-}
-
-async fn write_error_response(
-    writer: &mut (impl AsyncWriteExt + Unpin),
-    status: u16,
-    error: &ApiError,
-) {
-    write_json_response(writer, status, error).await;
 }

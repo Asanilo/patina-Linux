@@ -5,8 +5,6 @@ mod storage;
 use std::path::PathBuf;
 
 use sqlx::{Pool, Sqlite};
-use tokio::net::TcpListener;
-use tokio::sync::watch;
 
 pub use options::DaemonRunOptions;
 pub use status::DaemonStartupStatus;
@@ -16,70 +14,6 @@ pub struct DaemonSqliteRuntime {
     #[cfg_attr(not(test), allow(dead_code))]
     pub db_path: PathBuf,
     pub pool: Pool<Sqlite>,
-}
-
-pub struct MinimalApiServer {
-    port: u16,
-    listener: TcpListener,
-    auth_token: String,
-    #[cfg_attr(not(test), allow(dead_code))]
-    shutdown_tx: watch::Sender<bool>,
-    shutdown_rx: watch::Receiver<bool>,
-}
-
-#[derive(Clone)]
-#[cfg(test)]
-pub struct MinimalApiShutdown {
-    shutdown_tx: watch::Sender<bool>,
-}
-
-#[cfg(test)]
-impl MinimalApiShutdown {
-    pub fn shutdown(&self) {
-        let _ = self.shutdown_tx.send(true);
-    }
-}
-
-impl MinimalApiServer {
-    pub fn port(&self) -> u16 {
-        self.port
-    }
-
-    #[cfg(test)]
-    pub fn shutdown_handle(&self) -> MinimalApiShutdown {
-        MinimalApiShutdown {
-            shutdown_tx: self.shutdown_tx.clone(),
-        }
-    }
-
-    pub async fn run(mut self) {
-        loop {
-            tokio::select! {
-                accept_result = self.listener.accept() => {
-                    match accept_result {
-                        Ok((stream, _peer_addr)) => {
-                            let auth_token = self.auth_token.clone();
-                            tokio::spawn(async move {
-                                crate::engine::api::router::handle_minimal_connection(
-                                    stream,
-                                    auth_token,
-                                )
-                                .await;
-                            });
-                        }
-                        Err(error) => {
-                            eprintln!("[patinad] minimal API accept error: {error}");
-                        }
-                    }
-                }
-                _ = self.shutdown_rx.changed() => {
-                    if *self.shutdown_rx.borrow() {
-                        break;
-                    }
-                }
-            }
-        }
-    }
 }
 
 pub fn build_startup_status(
@@ -153,8 +87,12 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     println!("[{}] db {}", status.service_name, status.db_path.display());
     println!("[{}] sqlite ready", status.service_name);
     if options.serve_minimal_api {
-        let token = api_credentials.token()?;
-        let server = runtime.block_on(prepare_minimal_api_server(status.local_api_port, token))?;
+        let server = runtime.block_on(
+            crate::engine::api::server::prepare_standalone_minimal_server(
+                status.local_api_port,
+                api_credentials.clone(),
+            ),
+        )?;
         println!(
             "[{}] minimal API listening on http://127.0.0.1:{}",
             status.service_name,
@@ -181,30 +119,22 @@ pub async fn prepare_sqlite_runtime_at_path(
     Ok(DaemonSqliteRuntime { db_path, pool })
 }
 
-pub async fn prepare_minimal_api_server(
-    port: u16,
-    auth_token: impl Into<String>,
-) -> Result<MinimalApiServer, String> {
-    let listener = TcpListener::bind(("127.0.0.1", port))
-        .await
-        .map_err(|error| format!("failed to bind patinad minimal API: {error}"))?;
-    let port = listener
-        .local_addr()
-        .map_err(|error| format!("failed to inspect patinad minimal API address: {error}"))?
-        .port();
-    let (shutdown_tx, shutdown_rx) = watch::channel(false);
-    Ok(MinimalApiServer {
-        port,
-        listener,
-        auth_token: auth_token.into(),
-        shutdown_tx,
-        shutdown_rx,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_api_credentials() -> crate::engine::api::auth::ApiCredentialStore {
+        let path = std::env::temp_dir().join(format!(
+            "patina-daemon-api-token-{}-{}",
+            std::process::id(),
+            crate::app::runtime::now_ms()
+        ));
+        let credentials = crate::engine::api::auth::ApiCredentialStore::new();
+        credentials
+            .initialize_at(&path, Some("test-token"))
+            .unwrap();
+        credentials
+    }
 
     #[tokio::test]
     async fn daemon_sqlite_runtime_prepares_database_without_tauri_app_handle() {
@@ -298,7 +228,12 @@ mod tests {
 
     #[tokio::test]
     async fn daemon_minimal_api_server_serves_health_without_tauri_app_handle() {
-        let server = prepare_minimal_api_server(0, "test-token").await.unwrap();
+        let server = crate::engine::api::server::prepare_standalone_minimal_server(
+            0,
+            test_api_credentials(),
+        )
+        .await
+        .unwrap();
         let port = server.port();
         let shutdown = server.shutdown_handle();
         let task = tokio::spawn(server.run());
@@ -324,7 +259,12 @@ mod tests {
 
     #[tokio::test]
     async fn daemon_minimal_api_server_rejects_missing_token() {
-        let server = prepare_minimal_api_server(0, "test-token").await.unwrap();
+        let server = crate::engine::api::server::prepare_standalone_minimal_server(
+            0,
+            test_api_credentials(),
+        )
+        .await
+        .unwrap();
         let port = server.port();
         let shutdown = server.shutdown_handle();
         let task = tokio::spawn(server.run());
