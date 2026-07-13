@@ -105,35 +105,7 @@ pub fn build_startup_status(version: impl Into<String>) -> DaemonStartupStatus {
 }
 
 fn default_daemon_storage_paths() -> crate::platform::storage_paths::StoragePaths {
-    let roots = crate::platform::app_paths::AppPathRoots {
-        config: env_path("XDG_CONFIG_HOME").unwrap_or_else(|| home_path().join(".config")),
-        data: env_path("XDG_DATA_HOME").unwrap_or_else(|| home_path().join(".local/share")),
-        local_data: env_path("XDG_DATA_HOME").unwrap_or_else(|| home_path().join(".local/share")),
-    };
-    let profile = crate::platform::app_paths::AppProfile::Production;
-    let paths = crate::platform::app_paths::profile_paths(&roots, profile);
-
-    crate::platform::storage_paths::StoragePaths::from_roots(
-        paths.control_root,
-        paths.data_root.clone(),
-        paths.data_root,
-        paths.webview_root,
-        false,
-        false,
-    )
-}
-
-fn env_path(key: &str) -> Option<PathBuf> {
-    std::env::var_os(key)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-}
-
-fn home_path() -> PathBuf {
-    std::env::var_os("HOME")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."))
+    crate::platform::storage_paths::default_production_storage_paths_from_environment()
 }
 
 pub fn run(args: impl IntoIterator<Item = impl AsRef<str>>) -> Result<(), String> {

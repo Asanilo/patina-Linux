@@ -932,6 +932,36 @@ mod tests {
     }
 
     #[test]
+    fn explicit_path_pool_prepares_sessions_schema() {
+        tauri::async_runtime::block_on(async {
+            let root = std::env::temp_dir().join(format!(
+                "patina-explicit-pool-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            let db_path = root.join("Patina").join("patina.db");
+
+            let pool = open_prepared_sqlite_pool_at_path(&db_path, true)
+                .await
+                .unwrap();
+            let sessions_table_count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'sessions'",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+            assert_eq!(sessions_table_count, 1);
+
+            pool.close().await;
+            std::fs::remove_dir_all(root).unwrap();
+        });
+    }
+
+    #[test]
     fn current_baseline_migration_creates_complete_schema() {
         tauri::async_runtime::block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();

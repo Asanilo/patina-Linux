@@ -48,6 +48,42 @@ impl StoragePaths {
     }
 }
 
+pub fn default_production_storage_paths_from_environment() -> StoragePaths {
+    let home = std::env::var_os("HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join(".config"));
+    let data = std::env::var_os("XDG_DATA_HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join(".local/share"));
+    let roots = app_paths::AppPathRoots {
+        config,
+        data: data.clone(),
+        local_data: data,
+    };
+
+    default_production_storage_paths_from_roots(&roots)
+}
+
+pub fn default_production_storage_paths_from_roots(
+    roots: &app_paths::AppPathRoots,
+) -> StoragePaths {
+    let paths = app_paths::profile_paths(roots, app_paths::AppProfile::Production);
+    StoragePaths::from_roots(
+        paths.control_root,
+        paths.data_root.clone(),
+        paths.data_root,
+        paths.webview_root,
+        false,
+        false,
+    )
+}
+
 pub fn default_storage_paths<R: Runtime>(app: &AppHandle<R>) -> Result<StoragePaths, String> {
     let defaults = app_paths::default_profile_paths(app)?;
     Ok(StoragePaths::from_roots(
@@ -172,6 +208,35 @@ mod tests {
             false,
             false,
         )
+    }
+
+    #[test]
+    fn production_environment_defaults_are_derived_by_platform_owner() {
+        let roots = app_paths::AppPathRoots {
+            config: PathBuf::from("/home/test/.config"),
+            data: PathBuf::from("/home/test/.local/share"),
+            local_data: PathBuf::from("/home/test/.local/share"),
+        };
+
+        let paths = default_production_storage_paths_from_roots(&roots);
+
+        assert_eq!(
+            paths.control_root,
+            PathBuf::from("/home/test/.config/Patina")
+        );
+        assert_eq!(
+            paths.data_root,
+            PathBuf::from("/home/test/.local/share/Patina")
+        );
+        assert_eq!(
+            paths.webview_root,
+            PathBuf::from("/home/test/.local/share/Patina")
+        );
+        assert_eq!(
+            paths.api_token_path,
+            PathBuf::from("/home/test/.local/share/Patina/api_token")
+        );
+        assert!(paths.database_creation_allowed);
     }
 
     #[test]
