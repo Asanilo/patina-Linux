@@ -58,6 +58,15 @@ impl ApiError {
             },
         }
     }
+
+    pub fn unavailable(message: &str) -> Self {
+        Self {
+            error: ApiErrorDetail {
+                code: "service_unavailable".to_string(),
+                message: message.to_string(),
+            },
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -65,6 +74,27 @@ pub struct HealthResponse {
     pub status: String,
     pub version: String,
     pub platform: String,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct AvailabilityCapability {
+    pub available: bool,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct OwnedRuntimeCapability {
+    pub owned: bool,
+    pub ready: bool,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct CapabilitiesResponse {
+    pub protocol_version: u32,
+    pub runtime_host: String,
+    pub event_stream: AvailabilityCapability,
+    pub tracking: OwnedRuntimeCapability,
+    pub browser_activity_bridge: OwnedRuntimeCapability,
+    pub write_api: AvailabilityCapability,
 }
 
 #[derive(Debug, Serialize)]

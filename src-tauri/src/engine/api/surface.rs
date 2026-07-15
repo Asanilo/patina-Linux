@@ -17,6 +17,10 @@ const DESKTOP_ENDPOINTS: &[ApiEndpoint] = &[
     },
     ApiEndpoint {
         method: "GET",
+        path: "/api/v1/capabilities",
+    },
+    ApiEndpoint {
+        method: "GET",
         path: "/api/v1/openapi.json",
     },
     ApiEndpoint {
@@ -96,6 +100,14 @@ const DAEMON_READ_ONLY_ENDPOINTS: &[ApiEndpoint] = &[
     },
     ApiEndpoint {
         method: "GET",
+        path: "/api/v1/capabilities",
+    },
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/events",
+    },
+    ApiEndpoint {
+        method: "GET",
         path: "/api/v1/openapi.json",
     },
     ApiEndpoint {
@@ -153,6 +165,31 @@ const DAEMON_READ_ONLY_ENDPOINTS: &[ApiEndpoint] = &[
 ];
 
 impl ApiSurface {
+    pub fn runtime_host(self) -> &'static str {
+        match self {
+            Self::Desktop => "desktop",
+            Self::DaemonReadOnly => "daemon",
+        }
+    }
+
+    pub fn owns_tracking(self) -> bool {
+        matches!(self, Self::Desktop)
+    }
+
+    pub fn owns_browser_activity_bridge(self) -> bool {
+        matches!(self, Self::Desktop)
+    }
+
+    pub fn has_event_stream(self) -> bool {
+        self.allows("GET", "/api/v1/events")
+    }
+
+    pub fn has_write_api(self) -> bool {
+        self.endpoints()
+            .iter()
+            .any(|endpoint| endpoint.method != "GET")
+    }
+
     pub fn endpoints(self) -> &'static [ApiEndpoint] {
         match self {
             Self::Desktop => DESKTOP_ENDPOINTS,
@@ -194,26 +231,36 @@ mod tests {
 
     #[test]
     fn desktop_surface_keeps_existing_method_and_path_set() {
-        assert_eq!(ApiSurface::Desktop.endpoints().len(), 19);
+        assert_eq!(ApiSurface::Desktop.endpoints().len(), 20);
         assert!(ApiSurface::Desktop.allows("GET", "/api/v1/sessions"));
+        assert!(ApiSurface::Desktop.allows("GET", "/api/v1/capabilities"));
+        assert!(!ApiSurface::Desktop.allows("GET", "/api/v1/events"));
         assert!(ApiSurface::Desktop.allows("POST", "/api/v1/apps/{exe_name}/rename"));
         assert!(ApiSurface::Desktop.allows("GET", "/api/v1/tools/snapshot"));
     }
 
     #[test]
-    fn daemon_read_only_surface_matches_every_desktop_get_and_no_post() {
+    fn daemon_read_only_surface_matches_desktop_gets_plus_event_stream_and_no_post() {
         let desktop_gets = ApiSurface::Desktop
             .endpoints()
             .iter()
             .filter(|endpoint| endpoint.method == "GET")
             .copied()
             .collect::<Vec<_>>();
+        let daemon_shared_gets = ApiSurface::DaemonReadOnly
+            .endpoints()
+            .iter()
+            .filter(|endpoint| endpoint.path != "/api/v1/events")
+            .copied()
+            .collect::<Vec<_>>();
 
-        assert_eq!(ApiSurface::DaemonReadOnly.endpoints(), desktop_gets);
+        assert_eq!(daemon_shared_gets, desktop_gets);
         assert!(ApiSurface::DaemonReadOnly
             .endpoints()
             .iter()
             .all(|endpoint| endpoint.method == "GET"));
+        assert!(ApiSurface::DaemonReadOnly.allows("GET", "/api/v1/capabilities"));
+        assert!(ApiSurface::DaemonReadOnly.allows("GET", "/api/v1/events"));
         assert!(!ApiSurface::DaemonReadOnly.allows_request("POST", "/api/v1/apps/ghostty/rename"));
         assert!(ApiSurface::Desktop.allows_request("POST", "/api/v1/apps/ghostty/rename"));
         assert!(!ApiSurface::Desktop.allows_request("POST", "/api/v1/apps/ghostty/not-rename"));

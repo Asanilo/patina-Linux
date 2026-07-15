@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod apps;
+pub mod capabilities;
 pub mod diagnostics;
 pub mod health;
 pub mod openapi;

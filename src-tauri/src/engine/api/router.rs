@@ -1,7 +1,7 @@
 use crate::engine::api::{
     auth::ApiCredentialStore,
     handlers,
-    http::{self, ApiRequest},
+    http::{self, ApiConnectionResponse, ApiRequest},
     types::ApiError,
     types::RouteResponse,
 };
@@ -14,26 +14,60 @@ pub async fn handle_connection(
     context: Arc<crate::engine::api::context::ApiRuntimeContext>,
     surface: crate::engine::api::surface::ApiSurface,
     credentials: ApiCredentialStore,
+    event_hub: Option<Arc<crate::engine::runtime_event::RuntimeEventHub>>,
 ) {
     http::serve_connection(stream, credentials, move |request| async move {
         let method = request.method.clone();
         let path = request.path.clone();
-        match AssertUnwindSafe(route_request(request, &context, surface))
-            .catch_unwind()
-            .await
+        match AssertUnwindSafe(route_connection_request(
+            request, &context, surface, event_hub,
+        ))
+        .catch_unwind()
+        .await
         {
             Ok(response) => response,
             Err(_) => {
                 eprintln!("[api] handler panicked while serving {method} {path}");
-                RouteResponse {
+                ApiConnectionResponse::Json(RouteResponse {
                     status: 500,
                     body: serde_json::to_value(ApiError::internal("handler panicked"))
                         .unwrap_or_default(),
-                }
+                })
             }
         }
     })
     .await;
+}
+
+async fn route_connection_request(
+    request: ApiRequest,
+    context: &crate::engine::api::context::ApiRuntimeContext,
+    surface: crate::engine::api::surface::ApiSurface,
+    event_hub: Option<Arc<crate::engine::runtime_event::RuntimeEventHub>>,
+) -> ApiConnectionResponse {
+    if request.method == "GET" && request.path == "/api/v1/events" {
+        if !surface.allows_request(&request.method, &request.path) {
+            return ApiConnectionResponse::Json(RouteResponse {
+                status: 404,
+                body: serde_json::to_value(ApiError::not_found("endpoint not available"))
+                    .unwrap_or_default(),
+            });
+        }
+        return match event_hub {
+            Some(event_hub) => {
+                ApiConnectionResponse::EventStream(event_hub.subscribe_after(request.last_event_id))
+            }
+            None => ApiConnectionResponse::Json(RouteResponse {
+                status: 503,
+                body: serde_json::to_value(ApiError::unavailable(
+                    "runtime event stream is not ready",
+                ))
+                .unwrap_or_default(),
+            }),
+        };
+    }
+
+    ApiConnectionResponse::Json(route_request(request, context, surface).await)
 }
 
 pub(crate) async fn route_request(
@@ -54,6 +88,9 @@ pub(crate) async fn route_request(
     }
     match (method, path) {
         ("GET", "/api/v1/health") => handlers::health::get_health(context),
+        ("GET", "/api/v1/capabilities") => {
+            handlers::capabilities::get_capabilities(context, surface)
+        }
         ("GET", "/api/v1/openapi.json") => handlers::openapi::get_openapi(surface),
         ("GET", "/api/v1/diagnostics") => handlers::diagnostics::get_diagnostics(context).await,
         ("GET", "/api/v1/current") => handlers::health::get_current(context),

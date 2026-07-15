@@ -176,7 +176,7 @@ Raw DTO 只能停留在明确边界：
 
 ### 4.5 运行时宿主与长期所有权
 
-当前 Tauri desktop 仍拥有 tracking、watchdog 和部分 Linux 平台信号。`patinad` Stage 0、Stage 1 已完成 profile-safe storage bootstrap、单 owner `RuntimeLease`、共享 runtime/event 边界、按 profile 隔离的 API 凭据、bounded HTTP transport、完整只读 GET API、能力一致的 OpenAPI 和显式资源关闭；daemon 当前不记录 session，实时 tracker/browser 状态会明确降级。长期目标是把后台能力渐进迁入 `patinad`，但迁移期间不得复制出第二套业务实现。
+当前 Tauri desktop 仍拥有 tracking、watchdog 和部分 Linux 平台信号。`patinad` Stage 0、Stage 1 和 Stage 2A 已完成 profile-safe storage bootstrap、单 owner `RuntimeLease`、共享 runtime/event 边界、按 profile 隔离的 API 凭据、bounded HTTP transport、完整只读 GET API、能力一致的 OpenAPI、受认证的有界 SSE event stream、能力协商和显式资源关闭；daemon 当前不记录 session，实时 tracker/browser 状态会明确降级。长期目标是把后台能力渐进迁入 `patinad`，但迁移期间不得复制出第二套业务实现。
 
 迁移期共享运行时结构为：
 
@@ -202,6 +202,7 @@ domain ─────────┘          │
 
 - `RuntimeContext`：数据库、设置、clock 与运行状态
 - `RuntimeEventSink`：Tauri event、daemon event stream 与测试 sink 的统一出口
+- `RuntimeEventHub`：daemon-owned 有界 replay 与订阅出口；不是第二份活动数据库
 - `RuntimeLease`：按 Production / Local / Dev profile 保证唯一写侧 owner
 - API runtime context：让 handler 依赖明确数据与状态，不依赖 `AppHandle`
 - Tauri-free storage bootstrap：统一解析默认路径、锚点、pending migration 与 fail-closed 规则

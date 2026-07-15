@@ -6,6 +6,7 @@ mod storage;
 use std::path::PathBuf;
 
 use sqlx::{Pool, Sqlite};
+use std::sync::Arc;
 
 pub use options::DaemonRunOptions;
 pub use runtime::DaemonRuntime;
@@ -63,18 +64,22 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     let requested_port = options
         .port_override
         .unwrap_or(crate::engine::api::server::DEFAULT_PORT);
+    let event_hub = Arc::new(crate::engine::runtime_event::RuntimeEventHub::new(
+        crate::engine::runtime_event::DEFAULT_EVENT_REPLAY_CAPACITY,
+    ));
     let api_server = if options.serve_api {
         let context = crate::engine::api::context::ApiRuntimeContext::new(
             crate::engine::runtime_context::RuntimeContext::system(sqlite_runtime.pool.clone()),
         );
-        Some(
-            runtime.block_on(crate::engine::api::server::prepare_standalone_server(
+        Some(runtime.block_on(
+            crate::engine::api::server::prepare_standalone_server_with_events(
                 requested_port,
                 api_credentials.clone(),
                 context,
                 crate::engine::api::surface::ApiSurface::DaemonReadOnly,
-            ))?,
-        )
+                event_hub.clone(),
+            ),
+        )?)
     } else {
         None
     };
@@ -125,7 +130,7 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     } else {
         None
     };
-    let daemon_runtime = DaemonRuntime::new(api_handle, sqlite_runtime, runtime_lease);
+    let daemon_runtime = DaemonRuntime::new(api_handle, event_hub, sqlite_runtime, runtime_lease);
     runtime.block_on(async move {
         if options.serve_api {
             tokio::signal::ctrl_c()
@@ -154,6 +159,10 @@ pub async fn prepare_sqlite_runtime_at_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_event_hub() -> Arc<crate::engine::runtime_event::RuntimeEventHub> {
+        Arc::new(crate::engine::runtime_event::RuntimeEventHub::new(8))
+    }
 
     fn test_api_credentials() -> crate::engine::api::auth::ApiCredentialStore {
         let path = std::env::temp_dir().join(format!(
@@ -186,6 +195,7 @@ mod tests {
             query: None,
             body: Vec::new(),
             authorization: None,
+            last_event_id: None,
         }
     }
 
@@ -305,11 +315,12 @@ mod tests {
 
     #[tokio::test]
     async fn daemon_read_only_api_server_serves_health_without_tauri_app_handle() {
-        let server = crate::engine::api::server::prepare_standalone_server(
+        let server = crate::engine::api::server::prepare_standalone_server_with_events(
             0,
             test_api_credentials(),
             test_api_context().await,
             crate::engine::api::surface::ApiSurface::DaemonReadOnly,
+            test_event_hub(),
         )
         .await
         .unwrap();
@@ -338,11 +349,12 @@ mod tests {
 
     #[tokio::test]
     async fn daemon_read_only_api_server_rejects_missing_token() {
-        let server = crate::engine::api::server::prepare_standalone_server(
+        let server = crate::engine::api::server::prepare_standalone_server_with_events(
             0,
             test_api_credentials(),
             test_api_context().await,
             crate::engine::api::surface::ApiSurface::DaemonReadOnly,
+            test_event_hub(),
         )
         .await
         .unwrap();

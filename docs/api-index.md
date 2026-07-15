@@ -33,8 +33,9 @@ Current caveats:
 - `/api/v1/openapi.json` exposes the machine-readable OpenAPI 3.1 schema with paths, query/path parameters, request bodies, response envelopes, auth, error envelopes, and field-level component schemas.
 - The OpenAPI server URL uses a configurable `{port}` variable whose default is `14840`.
 - This document remains the human-maintained reference for behavior notes and implementation caveats.
-- The desktop runtime exposes every endpoint below. Development-only `patinad` Stage 1 exposes every authenticated `GET` endpoint through the same handlers and a read-only OpenAPI surface; it rejects all `POST` endpoints.
+- The desktop runtime exposes the JSON endpoints below. Development-only `patinad` Stage 2A exposes every authenticated `GET` endpoint through the same handlers, plus capability negotiation and an authenticated SSE stream; it rejects all `POST` endpoints.
 - Until Stage 2 moves tracking ownership, daemon `GET /api/v1/current` returns `503` and live tracker/browser diagnostics are `null`; historical SQLite-backed reads remain available.
+- `/api/v1/events` accepts the token only through the `Authorization` header. It does not accept tokens in URLs or query strings.
 
 ---
 
@@ -43,6 +44,8 @@ Current caveats:
 | Endpoint | Method | Status | Purpose |
 |---|---:|---|---|
 | `/api/v1/health` | `GET` | Implemented | API health, app version, platform |
+| `/api/v1/capabilities` | `GET` | Implemented | Runtime host, protocol, event stream, owner/readiness, and write-surface negotiation |
+| `/api/v1/events` | `GET` | Daemon | Authenticated SSE runtime event stream with bounded replay |
 | `/api/v1/openapi.json` | `GET` | Implemented | Machine-readable OpenAPI 3.1 schema |
 | `/api/v1/diagnostics` | `GET` | Implemented | Platform, tracker runtime, and browser bridge diagnostics |
 | `/api/v1/current` | `GET` | Implemented | Current foreground window snapshot |
@@ -79,11 +82,11 @@ Current scope:
 
 - OpenAPI version: `3.1.0`
 - Auth model: bearer token through `components.securitySchemes.bearerAuth`
-- Paths: every implemented local API endpoint listed in this document
+- Paths: the exact endpoints enabled for the current desktop or daemon API surface
 - Parameters: query params for sessions, summary range, trend, web activity; path params for app management
 - Request bodies: classify, rename, exclude, and AFK threshold writes
 - Responses: success envelopes and standard `400` / `401` / `404` / `500` error envelopes
-- Components: field-level schemas for health, diagnostics, current window, sessions, active session, summaries, trend, web activity, apps, tracker settings, AI activity context, and Tools snapshot
+- Components: field-level schemas for health, capabilities, runtime event envelopes, diagnostics, current window, sessions, active session, summaries, trend, web activity, apps, tracker settings, AI activity context, and Tools snapshot
 
 Known gap:
 
@@ -115,6 +118,59 @@ Schema:
   }
 }
 ```
+
+### `GET /api/v1/capabilities`
+
+Curl:
+
+```bash
+curl -s "$PATINA_API_BASE/api/v1/capabilities" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN"
+```
+
+Daemon Stage 2A schema:
+
+```json
+{
+  "data": {
+    "protocol_version": 1,
+    "runtime_host": "daemon",
+    "event_stream": { "available": true },
+    "tracking": { "owned": false, "ready": false },
+    "browser_activity_bridge": { "owned": false, "ready": false },
+    "write_api": { "available": false }
+  }
+}
+```
+
+`owned` means that host is responsible for running the capability. `ready` is never true when `owned` is false. This prevents clients from confusing a readable historical API with a live tracking owner.
+
+### `GET /api/v1/events`
+
+Daemon-only SSE connection:
+
+```bash
+curl -N "$PATINA_API_BASE/api/v1/events" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  -H "Last-Event-ID: 0"
+```
+
+Event frame:
+
+```text
+id: 1
+event: tracking-data-changed
+data: {"sequence":1,"event":{"type":"tracking-data-changed","reason":"window-changed","changed_at_ms":1782000000000}}
+```
+
+Behavior:
+
+- Sequence IDs are monotonic within one daemon process and use a bounded in-memory replay window.
+- Reconnect with `Last-Event-ID`; header names are case-insensitive and invalid IDs return `400`.
+- `event: resync-required` means the cursor fell outside replay or the receiver lagged. Reload current/read-model snapshots through the JSON API.
+- Daemon restart resets the sequence. Clients should call `/api/v1/capabilities` and reload snapshots after reconnect.
+- Keepalive comments prevent idle local connections from being mistaken for a dead daemon.
+- Stage 2A establishes transport only. Runtime tracking events begin after the daemon takes tracking ownership in the next Stage 2 batch.
 
 ### `GET /api/v1/diagnostics`
 

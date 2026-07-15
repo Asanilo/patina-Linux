@@ -28,6 +28,7 @@ pub struct StandaloneApiServer {
     credentials: crate::engine::api::auth::ApiCredentialStore,
     context: Arc<crate::engine::api::context::ApiRuntimeContext>,
     surface: crate::engine::api::surface::ApiSurface,
+    event_hub: Option<Arc<crate::engine::runtime_event::RuntimeEventHub>>,
     #[cfg_attr(not(test), allow(dead_code))]
     shutdown_tx: watch::Sender<bool>,
     shutdown_rx: watch::Receiver<bool>,
@@ -35,11 +36,15 @@ pub struct StandaloneApiServer {
 
 pub struct ApiServerHandle {
     shutdown_tx: watch::Sender<bool>,
+    event_hub: Option<Arc<crate::engine::runtime_event::RuntimeEventHub>>,
     task: tokio::task::JoinHandle<()>,
 }
 
 impl ApiServerHandle {
     pub async fn shutdown(self) {
+        if let Some(event_hub) = self.event_hub.as_ref() {
+            event_hub.shutdown();
+        }
         let _ = self.shutdown_tx.send(true);
         let _ = self.task.await;
     }
@@ -49,11 +54,15 @@ impl ApiServerHandle {
 #[derive(Clone)]
 pub struct StandaloneApiShutdown {
     shutdown_tx: watch::Sender<bool>,
+    event_hub: Option<Arc<crate::engine::runtime_event::RuntimeEventHub>>,
 }
 
 #[cfg(test)]
 impl StandaloneApiShutdown {
     pub fn shutdown(&self) {
+        if let Some(event_hub) = self.event_hub.as_ref() {
+            event_hub.shutdown();
+        }
         let _ = self.shutdown_tx.send(true);
     }
 }
@@ -65,14 +74,20 @@ impl StandaloneApiServer {
 
     pub fn start(self) -> ApiServerHandle {
         let shutdown_tx = self.shutdown_tx.clone();
+        let event_hub = self.event_hub.clone();
         let task = tokio::spawn(self.run());
-        ApiServerHandle { shutdown_tx, task }
+        ApiServerHandle {
+            shutdown_tx,
+            event_hub,
+            task,
+        }
     }
 
     #[cfg(test)]
     pub fn shutdown_handle(&self) -> StandaloneApiShutdown {
         StandaloneApiShutdown {
             shutdown_tx: self.shutdown_tx.clone(),
+            event_hub: self.event_hub.clone(),
         }
     }
 
@@ -86,8 +101,16 @@ impl StandaloneApiServer {
                             let credentials = self.credentials.clone();
                             let context = self.context.clone();
                             let surface = self.surface;
+                            let event_hub = self.event_hub.clone();
                             connections.spawn(async move {
-                                router::handle_connection(stream, context, surface, credentials).await;
+                                router::handle_connection(
+                                    stream,
+                                    context,
+                                    surface,
+                                    credentials,
+                                    event_hub,
+                                )
+                                .await;
                             });
                         }
                         Err(error) => eprintln!("[patinad] API accept error: {error}"),
@@ -101,16 +124,43 @@ impl StandaloneApiServer {
                 }
             }
         }
+        if let Some(event_hub) = self.event_hub.as_ref() {
+            event_hub.shutdown();
+        }
         drain_connections(&mut connections).await;
     }
 }
 
+#[cfg(test)]
 pub async fn prepare_standalone_server(
     port: u16,
     credentials: crate::engine::api::auth::ApiCredentialStore,
     context: crate::engine::api::context::ApiRuntimeContext,
     surface: crate::engine::api::surface::ApiSurface,
 ) -> Result<StandaloneApiServer, String> {
+    prepare_standalone_server_internal(port, credentials, context, surface, None).await
+}
+
+pub async fn prepare_standalone_server_with_events(
+    port: u16,
+    credentials: crate::engine::api::auth::ApiCredentialStore,
+    context: crate::engine::api::context::ApiRuntimeContext,
+    surface: crate::engine::api::surface::ApiSurface,
+    event_hub: Arc<crate::engine::runtime_event::RuntimeEventHub>,
+) -> Result<StandaloneApiServer, String> {
+    prepare_standalone_server_internal(port, credentials, context, surface, Some(event_hub)).await
+}
+
+async fn prepare_standalone_server_internal(
+    port: u16,
+    credentials: crate::engine::api::auth::ApiCredentialStore,
+    context: crate::engine::api::context::ApiRuntimeContext,
+    surface: crate::engine::api::surface::ApiSurface,
+    event_hub: Option<Arc<crate::engine::runtime_event::RuntimeEventHub>>,
+) -> Result<StandaloneApiServer, String> {
+    if surface.has_event_stream() && event_hub.is_none() {
+        return Err("API surface requires a runtime event hub".to_string());
+    }
     let prepared = prepare_listener(port).await?;
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     Ok(StandaloneApiServer {
@@ -119,6 +169,7 @@ pub async fn prepare_standalone_server(
         credentials,
         context: Arc::new(context),
         surface,
+        event_hub,
         shutdown_tx,
         shutdown_rx,
     })
@@ -252,7 +303,8 @@ async fn run_server(
                         let context = context.clone();
                         let credentials = credentials.clone();
                         connections.spawn(async move {
-                            router::handle_connection(stream, context, surface, credentials).await;
+                            router::handle_connection(stream, context, surface, credentials, None)
+                                .await;
                         });
                     }
                     Err(error) => {
@@ -287,6 +339,8 @@ async fn drain_connections(connections: &mut JoinSet<()>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::runtime_event::{RuntimeEvent, RuntimeEventHub, RuntimeEventSink};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     fn install_test_runtime(state: &ApiServerState, port: u16) -> watch::Receiver<bool> {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -354,7 +408,7 @@ mod tests {
             0,
             test_credentials(),
             test_context().await,
-            crate::engine::api::surface::ApiSurface::DaemonReadOnly,
+            crate::engine::api::surface::ApiSurface::Desktop,
         )
         .await
         .unwrap();
@@ -383,5 +437,84 @@ mod tests {
             assert_eq!(error.kind(), std::io::ErrorKind::ConnectionReset);
         }
         assert!(remaining.is_empty());
+    }
+
+    #[tokio::test]
+    async fn daemon_event_surface_requires_an_event_hub() {
+        let result = prepare_standalone_server(
+            0,
+            test_credentials(),
+            test_context().await,
+            crate::engine::api::surface::ApiSurface::DaemonReadOnly,
+        )
+        .await;
+        let error = match result {
+            Ok(_) => panic!("daemon event surface must not advertise an unavailable stream"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error, "API surface requires a runtime event hub");
+    }
+
+    #[tokio::test]
+    async fn standalone_daemon_streams_replayed_events_and_reclaims_connection_on_shutdown() {
+        let event_hub = Arc::new(RuntimeEventHub::new(8));
+        event_hub
+            .emit(RuntimeEvent::TrackingDataChanged {
+                reason: "integration-test".to_string(),
+                changed_at_ms: 1_000,
+            })
+            .unwrap();
+        let server = prepare_standalone_server_with_events(
+            0,
+            test_credentials(),
+            test_context().await,
+            crate::engine::api::surface::ApiSurface::DaemonReadOnly,
+            event_hub,
+        )
+        .await
+        .unwrap();
+        let port = server.port();
+        let shutdown = server.shutdown_handle();
+        let server_task = tokio::spawn(server.run());
+        let mut client = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
+        client
+            .write_all(
+                b"GET /api/v1/events HTTP/1.1\r\nAuthorization: Bearer test-token\r\nLast-Event-ID: 0\r\n\r\n",
+            )
+            .await
+            .unwrap();
+
+        let response = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            let mut response = Vec::new();
+            let mut chunk = [0_u8; 1024];
+            loop {
+                let read = client.read(&mut chunk).await.unwrap();
+                if read == 0 {
+                    break;
+                }
+                response.extend_from_slice(&chunk[..read]);
+                if response
+                    .windows(b"\"reason\":\"integration-test\"".len())
+                    .any(|window| window == b"\"reason\":\"integration-test\"")
+                {
+                    break;
+                }
+            }
+            String::from_utf8(response).unwrap()
+        })
+        .await
+        .expect("event stream should produce replay");
+        assert!(response.starts_with("HTTP/1.1 200 OK"));
+        assert!(response.contains("Content-Type: text/event-stream"));
+        assert!(response.contains("id: 1\n"));
+
+        shutdown.shutdown();
+        tokio::time::timeout(std::time::Duration::from_secs(2), server_task)
+            .await
+            .expect("server shutdown should reclaim stream connections")
+            .unwrap();
     }
 }

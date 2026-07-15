@@ -1,6 +1,6 @@
 # `patinad` 后台运行时设计
 
-> 状态：Stage 0、Stage 1 已完成并验证；Stage 2 及后续阶段待实施。
+> 状态：Stage 0、Stage 1 和 Stage 2A 事件传输已完成并验证；Stage 2 后台 owner 迁移及后续阶段待实施。
 > 生命周期：本设计是当前 `patinad` 实施依据；后台接管稳定完成后移入 `docs/archive/`。
 
 ## 1. 目标
@@ -18,7 +18,7 @@
 - 不扩大 KDE、wlroots 或移动端支持
 - 不为 MCP 提供任意文件操作能力
 
-## 3. 当前 Stage 1 状态
+## 3. 当前 Stage 2A 状态
 
 当前分支已经提供并验证：
 
@@ -39,11 +39,15 @@
 - desktop runtime snapshot provider 与 daemon 明确不可用状态
 - tracking 启动自愈、电源封口和 watchdog 的共享数据/事件边界
 - 真实临时 XDG daemon 进程下的只读 API、写请求拒绝和优雅退出验证
+- daemon-owned 有界 `RuntimeEventHub`、进程内单调序号和 replay window
+- bearer token 认证的 `/api/v1/events` SSE、`Last-Event-ID` replay、resync 信号和 keepalive
+- `/api/v1/capabilities` 宿主/协议能力协商，不把未迁移 owner 误报为 ready
+- event stream、listener、连接任务、SQLite pool 和 lease 的有序关闭
 
 当前实现仍不能发布为正式后台服务，原因包括：
 
 - tracking、watchdog、power、audio、MPRIS 和 browser bridge 仍依赖 Tauri runtime
-- daemon 尚无 event stream、systemd user service 和浏览器 UI
+- daemon 尚无 systemd user service 和浏览器 UI
 - Tauri desktop 尚未改为 daemon client
 
 ## 4. 目标结构
@@ -145,10 +149,13 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 
 ### 阶段 2：daemon 接管后台
 
-- daemon 接管 tracking、watchdog、power、audio 和 MPRIS
-- 接管 browser activity bridge 与本地 API
-- desktop 通过 daemon client 和 event stream 获取状态
-- desktop 不再启动第二套 tracker
+状态：Stage 2A 事件传输已完成；后台 owner 迁移待实施。
+
+- 已完成：有界事件中心、受认证 SSE、replay/resync、能力协商和干净关闭
+- 待实施：daemon 接管 tracking、watchdog、power、audio 和 MPRIS
+- 待实施：接管 browser activity bridge 与完整本地 API owner
+- 待实施：desktop 通过 daemon client 和 event stream 获取状态
+- 待实施：desktop 不再启动第二套 tracker
 
 验收：关闭 UI 后继续记录；重开 UI 恢复当前状态；AFK、锁屏、睡眠、恢复和异常封口正确；统计不倒退、不重复。
 

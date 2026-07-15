@@ -46,6 +46,12 @@ fn paths(surface: ApiSurface) -> Value {
         "/api/v1/health": {
             "get": get_operation("API health, app version, and platform.", "HealthResponse")
         },
+        "/api/v1/capabilities": {
+            "get": get_operation("Runtime host, protocol, and feature capability negotiation.", "CapabilitiesResponse")
+        },
+        "/api/v1/events": {
+            "get": event_stream_operation()
+        },
         "/api/v1/openapi.json": {
             "get": get_operation("Machine-readable OpenAPI schema for the local API.", "OpenApiDocument")
         },
@@ -194,6 +200,47 @@ fn schemas() -> Value {
             ("version", string_schema()),
             ("platform", string_schema()),
         ])),
+    );
+    schemas.insert(
+        "AvailabilityCapability".to_string(),
+        object_schema(vec![("available", bool_schema())]),
+    );
+    schemas.insert(
+        "OwnedRuntimeCapability".to_string(),
+        object_schema(vec![("owned", bool_schema()), ("ready", bool_schema())]),
+    );
+    schemas.insert(
+        "CapabilitiesData".to_string(),
+        object_schema(vec![
+            ("protocol_version", integer_schema()),
+            ("runtime_host", enum_schema(vec!["desktop", "daemon"])),
+            ("event_stream", schema_ref("AvailabilityCapability")),
+            ("tracking", schema_ref("OwnedRuntimeCapability")),
+            (
+                "browser_activity_bridge",
+                schema_ref("OwnedRuntimeCapability"),
+            ),
+            ("write_api", schema_ref("AvailabilityCapability")),
+        ]),
+    );
+    schemas.insert(
+        "CapabilitiesResponse".to_string(),
+        envelope(schema_ref("CapabilitiesData")),
+    );
+    schemas.insert(
+        "RuntimeEvent".to_string(),
+        object_schema(vec![
+            ("type", enum_schema(vec!["tracking-data-changed"])),
+            ("reason", string_schema()),
+            ("changed_at_ms", integer_schema()),
+        ]),
+    );
+    schemas.insert(
+        "RuntimeEventEnvelope".to_string(),
+        object_schema(vec![
+            ("sequence", integer_schema()),
+            ("event", schema_ref("RuntimeEvent")),
+        ]),
     );
     schemas.insert(
         "CurrentWindowResponse".to_string(),
@@ -567,6 +614,41 @@ fn get_operation(summary: &str, response_schema: &str) -> Value {
     get_operation_with_parameters(summary, response_schema, vec![])
 }
 
+fn event_stream_operation() -> Value {
+    json!({
+        "summary": "Authenticated runtime event stream with Last-Event-ID replay.",
+        "parameters": [
+            {
+                "name": "Last-Event-ID",
+                "in": "header",
+                "required": false,
+                "description": "Last processed sequence ID for bounded in-process replay.",
+                "schema": integer_schema()
+            }
+        ],
+        "responses": {
+            "200": {
+                "description": "Server-Sent Events stream. Each data field is a RuntimeEventEnvelope.",
+                "content": {
+                    "text/event-stream": {
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "401": {
+                "description": "Missing or invalid bearer token.",
+                "content": {
+                    "application/json": {
+                        "schema": schema_ref("ApiError")
+                    }
+                }
+            }
+        }
+    })
+}
+
 fn get_operation_with_parameters(
     summary: &str,
     response_schema: &str,
@@ -785,6 +867,8 @@ mod tests {
             .expect("schemas object");
 
         assert!(schemas.contains_key("HealthResponse"));
+        assert!(schemas.contains_key("CapabilitiesResponse"));
+        assert!(schemas.contains_key("RuntimeEventEnvelope"));
         assert!(schemas.contains_key("SessionEntry"));
         assert!(schemas.contains_key("WebActivityEntry"));
         assert!(schemas.contains_key("ActivityContextResponse"));

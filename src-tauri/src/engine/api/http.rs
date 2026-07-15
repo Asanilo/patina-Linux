@@ -1,12 +1,15 @@
 use crate::engine::api::{auth::ApiCredentialStore, types::ApiError, types::RouteResponse};
+use crate::engine::runtime_event::RuntimeEventSubscription;
 use std::future::Future;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::sync::broadcast;
 
 const REQUEST_LINE_LIMIT: usize = 8 * 1024;
 const HEADER_SECTION_LIMIT: usize = 32 * 1024;
 const BODY_LIMIT: usize = 64 * 1024;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
+const EVENT_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ApiRequest {
@@ -15,13 +18,26 @@ pub struct ApiRequest {
     pub query: Option<String>,
     pub body: Vec<u8>,
     pub authorization: Option<String>,
+    pub last_event_id: Option<u64>,
 }
 
-pub async fn serve_connection<S, F, Fut>(stream: S, credentials: ApiCredentialStore, route: F)
+pub enum ApiConnectionResponse {
+    Json(RouteResponse),
+    EventStream(RuntimeEventSubscription),
+}
+
+impl From<RouteResponse> for ApiConnectionResponse {
+    fn from(response: RouteResponse) -> Self {
+        Self::Json(response)
+    }
+}
+
+pub async fn serve_connection<S, F, Fut, R>(stream: S, credentials: ApiCredentialStore, route: F)
 where
     S: AsyncRead + AsyncWrite + Unpin,
     F: FnOnce(ApiRequest) -> Fut,
-    Fut: Future<Output = RouteResponse>,
+    Fut: Future<Output = R>,
+    R: Into<ApiConnectionResponse>,
 {
     let (reader, mut writer) = tokio::io::split(stream);
     let request = match tokio::time::timeout(REQUEST_TIMEOUT, parse_request(reader)).await {
@@ -42,8 +58,14 @@ where
         return;
     }
 
-    let response = route(request).await;
-    write_json_response(&mut writer, response.status, &response.body).await;
+    match route(request).await.into() {
+        ApiConnectionResponse::Json(response) => {
+            write_json_response(&mut writer, response.status, &response.body).await;
+        }
+        ApiConnectionResponse::EventStream(subscription) => {
+            write_event_stream(&mut writer, subscription).await;
+        }
+    }
 }
 
 async fn parse_request<R: AsyncRead + Unpin>(reader: R) -> Result<ApiRequest, ParseError> {
@@ -57,6 +79,7 @@ async fn parse_request<R: AsyncRead + Unpin>(reader: R) -> Result<ApiRequest, Pa
     let mut header_bytes = 0;
     let mut content_length = 0_usize;
     let mut authorization = None;
+    let mut last_event_id = None;
     loop {
         let remaining = HEADER_SECTION_LIMIT.saturating_sub(header_bytes);
         if remaining == 0 {
@@ -72,6 +95,14 @@ async fn parse_request<R: AsyncRead + Unpin>(reader: R) -> Result<ApiRequest, Pa
             .ok_or_else(|| ParseError::bad_request("malformed header"))?;
         match name.trim().to_ascii_lowercase().as_str() {
             "authorization" => authorization = Some(value.trim().to_string()),
+            "last-event-id" => {
+                last_event_id = Some(
+                    value
+                        .trim()
+                        .parse()
+                        .map_err(|_| ParseError::bad_request("invalid Last-Event-ID"))?,
+                );
+            }
             "content-length" => {
                 content_length = value
                     .trim()
@@ -103,6 +134,7 @@ async fn parse_request<R: AsyncRead + Unpin>(reader: R) -> Result<ApiRequest, Pa
         query,
         body,
         authorization,
+        last_event_id,
     })
 }
 
@@ -180,6 +212,7 @@ async fn write_json_response<W: AsyncWrite + Unpin>(
         401 => "Unauthorized",
         404 => "Not Found",
         413 => "Payload Too Large",
+        503 => "Service Unavailable",
         500 => "Internal Server Error",
         _ => "Unknown",
     };
@@ -190,9 +223,97 @@ async fn write_json_response<W: AsyncWrite + Unpin>(
     let _ = writer.write_all(response.as_bytes()).await;
 }
 
+async fn write_event_stream<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    mut subscription: RuntimeEventSubscription,
+) {
+    let headers = "HTTP/1.1 200 OK\r\n\
+                   Content-Type: text/event-stream\r\n\
+                   Cache-Control: no-cache\r\n\
+                   Connection: keep-alive\r\n\
+                   Access-Control-Allow-Origin: *\r\n\r\n";
+    if writer.write_all(headers.as_bytes()).await.is_err() {
+        return;
+    }
+    if subscription.resync_required
+        && write_resync_required(writer, "replay-gap", None)
+            .await
+            .is_err()
+    {
+        return;
+    }
+    for event in subscription.replay {
+        if write_runtime_event(writer, &event).await.is_err() {
+            return;
+        }
+    }
+
+    let mut keepalive = tokio::time::interval(EVENT_KEEPALIVE_INTERVAL);
+    keepalive.tick().await;
+    if *subscription.shutdown.borrow() {
+        return;
+    }
+    loop {
+        tokio::select! {
+            event = subscription.receiver.recv() => {
+                match event {
+                    Ok(event) => {
+                        if write_runtime_event(writer, &event).await.is_err() {
+                            return;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(missed)) => {
+                        if write_resync_required(writer, "receiver-lagged", Some(missed)).await.is_err() {
+                            return;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Closed) => return,
+                }
+            }
+            _ = keepalive.tick() => {
+                if writer.write_all(b": keepalive\n\n").await.is_err() {
+                    return;
+                }
+            }
+            changed = subscription.shutdown.changed() => {
+                if changed.is_err() || *subscription.shutdown.borrow() {
+                    return;
+                }
+            }
+        }
+    }
+}
+
+async fn write_runtime_event<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    envelope: &crate::engine::runtime_event::RuntimeEventEnvelope,
+) -> std::io::Result<()> {
+    let data = serde_json::to_string(envelope).unwrap_or_else(|_| "{}".to_string());
+    let frame = format!(
+        "id: {}\nevent: {}\ndata: {data}\n\n",
+        envelope.sequence,
+        envelope.event.event_name()
+    );
+    writer.write_all(frame.as_bytes()).await
+}
+
+async fn write_resync_required<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    reason: &str,
+    missed: Option<u64>,
+) -> std::io::Result<()> {
+    let data = serde_json::json!({
+        "reason": reason,
+        "missed": missed,
+    });
+    let frame = format!("event: resync-required\ndata: {data}\n\n");
+    writer.write_all(frame.as_bytes()).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::runtime_event::RuntimeEventSink;
     use serde_json::json;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
@@ -220,6 +341,7 @@ mod tests {
                         "method": request.method,
                         "path": request.path,
                         "query": request.query,
+                        "last_event_id": request.last_event_id,
                         "body": String::from_utf8_lossy(&request.body),
                     }),
                 }
@@ -236,20 +358,72 @@ mod tests {
     #[tokio::test]
     async fn lowercase_headers_and_valid_bearer_reach_route() {
         let response = exchange(
-            "POST /items?limit=2 HTTP/1.1\r\nauthorization: Bearer test-token\r\ncontent-length: 4\r\n\r\ntest",
+            "POST /items?limit=2 HTTP/1.1\r\nauthorization: Bearer test-token\r\nlast-event-id: 42\r\ncontent-length: 4\r\n\r\ntest",
         )
         .await;
 
         assert!(response.starts_with("HTTP/1.1 200 OK"));
         assert!(response.contains("\"path\":\"/items\""));
         assert!(response.contains("\"query\":\"limit=2\""));
+        assert!(response.contains("\"last_event_id\":42"));
         assert!(response.contains("\"body\":\"test\""));
+    }
+
+    #[tokio::test]
+    async fn event_stream_writes_replayed_event_as_sse() {
+        let (mut client, server) = tokio::io::duplex(256 * 1024);
+        let hub = Arc::new(crate::engine::runtime_event::RuntimeEventHub::new(8));
+        hub.emit(
+            crate::engine::runtime_event::RuntimeEvent::TrackingDataChanged {
+                reason: "window-changed".to_string(),
+                changed_at_ms: 1_000,
+            },
+        )
+        .unwrap();
+        let stream_hub = hub.clone();
+        let task = tokio::spawn(serve_connection(
+            server,
+            credentials(),
+            move |_| async move {
+                ApiConnectionResponse::EventStream(stream_hub.subscribe_after(Some(0)))
+            },
+        ));
+        client
+            .write_all(
+                b"GET /api/v1/events HTTP/1.1\r\nAuthorization: Bearer test-token\r\nLast-Event-ID: 0\r\n\r\n",
+            )
+            .await
+            .unwrap();
+
+        let mut response = vec![0_u8; 1024];
+        let read = tokio::time::timeout(Duration::from_secs(1), client.read(&mut response))
+            .await
+            .expect("SSE response should arrive")
+            .unwrap();
+        let response = String::from_utf8_lossy(&response[..read]);
+        assert!(response.starts_with("HTTP/1.1 200 OK"));
+        assert!(response.contains("Content-Type: text/event-stream"));
+        assert!(response.contains("id: 1\n"));
+        assert!(response.contains("event: tracking-data-changed\n"));
+        assert!(response.contains("\"sequence\":1"));
+        assert!(response.contains("\"reason\":\"window-changed\""));
+
+        drop(client);
+        task.abort();
+        let _ = task.await;
     }
 
     #[tokio::test]
     async fn malformed_and_oversized_requests_are_rejected() {
         let malformed = exchange("GET /missing-version\r\n\r\n").await;
         assert!(malformed.starts_with("HTTP/1.1 400 Bad Request"));
+
+        let invalid_event_id = exchange(
+            "GET /api/v1/events HTTP/1.1\r\nAuthorization: Bearer test-token\r\nLast-Event-ID: stale\r\n\r\n",
+        )
+        .await;
+        assert!(invalid_event_id.starts_with("HTTP/1.1 400 Bad Request"));
+        assert!(invalid_event_id.contains("invalid Last-Event-ID"));
 
         let oversized_body = exchange(&format!(
             "POST /items HTTP/1.1\r\nAuthorization: Bearer test-token\r\nContent-Length: {}\r\n\r\n",

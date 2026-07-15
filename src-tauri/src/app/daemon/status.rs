@@ -10,6 +10,7 @@ pub struct DaemonStartupStatus {
     pub sqlite_enabled: bool,
     pub tracking_enabled: bool,
     pub local_api_enabled: bool,
+    pub event_stream_enabled: bool,
     pub local_api_port: u16,
     pub api_token_path: PathBuf,
     pub data_root: PathBuf,
@@ -30,17 +31,18 @@ pub fn build_startup_status(
         mode: "daemon",
         profile,
         version: version.into(),
-        stage: "stage-1-read-only",
+        stage: "stage-2a-event-stream",
         sqlite_enabled: true,
         tracking_enabled: false,
         local_api_enabled,
+        event_stream_enabled: local_api_enabled,
         local_api_port,
         api_token_path: storage_paths.api_token_path.clone(),
         data_root: storage_paths.data_root.clone(),
         db_path: storage_paths.db_path.clone(),
         webview_root: storage_paths.webview_root.clone(),
         notes: vec![
-            "daemon exposes the shared read-only local API when enabled",
+            "daemon exposes the shared read-only local API and authenticated event stream when enabled",
             "tracking stays owned by the desktop runtime in this stage",
         ],
     }
@@ -62,7 +64,7 @@ mod tests {
     }
 
     #[test]
-    fn daemon_status_identifies_stage_one_read_only_runtime() {
+    fn daemon_status_identifies_stage_two_a_event_stream_runtime() {
         let paths = storage_paths("/tmp/Patina");
         let status = build_startup_status(
             "1.8.3",
@@ -76,16 +78,20 @@ mod tests {
         assert_eq!(status.mode, "daemon");
         assert_eq!(status.profile, crate::platform::app_paths::AppProfile::Dev);
         assert_eq!(status.version, "1.8.3");
-        assert_eq!(status.stage, "stage-1-read-only");
+        assert_eq!(status.stage, "stage-2a-event-stream");
         assert!(status.sqlite_enabled);
         assert!(!status.tracking_enabled);
         assert!(!status.local_api_enabled);
+        assert!(!status.event_stream_enabled);
         assert_eq!(status.local_api_port, 14_840);
         assert!(status.api_token_path.ends_with("api_token"));
         assert!(status.data_root.ends_with("Patina"));
         assert!(status.db_path.ends_with("patina.db"));
         assert!(status.webview_root.ends_with("Patina"));
-        assert!(status.notes.iter().any(|note| note.contains("read-only")));
+        assert!(status
+            .notes
+            .iter()
+            .any(|note| note.contains("event stream")));
     }
 
     #[test]
@@ -100,6 +106,7 @@ mod tests {
         );
 
         assert!(status.local_api_enabled);
+        assert!(status.event_stream_enabled);
         assert_eq!(status.local_api_port, 42_321);
         assert!(!status.tracking_enabled);
     }

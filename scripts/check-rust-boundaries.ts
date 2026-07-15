@@ -11,6 +11,9 @@ const SCAN_ROOTS = [
 
 const EXTRA_FILES = [
   "src-tauri/src/lib.rs",
+  "src-tauri/src/engine/runtime_event.rs",
+  "src-tauri/src/engine/api/http.rs",
+  "src-tauri/src/engine/api/router.rs",
   "src-tauri/src/engine/tracking/watchdog.rs",
   "src-tauri/src/engine/tracking/startup.rs",
 ] as const;
@@ -91,6 +94,9 @@ function isLibSource(path: string) {
 
 function isHostNeutralRuntimeSource(path: string) {
   return /^src-tauri\/src\/engine\/api\/handlers\//.test(path)
+    || path === "src-tauri/src/engine/runtime_event.rs"
+    || path === "src-tauri/src/engine/api/http.rs"
+    || path === "src-tauri/src/engine/api/router.rs"
     || path === "src-tauri/src/engine/tracking/watchdog.rs"
     || path === "src-tauri/src/engine/tracking/startup.rs";
 }
@@ -220,6 +226,10 @@ function runSelfTest() {
       path: "src-tauri/src/engine/api/handlers/sessions.rs",
       content: "pub fn get(app: &tauri::AppHandle) {}",
     },
+    {
+      path: "src-tauri/src/engine/runtime_event.rs",
+      content: "use tauri::Emitter;",
+    },
   ]);
 
   const rules = violations.map((violation) => violation.rule).sort();
@@ -232,6 +242,7 @@ function runSelfTest() {
     "entry-layer-no-direct-sql-query",
     "platform-no-data-import",
     "persistent-owner-must-use-storage-paths",
+    "host-neutral-runtime-no-tauri",
     "host-neutral-runtime-no-tauri",
   ].sort();
 
