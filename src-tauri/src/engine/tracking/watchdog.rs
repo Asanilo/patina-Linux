@@ -6,10 +6,7 @@ use std::sync::{
     atomic::{AtomicI64, Ordering},
     Arc,
 };
-use tauri::{AppHandle, Runtime};
 use tokio::time::{sleep, Duration};
-
-use super::runtime;
 
 const TRACKER_WATCHDOG_POLL_MS: u64 = 1_000;
 const TRACKER_STALL_SEAL_AFTER_MS: i64 = 8_000;
@@ -68,16 +65,13 @@ impl RuntimeHealthState {
     }
 }
 
-pub async fn watch<R: Runtime>(
-    app: AppHandle<R>,
+pub async fn watch(
+    context: RuntimeContext,
     health_state: Arc<RuntimeHealthState>,
+    event_sink: Arc<dyn RuntimeEventSink>,
 ) -> Result<(), String> {
-    let pool = crate::data::sqlite_pool::wait_for_sqlite_pool(&app).await?;
-    let context = RuntimeContext::system(pool);
-    let sink = runtime::TauriRuntimeEventSink::new(app);
-
     loop {
-        run_iteration(&context, &health_state, &sink).await;
+        run_iteration(&context, &health_state, event_sink.as_ref()).await;
         sleep(Duration::from_millis(TRACKER_WATCHDOG_POLL_MS)).await;
     }
 }

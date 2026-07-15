@@ -1,3 +1,4 @@
+use crate::engine::runtime_context::RuntimeContext;
 use crate::engine::tools as tools_runtime;
 use crate::engine::tracking::{runtime as tracking_runtime, watchdog as tracking_watchdog};
 use crate::engine::updater::{self, UpdaterRuntimeState};
@@ -48,8 +49,15 @@ pub(crate) fn spawn_tracking_watchdog_restart_loop<R: Runtime + 'static>(
     tauri::async_runtime::spawn(async move {
         let mut retry_delay = RestartBackoff::new();
         loop {
-            if let Err(error) = tracking_watchdog::watch(app.clone(), runtime_health.clone()).await
-            {
+            let result = async {
+                let pool = crate::data::sqlite_pool::wait_for_sqlite_pool(&app).await?;
+                let context = RuntimeContext::system(pool);
+                let event_sink =
+                    Arc::new(tracking_runtime::TauriRuntimeEventSink::new(app.clone()));
+                tracking_watchdog::watch(context, runtime_health.clone(), event_sink).await
+            }
+            .await;
+            if let Err(error) = result {
                 eprintln!("[tracker] watchdog stopped: {error}");
                 let delay = retry_delay.next_delay();
                 eprintln!(

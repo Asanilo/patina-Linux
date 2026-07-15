@@ -124,11 +124,11 @@
 - Move after completion: this plan to `docs/archive/`
 - Test: architecture and full repository validation
 
-- [ ] Add architecture guard tests preventing API handlers and watchdog data logic from importing `tauri::AppHandle`.
-- [ ] Run `cargo fmt`, full Rust tests, clippy with warnings denied, `npm test`, `npm run test:replay`, and `npm run build`.
-- [ ] Perform a desktop regression smoke test and daemon temporary-XDG read-only API smoke test.
-- [ ] Update active docs to state the exact Stage 1 capability and remaining Stage 2 ownership.
-- [ ] Archive this completed plan and commit as `test: verify patinad stage one boundaries`.
+- [x] Add architecture guard tests preventing API handlers and watchdog/startup data logic from importing Tauri.
+- [x] Run `cargo fmt`, full Rust tests, clippy with warnings denied, the complete frontend suite, real browser smoke, production build, and bundle budget.
+- [x] Cover desktop regression through the existing tracking/frontend/compile suites and run a real daemon temporary-XDG read-only API smoke test.
+- [x] Update active docs to state the exact Stage 1 capability and remaining Stage 2 ownership.
+- [x] Archive this completed plan and commit as `test: verify patinad stage one boundaries`.
 
 ## Stop Conditions
 

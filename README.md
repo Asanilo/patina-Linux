@@ -62,7 +62,7 @@ Windows code follows a freeze-then-remove policy:
 | GNOME Wayland window tracking | Working prototype | Uses `org.patina.WindowTracker` from the GNOME Shell extension. |
 | X11 tracking | Implemented fallback / limited verification | Used on X11 sessions; GNOME Wayland does not silently fall back to X11. |
 | KDE / wlroots Wayland | Not promised | Needs compositor-specific work later. |
-| `patinad` | Stage 0 foundation complete | Profile-safe storage, single-owner lease, isolated credentials, bounded localhost transport, truthful OpenAPI, and graceful shutdown are implemented. Tracking remains desktop-owned; this is not a released background service. |
+| `patinad` | Stage 1 read-only runtime complete | Shared runtime/event boundaries and the full read-only local API are implemented and manually verified with isolated storage. Tracking remains desktop-owned; this is not a released background service. |
 | Local browser UI | Planned | Will be served by `patinad` on loopback; not implemented yet. |
 | Local API | Implemented | Binds to `127.0.0.1:14840` and uses a bearer token. |
 | MCP wrapper and Agent Skill | Implemented, query-first | `npm run mcp:patina`; write side currently covers app classify/rename/exclude, with HTTP and MCP skill references. |

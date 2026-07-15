@@ -33,7 +33,8 @@ Current caveats:
 - `/api/v1/openapi.json` exposes the machine-readable OpenAPI 3.1 schema with paths, query/path parameters, request bodies, response envelopes, auth, error envelopes, and field-level component schemas.
 - The OpenAPI server URL uses a configurable `{port}` variable whose default is `14840`.
 - This document remains the human-maintained reference for behavior notes and implementation caveats.
-- The desktop runtime exposes the endpoint set below. Development-only `patinad` Stage 0 exposes only authenticated `GET /api/v1/health` and `GET /api/v1/openapi.json`; its OpenAPI document is filtered to exactly those routes.
+- The desktop runtime exposes every endpoint below. Development-only `patinad` Stage 1 exposes every authenticated `GET` endpoint through the same handlers and a read-only OpenAPI surface; it rejects all `POST` endpoints.
+- Until Stage 2 moves tracking ownership, daemon `GET /api/v1/current` returns `503` and live tracker/browser diagnostics are `null`; historical SQLite-backed reads remain available.
 
 ---
 

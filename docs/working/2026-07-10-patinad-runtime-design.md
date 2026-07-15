@@ -1,6 +1,6 @@
 # `patinad` 后台运行时设计
 
-> 状态：Stage 0 已完成并验证；Stage 1 及后续阶段待实施。
+> 状态：Stage 0、Stage 1 已完成并验证；Stage 2 及后续阶段待实施。
 > 生命周期：本设计是当前 `patinad` 实施依据；后台接管稳定完成后移入 `docs/archive/`。
 
 ## 1. 目标
@@ -18,7 +18,7 @@
 - 不扩大 KDE、wlroots 或移动端支持
 - 不为 MCP 提供任意文件操作能力
 
-## 3. 当前 Stage 0 状态
+## 3. 当前 Stage 1 状态
 
 当前分支已经提供并验证：
 
@@ -33,11 +33,17 @@
 - 与实际能力一致的 `/api/v1/health`、`/api/v1/openapi.json`
 - listener、连接任务、SQLite pool 和 lease 的显式关闭顺序
 - daemon 专项、生命周期和架构边界测试
+- host-neutral `RuntimeContext`、clock 与 `RuntimeEventSink`
+- 不依赖 `AppHandle` 的 API handlers 和共享 `ApiRuntimeContext`
+- desktop / daemon 共用的完整只读 GET API 与按 surface 过滤的 OpenAPI
+- desktop runtime snapshot provider 与 daemon 明确不可用状态
+- tracking 启动自愈、电源封口和 watchdog 的共享数据/事件边界
+- 真实临时 XDG daemon 进程下的只读 API、写请求拒绝和优雅退出验证
 
 当前实现仍不能发布为正式后台服务，原因包括：
 
 - tracking、watchdog、power、audio、MPRIS 和 browser bridge 仍依赖 Tauri runtime
-- daemon 尚无完整只读 API、event stream、systemd user service 和浏览器 UI
+- daemon 尚无 event stream、systemd user service 和浏览器 UI
 - Tauri desktop 尚未改为 daemon client
 
 ## 4. 目标结构
@@ -126,6 +132,8 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 验收：开发 daemon 不触碰生产库；自定义目录正确解析；第二个 owner 明确拒绝启动；daemon 不写 session。
 
 ### 阶段 1：共享运行时边界
+
+状态：已完成。
 
 - 引入最小 `RuntimeContext` 与 `RuntimeEventSink`
 - 让 API handlers 摆脱 `AppHandle`

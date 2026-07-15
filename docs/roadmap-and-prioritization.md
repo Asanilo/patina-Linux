@@ -151,8 +151,8 @@
 当前结构主线按以下顺序推进：
 
 1. Stage 0 基础已完成：数据 profile、存储锚点、运行时唯一 owner、API 凭据、bounded transport、OpenAPI 一致性和优雅关闭已有自动验证。
-2. 下一阶段建立共享 `RuntimeContext`、`RuntimeEventSink` 与 API runtime context，让核心行为摆脱 `AppHandle`；`RuntimeLease` 已在 Stage 0 落地。
-3. 先让 daemon 提供完整只读 API 和本机 event stream，再接管 tracking、watchdog、电源、音频、MPRIS 和浏览器活动桥接。
+2. Stage 1 已完成：共享 `RuntimeContext`、`RuntimeEventSink`、API runtime context、完整只读 GET API 和 host-neutral handler 已落地。
+3. 下一阶段先建立本机 event stream，再由 daemon 接管 tracking、watchdog、电源、音频、MPRIS 和浏览器活动桥接。
 4. 复用现有 React feature 建立由 `patinad` 在 loopback 提供的浏览器 UI，先覆盖 Dashboard、History、Data、当前会话和诊断。
 5. 让 Tauri UI 成为 daemon 桌面客户端，保留 tray、通知、文件选择和 updater，验证关闭 UI 后继续记录、重开恢复和版本兼容诊断。
 6. 完成 systemd user service、`.deb` / AppImage 安装差异、日志、升级和恢复验证。

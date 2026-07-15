@@ -6,9 +6,14 @@ const SCAN_ROOTS = [
   "src-tauri/src/app",
   "src-tauri/src/platform",
   "src-tauri/src/domain",
+  "src-tauri/src/engine/api/handlers",
 ] as const;
 
-const EXTRA_FILES = ["src-tauri/src/lib.rs"] as const;
+const EXTRA_FILES = [
+  "src-tauri/src/lib.rs",
+  "src-tauri/src/engine/tracking/watchdog.rs",
+  "src-tauri/src/engine/tracking/startup.rs",
+] as const;
 
 const STORAGE_PATH_OWNER_FILES = new Set([
   "src-tauri/src/data/sqlite_pool.rs",
@@ -84,6 +89,12 @@ function isLibSource(path: string) {
   return path === "src-tauri/src/lib.rs";
 }
 
+function isHostNeutralRuntimeSource(path: string) {
+  return /^src-tauri\/src\/engine\/api\/handlers\//.test(path)
+    || path === "src-tauri/src/engine/tracking/watchdog.rs"
+    || path === "src-tauri/src/engine/tracking/startup.rs";
+}
+
 function isTestLine(lineText: string) {
   return lineText.includes("#[cfg(test)]") || lineText.trim().startsWith("mod tests");
 }
@@ -149,6 +160,19 @@ function findRustBoundaryViolations(files: SourceFile[]): BoundaryViolation[] {
       }
 
       if (
+        isHostNeutralRuntimeSource(file.path)
+        && !inTestModule
+        && (/\btauri::/.test(line) || /\bAppHandle\b/.test(line))
+      ) {
+        violations.push({
+          path: file.path,
+          line: index + 1,
+          rule: "host-neutral-runtime-no-tauri",
+          text: line,
+        });
+      }
+
+      if (
         STORAGE_PATH_OWNER_FILES.has(file.path) &&
         /app_paths::product_(?:roaming|local|webview)_data_dir/.test(line)
       ) {
@@ -192,6 +216,10 @@ function runSelfTest() {
       content:
         "let row = sqlx::query(\"SELECT 1\");\nlet root = app_paths::product_roaming_data_dir(app)?;",
     },
+    {
+      path: "src-tauri/src/engine/api/handlers/sessions.rs",
+      content: "pub fn get(app: &tauri::AppHandle) {}",
+    },
   ]);
 
   const rules = violations.map((violation) => violation.rule).sort();
@@ -204,6 +232,7 @@ function runSelfTest() {
     "entry-layer-no-direct-sql-query",
     "platform-no-data-import",
     "persistent-owner-must-use-storage-paths",
+    "host-neutral-runtime-no-tauri",
   ].sort();
 
   if (JSON.stringify(rules) !== JSON.stringify(expectedRules)) {

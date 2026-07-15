@@ -54,9 +54,7 @@ pub(crate) fn build_diagnostics_response(
 async fn load_platform_tracking_diagnostics() -> PlatformTrackingDiagnostics {
     #[cfg(target_os = "linux")]
     {
-        match tauri::async_runtime::spawn_blocking(crate::platform::tracking_diagnostics::current)
-            .await
-        {
+        match tokio::task::spawn_blocking(crate::platform::tracking_diagnostics::current).await {
             Ok(diagnostics) => diagnostics,
             Err(error) => {
                 eprintln!("[api] failed to collect platform diagnostics: {error}");
