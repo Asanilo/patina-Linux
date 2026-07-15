@@ -1,6 +1,7 @@
-use crate::data::sqlite_pool::wait_for_sqlite_pool;
 use crate::data::tracking_runtime::TrackingRuntimeDataStore;
 use crate::domain::tracking::TRACKING_REASON_WATCHDOG_SEALED;
+use crate::engine::runtime_context::RuntimeContext;
+use crate::engine::runtime_event::{RuntimeEvent, RuntimeEventSink};
 use std::sync::{
     atomic::{AtomicI64, Ordering},
     Arc,
@@ -71,36 +72,42 @@ pub async fn watch<R: Runtime>(
     app: AppHandle<R>,
     health_state: Arc<RuntimeHealthState>,
 ) -> Result<(), String> {
-    let pool = wait_for_sqlite_pool(&app).await?;
-    let data = TrackingRuntimeDataStore::new(pool);
+    let pool = crate::data::sqlite_pool::wait_for_sqlite_pool(&app).await?;
+    let context = RuntimeContext::system(pool);
+    let sink = runtime::TauriRuntimeEventSink::new(app);
 
     loop {
-        let now_ms = now_ms();
-        let last_successful_sample_ms = health_state.last_successful_sample_ms();
-        let last_watchdog_seal_sample_ms = health_state.last_watchdog_seal_sample_ms();
-
-        if should_watchdog_seal(
-            last_successful_sample_ms,
-            last_watchdog_seal_sample_ms,
-            now_ms,
-        ) {
-            seal_stale_session(
-                &app,
-                &data,
-                &health_state,
-                last_successful_sample_ms.unwrap_or_default(),
-            )
-            .await;
-        }
-
+        run_iteration(&context, &health_state, &sink).await;
         sleep(Duration::from_millis(TRACKER_WATCHDOG_POLL_MS)).await;
     }
 }
 
-async fn seal_stale_session<R: Runtime>(
-    app: &AppHandle<R>,
+pub(crate) async fn run_iteration(
+    context: &RuntimeContext,
+    health_state: &RuntimeHealthState,
+    event_sink: &dyn RuntimeEventSink,
+) {
+    let last_successful_sample_ms = health_state.last_successful_sample_ms();
+    if should_watchdog_seal(
+        last_successful_sample_ms,
+        health_state.last_watchdog_seal_sample_ms(),
+        context.now_ms(),
+    ) {
+        let data = TrackingRuntimeDataStore::new(context.pool().clone());
+        seal_stale_session(
+            &data,
+            health_state,
+            event_sink,
+            last_successful_sample_ms.unwrap_or_default(),
+        )
+        .await;
+    }
+}
+
+async fn seal_stale_session(
     data: &TrackingRuntimeDataStore,
     health_state: &RuntimeHealthState,
+    event_sink: &dyn RuntimeEventSink,
     sample_time_ms: i64,
 ) {
     match data.end_active_sessions(sample_time_ms).await {
@@ -112,11 +119,10 @@ async fn seal_stale_session<R: Runtime>(
                     "watchdog sealed stale active session at {} after tracker stall",
                     sample_time_ms
                 ));
-                let _ = runtime::emit_tracking_data_changed(
-                    app,
-                    TRACKING_REASON_WATCHDOG_SEALED,
-                    sample_time_ms as u64,
-                );
+                let _ = event_sink.emit(RuntimeEvent::TrackingDataChanged {
+                    reason: TRACKING_REASON_WATCHDOG_SEALED.to_string(),
+                    changed_at_ms: sample_time_ms as u64,
+                });
             }
         }
         Err(error) => {
@@ -141,20 +147,25 @@ pub(crate) fn should_watchdog_seal(
     now_ms.saturating_sub(last_successful_sample_ms) > TRACKER_STALL_SEAL_AFTER_MS
 }
 
-fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as i64)
-        .unwrap_or_default()
-}
-
 fn log_watchdog_error(message: impl AsRef<str>) {
     eprintln!("[tracker] {}", message.as_ref());
 }
 
 #[cfg(test)]
 mod tests {
-    use super::RuntimeHealthState;
+    use super::{run_iteration, RuntimeHealthState};
+    use crate::engine::runtime_context::{RuntimeClock, RuntimeContext};
+    use crate::engine::runtime_event::{MemoryRuntimeEventSink, RuntimeEvent};
+    use sqlx::{Executor, Row, SqlitePool};
+    use std::sync::Arc;
+
+    struct FixedClock(i64);
+
+    impl RuntimeClock for FixedClock {
+        fn now_ms(&self) -> i64 {
+            self.0
+        }
+    }
 
     #[test]
     fn runtime_health_snapshot_starts_empty() {
@@ -195,5 +206,38 @@ mod tests {
         let snapshot = state.snapshot();
         assert_eq!(snapshot.last_successful_sample_ms, Some(14_000));
         assert_eq!(snapshot.last_watchdog_seal_sample_ms, Some(14_000));
+    }
+
+    #[tokio::test]
+    async fn iteration_seals_stale_session_and_emits_one_runtime_event() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        pool.execute(crate::data::schema::CURRENT_BASELINE_SCHEMA_SQL)
+            .await
+            .unwrap();
+        crate::data::repositories::sessions::start_session(
+            &pool, "Ghostty", "ghostty", "patina", 1_000, 1_000,
+        )
+        .await
+        .unwrap();
+        let context = RuntimeContext::new(pool.clone(), Arc::new(FixedClock(20_000)));
+        let health = RuntimeHealthState::default();
+        health.note_successful_sample(5_000);
+        let sink = MemoryRuntimeEventSink::default();
+
+        run_iteration(&context, &health, &sink).await;
+
+        let row = sqlx::query("SELECT end_time FROM sessions LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(row.get::<Option<i64>, _>("end_time"), Some(5_000));
+        assert_eq!(
+            sink.events(),
+            vec![RuntimeEvent::TrackingDataChanged {
+                reason: crate::domain::tracking::TRACKING_REASON_WATCHDOG_SEALED.to_string(),
+                changed_at_ms: 5_000,
+            }]
+        );
+        pool.close().await;
     }
 }

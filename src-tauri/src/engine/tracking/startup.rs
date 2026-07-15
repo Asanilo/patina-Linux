@@ -1,16 +1,17 @@
 use crate::data::tracking_runtime::{TrackingRuntimeDataError, TrackingRuntimeDataStore};
-use crate::domain::tracking::{TrackingDataChangedPayload, TRACKING_REASON_STARTUP_SEALED};
+use crate::domain::tracking::TRACKING_REASON_STARTUP_SEALED;
+use crate::engine::runtime_event::{RuntimeEvent, RuntimeEventSink};
 #[cfg(target_os = "linux")]
 use crate::platform::linux::foreground as tracker;
 #[cfg(target_os = "windows")]
 use crate::platform::windows::foreground as tracker;
-use tauri::{AppHandle, Emitter, Runtime};
 
 const DEFAULT_AFK_THRESHOLD_SECS: u64 = 900;
 
-pub async fn initialize_tracker<R: Runtime>(
-    app: &AppHandle<R>,
+pub async fn initialize_tracker(
     data: &TrackingRuntimeDataStore,
+    event_sink: &dyn RuntimeEventSink,
+    now_ms: i64,
 ) -> Result<(), TrackingRuntimeDataError> {
     let afk_threshold_secs = load_startup_afk_threshold_secs(data).await?;
     tracker::cmd_set_afk_threshold(afk_threshold_secs);
@@ -18,8 +19,8 @@ pub async fn initialize_tracker<R: Runtime>(
     let mut repair_notes: Vec<String> = Vec::new();
 
     record_normalized_closed_duration(data, &mut repair_notes).await?;
-    seal_startup_active_session_if_needed(app, data, &mut repair_notes).await?;
-    persist_startup_self_heal_if_needed(data, &repair_notes).await?;
+    seal_startup_active_session_if_needed(data, event_sink, &mut repair_notes, now_ms).await?;
+    persist_startup_self_heal_if_needed(data, &repair_notes, now_ms).await?;
 
     Ok(())
 }
@@ -43,14 +44,18 @@ async fn record_normalized_closed_duration(
     Ok(())
 }
 
-async fn seal_startup_active_session_if_needed<R: Runtime>(
-    app: &AppHandle<R>,
+async fn seal_startup_active_session_if_needed(
     data: &TrackingRuntimeDataStore,
+    event_sink: &dyn RuntimeEventSink,
     repair_notes: &mut Vec<String>,
+    now_ms: i64,
 ) -> Result<(), TrackingRuntimeDataError> {
-    if let Some(end_time) = seal_startup_active_session(data, now_ms()).await? {
+    if let Some(end_time) = seal_startup_active_session(data, now_ms).await? {
         repair_notes.push("sealed_active_session".to_string());
-        let _ = emit_tracking_data_changed(app, TRACKING_REASON_STARTUP_SEALED, end_time as u64);
+        let _ = event_sink.emit(RuntimeEvent::TrackingDataChanged {
+            reason: TRACKING_REASON_STARTUP_SEALED.to_string(),
+            changed_at_ms: end_time as u64,
+        });
     }
 
     Ok(())
@@ -78,14 +83,14 @@ pub(crate) async fn seal_startup_active_session(
 async fn persist_startup_self_heal_if_needed(
     data: &TrackingRuntimeDataStore,
     repair_notes: &[String],
+    now_ms: i64,
 ) -> Result<(), TrackingRuntimeDataError> {
     if repair_notes.is_empty() {
         return Ok(());
     }
 
     let summary = repair_notes.join(",");
-    let now = now_ms();
-    data.save_startup_self_heal(now, &summary).await?;
+    data.save_startup_self_heal(now_ms, &summary).await?;
     log_startup_error(format!("startup self-heal applied: {summary}"));
 
     Ok(())
@@ -101,24 +106,6 @@ pub(crate) fn resolve_startup_seal_time(
     };
 
     now_ms.min(session_start_time.max(last_heartbeat_ms))
-}
-
-fn emit_tracking_data_changed<R: Runtime>(
-    app: &AppHandle<R>,
-    reason: &str,
-    changed_at_ms: u64,
-) -> tauri::Result<()> {
-    app.emit(
-        "tracking-data-changed",
-        TrackingDataChangedPayload::new(reason, changed_at_ms),
-    )
-}
-
-fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as i64)
-        .unwrap_or_default()
 }
 
 fn log_startup_error(message: impl AsRef<str>) {

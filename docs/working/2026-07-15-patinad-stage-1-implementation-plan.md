@@ -105,12 +105,12 @@
 - Modify: `src-tauri/src/app/runtime.rs`
 - Test: tracking event and watchdog stale-session tests
 
-- [ ] Write failing tests that run watchdog sealing against a prepared pool and memory event sink without Tauri.
-- [ ] Extract the watchdog loop body into a context-driven iteration.
-- [ ] Route tracking data-change emission through `RuntimeEventSink`.
-- [ ] Keep foreground polling and Tauri lifecycle assembly in the desktop host for Stage 1.
-- [ ] Verify session sealing and event ordering remain unchanged.
-- [ ] Commit as `refactor: detach tracking data access from Tauri host`.
+- [x] Write failing tests that run watchdog sealing against a prepared pool and memory event sink without Tauri.
+- [x] Extract the watchdog loop body into a context-driven iteration.
+- [x] Route tracking data-change emission, startup self-heal, and power lifecycle sealing through `RuntimeEventSink`.
+- [x] Keep foreground polling and Tauri lifecycle assembly in the desktop host for Stage 1.
+- [x] Verify session sealing and event ordering remain unchanged.
+- [x] Commit as `refactor: detach tracking data access from Tauri host`.
 
 ### Task 6: Stage 1 Contract and Documentation Closure
 

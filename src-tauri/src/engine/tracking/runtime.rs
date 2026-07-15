@@ -16,6 +16,8 @@ use crate::domain::tracking::TrackingDataChangedPayload;
 #[cfg(test)]
 use crate::domain::tracking::TRACKING_REASON_TRACKING_PAUSED_SEALED;
 use crate::domain::tracking::{TrackingStatusSnapshot, TRACKING_REASON_STATUS_CHANGED};
+use crate::engine::runtime_context::RuntimeContext;
+use crate::engine::runtime_event::{RuntimeEvent, RuntimeEventSink};
 #[cfg(target_os = "linux")]
 use crate::platform::linux::foreground as tracker;
 #[cfg(target_os = "windows")]
@@ -38,8 +40,8 @@ use loop_state::{
     TrackingSettingsCache,
 };
 use power_lifecycle::apply_power_lifecycle_event;
-pub use support::emit_tracking_data_changed;
-use support::{log_tracker_error, now_ms};
+use support::log_tracker_error;
+pub use support::{emit_tracking_data_changed, TauriRuntimeEventSink};
 use window_polling::{poll_active_window_with_timeout, WindowPollOutcome};
 
 // Owner ledger: run() owns runtime loop orchestration only. Polling,
@@ -50,8 +52,19 @@ pub async fn run<R: Runtime>(
     health_state: Arc<watchdog::RuntimeHealthState>,
 ) -> Result<(), String> {
     let pool = wait_for_sqlite_pool(&app).await?;
-    let data = TrackingRuntimeDataStore::new(pool);
-    startup::initialize_tracker(&app, &data)
+    let context = RuntimeContext::system(pool);
+    let event_sink = TauriRuntimeEventSink::new(app.clone());
+    run_with_context(app, context, health_state, &event_sink).await
+}
+
+async fn run_with_context<R: Runtime>(
+    app: AppHandle<R>,
+    context: RuntimeContext,
+    health_state: Arc<watchdog::RuntimeHealthState>,
+    event_sink: &dyn RuntimeEventSink,
+) -> Result<(), String> {
+    let data = TrackingRuntimeDataStore::new(context.pool().clone());
+    startup::initialize_tracker(&data, event_sink, context.now_ms())
         .await
         .map_err(|error| format!("tracker initialization failed: {error}"))?;
 
@@ -66,7 +79,7 @@ pub async fn run<R: Runtime>(
     loop {
         let poll_outcome = poll_active_window_with_timeout().await;
         let window_info = poll_outcome.window.clone();
-        let now_ms = now_ms();
+        let now_ms = context.now_ms();
         health_state.note_heartbeat(now_ms);
         if poll_outcome.is_successful_sample() {
             health_state.note_successful_sample(now_ms);
@@ -98,7 +111,7 @@ pub async fn run<R: Runtime>(
         if tracking_state.tracking_paused {
             match seal_active_sessions_for_tracking_pause(&data, now_ms).await {
                 Ok(Some(reason)) => {
-                    let _ = emit_tracking_data_changed(&app, reason, now_ms as u64);
+                    emit_tracking_event(event_sink, reason, now_ms);
                 }
                 Ok(None) => {}
                 Err(error) => {
@@ -151,7 +164,7 @@ pub async fn run<R: Runtime>(
             .await
             {
                 Ok(Some(reason)) => {
-                    let _ = emit_tracking_data_changed(&app, reason, now_ms as u64);
+                    emit_tracking_event(event_sink, reason, now_ms);
                 }
                 Ok(None) => {}
                 Err(error) => {
@@ -182,7 +195,7 @@ pub async fn run<R: Runtime>(
             .await
             {
                 Ok(Some(reason)) => {
-                    let _ = emit_tracking_data_changed(&app, reason, now_ms as u64);
+                    emit_tracking_event(event_sink, reason, now_ms);
                 }
                 Ok(None) => {}
                 Err(error) => {
@@ -217,7 +230,7 @@ pub async fn run<R: Runtime>(
         .await
         {
             Ok(Some(reason)) => {
-                let _ = emit_tracking_data_changed(&app, reason, now_ms as u64);
+                emit_tracking_event(event_sink, reason, now_ms);
                 did_emit_tracking_data_changed = true;
             }
             Ok(None) => {}
@@ -233,7 +246,7 @@ pub async fn run<R: Runtime>(
                 &tracking_state.tracking_status,
             )
         {
-            let _ = emit_tracking_data_changed(&app, TRACKING_REASON_STATUS_CHANGED, now_ms as u64);
+            emit_tracking_event(event_sink, TRACKING_REASON_STATUS_CHANGED, now_ms);
         }
 
         pending_continuity = continuity::resolve_next_pending_continuity(
@@ -292,16 +305,34 @@ pub async fn handle_power_lifecycle_event<R: Runtime>(
     timestamp_ms: i64,
 ) -> Result<(), String> {
     let pool = wait_for_sqlite_pool(&app).await?;
-    let data = TrackingRuntimeDataStore::new(pool);
+    let context = RuntimeContext::system(pool);
+    let event_sink = TauriRuntimeEventSink::new(app);
+    handle_power_lifecycle_event_with_context(&context, &event_sink, state, timestamp_ms).await
+}
+
+pub async fn handle_power_lifecycle_event_with_context(
+    context: &RuntimeContext,
+    event_sink: &dyn RuntimeEventSink,
+    state: &str,
+    timestamp_ms: i64,
+) -> Result<(), String> {
+    let data = TrackingRuntimeDataStore::new(context.pool().clone());
     let reason = apply_power_lifecycle_event(&data, state, timestamp_ms)
         .await
         .map_err(|error| format!("power lifecycle transition failed: {error}"))?;
 
     if let Some(reason) = reason {
-        let _ = emit_tracking_data_changed(&app, reason, timestamp_ms as u64);
+        emit_tracking_event(event_sink, reason, timestamp_ms);
     }
 
     Ok(())
+}
+
+fn emit_tracking_event(event_sink: &dyn RuntimeEventSink, reason: &str, changed_at_ms: i64) {
+    let _ = event_sink.emit(RuntimeEvent::TrackingDataChanged {
+        reason: reason.to_string(),
+        changed_at_ms: changed_at_ms.max(0) as u64,
+    });
 }
 
 #[cfg(test)]
