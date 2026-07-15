@@ -208,7 +208,11 @@ export function runRuntimeEffectsTests() {
   });
 
   runTest("power lifecycle end reasons keep refresh=true and pause sync=false", () => {
-    for (const reason of ["session-ended-lock", "session-ended-suspend"]) {
+    for (const reason of [
+      "session-ended-lock",
+      "session-ended-suspend",
+      "session-ended-shutdown",
+    ]) {
       const effects = resolveTrackingDataChangedEffects(reason);
       assert.equal(effects.shouldRefresh, true);
       assert.equal(effects.shouldSyncPauseSetting, false);

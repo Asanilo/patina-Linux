@@ -1087,6 +1087,46 @@ mod tests {
     }
 
     #[test]
+    fn shutdown_event_seals_active_session_immediately() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            sessions::start_session(&pool, "QQ", "QQ.exe", "Window", 1_000, 1_000)
+                .await
+                .unwrap();
+            let data = data_store(&pool);
+
+            let reason = apply_power_lifecycle_event(&data, "shutdown", 5_000)
+                .await
+                .unwrap();
+            let active = sessions::load_active_session(&pool).await.unwrap();
+
+            assert_eq!(reason, Some("session-ended-shutdown"));
+            assert!(active.is_none());
+        });
+    }
+
+    #[test]
+    fn shutdown_after_suspend_does_not_double_seal_session() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            sessions::start_session(&pool, "QQ", "QQ.exe", "Window", 1_000, 1_000)
+                .await
+                .unwrap();
+            let data = data_store(&pool);
+
+            let suspend_reason = apply_power_lifecycle_event(&data, "suspend", 5_000)
+                .await
+                .unwrap();
+            let shutdown_reason = apply_power_lifecycle_event(&data, "shutdown", 6_000)
+                .await
+                .unwrap();
+
+            assert_eq!(suspend_reason, Some("session-ended-suspend"));
+            assert_eq!(shutdown_reason, None);
+        });
+    }
+
+    #[test]
     fn tracking_pause_seals_active_session_and_returns_pause_reason() {
         tauri::async_runtime::block_on(async {
             let pool = setup_test_db().await;

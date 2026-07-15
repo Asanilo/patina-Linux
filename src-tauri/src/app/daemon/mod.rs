@@ -141,15 +141,15 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     } else {
         None
     };
-    let tracking_tasks = runtime.block_on(async {
+    let background_tasks = runtime.block_on(async {
         tracking_snapshot.map(|snapshot| {
-            runtime::DaemonTrackingTasks::start(runtime_context, snapshot, event_hub.clone())
+            runtime::DaemonBackgroundTasks::start(runtime_context, snapshot, event_hub.clone())
         })
     });
     let daemon_runtime = DaemonRuntime::new(
         api_handle,
         event_hub,
-        tracking_tasks,
+        background_tasks,
         sqlite_runtime,
         runtime_lease,
     );

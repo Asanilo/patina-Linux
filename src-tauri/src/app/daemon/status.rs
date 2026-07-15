@@ -33,7 +33,7 @@ pub fn build_startup_status(
         profile,
         version: version.into(),
         stage: if tracking_enabled {
-            "stage-2b-tracking-preview"
+            "stage-2c-power-preview"
         } else {
             "stage-2a-event-stream"
         },
@@ -49,6 +49,7 @@ pub fn build_startup_status(
         notes: if tracking_enabled {
             vec![
                 "daemon owns tracking and watchdog for this profile",
+                "daemon observes lock, suspend, resume, and shutdown through systemd-logind",
                 "tracking preview is explicitly enabled and the desktop must not use the same profile",
             ]
         } else {
@@ -137,7 +138,7 @@ mod tests {
             &paths,
         );
 
-        assert_eq!(status.stage, "stage-2b-tracking-preview");
+        assert_eq!(status.stage, "stage-2c-power-preview");
         assert!(status.tracking_enabled);
         assert!(status
             .notes

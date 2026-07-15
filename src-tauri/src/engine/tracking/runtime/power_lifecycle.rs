@@ -5,7 +5,7 @@ pub(super) async fn apply_power_lifecycle_event(
     state: &str,
     timestamp_ms: i64,
 ) -> Result<Option<&'static str>, TrackingRuntimeDataError> {
-    let should_end_active_session = matches!(state, "lock" | "suspend");
+    let should_end_active_session = matches!(state, "lock" | "suspend" | "shutdown");
 
     if !should_end_active_session {
         return Ok(None);
@@ -15,6 +15,7 @@ pub(super) async fn apply_power_lifecycle_event(
         return Ok(Some(match state {
             "lock" => "session-ended-lock",
             "suspend" => "session-ended-suspend",
+            "shutdown" => "session-ended-shutdown",
             _ => "session-ended-system",
         }));
     }

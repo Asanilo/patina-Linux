@@ -154,12 +154,13 @@
 2. Stage 1 已完成：共享 `RuntimeContext`、`RuntimeEventSink`、API runtime context、完整只读 GET API 和 host-neutral handler 已落地。
 3. Stage 2A 已完成：本机有界 event stream、bearer 认证、replay/resync、能力协商和关闭语义已有自动验证。
 4. Stage 2B tracking preview 已完成：显式 `--track` 模式由 daemon 接管 tracking/watchdog、实时快照、session 写入和退出封口；desktop 默认 owner 尚未切换。
-5. 下一阶段按 power、audio、MPRIS、浏览器活动桥接的顺序迁移平台 owner。
-6. 复用现有 React feature 建立由 `patinad` 在 loopback 提供的浏览器 UI，先覆盖 Dashboard、History、Data、当前会话和诊断。
-7. 让 Tauri UI 成为 daemon 桌面客户端，保留 tray、通知、文件选择和 updater，验证关闭 UI 后继续记录、重开恢复和版本兼容诊断。
-8. 完成 systemd user service、`.deb` / AppImage 安装差异、日志、升级和恢复验证。
-9. 在 daemon 契约稳定后开发 TUI / CLI，并开始 KDE Wayland 适配；桌面端是否从 Tauri 迁往 GPUI 只按实测收益单独评估。
-10. `patinad` 稳定后，单独分阶段删除冻结的 Windows 平台代码。
+5. Stage 2C power preview 已完成：共享 logind source 覆盖锁屏、解锁、休眠、恢复和关机，daemon 可在对应边界立即封口。
+6. 下一阶段按 audio、MPRIS、浏览器活动桥接的顺序迁移平台 owner。
+7. 复用现有 React feature 建立由 `patinad` 在 loopback 提供的浏览器 UI，先覆盖 Dashboard、History、Data、当前会话和诊断。
+8. 让 Tauri UI 成为 daemon 桌面客户端，保留 tray、通知、文件选择和 updater，验证关闭 UI 后继续记录、重开恢复和版本兼容诊断。
+9. 完成 systemd user service、`.deb` / AppImage 安装差异、日志、升级和恢复验证。
+10. 在 daemon 契约稳定后开发 TUI / CLI，并开始 KDE Wayland 适配；桌面端是否从 Tauri 迁往 GPUI 只按实测收益单独评估。
+11. `patinad` 稳定后，单独分阶段删除冻结的 Windows 平台代码。
 
 每一阶段必须保持当前桌面主路径可用，不以一次性切换换取架构完成感。
 

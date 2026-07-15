@@ -14,6 +14,127 @@ pub struct DaemonTrackingTasks {
     event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
 }
 
+pub struct DaemonBackgroundTasks {
+    #[cfg(target_os = "linux")]
+    power: DaemonPowerTask,
+    tracking: DaemonTrackingTasks,
+}
+
+impl DaemonBackgroundTasks {
+    pub fn start(
+        context: crate::engine::runtime_context::RuntimeContext,
+        snapshot: Arc<crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState>,
+        event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
+    ) -> Self {
+        #[cfg(target_os = "linux")]
+        let power = DaemonPowerTask::start(context.clone(), event_sink.clone());
+        let tracking = DaemonTrackingTasks::start(context, snapshot, event_sink);
+        Self {
+            #[cfg(target_os = "linux")]
+            power,
+            tracking,
+        }
+    }
+
+    async fn shutdown(self) {
+        #[cfg(target_os = "linux")]
+        self.power.shutdown().await;
+        self.tracking.shutdown().await;
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub struct DaemonPowerTask {
+    shutdown_tx: watch::Sender<bool>,
+    handle: JoinHandle<()>,
+}
+
+#[cfg(target_os = "linux")]
+impl DaemonPowerTask {
+    fn start(
+        context: crate::engine::runtime_context::RuntimeContext,
+        event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
+    ) -> Self {
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let handle = tokio::spawn(run_power_restart_loop(context, event_sink, shutdown_rx));
+        Self {
+            shutdown_tx,
+            handle,
+        }
+    }
+
+    async fn shutdown(self) {
+        let _ = self.shutdown_tx.send(true);
+        let mut handle = self.handle;
+        if tokio::time::timeout(std::time::Duration::from_secs(5), &mut handle)
+            .await
+            .is_err()
+        {
+            handle.abort();
+            let _ = handle.await;
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+async fn run_power_restart_loop(
+    context: crate::engine::runtime_context::RuntimeContext,
+    event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
+    mut shutdown: watch::Receiver<bool>,
+) {
+    let mut retry_secs = 2_u64;
+    loop {
+        let result =
+            run_power_watch_attempt(context.clone(), event_sink.clone(), shutdown.clone()).await;
+        if *shutdown.borrow() {
+            return;
+        }
+        if let Err(error) = result {
+            eprintln!("[patinad] power watcher stopped: {error}");
+        }
+        if wait_for_restart(&mut shutdown, retry_secs).await {
+            return;
+        }
+        retry_secs = retry_secs.saturating_mul(2).min(30);
+    }
+}
+
+#[cfg(target_os = "linux")]
+async fn run_power_watch_attempt(
+    context: crate::engine::runtime_context::RuntimeContext,
+    event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
+    mut shutdown: watch::Receiver<bool>,
+) -> Result<(), String> {
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(16);
+    let watcher = crate::platform::linux::power::watch_systemd_logind(shutdown.clone(), event_tx);
+    tokio::pin!(watcher);
+
+    loop {
+        tokio::select! {
+            result = &mut watcher => return result,
+            changed = shutdown.changed() => {
+                let _ = changed;
+                return Ok(());
+            }
+            event = event_rx.recv() => {
+                let event = event.ok_or_else(|| "power lifecycle event channel closed".to_string())?;
+                if event.state == "ready" {
+                    println!("[patinad] power watcher ready");
+                    continue;
+                }
+                if let Err(error) = crate::engine::tracking::runtime::handle_power_lifecycle_event_with_context(
+                    &context,
+                    event_sink.as_ref(),
+                    &event.state,
+                    event.timestamp_ms as i64,
+                ).await {
+                    eprintln!("[patinad] power lifecycle handling failed: {error}");
+                }
+            }
+        }
+    }
+}
+
 impl DaemonTrackingTasks {
     pub fn start(
         context: crate::engine::runtime_context::RuntimeContext,
@@ -147,7 +268,7 @@ async fn wait_for_restart(shutdown: &mut watch::Receiver<bool>, retry_secs: u64)
 pub struct DaemonRuntime {
     api_server: Option<ApiServerHandle>,
     event_hub: Option<Arc<RuntimeEventHub>>,
-    tracking_tasks: Option<DaemonTrackingTasks>,
+    background_tasks: Option<DaemonBackgroundTasks>,
     sqlite: Option<DaemonSqliteRuntime>,
     lease: Option<RuntimeLease>,
 }
@@ -156,21 +277,21 @@ impl DaemonRuntime {
     pub fn new(
         api_server: Option<ApiServerHandle>,
         event_hub: Arc<RuntimeEventHub>,
-        tracking_tasks: Option<DaemonTrackingTasks>,
+        background_tasks: Option<DaemonBackgroundTasks>,
         sqlite: DaemonSqliteRuntime,
         lease: RuntimeLease,
     ) -> Self {
         Self {
             api_server,
             event_hub: Some(event_hub),
-            tracking_tasks,
+            background_tasks,
             sqlite: Some(sqlite),
             lease: Some(lease),
         }
     }
 
     pub async fn shutdown(mut self) {
-        if let Some(tasks) = self.tracking_tasks.take() {
+        if let Some(tasks) = self.background_tasks.take() {
             tasks.shutdown().await;
         }
         if let Some(event_hub) = self.event_hub.as_ref() {
@@ -284,14 +405,14 @@ mod tests {
         let event_hub = Arc::new(RuntimeEventHub::new(
             crate::engine::runtime_event::DEFAULT_EVENT_REPLAY_CAPACITY,
         ));
-        let tracking_tasks = DaemonTrackingTasks::start(
+        let background_tasks = DaemonBackgroundTasks::start(
             crate::engine::runtime_context::RuntimeContext::system(sqlite.pool.clone()),
             Arc::new(
                 crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState::default(),
             ),
             event_hub.clone(),
         );
-        DaemonRuntime::new(None, event_hub, Some(tracking_tasks), sqlite, lease)
+        DaemonRuntime::new(None, event_hub, Some(background_tasks), sqlite, lease)
             .shutdown()
             .await;
 
