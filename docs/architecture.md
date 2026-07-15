@@ -176,7 +176,7 @@ Raw DTO 只能停留在明确边界：
 
 ### 4.5 运行时宿主与长期所有权
 
-当前 Tauri desktop 仍拥有 tracking、watchdog 和部分 Linux 平台信号。`patinad` Stage 0、Stage 1 和 Stage 2A 已完成 profile-safe storage bootstrap、单 owner `RuntimeLease`、共享 runtime/event 边界、按 profile 隔离的 API 凭据、bounded HTTP transport、完整只读 GET API、能力一致的 OpenAPI、受认证的有界 SSE event stream、能力协商和显式资源关闭；daemon 当前不记录 session，实时 tracker/browser 状态会明确降级。长期目标是把后台能力渐进迁入 `patinad`，但迁移期间不得复制出第二套业务实现。
+Tauri desktop 仍是默认 tracking owner，并继续拥有部分 Linux 平台信号。`patinad` Stage 0、Stage 1、Stage 2A 和 Stage 2B tracking preview 已完成 profile-safe storage bootstrap、单 owner `RuntimeLease`、共享 runtime/event 边界、完整只读 API、受认证 SSE，以及宿主无关的 tracking/watchdog 执行。显式 `--serve-api --track` 模式可以让 daemon 为隔离 profile 记录 session、提供实时 tracker snapshot 并在退出前封口；默认 daemon 模式仍不记录，browser bridge 仍明确降级。迁移期间不得复制第二套业务实现，也不得让 desktop 与 daemon 同时追踪同一 profile。
 
 迁移期共享运行时结构为：
 

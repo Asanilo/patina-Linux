@@ -61,7 +61,7 @@ Windows 代码采用冻结后删除策略：
 | GNOME Wayland 窗口追踪 | 原型可用 | 依赖 GNOME Shell 扩展提供的 `org.patina.WindowTracker`。 |
 | X11 追踪 | 已实现 fallback / 验证有限 | X11 session 可走 fallback；GNOME Wayland 不会静默降级到 X11。 |
 | KDE / wlroots Wayland | 暂不承诺 | 后续需要按桌面环境分别适配。 |
-| `patinad` | Stage 2A 事件传输已完成 | 已实现完整只读 API、能力协商和受认证的有界 SSE 事件流。Tracking 仍由桌面端拥有，当前不作为正式后台服务发布。 |
+| `patinad` | Stage 2B 追踪预览 | 显式使用 `--serve-api --track` 后，daemon 可为隔离 profile 运行 tracking/watchdog、写入会话、提供实时快照与 SSE，并在退出时封口。桌面端仍是默认 owner，当前不作为正式后台服务发布。 |
 | 本机浏览器 UI | 已规划 | 将由 `patinad` 在 loopback 提供；当前尚未实现。 |
 | 本地 API | 已实现 | 监听 `127.0.0.1:14840`，使用 bearer token，并提供 daemon 能力查询和受认证 SSE。 |
 | MCP wrapper | 已实现，查询优先 | `npm run mcp:patina`；写侧当前覆盖应用分类、重命名和排除。 |

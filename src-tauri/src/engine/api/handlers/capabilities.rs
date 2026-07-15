@@ -83,4 +83,17 @@ mod tests {
         assert!(unavailable.browser_activity_bridge.owned);
         assert!(!unavailable.browser_activity_bridge.ready);
     }
+
+    #[test]
+    fn tracking_daemon_capabilities_are_owned_before_the_first_sample() {
+        let starting = build_capabilities(ApiSurface::DaemonTrackingReadOnly, false, false);
+        assert!(starting.tracking.owned);
+        assert!(!starting.tracking.ready);
+        assert!(!starting.browser_activity_bridge.owned);
+        assert!(!starting.write_api.available);
+
+        let ready = build_capabilities(ApiSurface::DaemonTrackingReadOnly, true, false);
+        assert!(ready.tracking.owned);
+        assert!(ready.tracking.ready);
+    }
 }

@@ -23,6 +23,7 @@ pub fn build_startup_status(
     version: impl Into<String>,
     profile: crate::platform::app_paths::AppProfile,
     local_api_enabled: bool,
+    tracking_enabled: bool,
     local_api_port: u16,
     storage_paths: &crate::platform::storage_paths::StoragePaths,
 ) -> DaemonStartupStatus {
@@ -31,9 +32,13 @@ pub fn build_startup_status(
         mode: "daemon",
         profile,
         version: version.into(),
-        stage: "stage-2a-event-stream",
+        stage: if tracking_enabled {
+            "stage-2b-tracking-preview"
+        } else {
+            "stage-2a-event-stream"
+        },
         sqlite_enabled: true,
-        tracking_enabled: false,
+        tracking_enabled,
         local_api_enabled,
         event_stream_enabled: local_api_enabled,
         local_api_port,
@@ -41,10 +46,17 @@ pub fn build_startup_status(
         data_root: storage_paths.data_root.clone(),
         db_path: storage_paths.db_path.clone(),
         webview_root: storage_paths.webview_root.clone(),
-        notes: vec![
-            "daemon exposes the shared read-only local API and authenticated event stream when enabled",
-            "tracking stays owned by the desktop runtime in this stage",
-        ],
+        notes: if tracking_enabled {
+            vec![
+                "daemon owns tracking and watchdog for this profile",
+                "tracking preview is explicitly enabled and the desktop must not use the same profile",
+            ]
+        } else {
+            vec![
+                "daemon exposes the shared read-only local API and authenticated event stream when enabled",
+                "tracking stays owned by the desktop runtime unless --track is supplied",
+            ]
+        },
     }
 }
 
@@ -69,6 +81,7 @@ mod tests {
         let status = build_startup_status(
             "1.8.3",
             crate::platform::app_paths::AppProfile::Dev,
+            false,
             false,
             14_840,
             &paths,
@@ -101,6 +114,7 @@ mod tests {
             "1.8.3",
             crate::platform::app_paths::AppProfile::Dev,
             true,
+            false,
             42_321,
             &paths,
         );
@@ -109,5 +123,25 @@ mod tests {
         assert!(status.event_stream_enabled);
         assert_eq!(status.local_api_port, 42_321);
         assert!(!status.tracking_enabled);
+    }
+
+    #[test]
+    fn daemon_status_reports_explicit_tracking_preview() {
+        let paths = storage_paths("/tmp/Patina Dev");
+        let status = build_startup_status(
+            "1.8.3",
+            crate::platform::app_paths::AppProfile::Dev,
+            true,
+            true,
+            42_321,
+            &paths,
+        );
+
+        assert_eq!(status.stage, "stage-2b-tracking-preview");
+        assert!(status.tracking_enabled);
+        assert!(status
+            .notes
+            .iter()
+            .any(|note| note.contains("owns tracking")));
     }
 }

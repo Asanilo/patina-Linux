@@ -24,6 +24,7 @@ use crate::platform::linux::foreground as tracker;
 use crate::platform::windows::foreground as tracker;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
+use tokio::sync::watch;
 use tokio::time::{sleep, Duration};
 
 #[path = "runtime/loop_state.rs"]
@@ -54,17 +55,64 @@ pub async fn run<R: Runtime>(
     let pool = wait_for_sqlite_pool(&app).await?;
     let context = RuntimeContext::system(pool);
     let event_sink = TauriRuntimeEventSink::new(app.clone());
-    run_with_context(app, context, health_state, &event_sink).await
+    let output = Arc::new(TauriTrackingRuntimeOutput::new(app));
+    let (_shutdown_tx, shutdown_rx) = watch::channel(false);
+    run_with_context(
+        context,
+        health_state,
+        Arc::new(event_sink),
+        output,
+        shutdown_rx,
+    )
+    .await
 }
 
-async fn run_with_context<R: Runtime>(
-    app: AppHandle<R>,
+pub trait TrackingRuntimeOutput: Send + Sync {
+    fn replace_snapshot(&self, snapshot: TrackingRuntimeSnapshot);
+    fn active_window_changed(&self, window: &tracker::WindowInfo) -> Result<(), String>;
+}
+
+pub struct TauriTrackingRuntimeOutput<R: Runtime>(AppHandle<R>);
+
+impl<R: Runtime> TauriTrackingRuntimeOutput<R> {
+    pub fn new(app: AppHandle<R>) -> Self {
+        Self(app)
+    }
+}
+
+impl<R: Runtime> TrackingRuntimeOutput for TauriTrackingRuntimeOutput<R> {
+    fn replace_snapshot(&self, snapshot: TrackingRuntimeSnapshot) {
+        if let Some(state) = self.0.try_state::<TrackingRuntimeSnapshotState>() {
+            state.replace(snapshot);
+        }
+    }
+
+    fn active_window_changed(&self, window: &tracker::WindowInfo) -> Result<(), String> {
+        self.0
+            .emit("active-window-changed", window)
+            .map_err(|error| error.to_string())
+    }
+}
+
+impl TrackingRuntimeOutput for TrackingRuntimeSnapshotState {
+    fn replace_snapshot(&self, snapshot: TrackingRuntimeSnapshot) {
+        self.replace(snapshot);
+    }
+
+    fn active_window_changed(&self, _window: &tracker::WindowInfo) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+pub async fn run_with_context(
     context: RuntimeContext,
     health_state: Arc<watchdog::RuntimeHealthState>,
-    event_sink: &dyn RuntimeEventSink,
+    event_sink: Arc<dyn RuntimeEventSink>,
+    output: Arc<dyn TrackingRuntimeOutput>,
+    mut shutdown: watch::Receiver<bool>,
 ) -> Result<(), String> {
     let data = TrackingRuntimeDataStore::new(context.pool().clone());
-    startup::initialize_tracker(&data, event_sink, context.now_ms())
+    startup::initialize_tracker(&data, event_sink.as_ref(), context.now_ms())
         .await
         .map_err(|error| format!("tracker initialization failed: {error}"))?;
 
@@ -77,7 +125,13 @@ async fn run_with_context<R: Runtime>(
     let mut settings_cache = TrackingSettingsCache::default();
 
     loop {
-        let poll_outcome = poll_active_window_with_timeout().await;
+        if *shutdown.borrow() {
+            return Ok(());
+        }
+        let poll_outcome = tokio::select! {
+            outcome = poll_active_window_with_timeout() => outcome,
+            _ = shutdown.changed() => return Ok(()),
+        };
         let window_info = poll_outcome.window.clone();
         let now_ms = context.now_ms();
         health_state.note_heartbeat(now_ms);
@@ -102,7 +156,7 @@ async fn run_with_context<R: Runtime>(
         sustained_participation_state = next_sustained_participation_state;
         let tracked_window = tracking_state.tracked_window;
         update_runtime_snapshot_state(
-            &app,
+            output.as_ref(),
             &tracked_window,
             &tracking_state.tracking_status,
             now_ms,
@@ -111,7 +165,7 @@ async fn run_with_context<R: Runtime>(
         if tracking_state.tracking_paused {
             match seal_active_sessions_for_tracking_pause(&data, now_ms).await {
                 Ok(Some(reason)) => {
-                    emit_tracking_event(event_sink, reason, now_ms);
+                    emit_tracking_event(event_sink.as_ref(), reason, now_ms);
                 }
                 Ok(None) => {}
                 Err(error) => {
@@ -122,14 +176,18 @@ async fn run_with_context<R: Runtime>(
             pending_continuity = None;
             last_window = Some(tracked_window);
             last_tracking_status = Some(tracking_state.tracking_status);
-            sleep(Duration::from_secs(1)).await;
+            if wait_for_next_iteration(&mut shutdown).await {
+                return Ok(());
+            }
             continue;
         }
 
         if !poll_outcome.is_successful_sample() {
             last_window = Some(tracked_window);
             last_tracking_status = Some(tracking_state.tracking_status);
-            sleep(Duration::from_secs(1)).await;
+            if wait_for_next_iteration(&mut shutdown).await {
+                return Ok(());
+            }
             continue;
         }
 
@@ -164,7 +222,7 @@ async fn run_with_context<R: Runtime>(
             .await
             {
                 Ok(Some(reason)) => {
-                    emit_tracking_event(event_sink, reason, now_ms);
+                    emit_tracking_event(event_sink.as_ref(), reason, now_ms);
                 }
                 Ok(None) => {}
                 Err(error) => {
@@ -176,7 +234,9 @@ async fn run_with_context<R: Runtime>(
 
             last_window = Some(tracked_window);
             last_tracking_status = Some(tracking_state.tracking_status);
-            sleep(Duration::from_secs(1)).await;
+            if wait_for_next_iteration(&mut shutdown).await {
+                return Ok(());
+            }
             continue;
         }
 
@@ -195,7 +255,7 @@ async fn run_with_context<R: Runtime>(
             .await
             {
                 Ok(Some(reason)) => {
-                    emit_tracking_event(event_sink, reason, now_ms);
+                    emit_tracking_event(event_sink.as_ref(), reason, now_ms);
                 }
                 Ok(None) => {}
                 Err(error) => {
@@ -207,14 +267,16 @@ async fn run_with_context<R: Runtime>(
 
             last_window = Some(tracked_window);
             last_tracking_status = Some(tracking_state.tracking_status);
-            sleep(Duration::from_secs(1)).await;
+            if wait_for_next_iteration(&mut shutdown).await {
+                return Ok(());
+            }
             continue;
         }
 
         let did_emit_active_window_changed =
             tracker::has_meaningful_change(last_emitted_window.as_ref(), &window_info);
         if did_emit_active_window_changed {
-            let _ = app.emit("active-window-changed", &tracked_window);
+            let _ = output.active_window_changed(&tracked_window);
             last_emitted_window = Some(window_info.clone());
         }
 
@@ -230,7 +292,7 @@ async fn run_with_context<R: Runtime>(
         .await
         {
             Ok(Some(reason)) => {
-                emit_tracking_event(event_sink, reason, now_ms);
+                emit_tracking_event(event_sink.as_ref(), reason, now_ms);
                 did_emit_tracking_data_changed = true;
             }
             Ok(None) => {}
@@ -246,7 +308,7 @@ async fn run_with_context<R: Runtime>(
                 &tracking_state.tracking_status,
             )
         {
-            emit_tracking_event(event_sink, TRACKING_REASON_STATUS_CHANGED, now_ms);
+            emit_tracking_event(event_sink.as_ref(), TRACKING_REASON_STATUS_CHANGED, now_ms);
         }
 
         pending_continuity = continuity::resolve_next_pending_continuity(
@@ -258,27 +320,34 @@ async fn run_with_context<R: Runtime>(
         );
         last_window = Some(tracked_window);
         last_tracking_status = Some(tracking_state.tracking_status);
-        sleep(Duration::from_secs(1)).await;
+        if wait_for_next_iteration(&mut shutdown).await {
+            return Ok(());
+        }
     }
 }
 
-fn update_runtime_snapshot_state<R: Runtime>(
-    app: &AppHandle<R>,
+async fn wait_for_next_iteration(shutdown: &mut watch::Receiver<bool>) -> bool {
+    tokio::select! {
+        _ = sleep(Duration::from_secs(1)) => false,
+        _ = shutdown.changed() => true,
+    }
+}
+
+fn update_runtime_snapshot_state(
+    output: &dyn TrackingRuntimeOutput,
     window: &tracker::WindowInfo,
     status: &TrackingStatusSnapshot,
     sampled_at_ms: i64,
     poll_outcome: &WindowPollOutcome,
 ) {
-    if let Some(state) = app.try_state::<TrackingRuntimeSnapshotState>() {
-        state.replace(TrackingRuntimeSnapshot {
-            window: window.clone(),
-            status: status.clone(),
-            sampled_at_ms,
-            probe_status: poll_outcome.probe_status,
-            degraded_reason: poll_outcome.degraded_reason.clone(),
-            probe_diagnostics: poll_outcome.probe_diagnostics.clone(),
-        });
-    }
+    output.replace_snapshot(TrackingRuntimeSnapshot {
+        window: window.clone(),
+        status: status.clone(),
+        sampled_at_ms,
+        probe_status: poll_outcome.probe_status,
+        degraded_reason: poll_outcome.degraded_reason.clone(),
+        probe_diagnostics: poll_outcome.probe_diagnostics.clone(),
+    });
 }
 
 fn should_emit_tracking_status_changed(

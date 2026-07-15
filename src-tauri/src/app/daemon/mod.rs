@@ -1,3 +1,4 @@
+mod api_runtime;
 mod options;
 mod runtime;
 mod status;
@@ -29,6 +30,7 @@ pub fn build_startup_status(
         version,
         options.profile,
         options.serve_api,
+        options.track,
         local_api_port,
         storage_paths,
     )
@@ -67,16 +69,25 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     let event_hub = Arc::new(crate::engine::runtime_event::RuntimeEventHub::new(
         crate::engine::runtime_event::DEFAULT_EVENT_REPLAY_CAPACITY,
     ));
+    let tracking_snapshot = options.track.then(|| {
+        Arc::new(crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState::default())
+    });
+    let runtime_context =
+        crate::engine::runtime_context::RuntimeContext::system(sqlite_runtime.pool.clone());
     let api_server = if options.serve_api {
-        let context = crate::engine::api::context::ApiRuntimeContext::new(
-            crate::engine::runtime_context::RuntimeContext::system(sqlite_runtime.pool.clone()),
-        );
+        let context =
+            api_runtime::build_context(runtime_context.clone(), tracking_snapshot.clone());
+        let surface = if options.track {
+            crate::engine::api::surface::ApiSurface::DaemonTrackingReadOnly
+        } else {
+            crate::engine::api::surface::ApiSurface::DaemonReadOnly
+        };
         Some(runtime.block_on(
             crate::engine::api::server::prepare_standalone_server_with_events(
                 requested_port,
                 api_credentials.clone(),
                 context,
-                crate::engine::api::surface::ApiSurface::DaemonReadOnly,
+                surface,
                 event_hub.clone(),
             ),
         )?)
@@ -130,7 +141,18 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     } else {
         None
     };
-    let daemon_runtime = DaemonRuntime::new(api_handle, event_hub, sqlite_runtime, runtime_lease);
+    let tracking_tasks = runtime.block_on(async {
+        tracking_snapshot.map(|snapshot| {
+            runtime::DaemonTrackingTasks::start(runtime_context, snapshot, event_hub.clone())
+        })
+    });
+    let daemon_runtime = DaemonRuntime::new(
+        api_handle,
+        event_hub,
+        tracking_tasks,
+        sqlite_runtime,
+        runtime_lease,
+    );
     runtime.block_on(async move {
         if options.serve_api {
             tokio::signal::ctrl_c()

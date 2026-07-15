@@ -5,6 +5,7 @@ pub struct DaemonRunOptions {
     pub profile: AppProfile,
     pub port_override: Option<u16>,
     pub serve_api: bool,
+    pub track: bool,
 }
 
 impl Default for DaemonRunOptions {
@@ -13,6 +14,7 @@ impl Default for DaemonRunOptions {
             profile: default_profile(),
             port_override: None,
             serve_api: false,
+            track: false,
         }
     }
 }
@@ -25,6 +27,7 @@ impl DaemonRunOptions {
         while let Some(arg) = args.next() {
             match arg.as_ref() {
                 "--serve-api" => options.serve_api = true,
+                "--track" => options.track = true,
                 "--profile" => {
                     let value = args
                         .next()
@@ -39,6 +42,9 @@ impl DaemonRunOptions {
                 }
                 unknown => return Err(format!("unknown patinad option `{unknown}`")),
             }
+        }
+        if options.track && !options.serve_api {
+            return Err("--track requires --serve-api during the Stage 2B migration".to_string());
         }
         Ok(options)
     }
@@ -84,12 +90,21 @@ mod tests {
             "--port",
             "0",
             "--serve-api",
+            "--track",
         ])
         .unwrap();
 
         assert_eq!(options.profile, AppProfile::Local);
         assert_eq!(options.port_override, Some(0));
         assert!(options.serve_api);
+        assert!(options.track);
+    }
+
+    #[test]
+    fn tracking_requires_observable_api_mode() {
+        let error = DaemonRunOptions::from_args(["patinad", "--track"]).unwrap_err();
+
+        assert!(error.contains("requires --serve-api"));
     }
 
     #[test]

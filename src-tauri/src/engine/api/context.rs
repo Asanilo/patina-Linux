@@ -13,9 +13,11 @@ pub trait ApiRuntimeStateProvider: Send + Sync {
     ) -> Option<WebActivityBridgeSnapshot>;
 }
 
+#[cfg(test)]
 #[derive(Debug, Default)]
 pub struct UnavailableApiRuntimeState;
 
+#[cfg(test)]
 impl ApiRuntimeStateProvider for UnavailableApiRuntimeState {
     fn tracking_snapshot(&self) -> Option<TrackingRuntimeSnapshot> {
         None
@@ -39,6 +41,7 @@ pub struct ApiRuntimeContext {
 }
 
 impl ApiRuntimeContext {
+    #[cfg(test)]
     pub fn new(runtime: RuntimeContext) -> Self {
         Self::with_state(
             runtime,

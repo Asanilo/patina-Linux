@@ -2,6 +2,7 @@ const SEALED_REFRESH_ONLY_REASONS = new Set([
   "watchdog-sealed",
   "startup-sealed",
   "tracking-paused-sealed",
+  "runtime-shutdown-sealed",
   "continuity-window-sealed",
   "passive-participation-sealed",
   "backup-restored",

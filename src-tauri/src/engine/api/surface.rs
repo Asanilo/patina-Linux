@@ -2,6 +2,7 @@
 pub enum ApiSurface {
     Desktop,
     DaemonReadOnly,
+    DaemonTrackingReadOnly,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -168,12 +169,12 @@ impl ApiSurface {
     pub fn runtime_host(self) -> &'static str {
         match self {
             Self::Desktop => "desktop",
-            Self::DaemonReadOnly => "daemon",
+            Self::DaemonReadOnly | Self::DaemonTrackingReadOnly => "daemon",
         }
     }
 
     pub fn owns_tracking(self) -> bool {
-        matches!(self, Self::Desktop)
+        matches!(self, Self::Desktop | Self::DaemonTrackingReadOnly)
     }
 
     pub fn owns_browser_activity_bridge(self) -> bool {
@@ -193,7 +194,7 @@ impl ApiSurface {
     pub fn endpoints(self) -> &'static [ApiEndpoint] {
         match self {
             Self::Desktop => DESKTOP_ENDPOINTS,
-            Self::DaemonReadOnly => DAEMON_READ_ONLY_ENDPOINTS,
+            Self::DaemonReadOnly | Self::DaemonTrackingReadOnly => DAEMON_READ_ONLY_ENDPOINTS,
         }
     }
 
@@ -297,5 +298,16 @@ mod tests {
             .as_object()
             .unwrap()
             .contains_key("/api/v1/apps/{exe_name}/rename"));
+    }
+
+    #[test]
+    fn daemon_tracking_surface_owns_tracking_without_exposing_writes() {
+        let surface = ApiSurface::DaemonTrackingReadOnly;
+
+        assert!(surface.owns_tracking());
+        assert!(!surface.owns_browser_activity_bridge());
+        assert!(surface.has_event_stream());
+        assert!(!surface.has_write_api());
+        assert_eq!(surface.endpoints(), ApiSurface::DaemonReadOnly.endpoints());
     }
 }

@@ -6,6 +6,7 @@ use std::sync::{
     atomic::{AtomicI64, Ordering},
     Arc,
 };
+use tokio::sync::watch;
 use tokio::time::{sleep, Duration};
 
 const TRACKER_WATCHDOG_POLL_MS: u64 = 1_000;
@@ -70,9 +71,25 @@ pub async fn watch(
     health_state: Arc<RuntimeHealthState>,
     event_sink: Arc<dyn RuntimeEventSink>,
 ) -> Result<(), String> {
+    let (_shutdown_tx, shutdown_rx) = watch::channel(false);
+    watch_with_shutdown(context, health_state, event_sink, shutdown_rx).await
+}
+
+pub async fn watch_with_shutdown(
+    context: RuntimeContext,
+    health_state: Arc<RuntimeHealthState>,
+    event_sink: Arc<dyn RuntimeEventSink>,
+    mut shutdown: watch::Receiver<bool>,
+) -> Result<(), String> {
     loop {
+        if *shutdown.borrow() {
+            return Ok(());
+        }
         run_iteration(&context, &health_state, event_sink.as_ref()).await;
-        sleep(Duration::from_millis(TRACKER_WATCHDOG_POLL_MS)).await;
+        tokio::select! {
+            _ = sleep(Duration::from_millis(TRACKER_WATCHDOG_POLL_MS)) => {}
+            _ = shutdown.changed() => return Ok(()),
+        }
     }
 }
 

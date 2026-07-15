@@ -33,8 +33,9 @@ Current caveats:
 - `/api/v1/openapi.json` exposes the machine-readable OpenAPI 3.1 schema with paths, query/path parameters, request bodies, response envelopes, auth, error envelopes, and field-level component schemas.
 - The OpenAPI server URL uses a configurable `{port}` variable whose default is `14840`.
 - This document remains the human-maintained reference for behavior notes and implementation caveats.
-- The desktop runtime exposes the JSON endpoints below. Development-only `patinad` Stage 2A exposes every authenticated `GET` endpoint through the same handlers, plus capability negotiation and an authenticated SSE stream; it rejects all `POST` endpoints.
-- Until Stage 2 moves tracking ownership, daemon `GET /api/v1/current` returns `503` and live tracker/browser diagnostics are `null`; historical SQLite-backed reads remain available.
+- The desktop runtime exposes the JSON endpoints below. Development-only `patinad` exposes every authenticated `GET` endpoint through the same handlers, plus capability negotiation and an authenticated SSE stream; it rejects all `POST` endpoints.
+- Default daemon mode remains historical/read-only: `GET /api/v1/current` returns `503` and live tracker/browser diagnostics are `null`.
+- Stage 2B preview mode is explicit: run `patinad --profile dev --serve-api --track --port 0`. It owns tracking for that profile, serves a live `/current`, and reports tracking readiness after the first sample. Never run desktop and daemon tracking against the same profile.
 - `/api/v1/events` accepts the token only through the `Authorization` header. It does not accept tokens in URLs or query strings.
 
 ---
@@ -128,7 +129,7 @@ curl -s "$PATINA_API_BASE/api/v1/capabilities" \
   -H "Authorization: Bearer $PATINA_API_TOKEN"
 ```
 
-Daemon Stage 2A schema:
+Default daemon schema:
 
 ```json
 {
@@ -144,6 +145,8 @@ Daemon Stage 2A schema:
 ```
 
 `owned` means that host is responsible for running the capability. `ready` is never true when `owned` is false. This prevents clients from confusing a readable historical API with a live tracking owner.
+
+With Stage 2B `--track`, the same response changes `tracking` to `{ "owned": true, "ready": false }` during startup and `{ "owned": true, "ready": true }` after the first runtime snapshot. Browser activity remains unowned in this stage.
 
 ### `GET /api/v1/events`
 
@@ -170,7 +173,7 @@ Behavior:
 - `event: resync-required` means the cursor fell outside replay or the receiver lagged. Reload current/read-model snapshots through the JSON API.
 - Daemon restart resets the sequence. Clients should call `/api/v1/capabilities` and reload snapshots after reconnect.
 - Keepalive comments prevent idle local connections from being mistaken for a dead daemon.
-- Stage 2A establishes transport only. Runtime tracking events begin after the daemon takes tracking ownership in the next Stage 2 batch.
+- Stage 2B `--track` publishes real session transition, metadata, status, watchdog, and shutdown-seal events. Default daemon mode still has no tracking producer.
 
 ### `GET /api/v1/diagnostics`
 

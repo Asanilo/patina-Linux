@@ -176,6 +176,7 @@ export function runRuntimeEffectsTests() {
       "watchdog-sealed",
       "startup-sealed",
       "tracking-paused-sealed",
+      "runtime-shutdown-sealed",
       "passive-participation-sealed",
     ];
 
