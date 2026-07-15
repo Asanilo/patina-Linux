@@ -1,13 +1,65 @@
+use crate::domain::{settings::WebActivitySettings, web_activity::WebActivityBridgeSnapshot};
 use crate::engine::runtime_context::RuntimeContext;
+use crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshot;
+use std::sync::Arc;
+
+pub trait ApiRuntimeStateProvider: Send + Sync {
+    fn tracking_snapshot(&self) -> Option<TrackingRuntimeSnapshot>;
+
+    fn web_activity_snapshot(
+        &self,
+        settings: &WebActivitySettings,
+        now_ms: i64,
+    ) -> Option<WebActivityBridgeSnapshot>;
+}
+
+#[derive(Debug, Default)]
+pub struct UnavailableApiRuntimeState;
+
+impl ApiRuntimeStateProvider for UnavailableApiRuntimeState {
+    fn tracking_snapshot(&self) -> Option<TrackingRuntimeSnapshot> {
+        None
+    }
+
+    fn web_activity_snapshot(
+        &self,
+        _settings: &WebActivitySettings,
+        _now_ms: i64,
+    ) -> Option<WebActivityBridgeSnapshot> {
+        None
+    }
+}
 
 #[derive(Clone)]
 pub struct ApiRuntimeContext {
     runtime: RuntimeContext,
+    version: String,
+    platform: String,
+    state: Arc<dyn ApiRuntimeStateProvider>,
 }
 
 impl ApiRuntimeContext {
     pub fn new(runtime: RuntimeContext) -> Self {
-        Self { runtime }
+        Self::with_state(
+            runtime,
+            env!("CARGO_PKG_VERSION"),
+            std::env::consts::OS,
+            Arc::new(UnavailableApiRuntimeState),
+        )
+    }
+
+    pub fn with_state(
+        runtime: RuntimeContext,
+        version: impl Into<String>,
+        platform: impl Into<String>,
+        state: Arc<dyn ApiRuntimeStateProvider>,
+    ) -> Self {
+        Self {
+            runtime,
+            version: version.into(),
+            platform: platform.into(),
+            state,
+        }
     }
 
     pub fn pool(&self) -> &sqlx::Pool<sqlx::Sqlite> {
@@ -16,6 +68,25 @@ impl ApiRuntimeContext {
 
     pub fn now_ms(&self) -> i64 {
         self.runtime.now_ms()
+    }
+
+    pub fn version(&self) -> &str {
+        &self.version
+    }
+
+    pub fn platform(&self) -> &str {
+        &self.platform
+    }
+
+    pub fn tracking_snapshot(&self) -> Option<TrackingRuntimeSnapshot> {
+        self.state.tracking_snapshot()
+    }
+
+    pub fn web_activity_snapshot(
+        &self,
+        settings: &WebActivitySettings,
+    ) -> Option<WebActivityBridgeSnapshot> {
+        self.state.web_activity_snapshot(settings, self.now_ms())
     }
 }
 
@@ -78,9 +149,26 @@ mod tests {
             crate::engine::api::handlers::web_activity::get_web_activity(&context, None).await,
             crate::engine::api::handlers::apps::get_apps(&context).await,
             crate::engine::api::handlers::settings::get_tracker_settings(&context).await,
+            crate::engine::api::handlers::tools::get_tools_snapshot(&context).await,
         ];
 
         assert!(responses.iter().all(|response| response.status == 200));
+        pool.close().await;
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn unavailable_live_state_is_reported_without_false_readiness() {
+        let (root, pool, context) = test_context("unavailable-live-state").await;
+
+        let current = crate::engine::api::handlers::health::get_current(&context);
+        let diagnostics =
+            crate::engine::api::handlers::diagnostics::get_diagnostics(&context).await;
+
+        assert_eq!(current.status, 503);
+        assert_eq!(diagnostics.status, 200);
+        assert!(diagnostics.body["data"]["tracker_runtime"].is_null());
+        assert!(diagnostics.body["data"]["web_activity_bridge"].is_null());
         pool.close().await;
         std::fs::remove_dir_all(root).unwrap();
     }

@@ -5,7 +5,7 @@ use crate::domain::tools::{
 };
 #[cfg(test)]
 use crate::domain::tools::{PomodoroStatus, TimerStatus};
-use chrono::Local;
+use chrono::{Local, TimeZone};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tokio::time::{sleep, Duration};
@@ -129,6 +129,13 @@ pub async fn run<R: Runtime + 'static>(app: AppHandle<R>) -> Result<(), String> 
 
 pub async fn get_snapshot<R: Runtime>(app: &AppHandle<R>) -> Result<ToolsRuntimeSnapshot, String> {
     load_snapshot(app).await
+}
+
+pub async fn get_snapshot_from_pool(
+    pool: &sqlx::Pool<sqlx::Sqlite>,
+    now_ms: i64,
+) -> Result<ToolsRuntimeSnapshot, String> {
+    repositories::tools::fetch_tools_snapshot(pool, now_ms, &date_key_at(now_ms)).await
 }
 
 pub fn get_alerts<R: Runtime>(app: &AppHandle<R>) -> Vec<ToolAlert> {
@@ -417,7 +424,7 @@ async fn tick_and_notify<R: Runtime + 'static>(
 
 async fn load_snapshot<R: Runtime>(app: &AppHandle<R>) -> Result<ToolsRuntimeSnapshot, String> {
     let pool = wait_for_sqlite_pool(app).await?;
-    let snapshot = repositories::tools::fetch_tools_snapshot(&pool, now_ms(), &date_key()).await?;
+    let snapshot = get_snapshot_from_pool(&pool, now_ms()).await?;
 
     if let Some(state) = app.try_state::<ToolsRuntimeState>() {
         state.replace(snapshot.clone());
@@ -477,6 +484,15 @@ fn now_ms() -> i64 {
 
 fn date_key() -> String {
     Local::now().format("%Y-%m-%d").to_string()
+}
+
+fn date_key_at(now_ms: i64) -> String {
+    Local
+        .timestamp_millis_opt(now_ms)
+        .single()
+        .unwrap_or_else(Local::now)
+        .format("%Y-%m-%d")
+        .to_string()
 }
 
 fn day_start_ms() -> i64 {

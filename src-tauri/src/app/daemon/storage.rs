@@ -79,7 +79,7 @@ mod tests {
     }
 
     #[test]
-    fn pending_migration_blocks_stage_zero_daemon_startup() {
+    fn pending_migration_blocks_daemon_startup() {
         let (root, roots) = temp_roots("pending");
         let defaults = crate::platform::app_paths::profile_paths(&roots, AppProfile::Production);
         write_pending_migration_to_dir(

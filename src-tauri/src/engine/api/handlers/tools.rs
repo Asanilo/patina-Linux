@@ -1,8 +1,11 @@
-use crate::engine::api::types::{ApiError, RouteResponse};
+use crate::engine::api::{
+    context::ApiRuntimeContext,
+    types::{ApiError, RouteResponse},
+};
 use serde_json::json;
 
-pub async fn get_tools_snapshot(app: &tauri::AppHandle) -> RouteResponse {
-    match crate::engine::tools::get_snapshot(app).await {
+pub async fn get_tools_snapshot(context: &ApiRuntimeContext) -> RouteResponse {
+    match crate::engine::tools::get_snapshot_from_pool(context.pool(), context.now_ms()).await {
         Ok(snapshot) => RouteResponse {
             status: 200,
             body: json!({ "data": snapshot }),

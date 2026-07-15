@@ -68,12 +68,12 @@
 - Modify: `src-tauri/src/engine/web_activity/mod.rs`
 - Test: provider and aggregate-response unit tests
 
-- [ ] Write failing tests for current-window unavailable/ready states and daemon diagnostics degradation.
-- [ ] Expose read-only snapshots from their state owners without `AppHandle`.
-- [ ] Build desktop and daemon provider sets with explicit capability availability.
-- [ ] Convert current, diagnostics, tools, and AI aggregate handlers to the shared API context.
-- [ ] Verify missing live runtime state produces contract-valid degraded data instead of panics or false readiness.
-- [ ] Commit as `refactor: share API runtime snapshot providers`.
+- [x] Write failing tests for current-window unavailable state and daemon diagnostics degradation; preserve the existing ready-state snapshot contract test.
+- [x] Expose read-only snapshots through a host-owned provider without `AppHandle` in handlers.
+- [x] Build desktop and daemon provider sets with explicit capability availability.
+- [x] Convert current, diagnostics, tools, and AI aggregate handlers to the shared API context.
+- [x] Verify missing live runtime state produces contract-valid degraded data instead of panics or false readiness.
+- [x] Commit as `refactor: share API runtime snapshot providers` (combined with Task 4 because the server owns the provider lifetime).
 
 ### Task 4: Unify Desktop and Daemon Read-Only Routing
 
@@ -88,12 +88,12 @@
 - Modify: `src-tauri/src/app/daemon/runtime.rs`
 - Test: route registry, server lifecycle, and real HTTP tests
 
-- [ ] Define a daemon read-only surface containing every desktop GET endpoint and no POST endpoint.
-- [ ] Write a bidirectional OpenAPI/route registry test for that surface.
-- [ ] Make the shared router receive `Arc<ApiRuntimeContext>` and `ApiSurface`.
-- [ ] Assemble the same handler path from desktop and daemon hosts.
-- [ ] Run a real temporary-XDG daemon smoke test for health, sessions, summary, settings, apps, and a rejected POST.
-- [ ] Commit as `feat: expose complete read-only API from patinad`.
+- [x] Define a daemon read-only surface containing every desktop GET endpoint and no POST endpoint.
+- [x] Write a bidirectional OpenAPI/route registry test for that surface.
+- [x] Make the shared router receive `Arc<ApiRuntimeContext>` and `ApiSurface`.
+- [x] Assemble the same handler path from desktop and daemon hosts.
+- [x] Run a real temporary-XDG daemon smoke test for health, sessions, summary, settings, apps, tools, diagnostics, expected current-state degradation, and a rejected POST.
+- [x] Commit as `feat: expose complete read-only API from patinad`.
 
 ### Task 5: Decouple Tracking and Watchdog Data/Event Access
 

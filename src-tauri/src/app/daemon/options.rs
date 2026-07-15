@@ -4,7 +4,7 @@ use crate::platform::app_paths::AppProfile;
 pub struct DaemonRunOptions {
     pub profile: AppProfile,
     pub port_override: Option<u16>,
-    pub serve_minimal_api: bool,
+    pub serve_api: bool,
 }
 
 impl Default for DaemonRunOptions {
@@ -12,7 +12,7 @@ impl Default for DaemonRunOptions {
         Self {
             profile: default_profile(),
             port_override: None,
-            serve_minimal_api: false,
+            serve_api: false,
         }
     }
 }
@@ -24,7 +24,7 @@ impl DaemonRunOptions {
         let _program = args.next();
         while let Some(arg) = args.next() {
             match arg.as_ref() {
-                "--serve-api" => options.serve_minimal_api = true,
+                "--serve-api" => options.serve_api = true,
                 "--profile" => {
                     let value = args
                         .next()
@@ -89,7 +89,7 @@ mod tests {
 
         assert_eq!(options.profile, AppProfile::Local);
         assert_eq!(options.port_override, Some(0));
-        assert!(options.serve_minimal_api);
+        assert!(options.serve_api);
     }
 
     #[test]

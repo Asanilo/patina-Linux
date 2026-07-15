@@ -70,9 +70,14 @@ mod tests {
         let sqlite = prepare_sqlite_runtime_at_path(&db_path, true)
             .await
             .unwrap();
-        let server = crate::engine::api::server::prepare_standalone_minimal_server(
+        let context = crate::engine::api::context::ApiRuntimeContext::new(
+            crate::engine::runtime_context::RuntimeContext::system(sqlite.pool.clone()),
+        );
+        let server = crate::engine::api::server::prepare_standalone_server(
             0,
             credentials(&root.join("data/Patina Dev/api_token")),
+            context,
+            crate::engine::api::surface::ApiSurface::DaemonReadOnly,
         )
         .await
         .unwrap();

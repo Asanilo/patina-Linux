@@ -30,7 +30,7 @@ pub fn build_startup_status(
         mode: "daemon",
         profile,
         version: version.into(),
-        stage: "stage-0",
+        stage: "stage-1-read-only",
         sqlite_enabled: true,
         tracking_enabled: false,
         local_api_enabled,
@@ -40,7 +40,7 @@ pub fn build_startup_status(
         db_path: storage_paths.db_path.clone(),
         webview_root: storage_paths.webview_root.clone(),
         notes: vec![
-            "daemon skeleton only",
+            "daemon exposes the shared read-only local API when enabled",
             "tracking stays owned by the desktop runtime in this stage",
         ],
     }
@@ -62,7 +62,7 @@ mod tests {
     }
 
     #[test]
-    fn daemon_status_identifies_stage_zero_runtime() {
+    fn daemon_status_identifies_stage_one_read_only_runtime() {
         let paths = storage_paths("/tmp/Patina");
         let status = build_startup_status(
             "1.8.3",
@@ -76,7 +76,7 @@ mod tests {
         assert_eq!(status.mode, "daemon");
         assert_eq!(status.profile, crate::platform::app_paths::AppProfile::Dev);
         assert_eq!(status.version, "1.8.3");
-        assert_eq!(status.stage, "stage-0");
+        assert_eq!(status.stage, "stage-1-read-only");
         assert!(status.sqlite_enabled);
         assert!(!status.tracking_enabled);
         assert!(!status.local_api_enabled);
@@ -85,7 +85,7 @@ mod tests {
         assert!(status.data_root.ends_with("Patina"));
         assert!(status.db_path.ends_with("patina.db"));
         assert!(status.webview_root.ends_with("Patina"));
-        assert!(status.notes.iter().any(|note| note.contains("skeleton")));
+        assert!(status.notes.iter().any(|note| note.contains("read-only")));
     }
 
     #[test]

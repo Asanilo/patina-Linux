@@ -1,3 +1,4 @@
+pub mod api_runtime;
 pub mod autostart;
 pub mod backup;
 pub mod bootstrap;

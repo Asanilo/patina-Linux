@@ -1,14 +1,10 @@
+use crate::engine::api::context::ApiRuntimeContext;
 use crate::engine::api::types::{
     ApiResponse, CurrentWindowResponse, HealthResponse, RouteResponse,
 };
-use crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState;
-use tauri::Manager;
 
-pub fn get_health(app: &tauri::AppHandle) -> RouteResponse {
-    let version = app.package_info().version.to_string();
-    let platform = std::env::consts::OS.to_string();
-
-    get_health_for_runtime(version, platform)
+pub fn get_health(context: &ApiRuntimeContext) -> RouteResponse {
+    get_health_for_runtime(context.version(), context.platform())
 }
 
 pub fn get_health_for_runtime(
@@ -28,9 +24,8 @@ pub fn get_health_for_runtime(
     }
 }
 
-pub fn get_current(app: &tauri::AppHandle) -> RouteResponse {
-    let snapshot_state = app.state::<TrackingRuntimeSnapshotState>();
-    let Some(snapshot) = snapshot_state.snapshot() else {
+pub fn get_current(context: &ApiRuntimeContext) -> RouteResponse {
+    let Some(snapshot) = context.tracking_snapshot() else {
         return RouteResponse {
             status: 503,
             body: serde_json::to_value(crate::engine::api::types::ApiError::internal(

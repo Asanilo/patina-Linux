@@ -20,7 +20,14 @@ pub async fn initialize(
     }
 
     let prepared = server.prepare_listener(stored.port).await?;
-    server.install_prepared(app.clone(), credentials.clone(), prepared);
+    let pool = crate::data::sqlite_pool::wait_for_sqlite_pool(app).await?;
+    let context = crate::app::api_runtime::build_context(app, pool);
+    server.install_prepared(
+        credentials.clone(),
+        context,
+        crate::engine::api::surface::ApiSurface::Desktop,
+        prepared,
+    );
     Ok(())
 }
 
@@ -40,7 +47,14 @@ pub async fn apply_port(
 
     let prepared = server.prepare_listener(port).await?;
     save_local_api_port_with_recovery(app, port).await?;
-    server.install_prepared(app.clone(), credentials.clone(), prepared);
+    let pool = crate::data::sqlite_pool::wait_for_sqlite_pool(app).await?;
+    let context = crate::app::api_runtime::build_context(app, pool);
+    server.install_prepared(
+        credentials.clone(),
+        context,
+        crate::engine::api::surface::ApiSurface::Desktop,
+        prepared,
+    );
     current_settings(credentials, port)
 }
 

@@ -1,29 +1,24 @@
 use crate::data::repositories::app_settings;
-use crate::data::sqlite_pool::wait_for_sqlite_pool;
 use crate::domain::web_activity::WebActivityBridgeSnapshot;
+use crate::engine::api::context::ApiRuntimeContext;
 use crate::engine::api::types::{
     ApiResponse, DiagnosticsResponse, RouteResponse, TrackerRuntimeDiagnostics,
 };
 use crate::engine::tracking::runtime_snapshot::{
-    TrackingRuntimeProbeDiagnostics, TrackingRuntimeProbeStatus, TrackingRuntimeSnapshotState,
+    TrackingRuntimeProbeDiagnostics, TrackingRuntimeProbeStatus,
 };
-use crate::engine::web_activity::WebActivityRuntimeState;
 use crate::platform::tracking_diagnostics::PlatformTrackingDiagnostics;
-use tauri::Manager;
 
-pub async fn get_diagnostics(app: &tauri::AppHandle) -> RouteResponse {
+pub async fn get_diagnostics(context: &ApiRuntimeContext) -> RouteResponse {
     let platform = load_platform_tracking_diagnostics().await;
-    let tracker_runtime = app
-        .try_state::<TrackingRuntimeSnapshotState>()
-        .and_then(|state| state.snapshot())
-        .map(|snapshot| {
-            (
-                snapshot.probe_status,
-                snapshot.degraded_reason,
-                snapshot.probe_diagnostics,
-            )
-        });
-    let web_activity_bridge = load_web_activity_bridge_snapshot(app).await;
+    let tracker_runtime = context.tracking_snapshot().map(|snapshot| {
+        (
+            snapshot.probe_status,
+            snapshot.degraded_reason,
+            snapshot.probe_diagnostics,
+        )
+    });
+    let web_activity_bridge = load_web_activity_bridge_snapshot(context).await;
 
     RouteResponse {
         status: 200,
@@ -79,10 +74,10 @@ async fn load_platform_tracking_diagnostics() -> PlatformTrackingDiagnostics {
 }
 
 async fn load_web_activity_bridge_snapshot(
-    app: &tauri::AppHandle,
+    context: &ApiRuntimeContext,
 ) -> Option<WebActivityBridgeSnapshot> {
-    let state = app.try_state::<WebActivityRuntimeState>()?;
-    let pool = wait_for_sqlite_pool(app).await.ok()?;
-    let settings = app_settings::load_web_activity_settings(&pool).await.ok()?;
-    Some(state.snapshot(&settings, crate::app::runtime::now_ms() as i64))
+    let settings = app_settings::load_web_activity_settings(context.pool())
+        .await
+        .ok()?;
+    context.web_activity_snapshot(&settings)
 }

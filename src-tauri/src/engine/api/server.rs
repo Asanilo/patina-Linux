@@ -1,6 +1,6 @@
 use crate::engine::api::router;
 use std::net::SocketAddr;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio::task::JoinSet;
@@ -26,6 +26,8 @@ pub struct StandaloneApiServer {
     port: u16,
     listener: TcpListener,
     credentials: crate::engine::api::auth::ApiCredentialStore,
+    context: Arc<crate::engine::api::context::ApiRuntimeContext>,
+    surface: crate::engine::api::surface::ApiSurface,
     #[cfg_attr(not(test), allow(dead_code))]
     shutdown_tx: watch::Sender<bool>,
     shutdown_rx: watch::Receiver<bool>,
@@ -82,8 +84,10 @@ impl StandaloneApiServer {
                     match accept_result {
                         Ok((stream, _peer_addr)) => {
                             let credentials = self.credentials.clone();
+                            let context = self.context.clone();
+                            let surface = self.surface;
                             connections.spawn(async move {
-                                router::handle_minimal_connection(stream, credentials).await;
+                                router::handle_connection(stream, context, surface, credentials).await;
                             });
                         }
                         Err(error) => eprintln!("[patinad] API accept error: {error}"),
@@ -101,9 +105,11 @@ impl StandaloneApiServer {
     }
 }
 
-pub async fn prepare_standalone_minimal_server(
+pub async fn prepare_standalone_server(
     port: u16,
     credentials: crate::engine::api::auth::ApiCredentialStore,
+    context: crate::engine::api::context::ApiRuntimeContext,
+    surface: crate::engine::api::surface::ApiSurface,
 ) -> Result<StandaloneApiServer, String> {
     let prepared = prepare_listener(port).await?;
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -111,6 +117,8 @@ pub async fn prepare_standalone_minimal_server(
         port: prepared.port,
         listener: prepared.listener,
         credentials,
+        context: Arc::new(context),
+        surface,
         shutdown_tx,
         shutdown_rx,
     })
@@ -170,8 +178,9 @@ async fn prepare_listener(port: u16) -> Result<PreparedApiListener, String> {
 impl ApiServerState {
     pub fn install_prepared(
         &self,
-        app_handle: tauri::AppHandle,
         credentials: crate::engine::api::auth::ApiCredentialStore,
+        context: crate::engine::api::context::ApiRuntimeContext,
+        surface: crate::engine::api::surface::ApiSurface,
         prepared: PreparedApiListener,
     ) {
         let port = prepared.port();
@@ -180,7 +189,15 @@ impl ApiServerState {
         let previous = self.replace_runtime(port, shutdown_tx);
 
         tauri::async_runtime::spawn(async move {
-            run_server(app_handle, credentials, port, listener, shutdown_rx).await;
+            run_server(
+                Arc::new(context),
+                surface,
+                credentials,
+                port,
+                listener,
+                shutdown_rx,
+            )
+            .await;
         });
         if let Some(previous) = previous {
             let _ = previous.send(true);
@@ -216,7 +233,8 @@ impl ApiServerState {
 }
 
 async fn run_server(
-    app_handle: tauri::AppHandle,
+    context: Arc<crate::engine::api::context::ApiRuntimeContext>,
+    surface: crate::engine::api::surface::ApiSurface,
     credentials: crate::engine::api::auth::ApiCredentialStore,
     port: u16,
     listener: TcpListener,
@@ -231,10 +249,10 @@ async fn run_server(
             accept_result = listener.accept() => {
                 match accept_result {
                     Ok((stream, _peer_addr)) => {
-                        let app = app_handle.clone();
+                        let context = context.clone();
                         let credentials = credentials.clone();
                         connections.spawn(async move {
-                            router::handle_connection(stream, app, credentials).await;
+                            router::handle_connection(stream, context, surface, credentials).await;
                         });
                     }
                     Err(error) => {
@@ -319,11 +337,27 @@ mod tests {
         credentials
     }
 
-    #[tokio::test]
-    async fn standalone_shutdown_aborts_stalled_connection_before_returning() {
-        let server = prepare_standalone_minimal_server(0, test_credentials())
+    async fn test_context() -> crate::engine::api::context::ApiRuntimeContext {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
             .await
             .unwrap();
+        crate::engine::api::context::ApiRuntimeContext::new(
+            crate::engine::runtime_context::RuntimeContext::system(pool),
+        )
+    }
+
+    #[tokio::test]
+    async fn standalone_shutdown_aborts_stalled_connection_before_returning() {
+        let server = prepare_standalone_server(
+            0,
+            test_credentials(),
+            test_context().await,
+            crate::engine::api::surface::ApiSurface::DaemonReadOnly,
+        )
+        .await
+        .unwrap();
         let port = server.port();
         let shutdown = server.shutdown_handle();
         let server_task = tokio::spawn(server.run());

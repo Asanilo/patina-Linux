@@ -27,7 +27,7 @@ pub fn build_startup_status(
     status::build_startup_status(
         version,
         options.profile,
-        options.serve_minimal_api,
+        options.serve_api,
         local_api_port,
         storage_paths,
     )
@@ -63,13 +63,18 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     let requested_port = options
         .port_override
         .unwrap_or(crate::engine::api::server::DEFAULT_PORT);
-    let api_server = if options.serve_minimal_api {
-        Some(runtime.block_on(
-            crate::engine::api::server::prepare_standalone_minimal_server(
+    let api_server = if options.serve_api {
+        let context = crate::engine::api::context::ApiRuntimeContext::new(
+            crate::engine::runtime_context::RuntimeContext::system(sqlite_runtime.pool.clone()),
+        );
+        Some(
+            runtime.block_on(crate::engine::api::server::prepare_standalone_server(
                 requested_port,
                 api_credentials.clone(),
-            ),
-        )?)
+                context,
+                crate::engine::api::surface::ApiSurface::DaemonReadOnly,
+            ))?,
+        )
     } else {
         None
     };
@@ -112,7 +117,7 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     println!("[{}] sqlite ready", status.service_name);
     let api_handle = if let Some(server) = api_server {
         println!(
-            "[{}] minimal API listening on http://127.0.0.1:{}",
+            "[{}] read-only API listening on http://127.0.0.1:{}",
             status.service_name,
             server.port()
         );
@@ -122,7 +127,7 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     };
     let daemon_runtime = DaemonRuntime::new(api_handle, sqlite_runtime, runtime_lease);
     runtime.block_on(async move {
-        if options.serve_minimal_api {
+        if options.serve_api {
             tokio::signal::ctrl_c()
                 .await
                 .map_err(|error| format!("failed to wait for shutdown signal: {error}"))?;
@@ -161,6 +166,27 @@ mod tests {
             .initialize_at(&path, Some("test-token"))
             .unwrap();
         credentials
+    }
+
+    async fn test_api_context() -> crate::engine::api::context::ApiRuntimeContext {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        crate::engine::api::context::ApiRuntimeContext::new(
+            crate::engine::runtime_context::RuntimeContext::system(pool),
+        )
+    }
+
+    fn request(method: &str, path: &str) -> crate::engine::api::http::ApiRequest {
+        crate::engine::api::http::ApiRequest {
+            method: method.to_string(),
+            path: path.to_string(),
+            query: None,
+            body: Vec::new(),
+            authorization: None,
+        }
     }
 
     #[tokio::test]
@@ -209,29 +235,53 @@ mod tests {
         std::fs::remove_dir_all(root).ok();
     }
 
-    #[test]
-    fn daemon_minimal_api_routes_health_and_openapi_without_tauri_app_handle() {
-        let health = crate::engine::api::router::route_minimal_request("GET", "/api/v1/health");
+    #[tokio::test]
+    async fn daemon_read_only_api_routes_without_tauri_app_handle() {
+        let context = test_api_context().await;
+        let surface = crate::engine::api::surface::ApiSurface::DaemonReadOnly;
+        let health = crate::engine::api::router::route_request(
+            request("GET", "/api/v1/health"),
+            &context,
+            surface,
+        )
+        .await;
         assert_eq!(health.status, 200);
         assert_eq!(health.body["data"]["status"], "ok");
         assert_eq!(health.body["data"]["version"], env!("CARGO_PKG_VERSION"));
 
-        let openapi =
-            crate::engine::api::router::route_minimal_request("GET", "/api/v1/openapi.json");
+        let openapi = crate::engine::api::router::route_request(
+            request("GET", "/api/v1/openapi.json"),
+            &context,
+            surface,
+        )
+        .await;
         assert_eq!(openapi.status, 200);
         assert_eq!(openapi.body["openapi"], "3.1.0");
 
-        let missing = crate::engine::api::router::route_minimal_request("GET", "/api/v1/current");
-        assert_eq!(missing.status, 404);
+        let current = crate::engine::api::router::route_request(
+            request("GET", "/api/v1/current"),
+            &context,
+            surface,
+        )
+        .await;
+        assert_eq!(current.status, 503);
+
+        let rejected_write = crate::engine::api::router::route_request(
+            request("POST", "/api/v1/apps/ghostty/rename"),
+            &context,
+            surface,
+        )
+        .await;
+        assert_eq!(rejected_write.status, 404);
     }
 
     #[test]
-    fn daemon_run_options_enable_minimal_api_from_flag() {
+    fn daemon_run_options_enable_api_from_flag() {
         let options = DaemonRunOptions::from_args(["patinad", "--serve-api"]).unwrap();
-        assert!(options.serve_minimal_api);
+        assert!(options.serve_api);
 
         let default_options = DaemonRunOptions::from_args(["patinad"]).unwrap();
-        assert!(!default_options.serve_minimal_api);
+        assert!(!default_options.serve_api);
     }
 
     #[test]
@@ -254,10 +304,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn daemon_minimal_api_server_serves_health_without_tauri_app_handle() {
-        let server = crate::engine::api::server::prepare_standalone_minimal_server(
+    async fn daemon_read_only_api_server_serves_health_without_tauri_app_handle() {
+        let server = crate::engine::api::server::prepare_standalone_server(
             0,
             test_api_credentials(),
+            test_api_context().await,
+            crate::engine::api::surface::ApiSurface::DaemonReadOnly,
         )
         .await
         .unwrap();
@@ -285,10 +337,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn daemon_minimal_api_server_rejects_missing_token() {
-        let server = crate::engine::api::server::prepare_standalone_minimal_server(
+    async fn daemon_read_only_api_server_rejects_missing_token() {
+        let server = crate::engine::api::server::prepare_standalone_server(
             0,
             test_api_credentials(),
+            test_api_context().await,
+            crate::engine::api::surface::ApiSurface::DaemonReadOnly,
         )
         .await
         .unwrap();
