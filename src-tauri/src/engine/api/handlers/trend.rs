@@ -1,4 +1,4 @@
-use crate::data::sqlite_pool;
+use crate::engine::api::context::ApiRuntimeContext;
 use crate::engine::api::types::{
     ApiError, ApiResponse, RouteResponse, TrendDataPoint, TrendResponse,
 };
@@ -6,12 +6,16 @@ use chrono::{Datelike, TimeZone};
 use sqlx::Row;
 use std::collections::HashMap;
 
-pub async fn get_trend(app: &tauri::AppHandle, query: Option<&str>) -> RouteResponse {
+pub async fn get_trend(context: &ApiRuntimeContext, query: Option<&str>) -> RouteResponse {
     let params = parse_trend_query(query);
     let range = match resolve_trend_range(
         params.period.as_deref(),
         params.granularity.as_deref(),
-        chrono::Local::now().fixed_offset(),
+        chrono::Local
+            .timestamp_millis_opt(context.now_ms())
+            .single()
+            .unwrap_or_else(chrono::Local::now)
+            .fixed_offset(),
     ) {
         Ok(range) => range,
         Err(message) => {
@@ -22,15 +26,7 @@ pub async fn get_trend(app: &tauri::AppHandle, query: Option<&str>) -> RouteResp
         }
     };
 
-    let pool = match sqlite_pool::wait_for_sqlite_pool(app).await {
-        Ok(pool) => pool,
-        Err(error) => {
-            return RouteResponse {
-                status: 500,
-                body: serde_json::to_value(ApiError::internal(&error)).unwrap_or_default(),
-            };
-        }
-    };
+    let pool = context.pool();
 
     let rows = match sqlx::query(
         "SELECT exe_name, start_time, end_time
@@ -42,7 +38,7 @@ pub async fn get_trend(app: &tauri::AppHandle, query: Option<&str>) -> RouteResp
     .bind(range.to_ms)
     .bind(range.to_ms)
     .bind(range.from_ms)
-    .fetch_all(&pool)
+    .fetch_all(pool)
     .await
     {
         Ok(rows) => rows,

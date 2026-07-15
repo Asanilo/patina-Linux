@@ -14,10 +14,20 @@ pub async fn handle_connection(
     app: tauri::AppHandle,
     credentials: ApiCredentialStore,
 ) {
+    let pool = match crate::data::sqlite_pool::wait_for_sqlite_pool(&app).await {
+        Ok(pool) => pool,
+        Err(error) => {
+            eprintln!("[api] sqlite context unavailable: {error}");
+            return;
+        }
+    };
+    let context = crate::engine::api::context::ApiRuntimeContext::new(
+        crate::engine::runtime_context::RuntimeContext::system(pool),
+    );
     http::serve_connection(stream, credentials, move |request| async move {
         let method = request.method.clone();
         let path = request.path.clone();
-        match AssertUnwindSafe(route_request(request, &app))
+        match AssertUnwindSafe(route_request(request, &app, &context))
             .catch_unwind()
             .await
         {
@@ -61,7 +71,11 @@ pub(crate) async fn handle_minimal_connection(stream: TcpStream, credentials: Ap
     .await;
 }
 
-async fn route_request(request: ApiRequest, app: &tauri::AppHandle) -> RouteResponse {
+async fn route_request(
+    request: ApiRequest,
+    app: &tauri::AppHandle,
+    context: &crate::engine::api::context::ApiRuntimeContext,
+) -> RouteResponse {
     let method = request.method.as_str();
     let path = request.path.as_str();
     let query = request.query.as_deref();
@@ -73,23 +87,29 @@ async fn route_request(request: ApiRequest, app: &tauri::AppHandle) -> RouteResp
         }
         ("GET", "/api/v1/diagnostics") => handlers::diagnostics::get_diagnostics(app).await,
         ("GET", "/api/v1/current") => handlers::health::get_current(app),
-        ("GET", "/api/v1/sessions") => handlers::sessions::get_sessions(app, query).await,
-        ("GET", "/api/v1/sessions/active") => handlers::sessions::get_active_session(app).await,
-        ("GET", "/api/v1/summary/today") => handlers::sessions::get_summary_today(app).await,
-        ("GET", "/api/v1/summary/range") => handlers::sessions::get_summary_range(app, query).await,
-        ("GET", "/api/v1/summary/week") => handlers::sessions::get_summary_week(app).await,
-        ("GET", "/api/v1/trend") => handlers::trend::get_trend(app, query).await,
+        ("GET", "/api/v1/sessions") => handlers::sessions::get_sessions(context, query).await,
+        ("GET", "/api/v1/sessions/active") => handlers::sessions::get_active_session(context).await,
+        ("GET", "/api/v1/summary/today") => handlers::sessions::get_summary_today(context).await,
+        ("GET", "/api/v1/summary/range") => {
+            handlers::sessions::get_summary_range(context, query).await
+        }
+        ("GET", "/api/v1/summary/week") => handlers::sessions::get_summary_week(context).await,
+        ("GET", "/api/v1/trend") => handlers::trend::get_trend(context, query).await,
         ("GET", "/api/v1/web-activity") => {
-            handlers::web_activity::get_web_activity(app, query).await
+            handlers::web_activity::get_web_activity(context, query).await
         }
-        ("GET", "/api/v1/ai/activity-context") => handlers::ai::get_activity_context(app).await,
-        ("GET", "/api/v1/apps") => handlers::apps::get_apps(app).await,
+        ("GET", "/api/v1/ai/activity-context") => {
+            handlers::ai::get_activity_context(app, context).await
+        }
+        ("GET", "/api/v1/apps") => handlers::apps::get_apps(context).await,
         ("POST", path) if path.starts_with("/api/v1/apps/") => {
-            handlers::apps::handle_app_action(app, path, body).await
+            handlers::apps::handle_app_action(context, path, body).await
         }
-        ("GET", "/api/v1/settings/tracker") => handlers::settings::get_tracker_settings(app).await,
+        ("GET", "/api/v1/settings/tracker") => {
+            handlers::settings::get_tracker_settings(context).await
+        }
         ("POST", "/api/v1/settings/tracker/afk-threshold") => {
-            handlers::settings::set_afk_threshold(app, body).await
+            handlers::settings::set_afk_threshold(context, body).await
         }
         ("GET", "/api/v1/tools/snapshot") => handlers::tools::get_tools_snapshot(app).await,
         _ => RouteResponse {

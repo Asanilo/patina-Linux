@@ -1,24 +1,15 @@
-use crate::data::sqlite_pool;
+use crate::engine::api::context::ApiRuntimeContext;
 use crate::engine::api::types::{
     ApiError, ApiResponse, AppEntry, AppsResponse, ClassifyRequest, ExcludeRequest, RenameRequest,
     RouteResponse,
 };
 use sqlx::Row;
 
-pub async fn get_apps(app: &tauri::AppHandle) -> RouteResponse {
-    let pool = match sqlite_pool::wait_for_sqlite_pool(app).await {
-        Ok(p) => p,
-        Err(e) => {
-            return RouteResponse {
-                status: 500,
-                body: serde_json::to_value(ApiError::internal(&e)).unwrap_or_default(),
-            };
-        }
-    };
-
+pub async fn get_apps(context: &ApiRuntimeContext) -> RouteResponse {
+    let pool = context.pool();
     // Get distinct exe_names from sessions
     let rows = match sqlx::query("SELECT DISTINCT exe_name FROM sessions ORDER BY exe_name")
-        .fetch_all(&pool)
+        .fetch_all(pool)
         .await
     {
         Ok(r) => r,
@@ -34,7 +25,7 @@ pub async fn get_apps(app: &tauri::AppHandle) -> RouteResponse {
     let override_rows = sqlx::query(
         "SELECT key, value FROM settings WHERE key LIKE '__app_override::%' OR key LIKE '__app_category::%' OR key LIKE '__app_excluded::%'",
     )
-    .fetch_all(&pool)
+    .fetch_all(pool)
     .await
     .unwrap_or_default();
 
@@ -92,7 +83,11 @@ pub async fn get_apps(app: &tauri::AppHandle) -> RouteResponse {
     }
 }
 
-pub async fn handle_app_action(app: &tauri::AppHandle, path: &str, body: &[u8]) -> RouteResponse {
+pub async fn handle_app_action(
+    context: &ApiRuntimeContext,
+    path: &str,
+    body: &[u8],
+) -> RouteResponse {
     // Path: /api/v1/apps/{exe_name}/{action}
     let remainder = path.strip_prefix("/api/v1/apps/").unwrap_or("");
     let parts: Vec<&str> = remainder.splitn(2, '/').collect();
@@ -106,15 +101,7 @@ pub async fn handle_app_action(app: &tauri::AppHandle, path: &str, body: &[u8]) 
     let exe_name = parts[0];
     let action = parts[1];
 
-    let pool = match sqlite_pool::wait_for_sqlite_pool(app).await {
-        Ok(p) => p,
-        Err(e) => {
-            return RouteResponse {
-                status: 500,
-                body: serde_json::to_value(ApiError::internal(&e)).unwrap_or_default(),
-            };
-        }
-    };
+    let pool = context.pool();
 
     match action {
         "classify" => {
@@ -130,7 +117,7 @@ pub async fn handle_app_action(app: &tauri::AppHandle, path: &str, body: &[u8]) 
             };
             let key = format!("__app_category::{exe_name}");
             if let Err(e) = crate::data::repositories::tracker_settings::save_setting_value(
-                &pool,
+                pool,
                 &key,
                 &req.category,
             )
@@ -164,7 +151,7 @@ pub async fn handle_app_action(app: &tauri::AppHandle, path: &str, body: &[u8]) 
             let key = format!("__app_override::{exe_name}");
             let value = serde_json::json!({"display_name": req.display_name}).to_string();
             if let Err(e) =
-                crate::data::repositories::tracker_settings::save_setting_value(&pool, &key, &value)
+                crate::data::repositories::tracker_settings::save_setting_value(pool, &key, &value)
                     .await
             {
                 return RouteResponse {
@@ -195,7 +182,7 @@ pub async fn handle_app_action(app: &tauri::AppHandle, path: &str, body: &[u8]) 
             let key = format!("__app_excluded::{exe_name}");
             let value = if req.excluded { "1" } else { "0" };
             if let Err(e) =
-                crate::data::repositories::tracker_settings::save_setting_value(&pool, &key, value)
+                crate::data::repositories::tracker_settings::save_setting_value(pool, &key, value)
                     .await
             {
                 return RouteResponse {

@@ -1,12 +1,16 @@
 use crate::engine::api::{handlers, types::RouteResponse};
 use serde_json::json;
 
-pub async fn get_activity_context(app: &tauri::AppHandle) -> RouteResponse {
+pub async fn get_activity_context(
+    app: &tauri::AppHandle,
+    context: &crate::engine::api::context::ApiRuntimeContext,
+) -> RouteResponse {
     let diagnostics = handlers::diagnostics::get_diagnostics(app).await;
-    let active_session = handlers::sessions::get_active_session(app).await;
-    let today_summary = handlers::sessions::get_summary_today(app).await;
-    let week_summary = handlers::sessions::get_summary_week(app).await;
-    let recent_web_activity = handlers::web_activity::get_web_activity(app, Some("limit=25")).await;
+    let active_session = handlers::sessions::get_active_session(context).await;
+    let today_summary = handlers::sessions::get_summary_today(context).await;
+    let week_summary = handlers::sessions::get_summary_week(context).await;
+    let recent_web_activity =
+        handlers::web_activity::get_web_activity(context, Some("limit=25")).await;
 
     RouteResponse {
         status: 200,

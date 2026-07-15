@@ -1,4 +1,4 @@
-use crate::data::sqlite_pool;
+use crate::engine::api::context::ApiRuntimeContext;
 use crate::engine::api::types::{
     ActiveSessionResponse, ApiError, ApiResponse, AppSummaryEntry, CategorySummaryEntry,
     RouteResponse, SessionEntry, SessionQueryParams, SessionsResponse, SummaryQueryParams,
@@ -8,17 +8,8 @@ use chrono::{Datelike, TimeZone};
 use sqlx::Row;
 use std::collections::HashMap;
 
-pub async fn get_sessions(app: &tauri::AppHandle, query: Option<&str>) -> RouteResponse {
-    let pool = match sqlite_pool::wait_for_sqlite_pool(app).await {
-        Ok(p) => p,
-        Err(e) => {
-            return RouteResponse {
-                status: 500,
-                body: serde_json::to_value(ApiError::internal(&e)).unwrap_or_default(),
-            };
-        }
-    };
-
+pub async fn get_sessions(context: &ApiRuntimeContext, query: Option<&str>) -> RouteResponse {
+    let pool = context.pool();
     let params = parse_session_query(query);
 
     let mut sql = String::from(
@@ -47,7 +38,7 @@ pub async fn get_sessions(app: &tauri::AppHandle, query: Option<&str>) -> RouteR
         sql.push_str(" LIMIT 100");
     }
 
-    let rows = match sqlx::query(&sql).fetch_all(&pool).await {
+    let rows = match sqlx::query(&sql).fetch_all(pool).await {
         Ok(r) => r,
         Err(e) => {
             return RouteResponse {
@@ -81,17 +72,8 @@ pub async fn get_sessions(app: &tauri::AppHandle, query: Option<&str>) -> RouteR
     }
 }
 
-pub async fn get_active_session(app: &tauri::AppHandle) -> RouteResponse {
-    let pool = match sqlite_pool::wait_for_sqlite_pool(app).await {
-        Ok(p) => p,
-        Err(e) => {
-            return RouteResponse {
-                status: 500,
-                body: serde_json::to_value(ApiError::internal(&e)).unwrap_or_default(),
-            };
-        }
-    };
-
+pub async fn get_active_session(context: &ApiRuntimeContext) -> RouteResponse {
+    let pool = context.pool();
     let row = match sqlx::query(
         "SELECT id,
                 app_name,
@@ -104,7 +86,7 @@ pub async fn get_active_session(app: &tauri::AppHandle) -> RouteResponse {
          ORDER BY start_time DESC, id DESC
          LIMIT 1",
     )
-    .fetch_optional(&pool)
+    .fetch_optional(pool)
     .await
     {
         Ok(Some(row)) => row,
@@ -125,7 +107,7 @@ pub async fn get_active_session(app: &tauri::AppHandle) -> RouteResponse {
         }
     };
 
-    let sampled_at_ms = now_ms();
+    let sampled_at_ms = context.now_ms();
     let active = build_active_session_response(
         row.try_get::<i64, _>("id").unwrap_or(0),
         row.try_get::<String, _>("app_name").unwrap_or_default(),
@@ -166,12 +148,12 @@ fn build_active_session_response(
     }
 }
 
-pub async fn get_summary_today(app: &tauri::AppHandle) -> RouteResponse {
-    let range = local_today_range(chrono::Local::now().fixed_offset());
-    build_summary_response(app, range.from_ms, range.to_ms, &range.label).await
+pub async fn get_summary_today(context: &ApiRuntimeContext) -> RouteResponse {
+    let range = local_today_range(local_now(context));
+    build_summary_response(context, range.from_ms, range.to_ms, &range.label).await
 }
 
-pub async fn get_summary_range(app: &tauri::AppHandle, query: Option<&str>) -> RouteResponse {
+pub async fn get_summary_range(context: &ApiRuntimeContext, query: Option<&str>) -> RouteResponse {
     let params = parse_summary_query(query);
     let Some(from) = params.from else {
         return RouteResponse {
@@ -198,30 +180,22 @@ pub async fn get_summary_range(app: &tauri::AppHandle, query: Option<&str>) -> R
             .unwrap_or_default()
     );
 
-    build_summary_response(app, from, to, &label).await
+    build_summary_response(context, from, to, &label).await
 }
 
-pub async fn get_summary_week(app: &tauri::AppHandle) -> RouteResponse {
-    let range = local_week_range(chrono::Local::now().fixed_offset());
-    build_summary_response(app, range.from_ms, range.to_ms, &range.label).await
+pub async fn get_summary_week(context: &ApiRuntimeContext) -> RouteResponse {
+    let range = local_week_range(local_now(context));
+    build_summary_response(context, range.from_ms, range.to_ms, &range.label).await
 }
 
 async fn build_summary_response(
-    app: &tauri::AppHandle,
+    context: &ApiRuntimeContext,
     from_ms: i64,
     to_ms: i64,
     label: &str,
 ) -> RouteResponse {
-    let pool = match sqlite_pool::wait_for_sqlite_pool(app).await {
-        Ok(p) => p,
-        Err(e) => {
-            return RouteResponse {
-                status: 500,
-                body: serde_json::to_value(ApiError::internal(&e)).unwrap_or_default(),
-            };
-        }
-    };
-    let sampled_at_ms = now_ms();
+    let pool = context.pool();
+    let sampled_at_ms = context.now_ms();
     let active_cutoff_ms = sampled_at_ms.min(to_ms);
 
     let rows = match sqlx::query(
@@ -234,7 +208,7 @@ async fn build_summary_response(
     .bind(to_ms)
     .bind(active_cutoff_ms)
     .bind(from_ms)
-    .fetch_all(&pool)
+    .fetch_all(pool)
     .await
     {
         Ok(r) => r,
@@ -258,7 +232,7 @@ async fn build_summary_response(
     // Category aggregation: load category overrides from settings
     let category_rows =
         sqlx::query("SELECT key, value FROM settings WHERE key LIKE '__app_category::%'")
-            .fetch_all(&pool)
+            .fetch_all(pool)
             .await
             .unwrap_or_default();
 
@@ -382,11 +356,12 @@ fn parse_session_query(query: Option<&str>) -> SessionQueryParams {
     params
 }
 
-fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as i64)
-        .unwrap_or_default()
+fn local_now(context: &ApiRuntimeContext) -> chrono::DateTime<chrono::FixedOffset> {
+    chrono::Local
+        .timestamp_millis_opt(context.now_ms())
+        .single()
+        .unwrap_or_else(chrono::Local::now)
+        .fixed_offset()
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

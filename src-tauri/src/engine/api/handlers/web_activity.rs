@@ -1,25 +1,16 @@
 use crate::data::repositories::web_activity::{
     query_segments, WebActivitySegmentQuery, WebActivitySegmentRecord,
 };
-use crate::data::sqlite_pool;
 use crate::domain::settings::WebActivityUrlPrivacyMode;
+use crate::engine::api::context::ApiRuntimeContext;
 use crate::engine::api::types::{
     ApiError, ApiResponse, RouteResponse, WebActivityEntry, WebActivityResponse,
 };
 
-pub async fn get_web_activity(app: &tauri::AppHandle, query: Option<&str>) -> RouteResponse {
-    let pool = match sqlite_pool::wait_for_sqlite_pool(app).await {
-        Ok(pool) => pool,
-        Err(error) => {
-            return RouteResponse {
-                status: 500,
-                body: serde_json::to_value(ApiError::internal(&error)).unwrap_or_default(),
-            };
-        }
-    };
-
+pub async fn get_web_activity(context: &ApiRuntimeContext, query: Option<&str>) -> RouteResponse {
+    let pool = context.pool();
     let query = parse_web_activity_query(query);
-    let rows = match query_segments(&pool, &query, now_ms()).await {
+    let rows = match query_segments(pool, &query, context.now_ms()).await {
         Ok(rows) => rows,
         Err(error) => {
             return RouteResponse {
@@ -31,7 +22,7 @@ pub async fn get_web_activity(app: &tauri::AppHandle, query: Option<&str>) -> Ro
     };
 
     let settings =
-        match crate::data::repositories::app_settings::load_web_activity_settings(&pool).await {
+        match crate::data::repositories::app_settings::load_web_activity_settings(pool).await {
             Ok(settings) => settings,
             Err(error) => {
                 return RouteResponse {
@@ -122,13 +113,6 @@ fn strip_query_and_fragment(url: &str) -> String {
         .min()
         .unwrap_or(url.len());
     url[..truncate_at].to_string()
-}
-
-fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as i64)
-        .unwrap_or_default()
 }
 
 #[cfg(test)]
