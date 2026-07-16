@@ -1,6 +1,6 @@
 # `patinad` 后台运行时设计
 
-> 状态：Stage 0、Stage 1、Stage 2A、Stage 2B tracking preview 和 Stage 2C power preview 已完成并验证；其余后台 owner 与客户端迁移待实施。
+> 状态：Stage 0、Stage 1、Stage 2A、Stage 2B tracking preview、Stage 2C power preview 和 Stage 2D audio preview 已完成并验证；其余后台 owner 与客户端迁移待实施。
 > 生命周期：本设计是当前 `patinad` 实施依据；后台接管稳定完成后移入 `docs/archive/`。
 
 ## 1. 目标
@@ -18,7 +18,7 @@
 - 不扩大 KDE、wlroots 或移动端支持
 - 不为 MCP 提供任意文件操作能力
 
-## 3. 当前 Stage 2B 状态
+## 3. 当前 Stage 2D 状态
 
 当前分支已经提供并验证：
 
@@ -50,10 +50,13 @@
 - host-neutral systemd-logind watcher，覆盖 Manager sleep/shutdown 与 Session lock/unlock/LockedHint
 - daemon power task 的取消、退避重连，以及 power → tracking → SQLite 的关闭顺序
 - `shutdown` 立即封口和重复 lock/suspend/shutdown 幂等语义
+- 显式、可克隆、可取消的 Linux audio source，不依赖 Tauri host
+- daemon 按 `audio_participation_enabled` 启停 PulseAudio/pipewire-pulse 播放流探测
+- 音频 probe 故障与无音频分离，已暂停流不参与持续参与判断
 
 当前实现仍不能发布为正式后台服务，原因包括：
 
-- audio、MPRIS 和 browser bridge 仍未迁入 daemon
+- MPRIS 和 browser bridge 仍未迁入 daemon
 - daemon 尚无 systemd user service 和浏览器 UI
 - Tauri desktop 尚未改为 daemon client
 
@@ -156,12 +159,13 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 
 ### 阶段 2：daemon 接管后台
 
-状态：Stage 2A 事件传输、Stage 2B tracking preview 和 Stage 2C power preview 已完成；默认 owner 切换及其余平台 owner 待实施。
+状态：Stage 2A 事件传输、Stage 2B tracking preview、Stage 2C power preview 和 Stage 2D audio preview 已完成；默认 owner 切换及其余平台 owner 待实施。
 
 - 已完成：有界事件中心、受认证 SSE、replay/resync、能力协商和干净关闭
 - 已完成：显式模式下 daemon 接管 tracking/watchdog、实时快照、session 写入和退出封口
 - 已完成：共享 logind power source 与 daemon lock/suspend/resume/shutdown owner
-- 待实施：daemon 接管 audio 和 MPRIS
+- 已完成：daemon 接管 Linux audio source，按设置启停并在退出时取消
+- 待实施：daemon 接管 MPRIS
 - 待实施：接管 browser activity bridge 与完整本地 API owner
 - 待实施：desktop 通过 daemon client 和 event stream 获取状态
 - 待实施：desktop 不再启动第二套 tracker

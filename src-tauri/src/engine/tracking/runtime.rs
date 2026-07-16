@@ -56,12 +56,16 @@ pub async fn run<R: Runtime>(
     let context = RuntimeContext::system(pool);
     let event_sink = TauriRuntimeEventSink::new(app.clone());
     let output = Arc::new(TauriTrackingRuntimeOutput::new(app));
+    #[cfg(target_os = "linux")]
+    let audio_source = crate::platform::linux::audio::global_signal_source();
     let (_shutdown_tx, shutdown_rx) = watch::channel(false);
     run_with_context(
         context,
         health_state,
         Arc::new(event_sink),
         output,
+        #[cfg(target_os = "linux")]
+        audio_source,
         shutdown_rx,
     )
     .await
@@ -109,6 +113,7 @@ pub async fn run_with_context(
     health_state: Arc<watchdog::RuntimeHealthState>,
     event_sink: Arc<dyn RuntimeEventSink>,
     output: Arc<dyn TrackingRuntimeOutput>,
+    #[cfg(target_os = "linux")] audio_source: crate::platform::linux::audio::AudioSignalSource,
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<(), String> {
     let data = TrackingRuntimeDataStore::new(context.pool().clone());
@@ -151,6 +156,8 @@ pub async fn run_with_context(
             now_ms,
             &sustained_participation_state,
             &mut settings_cache,
+            #[cfg(target_os = "linux")]
+            &audio_source,
         )
         .await;
         sustained_participation_state = next_sustained_participation_state;

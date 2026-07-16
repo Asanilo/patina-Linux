@@ -14,13 +14,18 @@ use tokio::{
     time::{sleep, timeout, Duration},
 };
 
-const AUDIO_SESSION_QUERY_TIMEOUT_SECS: u64 = 2;
+const AUDIO_SESSION_QUERY_TIMEOUT_SECS: u64 = 5;
 const AUDIO_SNAPSHOT_TTL_MS: i64 = 15_000;
 const AUDIO_RECONCILE_INTERVAL_SECS: u64 = 10;
 const AUDIO_SESSION_LIMIT: usize = 64;
 const AUDIO_PROBE_LOG_THROTTLE_MS: i64 = 60_000;
 
-static AUDIO_SIGNAL_SOURCE: OnceLock<Arc<AudioSignalSourceState>> = OnceLock::new();
+static AUDIO_SIGNAL_SOURCE: OnceLock<AudioSignalSource> = OnceLock::new();
+
+#[derive(Clone, Debug)]
+pub struct AudioSignalSource {
+    state: Arc<AudioSignalSourceState>,
+}
 
 #[derive(Debug)]
 struct AudioSignalSourceState {
@@ -34,38 +39,73 @@ struct AudioProbeInFlightGuard {
 }
 
 pub fn start_signal_source(enabled: bool) {
-    let state = AUDIO_SIGNAL_SOURCE
-        .get_or_init(|| Arc::new(AudioSignalSourceState::new()))
-        .clone();
-    state.set_enabled(enabled);
+    let source = global_signal_source();
+    source.set_enabled(enabled);
 
     tauri::async_runtime::spawn(async move {
-        state.run().await;
+        source.run().await;
     });
 }
 
 pub fn set_signal_source_enabled(enabled: bool) {
-    if let Some(state) = AUDIO_SIGNAL_SOURCE.get() {
-        state.set_enabled(enabled);
+    if let Some(source) = AUDIO_SIGNAL_SOURCE.get() {
+        source.set_enabled(enabled);
     }
 }
 
-pub async fn get_sustained_participation_signal(
-    window: &WindowInfo,
-) -> SustainedParticipationSignalSnapshot {
-    if window.exe_name.trim().is_empty() {
-        return SustainedParticipationSignalSnapshot::default();
+pub fn global_signal_source() -> AudioSignalSource {
+    AUDIO_SIGNAL_SOURCE
+        .get_or_init(|| AudioSignalSource::new(true))
+        .clone()
+}
+
+impl AudioSignalSource {
+    pub fn new(enabled: bool) -> Self {
+        let source = Self {
+            state: Arc::new(AudioSignalSourceState::new()),
+        };
+        source.set_enabled(enabled);
+        source
     }
 
-    let now_ms = now_ms();
-    let Some(state) = AUDIO_SIGNAL_SOURCE.get() else {
-        return SustainedParticipationSignalSnapshot::default();
-    };
-    if !state.is_enabled() {
-        return SustainedParticipationSignalSnapshot::default();
+    pub fn set_enabled(&self, enabled: bool) {
+        self.state.set_enabled(enabled);
     }
 
-    state.resolve_signal_for_window(window, now_ms)
+    pub fn is_enabled(&self) -> bool {
+        self.state.is_enabled()
+    }
+
+    pub async fn run(&self) {
+        let (_shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        self.run_with_shutdown(shutdown_rx).await;
+    }
+
+    pub async fn run_with_shutdown(&self, mut shutdown: tokio::sync::watch::Receiver<bool>) {
+        loop {
+            if *shutdown.borrow() {
+                return;
+            }
+            if self.is_enabled() {
+                tokio::select! {
+                    _ = self.state.reconcile_once() => {}
+                    _ = shutdown.changed() => return,
+                }
+            }
+            tokio::select! {
+                _ = sleep(Duration::from_secs(AUDIO_RECONCILE_INTERVAL_SECS)) => {}
+                _ = shutdown.changed() => return,
+            }
+        }
+    }
+
+    pub fn signal_for_window(&self, window: &WindowInfo) -> SustainedParticipationSignalSnapshot {
+        if window.exe_name.trim().is_empty() || !self.is_enabled() {
+            return SustainedParticipationSignalSnapshot::default();
+        }
+
+        self.state.resolve_signal_for_window(window, now_ms())
+    }
 }
 
 impl AudioSignalSourceState {
@@ -89,15 +129,6 @@ impl AudioSignalSourceState {
 
     fn is_enabled(&self) -> bool {
         self.enabled.load(Ordering::Acquire)
-    }
-
-    async fn run(&self) {
-        loop {
-            if self.is_enabled() {
-                self.reconcile_once().await;
-            }
-            sleep(Duration::from_secs(AUDIO_RECONCILE_INTERVAL_SECS)).await;
-        }
     }
 
     async fn reconcile_once(&self) {
@@ -258,7 +289,7 @@ fn query_pulseaudio_sessions() -> Result<Vec<AudioSessionFact>, String> {
                 }
                 _ => {}
             }
-            if start.elapsed().as_secs() > 2 {
+            if start.elapsed() >= std::time::Duration::from_secs(2) {
                 return Err("PulseAudio connection timed out".into());
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
@@ -271,6 +302,9 @@ fn query_pulseaudio_sessions() -> Result<Vec<AudioSessionFact>, String> {
             use libpulse_binding::callbacks::ListResult;
 
             if let ListResult::Item(item) = list {
+                if item.corked {
+                    return;
+                }
                 if let Some(pid_str) = item.proplist.get_str("application.process.id") {
                     if let Ok(pid) = pid_str.parse::<u32>() {
                         let exe_name = foreground::get_process_exe_name(pid);
@@ -310,7 +344,7 @@ fn query_pulseaudio_sessions() -> Result<Vec<AudioSessionFact>, String> {
                 OpState::Cancelled => return Err("PulseAudio query cancelled".into()),
                 _ => {}
             }
-            if start.elapsed().as_secs() > 2 {
+            if start.elapsed() >= std::time::Duration::from_secs(2) {
                 return Err("PulseAudio query timed out".into());
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
@@ -363,6 +397,46 @@ fn now_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn window(exe_name: &str) -> WindowInfo {
+        WindowInfo {
+            hwnd: "0x1".to_string(),
+            root_owner_hwnd: "0x1".to_string(),
+            process_id: 1,
+            window_class: "test".to_string(),
+            title: "test".to_string(),
+            exe_name: exe_name.to_string(),
+            process_path: format!("/usr/bin/{exe_name}"),
+            is_afk: false,
+            idle_time_ms: 0,
+        }
+    }
+
+    #[test]
+    fn disabled_source_never_reports_audio_participation() {
+        let source = AudioSignalSource::new(false);
+
+        assert!(!source.is_enabled());
+        assert_eq!(
+            source.signal_for_window(&window("firefox")),
+            SustainedParticipationSignalSnapshot::default()
+        );
+    }
+
+    #[tokio::test]
+    async fn disabled_source_stops_promptly() {
+        let source = AudioSignalSource::new(false);
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let task = tokio::spawn(async move {
+            source.run_with_shutdown(shutdown_rx).await;
+        });
+
+        shutdown_tx.send(true).unwrap();
+        tokio::time::timeout(Duration::from_millis(250), task)
+            .await
+            .expect("disabled audio source should stop promptly")
+            .unwrap();
+    }
 
     #[test]
     #[ignore = "requires a running PulseAudio or pipewire-pulse user service"]

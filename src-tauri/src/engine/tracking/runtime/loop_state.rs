@@ -95,6 +95,7 @@ pub(super) async fn load_tracking_loop_state(
     now_ms: i64,
     previous_state: &SustainedParticipationRuntimeState,
     settings_cache: &mut TrackingSettingsCache,
+    #[cfg(target_os = "linux")] audio_source: &crate::platform::linux::audio::AudioSignalSource,
 ) -> (TrackingLoopState, SustainedParticipationRuntimeState) {
     let cached_settings = settings_cache.load_tracking_settings(data, now_ms).await;
     let continuity_window_secs = cached_settings.continuity_window_secs;
@@ -109,8 +110,13 @@ pub(super) async fn load_tracking_loop_state(
         tracked_window.title.clear();
     }
 
-    let (system_media_signal, audio_signal) =
-        load_sustained_participation_signals(&tracked_window, tracking_paused).await;
+    let (system_media_signal, audio_signal) = load_sustained_participation_signals(
+        &tracked_window,
+        tracking_paused,
+        #[cfg(target_os = "linux")]
+        audio_source,
+    )
+    .await;
     let (tracking_status, next_sustained_participation_state) =
         resolve_tracking_status_with_runtime(SustainedParticipationStatusInput {
             exe_name: &tracked_window.exe_name,

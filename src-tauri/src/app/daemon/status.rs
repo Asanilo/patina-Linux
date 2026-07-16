@@ -33,7 +33,7 @@ pub fn build_startup_status(
         profile,
         version: version.into(),
         stage: if tracking_enabled {
-            "stage-2c-power-preview"
+            "stage-2d-audio-preview"
         } else {
             "stage-2a-event-stream"
         },
@@ -50,6 +50,7 @@ pub fn build_startup_status(
             vec![
                 "daemon owns tracking and watchdog for this profile",
                 "daemon observes lock, suspend, resume, and shutdown through systemd-logind",
+                "daemon owns the Linux audio participation source and follows its persisted setting",
                 "tracking preview is explicitly enabled and the desktop must not use the same profile",
             ]
         } else {
@@ -138,11 +139,15 @@ mod tests {
             &paths,
         );
 
-        assert_eq!(status.stage, "stage-2c-power-preview");
+        assert_eq!(status.stage, "stage-2d-audio-preview");
         assert!(status.tracking_enabled);
         assert!(status
             .notes
             .iter()
             .any(|note| note.contains("owns tracking")));
+        assert!(status
+            .notes
+            .iter()
+            .any(|note| note.contains("audio participation")));
     }
 }
