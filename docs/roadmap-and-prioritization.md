@@ -150,19 +150,21 @@
 
 当前结构主线按以下顺序推进：
 
-1. Stage 0 基础已完成：数据 profile、存储锚点、运行时唯一 owner、API 凭据、bounded transport、OpenAPI 一致性和优雅关闭已有自动验证。
+1. Stage 0 基础已完成：数据 profile、存储锚点、运行时唯一 owner、API 凭据、受限请求解析与生命周期、OpenAPI 一致性和优雅关闭已有自动验证。
 2. Stage 1 已完成：共享 `RuntimeContext`、`RuntimeEventSink`、API runtime context、完整只读 GET API 和 host-neutral handler 已落地。
 3. Stage 2A 已完成：本机有界 event stream、bearer 认证、replay/resync、能力协商和关闭语义已有自动验证。
 4. Stage 2B tracking preview 已完成：显式 `--track` 模式由 daemon 接管 tracking/watchdog、实时快照、session 写入和退出封口；desktop 默认 owner 尚未切换。
 5. Stage 2C power preview 已完成：共享 logind source 覆盖锁屏、解锁、休眠、恢复和关机，daemon 可在对应边界立即封口。
 6. Stage 2D audio preview 已完成：Linux audio source 可由 daemon 显式拥有、取消和按设置启停，PulseAudio/pipewire-pulse 探测不再依赖 Tauri 全局运行时。
 7. Stage 2E MPRIS preview 已完成：Linux media source 可由 daemon 显式拥有和取消，多播放器按当前窗口身份优先匹配，D-Bus 查询不依赖 Tauri 全局运行时。
-8. Stage 2F browser bridge preview 已完成：显式 tracking 模式由 daemon 在 loopback 接收浏览器扩展上报，共用宿主无关的鉴权、隐私、记录和封口逻辑，并提供有界连接与可等待关闭。
-9. 下一阶段复用现有 React feature 建立由 `patinad` 在 loopback 提供的浏览器 UI，先覆盖 Dashboard、History、Data、当前会话和诊断。
-10. 让 Tauri UI 成为 daemon 桌面客户端，保留 tray、通知、文件选择和 updater，验证关闭 UI 后继续记录、重开恢复和版本兼容诊断。
-11. 完成 systemd user service、`.deb` / AppImage 安装差异、日志、升级和恢复验证。
-12. 在 daemon 契约稳定后开发 TUI / CLI，并开始 KDE Wayland 适配；桌面端是否从 Tauri 迁往 GPUI 只按实测收益单独评估。
-13. `patinad` 稳定后，单独分阶段删除冻结的 Windows 平台代码。
+8. Stage 2F browser bridge preview 已完成：显式 tracking 模式由 daemon 在 loopback 接收浏览器扩展上报，共用宿主无关的鉴权、隐私、记录和封口逻辑，并提供受限请求生命周期与可等待关闭。
+9. 先完成 Stage 2F 稳定化门槛：网页异常退出必须按最后可信观测时间恢复；浏览器心跳需要合理宽限与过期封口；API、SSE 和浏览器桥接需要显式并发上限；capability readiness 必须跟随真实 task 生命周期；`app/daemon/runtime.rs` 在继续扩张前按 owner 拆分。
+10. 稳定化通过后，复用现有 React feature 建立由 `patinad` 在 loopback 提供的浏览器 UI，先覆盖 Dashboard、History、Data、当前会话和诊断。
+11. 补齐运行中设置写侧与安全的本机浏览器 session，再逐步开放分类、排除和工具操作；MCP 与浏览器 UI 继续复用同一 API 契约。
+12. 让 Tauri UI 成为 daemon 桌面客户端，保留 tray、通知、文件选择和 updater，验证关闭 UI 后继续记录、重开恢复和版本兼容诊断。
+13. 完成 systemd user service、`.deb` / AppImage 安装差异、journal 日志、升级和恢复验证。
+14. 在 daemon 契约稳定后开发 TUI / CLI，并开始 KDE Wayland 适配；桌面端是否从 Tauri 迁往 GPUI 只按实测收益单独评估。
+15. `patinad` 稳定后，单独分阶段删除冻结的 Windows 平台代码。
 
 每一阶段必须保持当前桌面主路径可用，不以一次性切换换取架构完成感。
 

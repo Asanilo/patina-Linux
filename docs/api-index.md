@@ -36,6 +36,8 @@ Current caveats:
 - The desktop runtime exposes the JSON endpoints below. Development-only `patinad` exposes every authenticated `GET` endpoint through the same handlers, plus capability negotiation and an authenticated SSE stream; it rejects all `POST` endpoints.
 - Default daemon mode remains historical/read-only: `GET /api/v1/current` returns `503` and live tracker/browser diagnostics are `null`.
 - Stage 2F preview mode is explicit: run `patinad --profile dev --serve-api --track --port 0`. It owns tracking for that profile, serves a live `/current`, observes Linux lock/suspend/resume/shutdown, runs audio/MPRIS participation sources, and owns the browser activity bridge configured for that profile. Never run desktop and daemon tracking against the same profile.
+- Stage 2F capability migration is complete, but it is not yet a released service contract. Crash recovery boundaries, browser heartbeat expiry, explicit API/SSE/bridge concurrency limits, and task-coupled readiness remain stabilization gates before `patinad` becomes the default owner.
+- The daemon reads the browser bridge port and token when it starts. Changing either setting currently requires restarting the daemon.
 - `/api/v1/events` accepts the token only through the `Authorization` header. It does not accept tokens in URLs or query strings.
 
 ---
@@ -146,7 +148,7 @@ Default daemon schema:
 
 `owned` means that host is responsible for running the capability. `ready` is never true when `owned` is false. This prevents clients from confusing a readable historical API with a live tracking owner.
 
-With Stage 2F `--track`, the same response changes `tracking` to `{ "owned": true, "ready": false }` during startup and `{ "owned": true, "ready": true }` after the first runtime snapshot. `browser_activity_bridge.owned` is also `true`; its `ready` value is `true` only after the configured loopback listener has bound successfully. Default daemon mode keeps both capabilities unowned.
+With Stage 2F `--track`, the same response changes `tracking` to `{ "owned": true, "ready": false }` during startup and `{ "owned": true, "ready": true }` after the first runtime snapshot. `browser_activity_bridge.owned` is also `true`; its current `ready` value becomes `true` after the configured loopback listener binds successfully. Stage 2F.1 must additionally make that value fall back to `false` if the listener task exits unexpectedly. Default daemon mode keeps both capabilities unowned.
 
 ### `GET /api/v1/events`
 

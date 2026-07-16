@@ -1,6 +1,6 @@
 # `patinad` 后台运行时设计
 
-> 状态：Stage 0、Stage 1、Stage 2A、Stage 2B tracking preview、Stage 2C power preview、Stage 2D audio preview、Stage 2E MPRIS preview 和 Stage 2F browser bridge preview 已完成并验证；默认 owner 切换与客户端迁移待实施。
+> 状态：Stage 0、Stage 1、Stage 2A、Stage 2B tracking preview、Stage 2C power preview、Stage 2D audio preview、Stage 2E MPRIS preview 和 Stage 2F browser bridge preview 的能力迁移已完成并验证；Stage 2F.1 稳定化、默认 owner 切换与客户端迁移待实施。
 > 生命周期：本设计是当前 `patinad` 实施依据；后台接管稳定完成后移入 `docs/archive/`。
 
 ## 1. 目标
@@ -28,7 +28,7 @@
 - pending migration 与缺失自定义挂载的 fail-closed 行为
 - desktop / daemon 按 profile 唯一 owner 的 `RuntimeLease`
 - 按 profile 隔离、owner-only 的 API credential store
-- desktop / daemon 共用的 bounded HTTP transport
+- desktop / daemon 共用的受限 HTTP 请求解析与生命周期
 - 可选的最小 localhost API
 - 与实际能力一致的 `/api/v1/health`、`/api/v1/openapi.json`
 - listener、连接任务、SQLite pool 和 lease 的显式关闭顺序
@@ -56,14 +56,20 @@
 - 显式、可克隆、可取消的 Linux MPRIS source，不依赖 Tauri host
 - 多 MPRIS 播放器保留有界快照，当前窗口匹配优先于无关活动播放器
 - 当前窗口对应播放器的 paused 状态可立即结束 media grace，而不会被其他播放器遮蔽
-- 浏览器活动 HTTP transport 只绑定 loopback，并限制 header、body、请求时长与并发任务生命周期
+- 浏览器活动 HTTP transport 只绑定 loopback，并限制 header、body、请求时长与任务关闭；显式并发数量上限待 Stage 2F.1 补齐
 - 浏览器 Token 校验、隐私规则、前台浏览器判断和 SQLite 写入不再依赖 `AppHandle`
-- daemon tracking preview 从 profile 设置读取浏览器桥接端口和 Token，并对外报告真实 listening readiness
-- tracking 事件会在离开浏览器、AFK 或暂停时封口网页段，启动与退出也会完成异常段修复
+- daemon tracking preview 从 profile 设置读取浏览器桥接端口和 Token；配置变更当前需要重启 daemon 才会生效
+- tracking 事件会在离开浏览器、AFK 或暂停时封口网页段；正常退出已有封口路径，异常退出的可信恢复边界待 Stage 2F.1 修正
 - desktop 继续通过薄 Tauri adapter 使用同一桥接核心
 
 当前实现仍不能发布为正式后台服务，原因包括：
 
+- 网页活动异常退出后仍按下次启动时间封口，可能把 daemon 停机时间计入 duration；必须改为最后可信上报时间
+- 扩展心跳周期和 connected 判定窗口当前同为 30 秒，存在调度抖动导致误断开的边界；扩展消失后也缺少按最后上报时间封口的 watchdog
+- API、SSE 和浏览器 bridge 已有请求限制与可等待关闭，但还没有各自明确的并发连接数量上限
+- browser bridge readiness 当前在 bind 后写入，尚未跟随 listener/task 的意外退出自动失效
+- `app/daemon/runtime.rs` 同时编排 tracking、power、audio、MPRIS、browser bridge 和 API，继续扩展前需要按 owner 拆分
+- 浏览器端口和 Token 仅在 daemon 启动时读取，运行中修改需要重启
 - daemon 尚无 systemd user service 和浏览器 UI
 - Tauri desktop 尚未改为 daemon client
 
@@ -166,19 +172,33 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 
 ### 阶段 2：daemon 接管后台
 
-状态：Stage 2A 事件传输、Stage 2B tracking preview、Stage 2C power preview、Stage 2D audio preview、Stage 2E MPRIS preview 和 Stage 2F browser bridge preview 已完成；默认 owner 切换与客户端化待实施。
+状态：Stage 2A 事件传输、Stage 2B tracking preview、Stage 2C power preview、Stage 2D audio preview、Stage 2E MPRIS preview 和 Stage 2F browser bridge preview 的能力迁移已完成；Stage 2F.1 稳定化、默认 owner 切换与客户端化待实施。
 
 - 已完成：有界事件中心、受认证 SSE、replay/resync、能力协商和干净关闭
 - 已完成：显式模式下 daemon 接管 tracking/watchdog、实时快照、session 写入和退出封口
 - 已完成：共享 logind power source 与 daemon lock/suspend/resume/shutdown owner
 - 已完成：daemon 接管 Linux audio source，按设置启停并在退出时取消
 - 已完成：daemon 接管 Linux MPRIS source，多播放器按当前窗口优先解析并在退出时取消
-- 已完成：daemon 接管 browser activity bridge，共用鉴权、隐私、记录、事件和有界 transport
+- 已完成：daemon 接管 browser activity bridge，共用鉴权、隐私、记录、事件和受限请求生命周期
+- 待实施：Stage 2F.1 稳定化门槛
 - 待实施：运行中设置写侧与完整本地 API owner
 - 待实施：desktop 通过 daemon client 和 event stream 获取状态
 - 待实施：desktop 不再启动第二套 tracker
 
 验收：关闭 UI 后继续记录；重开 UI 恢复当前状态；AFK、锁屏、睡眠、恢复和异常封口正确；统计不倒退、不重复。
+
+### 阶段 2F.1：后台稳定化
+
+该阶段不增加用户功能，先把 preview 能力收敛为可长期运行的服务边界：
+
+- data owner：网页 active row 按 `updated_at` 或等价的最后可信观测时间恢复，不把停机空白计入 duration
+- web activity engine：connected 宽限必须大于扩展心跳周期；上报过期后按最后成功上报时间封口网页段
+- API / platform transport：为普通 API、SSE 和 browser bridge 分别设置并验证并发连接上限
+- daemon health：capability 与 diagnostics readiness 跟随 listener/task 生命周期，任务意外退出后立即降级
+- daemon ownership：把 tracking、power、audio、media、web activity 和 transport 生命周期移入对应 owner 模块，`app/daemon/runtime.rs` 只保留编排和关闭顺序
+- verification：覆盖跨夜崩溃恢复、心跳抖动、扩展消失、连接饱和、listener 意外退出和有序 shutdown
+
+验收：daemon 停机不增长 session 或网页活动；短暂心跳抖动不误报断开；扩展消失后网页段不会无限增长；连接压力不会产生无界任务；readiness 与实际服务状态一致。
 
 ### 阶段 3：浏览器与桌面客户端化
 
@@ -211,7 +231,7 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 
 - storage anchor 损坏、挂载缺失或 schema 初始化失败时 fail-closed
 - API 只监听 `127.0.0.1`，Bearer token 文件保持 owner-only 权限
-- daemon 正常停止前封口 active session，异常退出由下次启动自愈
+- daemon 正常停止前封口 active session；异常退出由下次启动检查 active row，但只能按最后可信观测时间封口，不能用下次启动时间填补停机空白
 - desktop 与 daemon 版本不兼容时显示诊断，不静默使用不完整接口
 - 迁移、清理、恢复和备份继续由 Rust owner 执行
 - API、MCP、TUI 和 CLI 不获得任意路径删除或任意 SQL 能力

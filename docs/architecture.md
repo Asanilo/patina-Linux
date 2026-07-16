@@ -178,6 +178,14 @@ Raw DTO 只能停留在明确边界：
 
 Tauri desktop 仍是默认 tracking owner。`patinad` Stage 0、Stage 1、Stage 2A、Stage 2B tracking preview、Stage 2C power preview、Stage 2D audio preview、Stage 2E MPRIS preview 和 Stage 2F browser bridge preview 已完成 profile-safe storage bootstrap、单 owner `RuntimeLease`、共享 runtime/event 边界、完整只读 API、受认证 SSE、宿主无关的 tracking/watchdog、共享 systemd-logind lifecycle source、可取消的 Linux audio/MPRIS sources，以及共用的浏览器活动记录与 loopback transport。显式 `--serve-api --track` 模式可以让 daemon 为隔离 profile 记录 session，处理锁屏、休眠、恢复和关机，使用 PulseAudio/pipewire-pulse 与 MPRIS 参与信号，并接收带独立 Token 的浏览器扩展上报；默认 daemon 模式仍不记录或监听 browser bridge。迁移期间不得复制第二套业务实现，也不得让 desktop 与 daemon 同时追踪同一 profile。
 
+“preview owner 已迁移”不等于“默认服务质量已成立”。在 `patinad` 成为默认 owner 或进入 systemd 服务化之前，必须同时满足以下运行时门槛：
+
+- 崩溃恢复只能使用最后可信采样、最后心跳或最后网页上报作为封口边界，不能用下一次进程启动时间填补停机空白
+- 浏览器 bridge 的 connected 状态必须使用大于扩展上报周期的宽限窗口；上报过期后必须按最后成功上报时间封口活动网页段
+- loopback API、SSE 和浏览器 bridge 必须分别定义并验证并发连接上限，不能只依赖单请求超时
+- capability 与 diagnostics 的 readiness 必须跟随 listener/task 实际生命周期，不能只记录启动瞬间的布尔值
+- `app/daemon/*` 只负责编排；tracking、power、audio、media、web activity 与 transport 生命周期必须由各自 owner 模块承接，不能继续集中增长到单个 runtime 文件
+
 迁移期共享运行时结构为：
 
 ```text
