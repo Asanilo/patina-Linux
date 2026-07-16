@@ -1,6 +1,6 @@
 # `patinad` 后台运行时设计
 
-> 状态：Stage 0、Stage 1、Stage 2A、Stage 2B tracking preview、Stage 2C power preview、Stage 2D audio preview 和 Stage 2E MPRIS preview 已完成并验证；其余后台 owner 与客户端迁移待实施。
+> 状态：Stage 0、Stage 1、Stage 2A、Stage 2B tracking preview、Stage 2C power preview、Stage 2D audio preview、Stage 2E MPRIS preview 和 Stage 2F browser bridge preview 已完成并验证；默认 owner 切换与客户端迁移待实施。
 > 生命周期：本设计是当前 `patinad` 实施依据；后台接管稳定完成后移入 `docs/archive/`。
 
 ## 1. 目标
@@ -18,7 +18,7 @@
 - 不扩大 KDE、wlroots 或移动端支持
 - 不为 MCP 提供任意文件操作能力
 
-## 3. 当前 Stage 2E 状态
+## 3. 当前 Stage 2F 状态
 
 当前分支已经提供并验证：
 
@@ -56,10 +56,14 @@
 - 显式、可克隆、可取消的 Linux MPRIS source，不依赖 Tauri host
 - 多 MPRIS 播放器保留有界快照，当前窗口匹配优先于无关活动播放器
 - 当前窗口对应播放器的 paused 状态可立即结束 media grace，而不会被其他播放器遮蔽
+- 浏览器活动 HTTP transport 只绑定 loopback，并限制 header、body、请求时长与并发任务生命周期
+- 浏览器 Token 校验、隐私规则、前台浏览器判断和 SQLite 写入不再依赖 `AppHandle`
+- daemon tracking preview 从 profile 设置读取浏览器桥接端口和 Token，并对外报告真实 listening readiness
+- tracking 事件会在离开浏览器、AFK 或暂停时封口网页段，启动与退出也会完成异常段修复
+- desktop 继续通过薄 Tauri adapter 使用同一桥接核心
 
 当前实现仍不能发布为正式后台服务，原因包括：
 
-- browser bridge 仍未迁入 daemon
 - daemon 尚无 systemd user service 和浏览器 UI
 - Tauri desktop 尚未改为 daemon client
 
@@ -162,14 +166,15 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 
 ### 阶段 2：daemon 接管后台
 
-状态：Stage 2A 事件传输、Stage 2B tracking preview、Stage 2C power preview、Stage 2D audio preview 和 Stage 2E MPRIS preview 已完成；默认 owner 切换及其余平台 owner 待实施。
+状态：Stage 2A 事件传输、Stage 2B tracking preview、Stage 2C power preview、Stage 2D audio preview、Stage 2E MPRIS preview 和 Stage 2F browser bridge preview 已完成；默认 owner 切换与客户端化待实施。
 
 - 已完成：有界事件中心、受认证 SSE、replay/resync、能力协商和干净关闭
 - 已完成：显式模式下 daemon 接管 tracking/watchdog、实时快照、session 写入和退出封口
 - 已完成：共享 logind power source 与 daemon lock/suspend/resume/shutdown owner
 - 已完成：daemon 接管 Linux audio source，按设置启停并在退出时取消
 - 已完成：daemon 接管 Linux MPRIS source，多播放器按当前窗口优先解析并在退出时取消
-- 待实施：接管 browser activity bridge 与完整本地 API owner
+- 已完成：daemon 接管 browser activity bridge，共用鉴权、隐私、记录、事件和有界 transport
+- 待实施：运行中设置写侧与完整本地 API owner
 - 待实施：desktop 通过 daemon client 和 event stream 获取状态
 - 待实施：desktop 不再启动第二套 tracker
 

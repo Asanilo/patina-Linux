@@ -1,221 +1,224 @@
 use crate::domain::settings::WebActivityBridgeSettings;
-use serde_json::{json, Value};
+use crate::engine::web_activity::{WebActivityBridgeHttpRequest, WebActivityBridgeHttpResponse};
+use serde_json::json;
 use std::future::Future;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener as StdTcpListener};
 use std::pin::Pin;
-use std::sync::Mutex;
-use tauri::{AppHandle, Runtime};
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::watch;
+use tokio::sync::{watch, Mutex};
+use tokio::task::{JoinHandle, JoinSet};
 
 const WEB_ACTIVITY_BRIDGE_HTTP_BODY_MAX_BYTES: usize = 64 * 1024;
 const WEB_ACTIVITY_BRIDGE_HTTP_HEADER_MAX_BYTES: usize = 16 * 1024;
+const WEB_ACTIVITY_BRIDGE_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+const WEB_ACTIVITY_BRIDGE_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 pub const WEB_ACTIVITY_BRIDGE_SETTINGS_CHANGED_EVENT: &str = "app-settings-changed";
 pub const WEB_ACTIVITY_BRIDGE_ACTIVE_WINDOW_EVENT: &str = "active-window-changed";
 pub const WEB_ACTIVITY_BRIDGE_TRACKING_DATA_EVENT: &str = "tracking-data-changed";
 
 pub type WebActivityBridgeHttpFuture =
     Pin<Box<dyn Future<Output = WebActivityBridgeHttpResponse> + Send>>;
+pub type WebActivityBridgeHttpHandler = Arc<
+    dyn Fn(WebActivityBridgeHttpRequest) -> WebActivityBridgeHttpFuture + Send + Sync + 'static,
+>;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct WebActivityBridgeHttpRequest {
-    pub method: String,
-    pub path: String,
-    pub authorization: Option<String>,
-    pub body: Vec<u8>,
+pub struct PreparedWebActivityBridgeServer {
+    address: SocketAddr,
+    listener: StdTcpListener,
+    handler: WebActivityBridgeHttpHandler,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct WebActivityBridgeHttpResponse {
-    pub status: u16,
-    pub body: String,
+impl PreparedWebActivityBridgeServer {
+    pub fn port(&self) -> u16 {
+        self.address.port()
+    }
+
+    pub fn start(self) -> WebActivityBridgeServerHandle {
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let task = tokio::spawn(run_server(
+            self.address,
+            self.listener,
+            self.handler,
+            shutdown_rx,
+        ));
+        WebActivityBridgeServerHandle { shutdown_tx, task }
+    }
 }
 
-impl WebActivityBridgeHttpResponse {
-    pub fn json(status: u16, data: Value) -> Self {
-        Self {
-            status,
-            body: data.to_string(),
+pub struct WebActivityBridgeServerHandle {
+    shutdown_tx: watch::Sender<bool>,
+    task: JoinHandle<()>,
+}
+
+impl WebActivityBridgeServerHandle {
+    pub async fn shutdown(self) {
+        let _ = self.shutdown_tx.send(true);
+        let mut task = self.task;
+        if tokio::time::timeout(WEB_ACTIVITY_BRIDGE_SHUTDOWN_TIMEOUT, &mut task)
+            .await
+            .is_err()
+        {
+            task.abort();
+            let _ = task.await;
         }
     }
 }
 
-pub struct WebActivityBridgeRuntimeDeps<R: Runtime> {
-    pub handle_http_request:
-        fn(AppHandle<R>, WebActivityBridgeHttpRequest) -> WebActivityBridgeHttpFuture,
-}
-
-impl<R: Runtime> Clone for WebActivityBridgeRuntimeDeps<R> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<R: Runtime> Copy for WebActivityBridgeRuntimeDeps<R> {}
-
-#[derive(Debug)]
+#[derive(Default)]
 pub struct WebActivityBridgeRuntimeState {
     inner: Mutex<WebActivityBridgeRuntimeInner>,
-    shutdown_tx: watch::Sender<u64>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct WebActivityBridgeRuntimeInner {
     settings: WebActivityBridgeSettings,
-    server_task: Option<tauri::async_runtime::JoinHandle<()>>,
-}
-
-impl Default for WebActivityBridgeRuntimeState {
-    fn default() -> Self {
-        let (shutdown_tx, _) = watch::channel(0);
-        Self {
-            inner: Mutex::new(WebActivityBridgeRuntimeInner::default()),
-            shutdown_tx,
-        }
-    }
+    server: Option<WebActivityBridgeServerHandle>,
 }
 
 impl WebActivityBridgeRuntimeState {
-    pub fn update<R: Runtime + 'static>(
+    pub async fn update(
         &self,
-        app: AppHandle<R>,
         settings: WebActivityBridgeSettings,
-        deps: WebActivityBridgeRuntimeDeps<R>,
-    ) {
-        let mut inner = lock_inner(&self.inner);
-        let previous_settings = inner.settings.clone();
+        handler: WebActivityBridgeHttpHandler,
+    ) -> bool {
+        let mut inner = self.inner.lock().await;
         let should_restart =
-            should_restart_server(&previous_settings, &settings, inner.server_task.is_some());
+            should_restart_server(&inner.settings, &settings, inner.server.is_some());
 
         if should_restart {
-            if let Some(task) = inner.server_task.take() {
-                task.abort();
+            if let Some(server) = inner.server.take() {
+                server.shutdown().await;
             }
-            signal_shutdown(&self.shutdown_tx);
         }
 
-        if settings.enabled && (should_restart || inner.server_task.is_none()) {
-            inner.server_task =
-                spawn_server(app, self.shutdown_tx.subscribe(), settings.clone(), deps);
+        if settings.enabled && (should_restart || inner.server.is_none()) {
+            match prepare_web_activity_bridge_server(settings.port, handler) {
+                Ok(server) => inner.server = Some(server.start()),
+                Err(error) => eprintln!(
+                    "[web-activity-bridge] failed to bind 127.0.0.1:{}: {error}",
+                    settings.port
+                ),
+            }
         }
 
         inner.settings = settings;
+        inner.server.is_some()
     }
+
+    pub async fn shutdown(&self) {
+        let server = self.inner.lock().await.server.take();
+        if let Some(server) = server {
+            server.shutdown().await;
+        }
+    }
+}
+
+pub fn prepare_web_activity_bridge_server(
+    port: u16,
+    handler: WebActivityBridgeHttpHandler,
+) -> io::Result<PreparedWebActivityBridgeServer> {
+    let (address, listener) = open_web_activity_bridge_listener(port)?;
+    Ok(PreparedWebActivityBridgeServer {
+        address,
+        listener,
+        handler,
+    })
 }
 
 fn should_restart_server(
     previous_settings: &WebActivityBridgeSettings,
     settings: &WebActivityBridgeSettings,
-    has_server_task: bool,
+    has_server: bool,
 ) -> bool {
     previous_settings.enabled != settings.enabled
         || previous_settings.port != settings.port
         || previous_settings.token != settings.token
-        || (!settings.enabled && has_server_task)
+        || (!settings.enabled && has_server)
 }
 
-fn signal_shutdown(shutdown_tx: &watch::Sender<u64>) {
-    shutdown_tx.send_modify(|generation| {
-        *generation = generation.wrapping_add(1);
-    });
-}
-
-fn spawn_server<R: Runtime + 'static>(
-    app: AppHandle<R>,
-    mut shutdown_rx: watch::Receiver<u64>,
-    settings: WebActivityBridgeSettings,
-    deps: WebActivityBridgeRuntimeDeps<R>,
-) -> Option<tauri::async_runtime::JoinHandle<()>> {
-    let (address, std_listener) = match open_web_activity_bridge_listener(settings.port) {
+async fn run_server(
+    address: SocketAddr,
+    std_listener: StdTcpListener,
+    handler: WebActivityBridgeHttpHandler,
+    mut shutdown: watch::Receiver<bool>,
+) {
+    let listener = match TcpListener::from_std(std_listener) {
         Ok(listener) => listener,
         Err(error) => {
-            eprintln!(
-                "[web-activity-bridge] failed to bind 127.0.0.1:{}: {error}",
-                settings.port
-            );
-            return None;
+            eprintln!("[web-activity-bridge] failed to attach listener {address}: {error}");
+            return;
         }
     };
+    let mut clients = JoinSet::new();
 
-    Some(tauri::async_runtime::spawn(async move {
-        let listener = match TcpListener::from_std(std_listener) {
-            Ok(listener) => listener,
-            Err(error) => {
-                eprintln!("[web-activity-bridge] failed to attach listener {address}: {error}");
-                return;
+    loop {
+        tokio::select! {
+            changed = shutdown.changed() => {
+                let _ = changed;
+                break;
             }
-        };
-
-        loop {
-            let (stream, remote_addr) = tokio::select! {
-                changed = shutdown_rx.changed() => {
-                    if changed.is_err() {
-                        eprintln!("[web-activity-bridge] shutdown channel closed");
+            completed = clients.join_next(), if !clients.is_empty() => {
+                if let Some(Err(error)) = completed {
+                    eprintln!("[web-activity-bridge] client task failed: {error}");
+                }
+            }
+            accepted = listener.accept() => {
+                match accepted {
+                    Ok((stream, remote_addr)) => {
+                        let handler = handler.clone();
+                        let client_shutdown = shutdown.clone();
+                        clients.spawn(async move {
+                            if let Err(error) = handle_client(stream, handler, client_shutdown).await {
+                                eprintln!("[web-activity-bridge] client {remote_addr} closed: {error}");
+                            }
+                        });
                     }
-                    return;
+                    Err(error) => eprintln!("[web-activity-bridge] accept failed: {error}"),
                 }
-                next = listener.accept() => {
-                    match next {
-                        Ok(next) => next,
-                        Err(error) => {
-                            eprintln!("[web-activity-bridge] accept failed: {error}");
-                            continue;
-                        }
-                    }
-                }
-            };
-            let client_app = app.clone();
-            let client_shutdown_rx = shutdown_rx.clone();
-
-            tauri::async_runtime::spawn(async move {
-                if let Err(error) =
-                    handle_client(client_app, client_shutdown_rx, stream, deps).await
-                {
-                    eprintln!("[web-activity-bridge] client {remote_addr} closed: {error}");
-                }
-            });
+            }
         }
-    }))
+    }
+
+    clients.abort_all();
+    while clients.join_next().await.is_some() {}
 }
 
 fn open_web_activity_bridge_listener(port: u16) -> io::Result<(SocketAddr, StdTcpListener)> {
-    let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
-    let listener = StdTcpListener::bind(address)?;
+    let requested = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
+    let listener = StdTcpListener::bind(requested)?;
     listener.set_nonblocking(true)?;
-    Ok((address, listener))
+    Ok((listener.local_addr()?, listener))
 }
 
-async fn handle_client<R: Runtime>(
-    app: AppHandle<R>,
-    mut shutdown_rx: watch::Receiver<u64>,
+async fn handle_client(
     stream: TcpStream,
-    deps: WebActivityBridgeRuntimeDeps<R>,
+    handler: WebActivityBridgeHttpHandler,
+    mut shutdown: watch::Receiver<bool>,
 ) -> Result<(), String> {
     tokio::select! {
-        changed = shutdown_rx.changed() => shutdown_result(changed),
-        result = handle_http_client(app, stream, deps) => result,
+        changed = shutdown.changed() => changed.map_err(|error| format!("shutdown channel closed: {error}")),
+        result = tokio::time::timeout(WEB_ACTIVITY_BRIDGE_REQUEST_TIMEOUT, handle_http_client(stream, handler)) => {
+            result.map_err(|_| "http request timed out".to_string())?
+        },
     }
 }
 
-async fn handle_http_client<R: Runtime>(
-    app: AppHandle<R>,
+async fn handle_http_client(
     mut stream: TcpStream,
-    deps: WebActivityBridgeRuntimeDeps<R>,
+    handler: WebActivityBridgeHttpHandler,
 ) -> Result<(), String> {
     let response = match read_http_request(&mut stream).await {
         Ok(request) if request.method.eq_ignore_ascii_case("OPTIONS") => {
             WebActivityBridgeHttpResponse::json(204, json!({}))
         }
-        Ok(request) => (deps.handle_http_request)(app, request).await,
-        Err(error) => WebActivityBridgeHttpResponse::json(
-            400,
-            json!({
-                "ok": false,
-                "message": error,
-            }),
-        ),
+        Ok(request) => handler(request).await,
+        Err(error) => {
+            WebActivityBridgeHttpResponse::json(400, json!({ "ok": false, "message": error }))
+        }
     };
     write_http_response(&mut stream, response).await
 }
@@ -263,12 +266,11 @@ async fn read_http_request(stream: &mut TcpStream) -> Result<WebActivityBridgeHt
         let Some((name, value)) = line.split_once(':') else {
             continue;
         };
-        let normalized_name = name.trim().to_ascii_lowercase();
-        let normalized_value = value.trim();
-        match normalized_name.as_str() {
-            "authorization" => authorization = Some(normalized_value.to_string()),
+        match name.trim().to_ascii_lowercase().as_str() {
+            "authorization" => authorization = Some(value.trim().to_string()),
             "content-length" => {
-                content_length = normalized_value
+                content_length = value
+                    .trim()
                     .parse::<usize>()
                     .map_err(|_| "invalid content-length header".to_string())?;
             }
@@ -353,35 +355,25 @@ async fn write_http_response(
     Ok(())
 }
 
-fn shutdown_result(changed: Result<(), watch::error::RecvError>) -> Result<(), String> {
-    match changed {
-        Ok(()) => Ok(()),
-        Err(error) => Err(format!("shutdown channel closed: {error}")),
-    }
-}
-
-fn lock_inner<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    match mutex.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn ok_handler() -> WebActivityBridgeHttpHandler {
+        Arc::new(|_| {
+            Box::pin(async { WebActivityBridgeHttpResponse::json(200, json!({"ok": true})) })
+        })
+    }
 
     #[test]
     fn listener_bind_can_recover_after_occupied_port_is_released() {
         let (_address, occupied_listener) = open_web_activity_bridge_listener(0).unwrap();
         let port = occupied_listener.local_addr().unwrap().port();
-
         assert!(open_web_activity_bridge_listener(port).is_err());
-
         drop(occupied_listener);
-
-        let (_address, recovered_listener) = open_web_activity_bridge_listener(port).unwrap();
-        assert_eq!(recovered_listener.local_addr().unwrap().port(), port);
+        let (address, recovered_listener) = open_web_activity_bridge_listener(port).unwrap();
+        assert_eq!(address.port(), port);
+        drop(recovered_listener);
     }
 
     #[test]
@@ -395,19 +387,25 @@ mod tests {
             token: "new-token".to_string(),
             ..previous.clone()
         };
-
         assert!(should_restart_server(&previous, &next, true));
     }
 
-    #[test]
-    fn shutdown_generation_notifies_existing_receivers() {
-        tauri::async_runtime::block_on(async {
-            let (shutdown_tx, mut shutdown_rx) = watch::channel(0);
-
-            signal_shutdown(&shutdown_tx);
-
-            shutdown_rx.changed().await.unwrap();
-            assert_eq!(*shutdown_rx.borrow(), 1);
-        });
+    #[tokio::test]
+    async fn shutdown_releases_listener_with_stalled_client() {
+        let server = prepare_web_activity_bridge_server(0, ok_handler()).unwrap();
+        let port = server.port();
+        let handle = server.start();
+        let mut stalled = TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+            .await
+            .unwrap();
+        stalled
+            .write_all(b"POST /web-activity HTTP/1.1\r\nAuthorization:")
+            .await
+            .unwrap();
+        handle.shutdown().await;
+        let rebound = TcpListener::bind((Ipv4Addr::LOCALHOST, port))
+            .await
+            .unwrap();
+        drop(rebound);
     }
 }

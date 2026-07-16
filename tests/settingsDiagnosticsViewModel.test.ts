@@ -82,6 +82,7 @@ await runTest("settings diagnostics mark browser bridge disconnects as danger", 
     webActivityToken: "secret",
     webActivityBridge: {
       enabled: true,
+      listening: true,
       connected: false,
       browserClientId: null,
       browserKind: null,
@@ -94,6 +95,29 @@ await runTest("settings diagnostics mark browser bridge disconnects as danger", 
   assert.equal(bridge?.value, "未连接");
   assert.equal(bridge?.tone, "danger");
   assert.match(bridge?.detail ?? "", /18080/);
+});
+
+await runTest("settings diagnostics distinguish browser listener failures", () => {
+  const items = buildSettingsDiagnosticsViewModel({
+    trackerHealth: HEALTHY_GNOME,
+    webActivityEnabled: true,
+    webActivityPort: 18080,
+    webActivityToken: "secret",
+    webActivityBridge: {
+      enabled: true,
+      listening: false,
+      connected: false,
+      browserClientId: null,
+      browserKind: null,
+      extensionVersion: null,
+      lastActivityAtMs: null,
+    },
+  });
+
+  const bridge = items.find((item) => item.id === "browser-bridge");
+  assert.equal(bridge?.value, "监听异常");
+  assert.equal(bridge?.tone, "danger");
+  assert.match(bridge?.detail ?? "", /端口 18080 未成功监听/);
 });
 
 await runTest("settings diagnostics surface GNOME extension D-Bus failures", () => {

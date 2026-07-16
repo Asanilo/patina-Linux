@@ -4,6 +4,7 @@ const GET_WEB_ACTIVITY_BRIDGE_SNAPSHOT_COMMAND = "cmd_get_web_activity_bridge_sn
 
 export interface WebActivityBridgeSnapshot {
   enabled: boolean;
+  listening: boolean;
   connected: boolean;
   browserClientId: string | null;
   browserKind: string | null;

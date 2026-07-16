@@ -46,6 +46,7 @@ mod diagnostics_api_contract_tests {
             )),
             Some(WebActivityBridgeSnapshot {
                 enabled: true,
+                listening: true,
                 connected: false,
                 browser_client_id: Some("zen-profile".into()),
                 browser_kind: Some("firefox".into()),

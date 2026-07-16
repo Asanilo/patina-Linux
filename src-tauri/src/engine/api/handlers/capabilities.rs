@@ -10,7 +10,7 @@ pub fn get_capabilities(context: &ApiRuntimeContext, surface: ApiSurface) -> Rou
     let tracking_ready = context.tracking_snapshot().is_some();
     let browser_bridge_ready = context
         .web_activity_snapshot(&WebActivitySettings::default())
-        .is_some();
+        .is_some_and(|snapshot| snapshot.listening);
 
     RouteResponse {
         status: 200,
@@ -89,11 +89,13 @@ mod tests {
         let starting = build_capabilities(ApiSurface::DaemonTrackingReadOnly, false, false);
         assert!(starting.tracking.owned);
         assert!(!starting.tracking.ready);
-        assert!(!starting.browser_activity_bridge.owned);
+        assert!(starting.browser_activity_bridge.owned);
+        assert!(!starting.browser_activity_bridge.ready);
         assert!(!starting.write_api.available);
 
         let ready = build_capabilities(ApiSurface::DaemonTrackingReadOnly, true, false);
         assert!(ready.tracking.owned);
         assert!(ready.tracking.ready);
+        assert!(ready.browser_activity_bridge.owned);
     }
 }

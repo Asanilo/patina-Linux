@@ -2,12 +2,11 @@ use crate::data::repositories::app_settings;
 use crate::data::sqlite_pool::wait_for_sqlite_pool;
 use crate::domain::settings::WebActivityBridgeSettings;
 use crate::platform::web_activity_bridge::{
-    WebActivityBridgeHttpRequest, WebActivityBridgeHttpResponse, WebActivityBridgeRuntimeDeps,
-    WebActivityBridgeRuntimeState, WEB_ACTIVITY_BRIDGE_ACTIVE_WINDOW_EVENT,
-    WEB_ACTIVITY_BRIDGE_SETTINGS_CHANGED_EVENT, WEB_ACTIVITY_BRIDGE_TRACKING_DATA_EVENT,
+    WebActivityBridgeHttpHandler, WebActivityBridgeRuntimeState,
+    WEB_ACTIVITY_BRIDGE_ACTIVE_WINDOW_EVENT, WEB_ACTIVITY_BRIDGE_SETTINGS_CHANGED_EVENT,
+    WEB_ACTIVITY_BRIDGE_TRACKING_DATA_EVENT,
 };
-use std::future::Future;
-use std::pin::Pin;
+use std::sync::Arc;
 use tauri::{AppHandle, Listener, Manager, Runtime};
 
 pub fn start<R: Runtime + 'static>(app: AppHandle<R>) {
@@ -23,7 +22,7 @@ pub fn start<R: Runtime + 'static>(app: AppHandle<R>) {
 fn spawn_settings_bootstrap<R: Runtime + 'static>(app: AppHandle<R>) {
     tauri::async_runtime::spawn(async move {
         match load_web_activity_bridge_settings(&app).await {
-            Ok(settings) => update_runtime_state(app, settings),
+            Ok(settings) => update_runtime_state(app, settings).await,
             Err(error) => eprintln!("[web-activity-bridge] failed to load settings: {error}"),
         }
     });
@@ -35,7 +34,7 @@ fn register_event_handlers<R: Runtime + 'static>(app: AppHandle<R>) {
         let settings_app = settings_app.clone();
         tauri::async_runtime::spawn(async move {
             match load_web_activity_bridge_settings(&settings_app).await {
-                Ok(settings) => update_runtime_state(settings_app, settings),
+                Ok(settings) => update_runtime_state(settings_app, settings).await,
                 Err(error) => {
                     eprintln!("[web-activity-bridge] failed to reload settings: {error}")
                 }
@@ -54,18 +53,24 @@ fn register_event_handlers<R: Runtime + 'static>(app: AppHandle<R>) {
     });
 }
 
-fn update_runtime_state<R: Runtime + 'static>(
+async fn update_runtime_state<R: Runtime + 'static>(
     app: AppHandle<R>,
     settings: WebActivityBridgeSettings,
 ) {
     if let Some(state) = app.try_state::<WebActivityBridgeRuntimeState>() {
-        state.update(
-            app.clone(),
-            settings,
-            WebActivityBridgeRuntimeDeps {
-                handle_http_request: handle_http_request_boxed::<R>,
-            },
-        );
+        let handler_app = app.clone();
+        let handler: WebActivityBridgeHttpHandler = Arc::new(move |request| {
+            Box::pin(crate::app::web_activity::handle_http_request(
+                handler_app.clone(),
+                request,
+            ))
+        });
+        let listening = state.update(settings, handler).await;
+        if let Some(web_state) =
+            app.try_state::<crate::engine::web_activity::WebActivityRuntimeState>()
+        {
+            web_state.set_listening(listening);
+        }
     }
 }
 
@@ -76,11 +81,4 @@ async fn load_web_activity_bridge_settings<R: Runtime>(
     app_settings::load_web_activity_bridge_settings(&pool)
         .await
         .map_err(|error| format!("failed to load web activity bridge settings: {error}"))
-}
-
-fn handle_http_request_boxed<R: Runtime + 'static>(
-    app: AppHandle<R>,
-    request: WebActivityBridgeHttpRequest,
-) -> Pin<Box<dyn Future<Output = WebActivityBridgeHttpResponse> + Send>> {
-    Box::pin(crate::app::web_activity::handle_http_request(app, request))
 }

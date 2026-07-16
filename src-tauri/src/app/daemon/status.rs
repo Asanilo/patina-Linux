@@ -33,7 +33,7 @@ pub fn build_startup_status(
         profile,
         version: version.into(),
         stage: if tracking_enabled {
-            "stage-2e-mpris-preview"
+            "stage-2f-browser-bridge-preview"
         } else {
             "stage-2a-event-stream"
         },
@@ -52,6 +52,7 @@ pub fn build_startup_status(
                 "daemon observes lock, suspend, resume, and shutdown through systemd-logind",
                 "daemon owns the Linux audio participation source and follows its persisted setting",
                 "daemon owns the Linux MPRIS participation source",
+                "daemon owns the configured loopback browser activity bridge",
                 "tracking preview is explicitly enabled and the desktop must not use the same profile",
             ]
         } else {
@@ -140,7 +141,7 @@ mod tests {
             &paths,
         );
 
-        assert_eq!(status.stage, "stage-2e-mpris-preview");
+        assert_eq!(status.stage, "stage-2f-browser-bridge-preview");
         assert!(status.tracking_enabled);
         assert!(status
             .notes
@@ -151,5 +152,9 @@ mod tests {
             .iter()
             .any(|note| note.contains("audio participation")));
         assert!(status.notes.iter().any(|note| note.contains("MPRIS")));
+        assert!(status
+            .notes
+            .iter()
+            .any(|note| note.contains("browser activity bridge")));
     }
 }

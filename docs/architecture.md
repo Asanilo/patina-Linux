@@ -176,7 +176,7 @@ Raw DTO 只能停留在明确边界：
 
 ### 4.5 运行时宿主与长期所有权
 
-Tauri desktop 仍是默认 tracking owner。`patinad` Stage 0、Stage 1、Stage 2A、Stage 2B tracking preview、Stage 2C power preview、Stage 2D audio preview 和 Stage 2E MPRIS preview 已完成 profile-safe storage bootstrap、单 owner `RuntimeLease`、共享 runtime/event 边界、完整只读 API、受认证 SSE、宿主无关的 tracking/watchdog、共享 systemd-logind lifecycle source，以及可取消的 Linux audio/MPRIS sources。显式 `--serve-api --track` 模式可以让 daemon 为隔离 profile 记录 session，处理锁屏、休眠、恢复和关机，并使用 PulseAudio/pipewire-pulse 与 MPRIS 参与信号；默认 daemon 模式仍不记录，browser bridge 仍未迁移。迁移期间不得复制第二套业务实现，也不得让 desktop 与 daemon 同时追踪同一 profile。
+Tauri desktop 仍是默认 tracking owner。`patinad` Stage 0、Stage 1、Stage 2A、Stage 2B tracking preview、Stage 2C power preview、Stage 2D audio preview、Stage 2E MPRIS preview 和 Stage 2F browser bridge preview 已完成 profile-safe storage bootstrap、单 owner `RuntimeLease`、共享 runtime/event 边界、完整只读 API、受认证 SSE、宿主无关的 tracking/watchdog、共享 systemd-logind lifecycle source、可取消的 Linux audio/MPRIS sources，以及共用的浏览器活动记录与 loopback transport。显式 `--serve-api --track` 模式可以让 daemon 为隔离 profile 记录 session，处理锁屏、休眠、恢复和关机，使用 PulseAudio/pipewire-pulse 与 MPRIS 参与信号，并接收带独立 Token 的浏览器扩展上报；默认 daemon 模式仍不记录或监听 browser bridge。迁移期间不得复制第二套业务实现，也不得让 desktop 与 daemon 同时追踪同一 profile。
 
 迁移期共享运行时结构为：
 

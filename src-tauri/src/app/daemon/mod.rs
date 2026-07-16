@@ -72,11 +72,17 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     let tracking_snapshot = options.track.then(|| {
         Arc::new(crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState::default())
     });
+    let web_activity_state = options
+        .track
+        .then(|| Arc::new(crate::engine::web_activity::WebActivityRuntimeState::default()));
     let runtime_context =
         crate::engine::runtime_context::RuntimeContext::system(sqlite_runtime.pool.clone());
     let api_server = if options.serve_api {
-        let context =
-            api_runtime::build_context(runtime_context.clone(), tracking_snapshot.clone());
+        let context = api_runtime::build_context(
+            runtime_context.clone(),
+            tracking_snapshot.clone(),
+            web_activity_state.clone(),
+        );
         let surface = if options.track {
             crate::engine::api::surface::ApiSurface::DaemonTrackingReadOnly
         } else {
@@ -142,9 +148,18 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
         None
     };
     let background_tasks = runtime.block_on(async {
-        tracking_snapshot.map(|snapshot| {
-            runtime::DaemonBackgroundTasks::start(runtime_context, snapshot, event_hub.clone())
-        })
+        match (tracking_snapshot, web_activity_state) {
+            (Some(snapshot), Some(web_activity_state)) => Some(
+                runtime::DaemonBackgroundTasks::start(
+                    runtime_context,
+                    snapshot,
+                    web_activity_state,
+                    event_hub.clone(),
+                )
+                .await,
+            ),
+            _ => None,
+        }
     });
     let daemon_runtime = DaemonRuntime::new(
         api_handle,

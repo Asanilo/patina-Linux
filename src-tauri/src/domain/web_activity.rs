@@ -42,6 +42,7 @@ pub struct SanitizedWebActivityInput {
 #[serde(rename_all = "camelCase")]
 pub struct WebActivityBridgeSnapshot {
     pub enabled: bool,
+    pub listening: bool,
     pub connected: bool,
     pub browser_client_id: Option<String>,
     pub browser_kind: Option<String>,

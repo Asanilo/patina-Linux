@@ -1,109 +1,55 @@
 use crate::data::repositories::app_settings;
 use crate::data::sqlite_pool::wait_for_sqlite_pool;
 use crate::domain::tracking::TrackingDataChangedPayload;
-use crate::domain::web_activity::{BrowserActiveTabPayload, WEB_ACTIVITY_CHANGED_REASON};
+use crate::domain::web_activity::WEB_ACTIVITY_CHANGED_REASON;
+use crate::engine::tracking::runtime::TauriRuntimeEventSink;
+use crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState;
 use crate::engine::web_activity::{
-    record_active_tab, seal_active_segment, seal_if_tracking_inactive, WebActivityRuntimeState,
+    seal_active_segment, seal_if_tracking_inactive, WebActivityBridgeHttpRequest,
+    WebActivityBridgeHttpResponse, WebActivityRuntimeState,
 };
-use crate::platform::web_activity_bridge::{
-    WebActivityBridgeHttpRequest, WebActivityBridgeHttpResponse,
-};
-use serde_json::json;
-use tauri::{AppHandle, Emitter, Runtime, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 pub async fn handle_http_request<R: Runtime>(
     app: AppHandle<R>,
     request: WebActivityBridgeHttpRequest,
 ) -> WebActivityBridgeHttpResponse {
-    if !request.method.eq_ignore_ascii_case("POST") {
-        return web_activity_http_response(
-            405,
-            false,
-            "method-not-allowed",
-            "unsupported web activity method",
-        );
-    }
-    if request.path != "/web-activity" {
-        return web_activity_http_response(
-            404,
-            false,
-            "not-found",
-            "unsupported web activity path",
-        );
-    }
-
-    let now_ms = crate::app::runtime::now_ms() as i64;
     let pool = match wait_for_sqlite_pool(&app).await {
         Ok(pool) => pool,
         Err(error) => {
-            return web_activity_http_response(500, false, "storage-unavailable", &error);
-        }
-    };
-    let settings = match app_settings::load_web_activity_settings(&pool).await {
-        Ok(settings) => settings,
-        Err(error) => {
-            return web_activity_http_response(
+            return WebActivityBridgeHttpResponse::json(
                 500,
-                false,
-                "settings-unavailable",
-                &format!("failed to load web activity settings: {error}"),
+                serde_json::json!({
+                    "ok": false,
+                    "code": "storage-unavailable",
+                    "message": error,
+                }),
             );
         }
     };
-
-    let token = bearer_token(request.authorization.as_deref());
-    if settings.token.is_empty() || token.as_deref() != Some(settings.token.as_str()) {
-        return web_activity_http_response(
-            401,
-            false,
-            "unauthorized",
-            "invalid web activity token",
-        );
-    }
-
-    if !settings.enabled {
-        let _ = seal_active_segment(&pool, now_ms).await;
+    let Some(state) = app.try_state::<WebActivityRuntimeState>() else {
         return WebActivityBridgeHttpResponse::json(
-            409,
-            json!({
+            500,
+            serde_json::json!({
                 "ok": false,
-                "enabled": false,
-                "code": "web-recording-disabled",
-                "message": "Patina web recording is off.",
-                "serverTimeMs": now_ms,
+                "code": "runtime-unavailable",
+                "message": "web activity runtime is unavailable",
             }),
         );
-    }
-
-    let payload = match serde_json::from_slice::<BrowserActiveTabPayload>(&request.body) {
-        Ok(payload) => payload,
-        Err(error) => {
-            return web_activity_http_response(
-                400,
-                false,
-                "invalid-payload",
-                &format!("invalid active tab: {error}"),
-            );
-        }
     };
-
-    match record_active_tab(&app, &pool, &settings, payload, now_ms).await {
-        Ok(changed) => {
-            if changed {
-                emit_web_activity_changed(&app, now_ms);
-            }
-            WebActivityBridgeHttpResponse::json(
-                200,
-                json!({
-                    "ok": true,
-                    "enabled": true,
-                    "changed": changed,
-                    "serverTimeMs": now_ms,
-                }),
-            )
-        }
-        Err(error) => web_activity_http_response(400, false, "record-failed", &error),
-    }
+    let tracking_snapshot = app
+        .try_state::<TrackingRuntimeSnapshotState>()
+        .and_then(|state| state.snapshot());
+    let context = crate::engine::runtime_context::RuntimeContext::system(pool);
+    let event_sink = TauriRuntimeEventSink::new(app.clone());
+    crate::engine::web_activity::handle_http_request(
+        &context,
+        &state,
+        tracking_snapshot,
+        &event_sink,
+        request,
+    )
+    .await
 }
 
 pub fn spawn_foreground_sync<R: Runtime + 'static>(app: AppHandle<R>) {
@@ -135,7 +81,10 @@ pub fn spawn_startup_repair<R: Runtime + 'static>(app: AppHandle<R>) {
 pub async fn sync_foreground_state<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     let pool = wait_for_sqlite_pool(&app).await?;
     let now_ms = crate::app::runtime::now_ms() as i64;
-    if seal_if_tracking_inactive(&app, &pool, now_ms).await? {
+    let tracking_snapshot = app
+        .try_state::<TrackingRuntimeSnapshotState>()
+        .and_then(|state| state.snapshot());
+    if seal_if_tracking_inactive(&pool, tracking_snapshot, now_ms).await? {
         emit_web_activity_changed(&app, now_ms);
     }
     Ok(())
@@ -157,35 +106,4 @@ fn emit_web_activity_changed<R: Runtime>(app: &AppHandle<R>, changed_at_ms: i64)
         "tracking-data-changed",
         TrackingDataChangedPayload::new(WEB_ACTIVITY_CHANGED_REASON, changed_at_ms as u64),
     );
-}
-
-fn bearer_token(authorization: Option<&str>) -> Option<String> {
-    let value = authorization?.trim();
-    let token = value
-        .strip_prefix("Bearer ")
-        .or_else(|| value.strip_prefix("bearer "))
-        .unwrap_or(value)
-        .trim()
-        .to_string();
-    if token.is_empty() {
-        None
-    } else {
-        Some(token)
-    }
-}
-
-fn web_activity_http_response(
-    status: u16,
-    ok: bool,
-    code: &str,
-    message: &str,
-) -> WebActivityBridgeHttpResponse {
-    WebActivityBridgeHttpResponse::json(
-        status,
-        json!({
-            "ok": ok,
-            "code": code,
-            "message": message,
-        }),
-    )
 }

@@ -157,8 +157,8 @@
 5. Stage 2C power preview 已完成：共享 logind source 覆盖锁屏、解锁、休眠、恢复和关机，daemon 可在对应边界立即封口。
 6. Stage 2D audio preview 已完成：Linux audio source 可由 daemon 显式拥有、取消和按设置启停，PulseAudio/pipewire-pulse 探测不再依赖 Tauri 全局运行时。
 7. Stage 2E MPRIS preview 已完成：Linux media source 可由 daemon 显式拥有和取消，多播放器按当前窗口身份优先匹配，D-Bus 查询不依赖 Tauri 全局运行时。
-8. 下一阶段迁移浏览器活动桥接 owner。
-9. 复用现有 React feature 建立由 `patinad` 在 loopback 提供的浏览器 UI，先覆盖 Dashboard、History、Data、当前会话和诊断。
+8. Stage 2F browser bridge preview 已完成：显式 tracking 模式由 daemon 在 loopback 接收浏览器扩展上报，共用宿主无关的鉴权、隐私、记录和封口逻辑，并提供有界连接与可等待关闭。
+9. 下一阶段复用现有 React feature 建立由 `patinad` 在 loopback 提供的浏览器 UI，先覆盖 Dashboard、History、Data、当前会话和诊断。
 10. 让 Tauri UI 成为 daemon 桌面客户端，保留 tray、通知、文件选择和 updater，验证关闭 UI 后继续记录、重开恢复和版本兼容诊断。
 11. 完成 systemd user service、`.deb` / AppImage 安装差异、日志、升级和恢复验证。
 12. 在 daemon 契约稳定后开发 TUI / CLI，并开始 KDE Wayland 适配；桌面端是否从 Tauri 迁往 GPUI 只按实测收益单独评估。

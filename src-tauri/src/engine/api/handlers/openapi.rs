@@ -430,6 +430,7 @@ fn schemas() -> Value {
         "WebActivityBridgeDiagnostics".to_string(),
         object_schema(vec![
             ("enabled", bool_schema()),
+            ("listening", bool_schema()),
             ("connected", bool_schema()),
             ("browserClientId", nullable_string_schema()),
             ("browserKind", nullable_string_schema()),

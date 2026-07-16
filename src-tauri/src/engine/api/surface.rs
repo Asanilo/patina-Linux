@@ -178,7 +178,7 @@ impl ApiSurface {
     }
 
     pub fn owns_browser_activity_bridge(self) -> bool {
-        matches!(self, Self::Desktop)
+        matches!(self, Self::Desktop | Self::DaemonTrackingReadOnly)
     }
 
     pub fn has_event_stream(self) -> bool {
@@ -305,7 +305,7 @@ mod tests {
         let surface = ApiSurface::DaemonTrackingReadOnly;
 
         assert!(surface.owns_tracking());
-        assert!(!surface.owns_browser_activity_bridge());
+        assert!(surface.owns_browser_activity_bridge());
         assert!(surface.has_event_stream());
         assert!(!surface.has_write_api());
         assert_eq!(surface.endpoints(), ApiSurface::DaemonReadOnly.endpoints());

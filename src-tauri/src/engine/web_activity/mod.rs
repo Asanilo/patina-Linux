@@ -8,15 +8,18 @@ use crate::domain::web_activity::{
     sanitize_browser_kind, sanitize_extension_version, BrowserActiveTabPayload,
     WebActivityBridgeSnapshot,
 };
-use crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState;
+use crate::engine::runtime_context::RuntimeContext;
+use crate::engine::runtime_event::{RuntimeEvent, RuntimeEventSink};
+use crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshot;
+use serde_json::json;
 use sqlx::{Pool, Sqlite};
 use std::sync::Mutex;
-use tauri::{Manager, Runtime};
 
 const BROWSER_BRIDGE_CONNECTED_WINDOW_MS: i64 = 30_000;
 
 #[derive(Clone, Debug, Default)]
 struct WebActivityClientSnapshot {
+    listening: bool,
     browser_client_id: Option<String>,
     browser_kind: Option<String>,
     extension_version: Option<String>,
@@ -29,6 +32,14 @@ pub struct WebActivityRuntimeState {
 }
 
 impl WebActivityRuntimeState {
+    pub fn set_listening(&self, listening: bool) {
+        let mut guard = match self.inner.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        guard.listening = listening;
+    }
+
     pub fn observe_active_tab(&self, payload: &BrowserActiveTabPayload, now_ms: i64) {
         self.update_client(
             Some(sanitize_browser_client_id(
@@ -56,6 +67,7 @@ impl WebActivityRuntimeState {
 
         WebActivityBridgeSnapshot {
             enabled: settings.enabled,
+            listening: client.listening,
             connected,
             browser_client_id: client.browser_client_id,
             browser_kind: client.browser_kind,
@@ -88,16 +100,15 @@ impl WebActivityRuntimeState {
     }
 }
 
-pub async fn record_active_tab<R: Runtime>(
-    app: &tauri::AppHandle<R>,
+pub async fn record_active_tab(
     pool: &Pool<Sqlite>,
     settings: &WebActivitySettings,
+    state: &WebActivityRuntimeState,
+    tracking_snapshot: Option<TrackingRuntimeSnapshot>,
     payload: BrowserActiveTabPayload,
     now_ms: i64,
 ) -> Result<bool, String> {
-    if let Some(state) = app.try_state::<WebActivityRuntimeState>() {
-        state.observe_active_tab(&payload, now_ms);
-    }
+    state.observe_active_tab(&payload, now_ms);
 
     if !settings.enabled {
         return seal_active_segment(pool, now_ms).await;
@@ -113,10 +124,7 @@ pub async fn record_active_tab<R: Runtime>(
         return seal_active_segment(pool, now_ms).await;
     }
 
-    let Some(snapshot) = app
-        .try_state::<TrackingRuntimeSnapshotState>()
-        .and_then(|state| state.snapshot())
-    else {
+    let Some(snapshot) = tracking_snapshot else {
         return seal_active_segment(pool, now_ms).await;
     };
     if !snapshot.status.is_tracking_active
@@ -135,14 +143,12 @@ pub async fn record_active_tab<R: Runtime>(
         .map_err(|error| format!("failed to save web activity: {error}"))
 }
 
-pub async fn seal_if_tracking_inactive<R: Runtime>(
-    app: &tauri::AppHandle<R>,
+pub async fn seal_if_tracking_inactive(
     pool: &Pool<Sqlite>,
+    tracking_snapshot: Option<TrackingRuntimeSnapshot>,
     now_ms: i64,
 ) -> Result<bool, String> {
-    let should_seal = app
-        .try_state::<TrackingRuntimeSnapshotState>()
-        .and_then(|state| state.snapshot())
+    let should_seal = tracking_snapshot
         .map(|snapshot| {
             !snapshot.status.is_tracking_active
                 || snapshot.window.is_afk
@@ -157,6 +163,125 @@ pub async fn seal_if_tracking_inactive<R: Runtime>(
     Ok(false)
 }
 
+pub async fn handle_http_request(
+    context: &RuntimeContext,
+    state: &WebActivityRuntimeState,
+    tracking_snapshot: Option<TrackingRuntimeSnapshot>,
+    event_sink: &dyn RuntimeEventSink,
+    request: WebActivityBridgeHttpRequest,
+) -> WebActivityBridgeHttpResponse {
+    if !request.method.eq_ignore_ascii_case("POST") {
+        return http_response(
+            405,
+            false,
+            "method-not-allowed",
+            "unsupported web activity method",
+        );
+    }
+    if request.path != "/web-activity" {
+        return http_response(404, false, "not-found", "unsupported web activity path");
+    }
+
+    let now_ms = context.now_ms();
+    let settings =
+        match crate::data::repositories::app_settings::load_web_activity_settings(context.pool())
+            .await
+        {
+            Ok(settings) => settings,
+            Err(error) => {
+                return http_response(
+                    500,
+                    false,
+                    "settings-unavailable",
+                    &format!("failed to load web activity settings: {error}"),
+                );
+            }
+        };
+
+    let token = bearer_token(request.authorization.as_deref());
+    if settings.token.is_empty() || token.as_deref() != Some(settings.token.as_str()) {
+        return http_response(401, false, "unauthorized", "invalid web activity token");
+    }
+
+    if !settings.enabled {
+        let _ = seal_active_segment(context.pool(), now_ms).await;
+        return WebActivityBridgeHttpResponse::json(
+            409,
+            json!({
+                "ok": false,
+                "enabled": false,
+                "code": "web-recording-disabled",
+                "message": "Patina web recording is off.",
+                "serverTimeMs": now_ms,
+            }),
+        );
+    }
+
+    let payload = match serde_json::from_slice::<BrowserActiveTabPayload>(&request.body) {
+        Ok(payload) => payload,
+        Err(error) => {
+            return http_response(
+                400,
+                false,
+                "invalid-payload",
+                &format!("invalid active tab: {error}"),
+            );
+        }
+    };
+
+    match record_active_tab(
+        context.pool(),
+        &settings,
+        state,
+        tracking_snapshot,
+        payload,
+        now_ms,
+    )
+    .await
+    {
+        Ok(changed) => {
+            if changed {
+                let _ = event_sink.emit(RuntimeEvent::TrackingDataChanged {
+                    reason: crate::domain::web_activity::WEB_ACTIVITY_CHANGED_REASON.to_string(),
+                    changed_at_ms: now_ms.max(0) as u64,
+                });
+            }
+            WebActivityBridgeHttpResponse::json(
+                200,
+                json!({
+                    "ok": true,
+                    "enabled": true,
+                    "changed": changed,
+                    "serverTimeMs": now_ms,
+                }),
+            )
+        }
+        Err(error) => http_response(400, false, "record-failed", &error),
+    }
+}
+
+fn bearer_token(authorization: Option<&str>) -> Option<String> {
+    let value = authorization?.trim();
+    let token = value
+        .strip_prefix("Bearer ")
+        .or_else(|| value.strip_prefix("bearer "))
+        .unwrap_or(value)
+        .trim();
+    (!token.is_empty()).then(|| token.to_string())
+}
+
+fn http_response(
+    status: u16,
+    ok: bool,
+    code: &str,
+    message: &str,
+) -> WebActivityBridgeHttpResponse {
+    WebActivityBridgeHttpResponse::json(
+        status,
+        json!({ "ok": ok, "code": code, "message": message }),
+    )
+}
+
 pub async fn seal_active_segment(pool: &Pool<Sqlite>, now_ms: i64) -> Result<bool, String> {
     end_active_segment(pool, now_ms)
         .await
@@ -166,8 +291,21 @@ pub async fn seal_active_segment(pool: &Pool<Sqlite>, now_ms: i64) -> Result<boo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data::repositories::app_settings::{
+        commit_app_setting_mutations, AppSettingMutation,
+    };
     use crate::data::schema as db_schema;
+    use crate::domain::tracking::TrackingStatusSnapshot;
+    use crate::engine::runtime_event::MemoryRuntimeEventSink;
+    use crate::engine::tracking::runtime_snapshot::{
+        TrackingRuntimeProbeDiagnostics, TrackingRuntimeProbeStatus,
+    };
+    #[cfg(target_os = "linux")]
+    use crate::platform::linux::foreground::WindowInfo;
+    #[cfg(target_os = "windows")]
+    use crate::platform::windows::foreground::WindowInfo;
     use sqlx::{Executor, SqlitePool};
+    use std::sync::Arc;
 
     async fn setup_test_db() -> SqlitePool {
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
@@ -178,6 +316,109 @@ mod tests {
             .await
             .unwrap();
         pool
+    }
+
+    struct FixedClock(i64);
+
+    impl crate::engine::runtime_context::RuntimeClock for FixedClock {
+        fn now_ms(&self) -> i64 {
+            self.0
+        }
+    }
+
+    fn browser_tracking_snapshot() -> TrackingRuntimeSnapshot {
+        TrackingRuntimeSnapshot {
+            window: WindowInfo {
+                hwnd: "0x100".into(),
+                root_owner_hwnd: "0x100".into(),
+                process_id: 42,
+                window_class: "zen".into(),
+                title: "Example".into(),
+                exe_name: "zen".into(),
+                process_path: "/usr/bin/zen".into(),
+                is_afk: false,
+                idle_time_ms: 0,
+            },
+            status: TrackingStatusSnapshot {
+                is_tracking_active: true,
+                ..TrackingStatusSnapshot::default()
+            },
+            sampled_at_ms: 2_000,
+            probe_status: TrackingRuntimeProbeStatus::Ok,
+            degraded_reason: None,
+            probe_diagnostics: TrackingRuntimeProbeDiagnostics::default(),
+        }
+    }
+
+    fn active_tab_request(token: &str) -> WebActivityBridgeHttpRequest {
+        WebActivityBridgeHttpRequest {
+            method: "POST".into(),
+            path: "/web-activity".into(),
+            authorization: Some(format!("Bearer {token}")),
+            body: serde_json::to_vec(&serde_json::json!({
+                "browserClientId": "zen-profile",
+                "browserKind": "firefox",
+                "extensionVersion": "0.1.0",
+                "url": "https://example.com/work",
+                "title": "Example",
+                "incognito": false
+            }))
+            .unwrap(),
+        }
+    }
+
+    #[tokio::test]
+    async fn host_neutral_http_handler_authenticates_and_records_browser_activity() {
+        let pool = setup_test_db().await;
+        commit_app_setting_mutations(
+            &pool,
+            &[
+                AppSettingMutation {
+                    key: "web_activity_enabled".into(),
+                    value: "1".into(),
+                },
+                AppSettingMutation {
+                    key: "web_activity_token".into(),
+                    value: "secret".into(),
+                },
+            ],
+        )
+        .await
+        .unwrap();
+        let context = RuntimeContext::new(pool.clone(), Arc::new(FixedClock(2_000)));
+        let state = WebActivityRuntimeState::default();
+        let events = MemoryRuntimeEventSink::default();
+
+        let unauthorized = handle_http_request(
+            &context,
+            &state,
+            Some(browser_tracking_snapshot()),
+            &events,
+            active_tab_request("wrong"),
+        )
+        .await;
+        assert_eq!(unauthorized.status, 401);
+
+        let response = handle_http_request(
+            &context,
+            &state,
+            Some(browser_tracking_snapshot()),
+            &events,
+            active_tab_request("secret"),
+        )
+        .await;
+        assert_eq!(response.status, 200);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&response.body).unwrap()["changed"],
+            true
+        );
+        let domain: String =
+            sqlx::query_scalar("SELECT normalized_domain FROM web_activity_segments LIMIT 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(domain, "example.com");
+        assert_eq!(events.events().len(), 1);
     }
 
     #[test]
@@ -236,6 +477,10 @@ mod tests {
         );
 
         assert!(snapshot.connected);
+        assert!(!snapshot.listening);
         assert_eq!(snapshot.browser_kind.as_deref(), Some("chrome"));
     }
 }
+mod http_contract;
+
+pub use http_contract::{WebActivityBridgeHttpRequest, WebActivityBridgeHttpResponse};

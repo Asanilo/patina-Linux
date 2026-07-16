@@ -200,6 +200,7 @@ function resolveBrowserBridgeValue(
 ): string {
   if (!webActivityEnabled) return "未启用";
   if (!bridge) return "状态未知";
+  if (!bridge.listening) return "监听异常";
   if (bridge.connected) return "已连接";
   return "未连接";
 }
@@ -219,6 +220,9 @@ function resolveBrowserBridgeDetail(
   if (!bridge) {
     return `等待浏览器扩展连接本地端口 ${port}。`;
   }
+  if (!bridge.listening) {
+    return `本地桥接端口 ${port} 未成功监听，请检查端口占用或后台运行状态。`;
+  }
   if (!bridge.connected) {
     return `未收到最近的浏览器扩展上报。端口: ${port}`;
   }
@@ -236,6 +240,6 @@ function resolveBrowserBridgeTone(
 ): SettingsDiagnosticTone {
   if (!webActivityEnabled) return "muted";
   if (webActivityToken.trim().length === 0) return "danger";
-  if (!bridge || !bridge.connected) return "danger";
+  if (!bridge || !bridge.listening || !bridge.connected) return "danger";
   return "ok";
 }
