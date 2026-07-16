@@ -18,6 +18,8 @@ pub struct DaemonBackgroundTasks {
     #[cfg(target_os = "linux")]
     audio: DaemonAudioTask,
     #[cfg(target_os = "linux")]
+    media: DaemonMediaTask,
+    #[cfg(target_os = "linux")]
     power: DaemonPowerTask,
     tracking: DaemonTrackingTasks,
 }
@@ -33,6 +35,10 @@ impl DaemonBackgroundTasks {
         #[cfg(target_os = "linux")]
         let audio = DaemonAudioTask::start(context.clone(), audio_source.clone());
         #[cfg(target_os = "linux")]
+        let media_source = crate::platform::linux::media::MediaSignalSource::new();
+        #[cfg(target_os = "linux")]
+        let media = DaemonMediaTask::start(media_source.clone());
+        #[cfg(target_os = "linux")]
         let power = DaemonPowerTask::start(context.clone(), event_sink.clone());
         let tracking = DaemonTrackingTasks::start(
             context,
@@ -40,10 +46,14 @@ impl DaemonBackgroundTasks {
             event_sink,
             #[cfg(target_os = "linux")]
             audio_source,
+            #[cfg(target_os = "linux")]
+            media_source,
         );
         Self {
             #[cfg(target_os = "linux")]
             audio,
+            #[cfg(target_os = "linux")]
+            media,
             #[cfg(target_os = "linux")]
             power,
             tracking,
@@ -54,8 +64,43 @@ impl DaemonBackgroundTasks {
         #[cfg(target_os = "linux")]
         self.power.shutdown().await;
         #[cfg(target_os = "linux")]
+        self.media.shutdown().await;
+        #[cfg(target_os = "linux")]
         self.audio.shutdown().await;
         self.tracking.shutdown().await;
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub struct DaemonMediaTask {
+    shutdown_tx: watch::Sender<bool>,
+    handle: JoinHandle<()>,
+}
+
+#[cfg(target_os = "linux")]
+impl DaemonMediaTask {
+    fn start(source: crate::platform::linux::media::MediaSignalSource) -> Self {
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let handle = tokio::spawn(async move {
+            println!("[patinad] MPRIS participation source ready");
+            source.run_with_shutdown(shutdown_rx).await;
+        });
+        Self {
+            shutdown_tx,
+            handle,
+        }
+    }
+
+    async fn shutdown(self) {
+        let _ = self.shutdown_tx.send(true);
+        let mut handle = self.handle;
+        if tokio::time::timeout(std::time::Duration::from_secs(5), &mut handle)
+            .await
+            .is_err()
+        {
+            handle.abort();
+            let _ = handle.await;
+        }
     }
 }
 
@@ -205,6 +250,7 @@ impl DaemonTrackingTasks {
         snapshot: Arc<crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState>,
         event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
         #[cfg(target_os = "linux")] audio_source: crate::platform::linux::audio::AudioSignalSource,
+        #[cfg(target_os = "linux")] media_source: crate::platform::linux::media::MediaSignalSource,
     ) -> Self {
         let health = Arc::new(crate::engine::tracking::watchdog::RuntimeHealthState::default());
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -215,6 +261,8 @@ impl DaemonTrackingTasks {
             snapshot,
             #[cfg(target_os = "linux")]
             audio_source,
+            #[cfg(target_os = "linux")]
+            media_source,
             shutdown_rx.clone(),
         ));
         let watchdog_handle = tokio::spawn(run_watchdog_restart_loop(
@@ -273,6 +321,7 @@ async fn run_tracking_restart_loop(
     event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
     snapshot: Arc<crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState>,
     #[cfg(target_os = "linux")] audio_source: crate::platform::linux::audio::AudioSignalSource,
+    #[cfg(target_os = "linux")] media_source: crate::platform::linux::media::MediaSignalSource,
     mut shutdown: watch::Receiver<bool>,
 ) {
     let mut retry_secs = 2_u64;
@@ -284,6 +333,8 @@ async fn run_tracking_restart_loop(
             snapshot.clone(),
             #[cfg(target_os = "linux")]
             audio_source.clone(),
+            #[cfg(target_os = "linux")]
+            media_source.clone(),
             shutdown.clone(),
         )
         .await;

@@ -96,6 +96,7 @@ pub(super) async fn load_tracking_loop_state(
     previous_state: &SustainedParticipationRuntimeState,
     settings_cache: &mut TrackingSettingsCache,
     #[cfg(target_os = "linux")] audio_source: &crate::platform::linux::audio::AudioSignalSource,
+    #[cfg(target_os = "linux")] media_source: &crate::platform::linux::media::MediaSignalSource,
 ) -> (TrackingLoopState, SustainedParticipationRuntimeState) {
     let cached_settings = settings_cache.load_tracking_settings(data, now_ms).await;
     let continuity_window_secs = cached_settings.continuity_window_secs;
@@ -115,6 +116,8 @@ pub(super) async fn load_tracking_loop_state(
         tracking_paused,
         #[cfg(target_os = "linux")]
         audio_source,
+        #[cfg(target_os = "linux")]
+        media_source,
     )
     .await;
     let (tracking_status, next_sustained_participation_state) =

@@ -35,7 +35,7 @@ Current caveats:
 - This document remains the human-maintained reference for behavior notes and implementation caveats.
 - The desktop runtime exposes the JSON endpoints below. Development-only `patinad` exposes every authenticated `GET` endpoint through the same handlers, plus capability negotiation and an authenticated SSE stream; it rejects all `POST` endpoints.
 - Default daemon mode remains historical/read-only: `GET /api/v1/current` returns `503` and live tracker/browser diagnostics are `null`.
-- Stage 2D preview mode is explicit: run `patinad --profile dev --serve-api --track --port 0`. It owns tracking for that profile, serves a live `/current`, observes Linux lock/suspend/resume/shutdown through systemd-logind, runs the enabled PulseAudio/pipewire-pulse participation source, and reports tracking readiness after the first sample. Never run desktop and daemon tracking against the same profile.
+- Stage 2E preview mode is explicit: run `patinad --profile dev --serve-api --track --port 0`. It owns tracking for that profile, serves a live `/current`, observes Linux lock/suspend/resume/shutdown through systemd-logind, runs PulseAudio/pipewire-pulse and MPRIS participation sources, and reports tracking readiness after the first sample. Never run desktop and daemon tracking against the same profile.
 - `/api/v1/events` accepts the token only through the `Authorization` header. It does not accept tokens in URLs or query strings.
 
 ---
@@ -173,7 +173,7 @@ Behavior:
 - `event: resync-required` means the cursor fell outside replay or the receiver lagged. Reload current/read-model snapshots through the JSON API.
 - Daemon restart resets the sequence. Clients should call `/api/v1/capabilities` and reload snapshots after reconnect.
 - Keepalive comments prevent idle local connections from being mistaken for a dead daemon.
-- Stage 2D `--track` publishes real session transition, metadata, status, watchdog, runtime-shutdown, lock, suspend, and system-shutdown seal events. Audio participation affects tracking status through the same snapshots and events; default daemon mode still has no tracking producer.
+- Stage 2E `--track` publishes real session transition, metadata, status, watchdog, runtime-shutdown, lock, suspend, and system-shutdown seal events. Audio and MPRIS participation affect tracking status through the same snapshots and events; default daemon mode still has no tracking producer.
 
 ### `GET /api/v1/diagnostics`
 

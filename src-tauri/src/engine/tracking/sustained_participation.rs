@@ -58,6 +58,7 @@ pub(super) async fn load_sustained_participation_signals(
     tracked_window: &tracker::WindowInfo,
     tracking_paused: bool,
     #[cfg(target_os = "linux")] audio_source: &audio::AudioSignalSource,
+    #[cfg(target_os = "linux")] media_source: &media::MediaSignalSource,
 ) -> (
     SustainedParticipationSignalSnapshot,
     SustainedParticipationSignalSnapshot,
@@ -69,6 +70,9 @@ pub(super) async fn load_sustained_participation_signals(
         );
     }
 
+    #[cfg(target_os = "linux")]
+    let system_media_signal = media_source.signal_for_window(tracked_window);
+    #[cfg(target_os = "windows")]
     let system_media_signal = media::get_sustained_participation_signal(tracked_window).await;
     #[cfg(target_os = "linux")]
     let audio_signal = audio_source.signal_for_window(tracked_window);
