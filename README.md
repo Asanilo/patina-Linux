@@ -63,12 +63,12 @@ Windows code follows a freeze-then-remove policy:
 | X11 tracking | Implemented fallback / limited verification | Used on X11 sessions; GNOME Wayland does not silently fall back to X11. |
 | KDE / wlroots Wayland | Not promised | Needs compositor-specific work later. |
 | `patinad` | Stage 2F browser bridge preview | `--serve-api --track` runs tracking/watchdog, Linux participation sources, and the authenticated browser activity bridge for an isolated profile. Desktop remains the default owner; Stage 2F reliability gates still precede release as a background service. |
-| Local browser UI | Planned after Stage 2F stabilization | Will be served by `patinad` on loopback; not implemented yet. |
+| Local browser UI | Planned after daemon cutover | The first version will be a read-only loopback client served by `patinad`; not implemented yet. |
 | Local API | Implemented | Binds to `127.0.0.1:14840`, uses a bearer token, and exposes daemon capabilities plus an authenticated SSE stream. |
 | MCP wrapper and Agent Skill | Implemented, query-first | `npm run mcp:patina`; write side currently covers app classify/rename/exclude, with HTTP and MCP skill references. |
 | Chromium Web Sync | Implemented | `extensions/chromium`. |
 | Firefox / Zen Web Sync | Implemented | The signed `0.1.1` XPI can be installed directly and identifies Firefox-family forks before generic Firefox. |
-| Linux packaging | Release pipeline configured | Future version tags build x86_64 AppImage, `.deb`, browser/desktop extension assets, and a Linux-only updater manifest. |
+| Linux packaging | Current stable pipeline configured | Current stable tags build x86_64 AppImage and `.deb`; the first daemon-backed beta will intentionally publish DEB only until AppImage service ownership and atomic updates are designed. |
 | Local API token/port UI | Implemented | Settings applies ports atomically and rotates the owner-only API Token separately from browser Web Sync. |
 
 ## Quick Start On Linux
@@ -120,7 +120,7 @@ ${XDG_DATA_HOME:-~/.local/share}/Patina/api_token
 
 ## Linux Packages
 
-The release workflow produces:
+The current stable release workflow produces:
 
 - `Patina_<version>_amd64.AppImage`
 - `Patina_<version>_amd64.deb`
@@ -167,6 +167,8 @@ npm run extension:firefox:check
 ```
 
 `npm run test:release` verifies that the release workflow builds Linux-only bundles, that both AppImage and `.deb` artifacts have matching signatures, and that `latest.json` routes each installation to its signed package type.
+
+The first daemon-backed beta is a documented release-contract exception: it publishes only the DEB containing Patina Desktop, `patinad`, and the systemd user unit. AppImage returns to that release line only after versioned daemon extraction and atomic updater switching have separate validation.
 
 ## Browser Web Sync
 

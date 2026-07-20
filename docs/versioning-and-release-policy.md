@@ -87,6 +87,8 @@
 
 当前 `Patina` 默认不维护复杂的 `beta / rc` 预发布线。除非用户明确要求测试版、候选版或灰度验证，否则准备完成后直接按稳定版本发布。
 
+`patinad` 从 preview 切换为默认 runtime owner 是明确例外：首个 daemon-backed 产品包必须使用 `X.Y.Z-beta.N` 预发布版本，完成真实 DEB 安装、登录启动、关闭 UI 后持续记录、崩溃恢复、锁屏/睡眠、浏览器活动、升级、卸载和数据保留验收后，才能以对应稳定版本发布。该 beta 必须同时交付版本兼容的 Patina Desktop、`patinad` 与 systemd user unit，不能分别发布后依赖用户自行配对版本。首个 beta 只发布 DEB；AppImage 在版本化 daemon extraction、固定 service owner 和 updater 原子切换得到独立验证前不得作为同等可用资产发布。
+
 不应为了“先放着以后再改成 Latest”而默认把稳定 tag 做成预发布。GitHub Release 界面允许修改 `Pre-release / Latest` 标记，但本项目的长期默认是：稳定版本成熟后再发布稳定版本；如果确实需要预发布，就使用带语义后缀的版本号，例如 `1.6.0-rc.1`，正式发布再使用 `1.6.0`。
 
 ## 5.3 不再推荐的格式
@@ -329,6 +331,8 @@ Linux 发布资产契约：
 - 如果任何必需 Linux 软件包或其配对签名缺失、为空，`prepare-linux-release-assets` 必须失败。
 - `npm run test:release` 必须持续覆盖 workflow bundle 请求、`.deb` 准备逻辑和 Linux-only updater manifest。
 
+以上双包资产契约适用于当前稳定发布线。首个 daemon-backed beta 是窄例外：Release 只要求 `.deb`、`.deb.sig` 对应签名内容、DEB updater target 与扩展资产，不得生成或上传一个无法稳定拥有 systemd service 的 AppImage。进入该 beta 实施前，release 脚本、workflow、测试和 README 必须一起切换到明确的 DEB-only contract。daemon-backed 稳定版发布前，必须先完成 AppImage 的版本化 daemon extraction 与原子更新，或提供不会让现有 AppImage 客户端循环更新、下载错误包或静默失去支持的退役迁移。
+
 GitHub Release 中的浏览器扩展附件使用带扩展版本号的稳定命名模式：
 
 - `patina-chromium-extension-vX.Y.Z.zip`
@@ -385,9 +389,9 @@ GitHub Release 继续作为正式发布源、主下载入口和主更新清单�
 5. 将准备发布所需提交推送到远端，提交信息推荐使用 `chore: prepare vX.Y.Z release`。
 6. 只有在用户明确进入发布动作时，才推送对应的 `vX.Y.Z` 版本 tag，自动触发 GitHub Actions 的 `Publish Linux Release` 工作流。
 7. 工作流 checkout 到 tag 对应 commit，并校验版本文件、changelog 和长期版本文档与 tag 版本一致。
-8. Ubuntu 22.04 job 运行完整质量门槛，生成 release notes、AppImage、`.deb` 和 Linux updater manifest。
+8. Ubuntu 22.04 job 运行完整质量门槛；当前稳定线生成 release notes、AppImage、`.deb` 和 Linux updater manifest，首个 daemon-backed beta 按第 9.4 节的窄例外只生成 DEB updater 资产。
 9. 同一 job 打包 GNOME Shell、Chromium 与 Firefox / Zen 扩展。
-10. GitHub Release 附件至少包含 Linux AppImage、Linux `.deb`、Linux-only `latest.json`、Chromium 扩展包、GNOME 扩展包与 Firefox / Zen XPI。
+10. 当前稳定线的 GitHub Release 附件至少包含 Linux AppImage、Linux `.deb`、Linux-only `latest.json`、Chromium 扩展包、GNOME 扩展包与 Firefox / Zen XPI；daemon-backed beta 不要求 AppImage。
 
 如果只是把版本号、changelog、发布脚本或 release 说明准备好并推到 `main`，提交信息应避免让人误以为已经发布完成。推荐使用能表达准备状态的提交信息，例如 `chore: prepare vX.Y.Z release`。默认不再使用 GitHub Actions 自动生成 `release: vX.Y.Z` 版本提交。
 

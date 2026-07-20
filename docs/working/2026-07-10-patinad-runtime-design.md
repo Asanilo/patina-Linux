@@ -137,11 +137,13 @@ API handler 依赖 pool、runtime snapshots、settings 和平台诊断 provider�
 
 desktop 与 daemon 复用同一 transport 和 endpoint registry，OpenAPI 从实际启用的 endpoint 集合生成或校验。
 
+Stage 2F.1 使用 Axum + Tower 承接 HTTP、SSE、静态资源、并发预算和优雅关闭，删除自写 parser 与重复 server loop。API 与浏览器扩展 bridge 保持独立 listener、credential 和 origin policy，但复用同一成熟 transport 基础。
+
 ### 5.6 Browser UI client
 
 `patinad` 在 loopback 上提供静态浏览器 UI、HTTP API 和 event stream。第一版复用现有 React feature 与 read model，通过 browser runtime gateway 替换 Tauri IPC 和直接 SQLite 入口。
 
-浏览器 UI 不直接打开数据库，也不获得 tray、任意文件选择、安装更新或窗口激活能力。长期 API token 不进入 URL；写侧能力开放前必须设计本机配对或短期 session，并验证 CSRF、origin 和日志泄漏边界。
+浏览器 UI 不直接打开数据库，也不获得 tray、任意文件选择、安装更新或窗口激活能力。浏览器使用 same-origin、HttpOnly、SameSite session，不获得长期 API Token；MCP、CLI 和 Agent 继续使用 owner-only Bearer Token。写侧能力开放前必须验证 CSRF、origin、loopback Host 和日志泄漏边界。
 
 Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适合 Linux，替换范围只限桌面客户端，不改变 daemon、浏览器 UI、TUI、MCP 或数据协议。
 
@@ -193,45 +195,67 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 
 - data owner：网页 active row 按 `updated_at` 或等价的最后可信观测时间恢复，不把停机空白计入 duration
 - web activity engine：connected 宽限必须大于扩展心跳周期；上报过期后按最后成功上报时间封口网页段
-- API / platform transport：为普通 API、SSE 和 browser bridge 分别设置并验证并发连接上限
+- verification first：先用跨夜崩溃恢复、心跳抖动和扩展消失测试固定数据语义，再修改 transport 或 owner 结构
+- API / platform transport：以 Axum + Tower 替换自写 HTTP parser、server loop 和 SSE transport，为普通 API、SSE 和 browser bridge 分别设置并验证并发连接上限
+- browser boundary：API 使用严格 origin/CORS 与 loopback Host 校验；浏览器扩展保留独立 listener 和 Token
 - daemon health：capability 与 diagnostics readiness 跟随 listener/task 生命周期，任务意外退出后立即降级
 - daemon ownership：把 tracking、power、audio、media、web activity 和 transport 生命周期移入对应 owner 模块，`app/daemon/runtime.rs` 只保留编排和关闭顺序
-- verification：覆盖跨夜崩溃恢复、心跳抖动、扩展消失、连接饱和、listener 意外退出和有序 shutdown
+- workspace boundary：首个 daemon-backed 里程碑保持当前 Rust package，不把 Cargo workspace 重排混入 owner 迁移
+- verification complete：继续覆盖连接饱和、listener 意外退出和有序 shutdown
 
 验收：daemon 停机不增长 session 或网页活动；短暂心跳抖动不误报断开；扩展消失后网页段不会无限增长；连接压力不会产生无界任务；readiness 与实际服务状态一致。
 
-### 阶段 3：浏览器与桌面客户端化
+### 阶段 3：Linux 服务化与桌面客户端切换
 
-- `patinad` 提供 loopback browser UI 和 event stream
-- 先覆盖 Dashboard、History、Data、当前会话、Apps 查询和诊断
-- 复用现有 React feature，通过 transport-neutral gateway 获取数据
+- 补齐 Patina Desktop 当前操作所需的 daemon 写侧 API、版本协商和受控 service restart
 - Tauri 改为 daemon desktop client，并保留 tray、通知、文件选择和 updater
-- 浏览器写侧在本机 session 安全边界完成后逐步开放
+- 默认切换后 desktop 不启动或自动回退 embedded tracker；daemon 不可用时明确暂停、诊断和重启
+- 一个 `patina` 产品包同时交付 Patina Desktop、`patinad` 和 systemd user unit
+- DEB 不在 `postinst` 全局 enable；首次桌面启动在用户会话中迁移并启用服务
+- 将“后台追踪随登录启动”与“桌面客户端随登录打开”拆成独立设置，启动时最小化只属于桌面客户端
+- 首个 daemon-backed DEB 使用 beta 版本验证且只发布 DEB；AppImage 在解决 daemon 版本化解包与原子更新前不进入该发布
+- embedded runtime 至少跨一个稳定版本保留为显式开发回滚路径
 
-验收：浏览器 UI 不依赖 Tauri 即可回看数据；Tauri 与浏览器显示同一运行状态；关闭 Tauri 后 daemon 和浏览器 UI 继续工作；长期 token 不进入 URL 或浏览器历史。
+验收：登录后 daemon 可靠启动；关闭或退出 Tauri 后继续记录；重开 UI 恢复当前状态；服务崩溃由 systemd 恢复且不产生第二 owner；升级与卸载不误删用户数据。
 
-### 阶段 4：Linux 服务化
+### 阶段 4：独立仓库身份与稳定发布门槛
 
-- systemd user service
-- journal 日志与 Settings 诊断
-- daemon / desktop 版本能力协商
-- `.deb` 安装、升级、卸载和数据保留
-- AppImage 非固定路径下的启动策略
+- daemon-backed beta 验收后，完整 monorepo 脱离 Windows 上游 fork network
+- 保留 Git 历史、MIT 许可和 attribution，不拆分独立 `patinad` 仓库
+- daemon-backed 稳定版前，单独验证 AppImage 的版本化 daemon extraction 与原子更新，或完成不破坏既有 updater 的退役迁移
 
-验收：登录后可靠启动；崩溃可恢复；升级不产生双 owner；卸载不误删用户数据。
+验收：新仓库的 Actions、Release、Secrets 和 updater endpoint 可验证；现有 DEB 与 AppImage 用户都有明确且不会循环更新的迁移路径。
 
-### 阶段 5：新客户端与平台扩展
+### 阶段 5：只读浏览器 UI
 
+- `patinad` 提供 loopback browser UI、JSON API 和 event stream
+- 第一版只覆盖 Dashboard、History、当前会话和诊断
+- 复用现有 React feature，通过 transport-neutral browser gateway 获取数据
+- 浏览器使用 same-origin HttpOnly session，长期 Bearer Token 不进入 JavaScript、URL 或浏览器存储
+
+验收：浏览器 UI 不依赖 Tauri 即可回看数据；Tauri 与浏览器显示同一运行状态；恶意外部 Origin 无法读取 API；长期 Token 不进入浏览器历史、存储或普通日志。
+
+### 阶段 6：受控写侧与新客户端
+
+- 浏览器只读路径稳定后，再通过 CSRF 防护和操作确认逐步开放写侧
+- MCP、CLI 和 Agent 保留 Bearer Token 认证，与浏览器 UI 共用业务契约但不共用凭据模型
 - TUI 与可选 CLI
+
+### 阶段 7：平台与客户端实现扩展
+
 - KDE KWin provider
 - 按 compositor 评估 wlroots provider
 - 根据实测内存、启动、桌面集成和维护收益再独立评估 Tauri / GPUI
+- 只有实测构建、二进制、资源或独立打包收益成立时才拆 Cargo workspace
+- AppImage 只有在固定 service owner、版本化 daemon extraction 和 updater 原子切换得到独立验证后才恢复 daemon-backed 发布
 
 ## 7. 错误与安全策略
 
 - storage anchor 损坏、挂载缺失或 schema 初始化失败时 fail-closed
-- API 只监听 `127.0.0.1`，Bearer token 文件保持 owner-only 权限
+- API 只监听 loopback；Bearer Token 文件保持 owner-only 权限并只供 MCP、CLI 和 Agent 使用
+- browser UI 使用 same-origin HttpOnly session；API 拒绝任意外部 Origin，浏览器扩展使用独立 bridge credential
 - daemon 正常停止前封口 active session；异常退出由下次启动检查 active row，但只能按最后可信观测时间封口，不能用下次启动时间填补停机空白
+- 默认 owner 切换后，desktop 不自动启动 embedded tracker；服务故障必须可诊断并受控恢复
 - desktop 与 daemon 版本不兼容时显示诊断，不静默使用不完整接口
 - 迁移、清理、恢复和备份继续由 Rust owner 执行
 - API、MCP、TUI 和 CLI 不获得任意路径删除或任意 SQL 能力
@@ -266,7 +290,8 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 - browser UI 与 Tauri desktop 的同源数据、event reconnect 和能力降级
 - browser session、origin、CSRF 与长期 token 不落 URL
 - API auth、请求限制、schema 与实际路由一致性
-- `.deb`、AppImage 和 systemd user service 的安装升级
+- daemon-backed `.deb` 与 systemd user service 的安装、升级、卸载和数据保留
+- AppImage 的版本化 daemon extraction、固定 service owner 与 updater 原子切换独立验证
 - `npm run check:full` 与 Linux release contract
 
 阶段 0 和阶段 1 应优先使用 TDD 覆盖纯 context、path resolver、lease 和 endpoint registry，再进行真实 GNOME 环境手动验证。

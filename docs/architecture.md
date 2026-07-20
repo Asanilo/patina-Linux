@@ -202,9 +202,12 @@ domain ─────────┘          │
 - `engine / domain / data / platform` 承载共享能力，不能依赖某个具体 UI 宿主
 - `patinad` 最终唯一拥有 tracking、watchdog、SQLite 运行时写侧、Linux 平台信号、浏览器桥接和本地 API
 - 桌面客户端当前由 Tauri 实现，并拥有窗口、tray、WebView、用户交互和桌面 updater；它通过稳定客户端边界访问 daemon
+- 默认 owner 切换后，桌面客户端不得自动启动 embedded tracker；daemon 不可用时必须明确报告暂停状态并通过受控服务入口恢复，不能静默切换 owner
 - browser UI 由 `patinad` 在 loopback 提供，通过 HTTP API 和本机 event stream 访问同一运行时，不直接打开 SQLite
 - 未来 TUI / CLI 只能作为 daemon 客户端，不建立第二套 tracking 或数据库写侧
 - 迁移完成前允许 desktop 继续内嵌运行时，但必须通过显式模式和 `RuntimeLease` 保证同一 profile 只有一个后台 owner
+
+首个 daemon-backed Linux 安装使用一个产品包原子交付 Patina Desktop、`patinad` 与 systemd user unit，不先拆分独立 daemon 包。包安装阶段只放置 unit；首次桌面启动在当前用户会话中迁移旧 XDG autostart 并启用后台服务，避免 `postinst` 对多用户环境做全局选择。“后台追踪随登录启动”与“桌面客户端随登录打开”是两个独立偏好，启动时最小化只属于桌面客户端。
 
 共享运行内核至少需要以下窄边界：
 
@@ -217,6 +220,8 @@ domain ─────────┘          │
 
 这些名字表达的是职责，不要求一次性建立大而全 trait 系统。只有真实调用方出现时才提取最小接口。
 
+Stage 2F.1 使用 Axum + Tower 替换自写 HTTP parser、server loop 与 SSE transport。现有 domain handler、DTO、endpoint registry 与 API surface 继续作为协议 owner；框架只拥有 HTTP 解析、路由、middleware、静态资源、并发预算和优雅关闭。API 与浏览器扩展 bridge 保持独立 listener、credential 和 origin policy，但不能保留两套自写 transport。
+
 浏览器 UI 与桌面 UI 默认复用现有 React feature 和 read model，但外部数据访问必须经过 transport-neutral gateway：
 
 - browser gateway 使用 localhost HTTP API 和 event stream
@@ -225,9 +230,11 @@ domain ─────────┘          │
 - tray、系统通知、文件选择、安装更新和窗口激活仍属于桌面客户端能力
 - 浏览器端遇到桌面专属操作时应显示明确不可用状态或请求桌面客户端处理，不复制不安全的文件系统能力
 
-浏览器 UI 不是公开 Web 部署面。daemon 默认只监听 loopback，不允许把长期 API token 放进 URL、浏览器历史或普通持久化日志。浏览器写侧开放前，必须建立本机配对或短期会话机制，并验证跨站请求和来源边界。
+浏览器 UI 不是公开 Web 部署面。daemon 默认只监听 loopback，并校验 loopback Host 与严格 Origin；浏览器 UI 使用 same-origin、HttpOnly、SameSite session，不获得长期 API Token。owner-only Bearer Token 只供 MCP、CLI 和 Agent 使用；浏览器扩展继续使用独立 bridge credential。浏览器写侧开放前，必须增加 CSRF 防护和操作确认，并验证跨站请求、DNS rebinding 与日志泄漏边界。
 
 Tauri 是当前桌面客户端实现，不是长期协议 owner。未来可以在不改变 daemon、数据库、浏览器 UI、TUI 和 MCP 契约的前提下评估 GPUI 或其他 Linux 桌面 UI 框架；框架替换必须作为独立项目，以实测内存、启动速度、桌面集成完整性和维护成本决定。
+
+Patina Desktop、`patinad`、browser UI、extensions、MCP 与未来 TUI 保持一个 monorepo 和一条兼容发布线。首个 daemon-backed package 通过 beta 验收后，完整仓库脱离 Windows 上游 fork network，但保留 Git 历史、MIT 许可与 attribution。首个 daemon 里程碑不拆 Cargo workspace；只有测量证明构建、二进制、常驻资源或独立包需求存在时才进行 crate 拆分。
 
 ### 4.6 Linux-only 与 Windows 冻结边界
 

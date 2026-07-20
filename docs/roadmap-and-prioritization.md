@@ -158,13 +158,18 @@
 6. Stage 2D audio preview 已完成：Linux audio source 可由 daemon 显式拥有、取消和按设置启停，PulseAudio/pipewire-pulse 探测不再依赖 Tauri 全局运行时。
 7. Stage 2E MPRIS preview 已完成：Linux media source 可由 daemon 显式拥有和取消，多播放器按当前窗口身份优先匹配，D-Bus 查询不依赖 Tauri 全局运行时。
 8. Stage 2F browser bridge preview 已完成：显式 tracking 模式由 daemon 在 loopback 接收浏览器扩展上报，共用宿主无关的鉴权、隐私、记录和封口逻辑，并提供受限请求生命周期与可等待关闭。
-9. 先完成 Stage 2F 稳定化门槛：网页异常退出必须按最后可信观测时间恢复；浏览器心跳需要合理宽限与过期封口；API、SSE 和浏览器桥接需要显式并发上限；capability readiness 必须跟随真实 task 生命周期；`app/daemon/runtime.rs` 在继续扩张前按 owner 拆分。
-10. 稳定化通过后，复用现有 React feature 建立由 `patinad` 在 loopback 提供的浏览器 UI，先覆盖 Dashboard、History、Data、当前会话和诊断。
-11. 补齐运行中设置写侧与安全的本机浏览器 session，再逐步开放分类、排除和工具操作；MCP 与浏览器 UI 继续复用同一 API 契约。
-12. 让 Tauri UI 成为 daemon 桌面客户端，保留 tray、通知、文件选择和 updater，验证关闭 UI 后继续记录、重开恢复和版本兼容诊断。
-13. 完成 systemd user service、`.deb` / AppImage 安装差异、journal 日志、升级和恢复验证。
-14. 在 daemon 契约稳定后开发 TUI / CLI，并开始 KDE Wayland 适配；桌面端是否从 Tauri 迁往 GPUI 只按实测收益单独评估。
-15. `patinad` 稳定后，单独分阶段删除冻结的 Windows 平台代码。
+9. 先完成 Stage 2F.1 数据语义：网页异常退出按最后可信观测时间恢复；浏览器心跳使用合理宽限并在过期时封口；先以回归测试固定跨夜崩溃、心跳抖动和扩展消失行为。
+10. 在语义测试固定后，以 Axum + Tower 替换自写 HTTP parser、server loop 与 SSE transport；API、SSE 和浏览器桥接分别设置并发上限，readiness 跟随真实 task 生命周期，并收紧 API origin/CORS 边界。
+11. 按稳定行为拆分 daemon owner：tracking、power、audio、media、web activity 与 transport 生命周期回到对应模块，`app/daemon/runtime.rs` 只保留装配和关闭顺序；本阶段不做 Cargo workspace 重排。
+12. 补齐 Patina Desktop 所需的 daemon 写侧 API 和版本协商，再让 Tauri 成为纯客户端；切换后不自动回退 embedded tracker，daemon 故障必须明确诊断并提供受控重启。
+13. 用一个 `patina` 产品包同时安装 Patina Desktop、`patinad` 和 systemd user unit；首次桌面启动在用户会话中迁移旧 XDG autostart 并启用后台服务，把“后台追踪随登录启动”与“桌面客户端随登录打开”拆成独立设置。
+14. 首个 daemon-backed DEB 先发布为 beta，验证关闭 UI 后持续记录、登录启动、崩溃重启、锁屏、睡眠、浏览器活动、升级、卸载和数据保留；该 beta 只发布 DEB，不发布无法稳定安装 service owner 的 AppImage。embedded runtime 至少保留一个稳定版本作为显式开发回滚路径。
+15. beta 验收后让完整 monorepo 脱离 Windows 上游 fork network，保留 Git 历史、MIT 许可与 attribution；不拆分独立 `patinad` 仓库。
+16. daemon-backed 稳定版发布前，必须单独决定并验证 AppImage 的版本化 daemon extraction 与原子更新，或设计对现有 AppImage 用户明确且不循环更新的退役迁移；不能让 DEB-only stable 悄悄破坏既有 updater contract。
+17. daemon 稳定后建立只读本机浏览器 UI，先覆盖 Dashboard、History、当前会话和诊断；使用 same-origin HttpOnly session，不向前端 JavaScript 暴露长期 API Token。
+18. 浏览器只读路径稳定后再开放受控写操作；MCP、CLI 和 Agent 继续使用 Bearer Token，并与浏览器 UI 复用同一业务 API 契约而非同一认证方式。
+19. 之后开发 TUI / CLI 并开始 KDE Wayland 适配；桌面端是否从 Tauri 迁往 GPUI、是否拆 Cargo workspace，只按实测资源、构建和独立打包收益评估。
+20. `patinad` 稳定后，单独分阶段删除冻结的 Windows 平台代码，不与 owner 切换、transport 迁移或数据修复混合。
 
 每一阶段必须保持当前桌面主路径可用，不以一次性切换换取架构完成感。
 
