@@ -8,6 +8,7 @@ These instructions apply to all UI work unless the user gives an explicit task-s
 
 ## Always Read First
 
+- Use `docs/README.md` as the documentation map.
 - Domain terminology must follow `CONTEXT.md`.
 - Product direction and scope must follow `docs/product-principles-and-scope.md`.
 - Roadmap and priority decisions must follow `docs/roadmap-and-prioritization.md`.
