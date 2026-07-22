@@ -645,6 +645,22 @@ fn event_stream_operation() -> Value {
                         "schema": schema_ref("ApiError")
                     }
                 }
+            },
+            "403": {
+                "description": "Request origin is not allowed.",
+                "content": {
+                    "application/json": {
+                        "schema": schema_ref("ApiError")
+                    }
+                }
+            },
+            "503": {
+                "description": "Event stream is unavailable or its connection budget is full.",
+                "content": {
+                    "application/json": {
+                        "schema": schema_ref("ApiError")
+                    }
+                }
             }
         }
     })
@@ -709,6 +725,14 @@ fn standard_responses(schema: &str) -> Value {
                 }
             }
         },
+        "403": {
+            "description": "Request origin is not allowed.",
+            "content": {
+                "application/json": {
+                    "schema": schema_ref("ApiError")
+                }
+            }
+        },
         "404": {
             "description": "Endpoint or resource not found.",
             "content": {
@@ -717,8 +741,24 @@ fn standard_responses(schema: &str) -> Value {
                 }
             }
         },
+        "413": {
+            "description": "Request body is too large.",
+            "content": {
+                "application/json": {
+                    "schema": schema_ref("ApiError")
+                }
+            }
+        },
         "500": {
             "description": "Internal error.",
+            "content": {
+                "application/json": {
+                    "schema": schema_ref("ApiError")
+                }
+            }
+        },
+        "503": {
+            "description": "Runtime capability is unavailable, the request timed out, or the concurrency budget is full.",
             "content": {
                 "application/json": {
                     "schema": schema_ref("ApiError")

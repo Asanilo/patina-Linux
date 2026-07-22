@@ -677,6 +677,14 @@ impl DaemonRuntime {
         }
         drop(self.lease.take());
     }
+
+    pub async fn wait_for_api_stop(&mut self) {
+        if let Some(server) = self.api_server.as_mut() {
+            server.wait_until_stopped().await;
+        } else {
+            std::future::pending::<()>().await;
+        }
+    }
 }
 
 #[cfg(test)]

@@ -50,6 +50,15 @@ impl ApiError {
         }
     }
 
+    pub fn forbidden(message: &str) -> Self {
+        Self {
+            error: ApiErrorDetail {
+                code: "forbidden".to_string(),
+                message: message.to_string(),
+            },
+        }
+    }
+
     pub fn internal(message: &str) -> Self {
         Self {
             error: ApiErrorDetail {

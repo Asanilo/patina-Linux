@@ -8,7 +8,7 @@
 ## 1. Runtime
 
 - Base URL: `http://127.0.0.1:14840`
-- Protocol: local HTTP/1.1 JSON
+- Protocol: loopback HTTP JSON; `/api/v1/events` uses SSE.
 - Auth: `Authorization: Bearer <token>`
 - Production token file: `${XDG_DATA_HOME:-~/.local/share}/Patina/api_token`; Local and Dev use their matching profile directories.
 - Token generation: created on first API startup if the token file is missing or empty.
@@ -29,14 +29,15 @@ Current caveats:
 
 - API token and port can be managed from Settings.
 - The server binds to localhost only.
-- CORS is permissive for local integration.
+- Requests without an `Origin` header, including curl, MCP, CLI, and local agents, are allowed after Bearer authentication. Requests with an `Origin` header are accepted only from loopback HTTP(S) or `tauri://localhost`; the server never returns `Access-Control-Allow-Origin: *`.
+- The HTTP `Host` authority must be `localhost` or a loopback IP. API request bodies are limited to 64 KiB.
 - `/api/v1/openapi.json` exposes the machine-readable OpenAPI 3.1 schema with paths, query/path parameters, request bodies, response envelopes, auth, error envelopes, and field-level component schemas.
 - The OpenAPI server URL uses a configurable `{port}` variable whose default is `14840`.
 - This document remains the human-maintained reference for behavior notes and implementation caveats.
 - The desktop runtime exposes the JSON endpoints below. Development-only `patinad` exposes every authenticated `GET` endpoint through the same handlers, plus capability negotiation and an authenticated SSE stream; it rejects all `POST` endpoints.
 - Default daemon mode remains historical/read-only: `GET /api/v1/current` returns `503` and live tracker/browser diagnostics are `null`.
 - Stage 2F preview mode is explicit: run `patinad --profile dev --serve-api --track --port 0`. It owns tracking for that profile, serves a live `/current`, observes Linux lock/suspend/resume/shutdown, runs audio/MPRIS participation sources, and owns the browser activity bridge configured for that profile. Never run desktop and daemon tracking against the same profile.
-- Stage 2F capability migration and Stage 2F.1 browser crash/heartbeat semantics are complete, but this is not yet a released service contract. Explicit API/SSE/bridge concurrency limits and task-coupled readiness remain stabilization gates before `patinad` becomes the default owner.
+- Stage 2F capability migration and Stage 2F.1 browser crash/heartbeat semantics are complete. The shared desktop/daemon API and SSE transport now use Axum, with separate fail-fast concurrency budgets, bounded handler time, strict loopback Host/origin checks, and task-coupled listener readiness. The browser extension bridge still uses its independent transport and remains the next stabilization gate before `patinad` becomes the default owner.
 - The daemon reads the browser bridge port and token when it starts. Changing either setting currently requires restarting the daemon.
 - `/api/v1/events` accepts the token only through the `Authorization` header. It does not accept tokens in URLs or query strings.
 
@@ -88,7 +89,7 @@ Current scope:
 - Paths: the exact endpoints enabled for the current desktop or daemon API surface
 - Parameters: query params for sessions, summary range, trend, web activity; path params for app management
 - Request bodies: classify, rename, exclude, and AFK threshold writes
-- Responses: success envelopes and standard `400` / `401` / `404` / `500` error envelopes
+- Responses: success envelopes and standard `400` / `401` / `403` / `404` / `413` / `500` / `503` error envelopes
 - Components: field-level schemas for health, capabilities, runtime event envelopes, diagnostics, current window, sessions, active session, summaries, trend, web activity, apps, tracker settings, AI activity context, and Tools snapshot
 
 Known gap:
@@ -175,6 +176,7 @@ Behavior:
 - `event: resync-required` means the cursor fell outside replay or the receiver lagged. Reload current/read-model snapshots through the JSON API.
 - Daemon restart resets the sequence. Clients should call `/api/v1/capabilities` and reload snapshots after reconnect.
 - Keepalive comments prevent idle local connections from being mistaken for a dead daemon.
+- At most eight SSE streams are active at once. Additional streams fail immediately with `503` instead of creating unbounded long-lived tasks.
 - Stage 2F `--track` publishes real session transition, metadata, status, watchdog, runtime-shutdown, lock, suspend, system-shutdown, and browser activity events. Audio and MPRIS participation affect tracking status through the same snapshots and events; default daemon mode still has no tracking producer.
 
 ### `GET /api/v1/diagnostics`

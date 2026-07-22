@@ -161,7 +161,7 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
             _ => None,
         }
     });
-    let daemon_runtime = DaemonRuntime::new(
+    let mut daemon_runtime = DaemonRuntime::new(
         api_handle,
         event_hub,
         background_tasks,
@@ -170,9 +170,15 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     );
     runtime.block_on(async move {
         if options.serve_api {
-            tokio::signal::ctrl_c()
-                .await
-                .map_err(|error| format!("failed to wait for shutdown signal: {error}"))?;
+            tokio::select! {
+                result = tokio::signal::ctrl_c() => {
+                    result.map_err(|error| format!("failed to wait for shutdown signal: {error}"))?;
+                }
+                _ = daemon_runtime.wait_for_api_stop() => {
+                    daemon_runtime.shutdown().await;
+                    return Err("local API task stopped unexpectedly".to_string());
+                }
+            }
         }
         daemon_runtime.shutdown().await;
         Ok::<(), String>(())
@@ -225,14 +231,12 @@ mod tests {
         )
     }
 
-    fn request(method: &str, path: &str) -> crate::engine::api::http::ApiRequest {
-        crate::engine::api::http::ApiRequest {
+    fn request(method: &str, path: &str) -> crate::engine::api::router::ApiRequest {
+        crate::engine::api::router::ApiRequest {
             method: method.to_string(),
             path: path.to_string(),
             query: None,
             body: Vec::new(),
-            authorization: None,
-            last_event_id: None,
         }
     }
 
@@ -368,7 +372,7 @@ mod tests {
         let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
             .await
             .unwrap();
-        let request = "GET /api/v1/health HTTP/1.1\r\nAuthorization: Bearer test-token\r\n\r\n";
+        let request = "GET /api/v1/health HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer test-token\r\nConnection: close\r\n\r\n";
         tokio::io::AsyncWriteExt::write_all(&mut stream, request.as_bytes())
             .await
             .unwrap();
@@ -402,7 +406,7 @@ mod tests {
         let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
             .await
             .unwrap();
-        let request = "GET /api/v1/health HTTP/1.1\r\n\r\n";
+        let request = "GET /api/v1/health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
         tokio::io::AsyncWriteExt::write_all(&mut stream, request.as_bytes())
             .await
             .unwrap();
