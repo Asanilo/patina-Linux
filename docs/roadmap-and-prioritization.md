@@ -158,7 +158,7 @@
 6. Stage 2D audio preview 已完成：Linux audio source 可由 daemon 显式拥有、取消和按设置启停，PulseAudio/pipewire-pulse 探测不再依赖 Tauri 全局运行时。
 7. Stage 2E MPRIS preview 已完成：Linux media source 可由 daemon 显式拥有和取消，多播放器按当前窗口身份优先匹配，D-Bus 查询不依赖 Tauri 全局运行时。
 8. Stage 2F browser bridge preview 已完成：显式 tracking 模式由 daemon 在 loopback 接收浏览器扩展上报，共用宿主无关的鉴权、隐私、记录和封口逻辑，并提供受限请求生命周期与可等待关闭。
-9. 先完成 Stage 2F.1 数据语义：网页异常退出按最后可信观测时间恢复；浏览器心跳使用合理宽限并在过期时封口；先以回归测试固定跨夜崩溃、心跳抖动和扩展消失行为。
+9. Stage 2F.1 数据语义已完成：网页异常退出按最后可信观测时间恢复；浏览器心跳使用 75 秒宽限并由 watchdog 在过期时按最后上报封口；跨夜崩溃、心跳抖动、扩展消失和并发更新保护已有回归测试。
 10. 在语义测试固定后，以 Axum + Tower 替换自写 HTTP parser、server loop 与 SSE transport；API、SSE 和浏览器桥接分别设置并发上限，readiness 跟随真实 task 生命周期，并收紧 API origin/CORS 边界。
 11. 按稳定行为拆分 daemon owner：tracking、power、audio、media、web activity 与 transport 生命周期回到对应模块，`app/daemon/runtime.rs` 只保留装配和关闭顺序；本阶段不做 Cargo workspace 重排。
 12. 补齐 Patina Desktop 所需的 daemon 写侧 API 和版本协商，再让 Tauri 成为纯客户端；切换后不自动回退 embedded tracker，daemon 故障必须明确诊断并提供受控重启。

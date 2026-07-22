@@ -5,8 +5,9 @@ use crate::domain::web_activity::WEB_ACTIVITY_CHANGED_REASON;
 use crate::engine::tracking::runtime::TauriRuntimeEventSink;
 use crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState;
 use crate::engine::web_activity::{
-    seal_active_segment, seal_if_tracking_inactive, WebActivityBridgeHttpRequest,
-    WebActivityBridgeHttpResponse, WebActivityRuntimeState,
+    repair_active_segment_after_restart, seal_if_tracking_inactive, seal_stale_active_segment,
+    WebActivityBridgeHttpRequest, WebActivityBridgeHttpResponse, WebActivityRuntimeState,
+    WEB_ACTIVITY_STALE_CHECK_INTERVAL,
 };
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
@@ -70,12 +71,38 @@ pub fn spawn_startup_repair<R: Runtime + 'static>(app: AppHandle<R>) {
                 return;
             }
         };
-        match seal_active_segment(&pool, now_ms).await {
-            Ok(true) => emit_web_activity_changed(&app, now_ms),
-            Ok(false) => {}
+        match repair_active_segment_after_restart(&pool, now_ms).await {
+            Ok(Some(repaired_at_ms)) => emit_web_activity_changed(&app, repaired_at_ms),
+            Ok(None) => {}
             Err(error) => eprintln!("[web-activity] failed to repair active segment: {error}"),
         }
     });
+}
+
+pub fn spawn_stale_watchdog<R: Runtime + 'static>(app: AppHandle<R>) {
+    tauri::async_runtime::spawn(async move {
+        let start_at = tokio::time::Instant::now() + WEB_ACTIVITY_STALE_CHECK_INTERVAL;
+        let mut interval = tokio::time::interval_at(start_at, WEB_ACTIVITY_STALE_CHECK_INTERVAL);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            interval.tick().await;
+            if let Err(error) = sync_stale_state(&app).await {
+                eprintln!("[web-activity] stale watchdog failed: {error}");
+            }
+        }
+    });
+}
+
+async fn sync_stale_state<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    let pool = wait_for_sqlite_pool(app).await?;
+    let Some(state) = app.try_state::<WebActivityRuntimeState>() else {
+        return Err("web activity runtime is unavailable".to_string());
+    };
+    let now_ms = crate::app::runtime::now_ms() as i64;
+    if let Some(sealed_at_ms) = seal_stale_active_segment(&pool, &state, now_ms).await? {
+        emit_web_activity_changed(app, sealed_at_ms);
+    }
+    Ok(())
 }
 
 pub async fn sync_foreground_state<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {

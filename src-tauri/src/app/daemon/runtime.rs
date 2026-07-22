@@ -104,10 +104,16 @@ impl DaemonWebActivityTask {
     ) -> Self {
         let event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink> = event_hub.clone();
         let startup_at_ms = context.now_ms();
-        match crate::engine::web_activity::seal_active_segment(context.pool(), startup_at_ms).await
+        match crate::engine::web_activity::repair_active_segment_after_restart(
+            context.pool(),
+            startup_at_ms,
+        )
+        .await
         {
-            Ok(true) => emit_web_activity_event(event_sink.as_ref(), startup_at_ms),
-            Ok(false) => {}
+            Ok(Some(repaired_at_ms)) => {
+                emit_web_activity_event(event_sink.as_ref(), repaired_at_ms)
+            }
+            Ok(None) => {}
             Err(error) => eprintln!("[patinad] failed to repair active web activity: {error}"),
         }
 
@@ -171,6 +177,7 @@ impl DaemonWebActivityTask {
         let event_handle = tokio::spawn(run_web_activity_event_sync(
             context.clone(),
             tracking_snapshot.clone(),
+            state.clone(),
             event_hub,
             event_sink.clone(),
             shutdown_rx,
@@ -220,11 +227,19 @@ impl DaemonWebActivityTask {
 async fn run_web_activity_event_sync(
     context: crate::engine::runtime_context::RuntimeContext,
     tracking_snapshot: Arc<crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState>,
+    state: Arc<crate::engine::web_activity::WebActivityRuntimeState>,
     event_hub: Arc<crate::engine::runtime_event::RuntimeEventHub>,
     event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
     mut shutdown: watch::Receiver<bool>,
 ) {
     let mut subscription = event_hub.subscribe_after(None);
+    let start_at = tokio::time::Instant::now()
+        + crate::engine::web_activity::WEB_ACTIVITY_STALE_CHECK_INTERVAL;
+    let mut stale_interval = tokio::time::interval_at(
+        start_at,
+        crate::engine::web_activity::WEB_ACTIVITY_STALE_CHECK_INTERVAL,
+    );
+    stale_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         tokio::select! {
             changed = shutdown.changed() => {
@@ -255,6 +270,21 @@ async fn run_web_activity_event_sync(
                     event_sink.as_ref(),
                     changed_at_ms.min(i64::MAX as u64) as i64,
                 ).await;
+            }
+            _ = stale_interval.tick() => {
+                match crate::engine::web_activity::seal_stale_active_segment(
+                    context.pool(),
+                    state.as_ref(),
+                    context.now_ms(),
+                ).await {
+                    Ok(Some(sealed_at_ms)) => {
+                        emit_web_activity_event(event_sink.as_ref(), sealed_at_ms)
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        eprintln!("[patinad] stale web activity watchdog failed: {error}")
+                    }
+                }
             }
         }
     }

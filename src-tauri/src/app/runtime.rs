@@ -65,6 +65,7 @@ pub fn setup(
     crate::app::web_activity_bridge::start(app.handle().clone());
     crate::engine::remote_status_bridge::start(app.handle().clone());
     crate::app::web_activity::spawn_startup_repair(app.handle().clone());
+    crate::app::web_activity::spawn_stale_watchdog(app.handle().clone());
 
     // Start HTTP API server for AI agent integration
     let api_server = crate::engine::api::server::ApiServerState::new();

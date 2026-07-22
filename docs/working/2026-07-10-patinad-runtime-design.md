@@ -1,6 +1,6 @@
 # `patinad` 后台运行时设计
 
-> 状态：Stage 0、Stage 1、Stage 2A、Stage 2B tracking preview、Stage 2C power preview、Stage 2D audio preview、Stage 2E MPRIS preview 和 Stage 2F browser bridge preview 的能力迁移已完成并验证；Stage 2F.1 稳定化、默认 owner 切换与客户端迁移待实施。
+> 状态：Stage 0 至 Stage 2F 的 preview 能力迁移，以及 Stage 2F.1 的异常恢复与浏览器心跳数据语义已完成并验证；Stage 2F.1 transport/readiness/owner 收口、默认 owner 切换与客户端迁移待实施。
 > 生命周期：本设计是当前 `patinad` 实施依据；后台接管稳定完成后移入 `docs/archive/`。
 
 ## 1. 目标
@@ -59,13 +59,12 @@
 - 浏览器活动 HTTP transport 只绑定 loopback，并限制 header、body、请求时长与任务关闭；显式并发数量上限待 Stage 2F.1 补齐
 - 浏览器 Token 校验、隐私规则、前台浏览器判断和 SQLite 写入不再依赖 `AppHandle`
 - daemon tracking preview 从 profile 设置读取浏览器桥接端口和 Token；配置变更当前需要重启 daemon 才会生效
-- tracking 事件会在离开浏览器、AFK 或暂停时封口网页段；正常退出已有封口路径，异常退出的可信恢复边界待 Stage 2F.1 修正
+- tracking 事件会在离开浏览器、AFK 或暂停时封口网页段；异常退出按 active row 最后可信 `updated_at` 修复，不计入停机空白
+- 浏览器 connected 使用 75 秒心跳宽限；desktop 与 daemon watchdog 每 15 秒检查一次，并在扩展过期时按最后成功上报时间封口
 - desktop 继续通过薄 Tauri adapter 使用同一桥接核心
 
 当前实现仍不能发布为正式后台服务，原因包括：
 
-- 网页活动异常退出后仍按下次启动时间封口，可能把 daemon 停机时间计入 duration；必须改为最后可信上报时间
-- 扩展心跳周期和 connected 判定窗口当前同为 30 秒，存在调度抖动导致误断开的边界；扩展消失后也缺少按最后上报时间封口的 watchdog
 - API、SSE 和浏览器 bridge 已有请求限制与可等待关闭，但还没有各自明确的并发连接数量上限
 - browser bridge readiness 当前在 bind 后写入，尚未跟随 listener/task 的意外退出自动失效
 - `app/daemon/runtime.rs` 同时编排 tracking、power、audio、MPRIS、browser bridge 和 API，继续扩展前需要按 owner 拆分
@@ -174,7 +173,7 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 
 ### 阶段 2：daemon 接管后台
 
-状态：Stage 2A 事件传输、Stage 2B tracking preview、Stage 2C power preview、Stage 2D audio preview、Stage 2E MPRIS preview 和 Stage 2F browser bridge preview 的能力迁移已完成；Stage 2F.1 稳定化、默认 owner 切换与客户端化待实施。
+状态：Stage 2A 至 Stage 2F 的 preview 能力迁移，以及 Stage 2F.1 数据语义已完成；transport/readiness/owner 收口、默认 owner 切换与客户端化待实施。
 
 - 已完成：有界事件中心、受认证 SSE、replay/resync、能力协商和干净关闭
 - 已完成：显式模式下 daemon 接管 tracking/watchdog、实时快照、session 写入和退出封口
@@ -193,9 +192,9 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 
 该阶段不增加用户功能，先把 preview 能力收敛为可长期运行的服务边界：
 
-- data owner：网页 active row 按 `updated_at` 或等价的最后可信观测时间恢复，不把停机空白计入 duration
-- web activity engine：connected 宽限必须大于扩展心跳周期；上报过期后按最后成功上报时间封口网页段
-- verification first：先用跨夜崩溃恢复、心跳抖动和扩展消失测试固定数据语义，再修改 transport 或 owner 结构
+- 已完成 data owner：网页 active row 按 `updated_at` 恢复并受启动时间上限保护，不把停机空白计入 duration
+- 已完成 web activity engine：30 秒扩展心跳使用 75 秒 connected 宽限；15 秒 watchdog 在过期后按最后成功上报时间封口，并在 data owner 中防止并发新上报被旧检查误封
+- 已完成 verification first：跨夜崩溃恢复、心跳抖动、扩展消失和数据库观测边界已有测试，再进入 transport 与 owner 结构修改
 - API / platform transport：以 Axum + Tower 替换自写 HTTP parser、server loop 和 SSE transport，为普通 API、SSE 和 browser bridge 分别设置并验证并发连接上限
 - browser boundary：API 使用严格 origin/CORS 与 loopback Host 校验；浏览器扩展保留独立 listener 和 Token
 - daemon health：capability 与 diagnostics readiness 跟随 listener/task 生命周期，任务意外退出后立即降级

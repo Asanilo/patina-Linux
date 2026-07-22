@@ -1,6 +1,7 @@
 use crate::data::repositories::web_activity::{
-    end_active_segment, load_domain_recording_enabled, upsert_active_segment,
-    WebActivitySegmentInput,
+    end_active_segment, load_domain_recording_enabled,
+    repair_active_segment_after_restart as repair_active_segment_row_after_restart,
+    seal_active_segment_if_not_updated_after, upsert_active_segment, WebActivitySegmentInput,
 };
 use crate::domain::settings::WebActivitySettings;
 use crate::domain::web_activity::{
@@ -14,8 +15,10 @@ use crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshot;
 use serde_json::json;
 use sqlx::{Pool, Sqlite};
 use std::sync::Mutex;
+use std::time::Duration;
 
-const BROWSER_BRIDGE_CONNECTED_WINDOW_MS: i64 = 30_000;
+const BROWSER_BRIDGE_STALE_AFTER_MS: i64 = 75_000;
+pub const WEB_ACTIVITY_STALE_CHECK_INTERVAL: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Debug, Default)]
 struct WebActivityClientSnapshot {
@@ -62,7 +65,7 @@ impl WebActivityRuntimeState {
         };
         let connected = client
             .last_activity_at_ms
-            .map(|last| now_ms.saturating_sub(last) <= BROWSER_BRIDGE_CONNECTED_WINDOW_MS)
+            .map(|last| now_ms.saturating_sub(last) <= BROWSER_BRIDGE_STALE_AFTER_MS)
             .unwrap_or(false);
 
         WebActivityBridgeSnapshot {
@@ -74,6 +77,15 @@ impl WebActivityRuntimeState {
             extension_version: client.extension_version,
             last_activity_at_ms: client.last_activity_at_ms,
         }
+    }
+
+    fn stale_activity_boundary(&self, now_ms: i64) -> Option<i64> {
+        let last_activity_at_ms = match self.inner.lock() {
+            Ok(guard) => guard.last_activity_at_ms,
+            Err(poisoned) => poisoned.into_inner().last_activity_at_ms,
+        }?;
+        (now_ms.saturating_sub(last_activity_at_ms) > BROWSER_BRIDGE_STALE_AFTER_MS)
+            .then_some(last_activity_at_ms)
     }
 
     fn update_client(
@@ -288,6 +300,28 @@ pub async fn seal_active_segment(pool: &Pool<Sqlite>, now_ms: i64) -> Result<boo
         .map_err(|error| format!("failed to seal web activity: {error}"))
 }
 
+pub async fn repair_active_segment_after_restart(
+    pool: &Pool<Sqlite>,
+    restart_time_ms: i64,
+) -> Result<Option<i64>, String> {
+    repair_active_segment_row_after_restart(pool, restart_time_ms)
+        .await
+        .map_err(|error| format!("failed to repair web activity after restart: {error}"))
+}
+
+pub async fn seal_stale_active_segment(
+    pool: &Pool<Sqlite>,
+    state: &WebActivityRuntimeState,
+    now_ms: i64,
+) -> Result<Option<i64>, String> {
+    let Some(stale_boundary_ms) = state.stale_activity_boundary(now_ms) else {
+        return Ok(None);
+    };
+    seal_active_segment_if_not_updated_after(pool, stale_boundary_ms)
+        .await
+        .map_err(|error| format!("failed to seal stale web activity: {error}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -479,6 +513,83 @@ mod tests {
         assert!(snapshot.connected);
         assert!(!snapshot.listening);
         assert_eq!(snapshot.browser_kind.as_deref(), Some("chrome"));
+
+        let delayed_heartbeat_snapshot = state.snapshot(
+            &WebActivitySettings {
+                enabled: true,
+                token: "secret".into(),
+                url_privacy: crate::domain::settings::WebActivityUrlPrivacyMode::Full,
+            },
+            61_000,
+        );
+        assert!(delayed_heartbeat_snapshot.connected);
+
+        let stale_snapshot = state.snapshot(
+            &WebActivitySettings {
+                enabled: true,
+                token: "secret".into(),
+                url_privacy: crate::domain::settings::WebActivityUrlPrivacyMode::Full,
+            },
+            76_001,
+        );
+        assert!(!stale_snapshot.connected);
+    }
+
+    #[test]
+    fn stale_watchdog_seals_at_the_last_browser_observation() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            let input = WebActivitySegmentInput {
+                browser_client_id: "client".into(),
+                browser_kind: "chrome".into(),
+                browser_exe_name: "chrome.exe".into(),
+                domain: "github.com".into(),
+                normalized_domain: "github.com".into(),
+                url: None,
+                title: Some("Issue".into()),
+                favicon_url: None,
+            };
+            upsert_active_segment(&pool, &input, 1_000).await.unwrap();
+            upsert_active_segment(&pool, &input, 2_000).await.unwrap();
+
+            let state = WebActivityRuntimeState::default();
+            state.observe_active_tab(
+                &BrowserActiveTabPayload {
+                    browser_client_id: Some("client".into()),
+                    browser_kind: Some("chrome".into()),
+                    extension_version: Some("0.1.0".into()),
+                    tab_id: Some(1),
+                    window_id: Some(1),
+                    url: Some("https://github.com".into()),
+                    title: Some("Issue".into()),
+                    fav_icon_url: None,
+                    incognito: Some(false),
+                    captured_at_ms: Some(2_000),
+                    event_reason: Some("heartbeat".into()),
+                },
+                2_000,
+            );
+
+            assert_eq!(
+                seal_stale_active_segment(&pool, &state, 77_000)
+                    .await
+                    .unwrap(),
+                None
+            );
+            assert_eq!(
+                seal_stale_active_segment(&pool, &state, 77_001)
+                    .await
+                    .unwrap(),
+                Some(2_000)
+            );
+
+            let duration: Option<i64> =
+                sqlx::query_scalar("SELECT duration FROM web_activity_segments LIMIT 1")
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            assert_eq!(duration, Some(1_000));
+        });
     }
 }
 mod http_contract;

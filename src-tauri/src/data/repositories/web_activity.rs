@@ -52,6 +52,7 @@ struct ActiveWebActivitySegment {
     url: Option<String>,
     title: Option<String>,
     start_time: i64,
+    updated_at: i64,
 }
 
 impl WebActivitySegmentInput {
@@ -166,6 +167,67 @@ pub async fn end_active_segment(
     finish_segment_tx(&mut tx, active.id, active.start_time, timestamp_ms).await?;
     tx.commit().await?;
     Ok(true)
+}
+
+pub async fn repair_active_segment_after_restart(
+    pool: &Pool<Sqlite>,
+    restart_time_ms: i64,
+) -> Result<Option<i64>, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let active = load_active_segment_tx(&mut tx).await?;
+    let Some(active) = active else {
+        tx.rollback().await?;
+        return Ok(None);
+    };
+
+    let latest_allowed_end = restart_time_ms.max(active.start_time);
+    let end_time = active
+        .updated_at
+        .clamp(active.start_time, latest_allowed_end);
+    finish_segment_tx(&mut tx, active.id, active.start_time, end_time).await?;
+    tx.commit().await?;
+    Ok(Some(end_time))
+}
+
+pub async fn seal_active_segment_if_not_updated_after(
+    pool: &Pool<Sqlite>,
+    stale_boundary_ms: i64,
+) -> Result<Option<i64>, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let active = load_active_segment_tx(&mut tx).await?;
+    let Some(active) = active else {
+        tx.rollback().await?;
+        return Ok(None);
+    };
+    if active.updated_at > stale_boundary_ms {
+        tx.rollback().await?;
+        return Ok(None);
+    }
+
+    let end_time = active.updated_at.max(active.start_time);
+    let result = sqlx::query(
+        "UPDATE web_activity_segments
+         SET end_time = ?,
+             duration = ?,
+             updated_at = ?
+         WHERE id = ?
+           AND end_time IS NULL
+           AND updated_at = ?",
+    )
+    .bind(end_time)
+    .bind(end_time - active.start_time)
+    .bind(end_time)
+    .bind(active.id)
+    .bind(active.updated_at)
+    .execute(&mut *tx)
+    .await?;
+    if result.rows_affected() == 0 {
+        tx.rollback().await?;
+        return Ok(None);
+    }
+
+    tx.commit().await?;
+    Ok(Some(end_time))
 }
 
 pub async fn query_segments(
@@ -381,7 +443,7 @@ async fn load_active_segment_tx(
 ) -> Result<Option<ActiveWebActivitySegment>, sqlx::Error> {
     let row = sqlx::query(
         "SELECT id, browser_client_id, browser_kind, browser_exe_name, normalized_domain,
-                url, title, start_time
+                url, title, start_time, updated_at
          FROM web_activity_segments
          WHERE end_time IS NULL
          ORDER BY start_time DESC, id DESC
@@ -399,6 +461,7 @@ async fn load_active_segment_tx(
         url: row.get("url"),
         title: row.get("title"),
         start_time: row.get("start_time"),
+        updated_at: row.get("updated_at"),
     }))
 }
 
@@ -510,6 +573,75 @@ mod tests {
             assert_eq!(rows[0].get::<Option<i64>, _>("duration"), Some(2_000));
             assert_eq!(rows[1].get::<String, _>("normalized_domain"), "docs.rs");
             assert_eq!(rows[1].get::<Option<i64>, _>("end_time"), None);
+        });
+    }
+
+    #[test]
+    fn restart_repair_seals_at_last_observation_instead_of_restart_time() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+
+            assert!(
+                upsert_active_segment(&pool, &input("github.com", "Issue"), 1_000)
+                    .await
+                    .unwrap()
+            );
+            assert!(
+                !upsert_active_segment(&pool, &input("github.com", "Issue"), 2_000)
+                    .await
+                    .unwrap()
+            );
+
+            let repaired_at = repair_active_segment_after_restart(&pool, 86_402_000)
+                .await
+                .unwrap();
+            assert_eq!(repaired_at, Some(2_000));
+
+            let row = sqlx::query(
+                "SELECT end_time, duration, updated_at
+                 FROM web_activity_segments
+                 LIMIT 1",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(row.get::<Option<i64>, _>("end_time"), Some(2_000));
+            assert_eq!(row.get::<Option<i64>, _>("duration"), Some(1_000));
+            assert_eq!(row.get::<i64, _>("updated_at"), 2_000);
+        });
+    }
+
+    #[test]
+    fn stale_seal_rechecks_the_database_observation_boundary() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+
+            upsert_active_segment(&pool, &input("github.com", "Issue"), 1_000)
+                .await
+                .unwrap();
+            upsert_active_segment(&pool, &input("github.com", "Issue"), 2_000)
+                .await
+                .unwrap();
+
+            assert_eq!(
+                seal_active_segment_if_not_updated_after(&pool, 1_000)
+                    .await
+                    .unwrap(),
+                None
+            );
+            assert_eq!(
+                seal_active_segment_if_not_updated_after(&pool, 2_000)
+                    .await
+                    .unwrap(),
+                Some(2_000)
+            );
+
+            let duration: Option<i64> =
+                sqlx::query_scalar("SELECT duration FROM web_activity_segments LIMIT 1")
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            assert_eq!(duration, Some(1_000));
         });
     }
 
