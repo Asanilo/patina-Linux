@@ -159,7 +159,7 @@
 7. Stage 2E MPRIS preview 已完成：Linux media source 可由 daemon 显式拥有和取消，多播放器按当前窗口身份优先匹配，D-Bus 查询不依赖 Tauri 全局运行时。
 8. Stage 2F browser bridge preview 已完成：显式 tracking 模式由 daemon 在 loopback 接收浏览器扩展上报，共用宿主无关的鉴权、隐私、记录和封口逻辑，并提供受限请求生命周期与可等待关闭。
 9. Stage 2F.1 数据语义已完成：网页异常退出按最后可信观测时间恢复；浏览器心跳使用 75 秒宽限并由 watchdog 在过期时按最后上报封口；跨夜崩溃、心跳抖动、扩展消失和并发更新保护已有回归测试。
-10. Stage 2F.2 transport 第一批已完成：desktop 与 daemon 共用的 API/SSE 已迁移到 Axum + Tower，删除自写 API parser、server loop 和 SSE writer；普通 API 与 SSE 使用独立的 32/8 并发预算，API Host/origin/CORS 已限制为 loopback，listener readiness 跟随 task 生命周期，daemon API 意外退出会触发受控停机。下一批迁移独立浏览器 bridge transport，并让其 readiness 同样跟随 task 生命周期。
+10. Stage 2F.2 transport 已完成：desktop 与 daemon 共用的 API/SSE、独立浏览器 bridge 均已迁移到 Axum + Tower，不再保留自写 HTTP parser/server loop/SSE writer；普通 API、SSE、browser bridge 分别使用 32/8/8 的 fail-fast 并发预算。API 只允许 loopback Host/origin，bridge 只允许 loopback Host 与 Firefox/Chromium 扩展 Origin；listener readiness 跟随真实 task 生命周期，daemon API 意外退出会触发受控停机，bridge 意外退出会立即降级诊断状态。
 11. 按稳定行为拆分 daemon owner：tracking、power、audio、media、web activity 与 transport 生命周期回到对应模块，`app/daemon/runtime.rs` 只保留装配和关闭顺序；本阶段不做 Cargo workspace 重排。
 12. 补齐 Patina Desktop 所需的 daemon 写侧 API 和版本协商，再让 Tauri 成为纯客户端；切换后不自动回退 embedded tracker，daemon 故障必须明确诊断并提供受控重启。
 13. 用一个 `patina` 产品包同时安装 Patina Desktop、`patinad` 和 systemd user unit；首次桌面启动在用户会话中迁移旧 XDG autostart 并启用后台服务，把“后台追踪随登录启动”与“桌面客户端随登录打开”拆成独立设置。

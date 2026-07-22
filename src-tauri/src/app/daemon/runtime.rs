@@ -153,11 +153,13 @@ impl DaemonWebActivityTask {
             ) {
                 Ok(server) => {
                     let port = server.port();
-                    state.set_listening(true);
                     println!(
                         "[patinad] browser activity bridge listening on http://127.0.0.1:{port}"
                     );
-                    Some(server.start())
+                    let readiness_state = state.clone();
+                    Some(server.start_with_readiness(Arc::new(move |listening| {
+                        readiness_state.set_listening(listening);
+                    })))
                 }
                 Err(error) => {
                     state.set_listening(false);
@@ -837,6 +839,14 @@ mod tests {
         DaemonRuntime::new(None, event_hub, Some(background_tasks), sqlite, lease)
             .shutdown()
             .await;
+        assert!(
+            !web_activity_state
+                .snapshot(
+                    &crate::domain::settings::WebActivitySettings::default(),
+                    crate::app::runtime::now_ms() as i64,
+                )
+                .listening
+        );
 
         let rebound = tokio::net::TcpListener::bind(("127.0.0.1", browser_port))
             .await

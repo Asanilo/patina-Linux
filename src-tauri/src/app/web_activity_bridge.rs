@@ -2,7 +2,7 @@ use crate::data::repositories::app_settings;
 use crate::data::sqlite_pool::wait_for_sqlite_pool;
 use crate::domain::settings::WebActivityBridgeSettings;
 use crate::platform::web_activity_bridge::{
-    WebActivityBridgeHttpHandler, WebActivityBridgeRuntimeState,
+    WebActivityBridgeHttpHandler, WebActivityBridgeReadinessHandler, WebActivityBridgeRuntimeState,
     WEB_ACTIVITY_BRIDGE_ACTIVE_WINDOW_EVENT, WEB_ACTIVITY_BRIDGE_SETTINGS_CHANGED_EVENT,
     WEB_ACTIVITY_BRIDGE_TRACKING_DATA_EVENT,
 };
@@ -65,12 +65,15 @@ async fn update_runtime_state<R: Runtime + 'static>(
                 request,
             ))
         });
-        let listening = state.update(settings, handler).await;
-        if let Some(web_state) =
-            app.try_state::<crate::engine::web_activity::WebActivityRuntimeState>()
-        {
-            web_state.set_listening(listening);
-        }
+        let readiness_app = app.clone();
+        let readiness: WebActivityBridgeReadinessHandler = Arc::new(move |listening| {
+            if let Some(web_state) =
+                readiness_app.try_state::<crate::engine::web_activity::WebActivityRuntimeState>()
+            {
+                web_state.set_listening(listening);
+            }
+        });
+        state.update(settings, handler, readiness).await;
     }
 }
 

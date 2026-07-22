@@ -220,7 +220,7 @@ domain ─────────┘          │
 
 这些名字表达的是职责，不要求一次性建立大而全 trait 系统。只有真实调用方出现时才提取最小接口。
 
-Stage 2F.1 使用 Axum + Tower 替换自写 HTTP parser、server loop 与 SSE transport。现有 domain handler、DTO、endpoint registry 与 API surface 继续作为协议 owner；框架只拥有 HTTP 解析、路由、middleware、静态资源、并发预算和优雅关闭。API 与浏览器扩展 bridge 保持独立 listener、credential 和 origin policy，但不能保留两套自写 transport。
+Stage 2F.2 已使用 Axum + Tower 替换通用 API/SSE 与浏览器 bridge 的自写 HTTP parser、server loop 和 SSE transport。现有 domain handler、DTO、endpoint registry 与 API surface 继续作为协议 owner；框架只拥有 HTTP 解析、路由、middleware、静态资源、并发预算和优雅关闭。API 与浏览器扩展 bridge 保持独立 listener、credential 和 origin policy，不保留两套自写 transport。
 
 浏览器 UI 与桌面 UI 默认复用现有 React feature 和 read model，但外部数据访问必须经过 transport-neutral gateway：
 

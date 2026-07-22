@@ -56,7 +56,8 @@
 - 显式、可克隆、可取消的 Linux MPRIS source，不依赖 Tauri host
 - 多 MPRIS 播放器保留有界快照，当前窗口匹配优先于无关活动播放器
 - 当前窗口对应播放器的 paused 状态可立即结束 media grace，而不会被其他播放器遮蔽
-- 浏览器活动 HTTP transport 只绑定 loopback，并限制 header、body、请求时长与任务关闭；显式并发数量上限待 Stage 2F.1 补齐
+- 浏览器活动 HTTP transport 使用 Axum，只绑定 loopback，具有 64 KiB body、5 秒 handler、8 请求并发和 5 秒关闭预算
+- 浏览器 bridge CORS 只回显 `moz-extension://` 或 `chrome-extension://` Origin，不再使用 `Access-Control-Allow-Origin: *`；无 Origin 的本机诊断请求仍可用
 - 浏览器 Token 校验、隐私规则、前台浏览器判断和 SQLite 写入不再依赖 `AppHandle`
 - daemon tracking preview 从 profile 设置读取浏览器桥接端口和 Token；配置变更当前需要重启 daemon 才会生效
 - tracking 事件会在离开浏览器、AFK 或暂停时封口网页段；异常退出按 active row 最后可信 `updated_at` 修复，不计入停机空白
@@ -65,8 +66,6 @@
 
 当前实现仍不能发布为正式后台服务，原因包括：
 
-- API、SSE 和浏览器 bridge 已有请求限制与可等待关闭，但还没有各自明确的并发连接数量上限
-- browser bridge readiness 当前在 bind 后写入，尚未跟随 listener/task 的意外退出自动失效
 - `app/daemon/runtime.rs` 同时编排 tracking、power、audio、MPRIS、browser bridge 和 API，继续扩展前需要按 owner 拆分
 - 浏览器端口和 Token 仅在 daemon 启动时读取，运行中修改需要重启
 - daemon 尚无 systemd user service 和浏览器 UI
@@ -136,7 +135,7 @@ API handler 依赖 pool、runtime snapshots、settings 和平台诊断 provider�
 
 desktop 与 daemon 复用同一 transport 和 endpoint registry，OpenAPI 从实际启用的 endpoint 集合生成或校验。
 
-Stage 2F.2 第一批已由 Axum + Tower 承接通用 HTTP API、SSE、并发预算和优雅关闭，并删除通用 API 的自写 parser、server loop 与 SSE writer。普通 API 和 SSE 分别使用 32 和 8 的 fail-fast 并发预算；API 只接受 loopback Host，有 Origin 时只允许 loopback HTTP(S) 或 `tauri://localhost`，无 Origin 的 Bearer 客户端保持可用。API 与浏览器扩展 bridge 保持独立 listener、credential 和 origin policy；浏览器 bridge 的 transport 迁移属于下一批。
+Stage 2F.2 已由 Axum + Tower 承接通用 HTTP API、SSE、浏览器 bridge、并发预算和优雅关闭，并删除两套自写 parser/server loop 与 SSE writer。普通 API、SSE 和浏览器 bridge 分别使用 32、8 和 8 的 fail-fast 并发预算。API 只接受 loopback Host，有 Origin 时只允许 loopback HTTP(S) 或 `tauri://localhost`；bridge 只接受 loopback Host，有 Origin 时只允许 `moz-extension://` 或 `chrome-extension://`。无 Origin 的本机 Bearer 客户端保持可用，两类 listener 继续使用独立 credential 和 origin policy。
 
 ### 5.6 Browser UI client
 
@@ -173,7 +172,7 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 
 ### 阶段 2：daemon 接管后台
 
-状态：Stage 2A 至 Stage 2F 的 preview 能力迁移、Stage 2F.1 数据语义和 Stage 2F.2 通用 API/SSE transport 已完成；浏览器 bridge transport、owner 收口、默认 owner 切换与客户端化待实施。
+状态：Stage 2A 至 Stage 2F 的 preview 能力迁移、Stage 2F.1 数据语义和 Stage 2F.2 全部 loopback transport 已完成；owner 收口、默认 owner 切换与客户端化待实施。
 
 - 已完成：有界事件中心、受认证 SSE、replay/resync、能力协商和干净关闭
 - 已完成：显式模式下 daemon 接管 tracking/watchdog、实时快照、session 写入和退出封口
@@ -181,8 +180,8 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 - 已完成：daemon 接管 Linux audio source，按设置启停并在退出时取消
 - 已完成：daemon 接管 Linux MPRIS source，多播放器按当前窗口优先解析并在退出时取消
 - 已完成：daemon 接管 browser activity bridge，共用鉴权、隐私、记录、事件和受限请求生命周期
-- 已完成：通用 API/SSE 使用 Axum + Tower，具有独立并发预算、loopback Host/origin 边界、task readiness 和有界关闭
-- 待实施：浏览器 bridge transport/readiness 与 daemon owner 拆分
+- 已完成：通用 API/SSE 和浏览器 bridge 使用 Axum + Tower，具有独立并发预算、各自 Host/origin 边界、task readiness 和有界关闭
+- 待实施：daemon owner 拆分
 - 待实施：运行中设置写侧与完整本地 API owner
 - 待实施：desktop 通过 daemon client 和 event stream 获取状态
 - 待实施：desktop 不再启动第二套 tracker
@@ -197,10 +196,10 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 - 已完成 web activity engine：30 秒扩展心跳使用 75 秒 connected 宽限；15 秒 watchdog 在过期后按最后成功上报时间封口，并在 data owner 中防止并发新上报被旧检查误封
 - 已完成 verification first：跨夜崩溃恢复、心跳抖动、扩展消失和数据库观测边界已有测试，再进入 transport 与 owner 结构修改
 - 已完成 API transport：Axum + Tower 替换通用 API 的自写 HTTP parser、server loop 和 SSE transport；普通 API 和 SSE 分别使用 32/8 的 fail-fast 并发预算
-- 待完成 platform transport：browser bridge 迁移到成熟 transport 并设置独立并发上限
+- 已完成 platform transport：browser bridge 使用 Axum 并设置独立 8 请求并发上限
 - 已完成 API boundary：API 使用严格 origin/CORS 与 loopback Host 校验；无 Origin 的 Bearer 客户端保持兼容
-- 待完成 browser boundary：浏览器扩展保留独立 listener 和 Token，不复用通用 API 的 origin policy
-- 部分完成 daemon health：通用 API listener/task readiness 已联动，意外退出会使 desktop 诊断降级或触发 daemon 受控停机；browser bridge task readiness 仍待迁移
+- 已完成 browser boundary：浏览器扩展保留独立 listener 和 Token，只回显 Firefox/Chromium 扩展 Origin，不复用通用 API 的 origin policy
+- 已完成 transport health：通用 API listener/task readiness 已联动，意外退出会使 desktop 诊断降级或触发 daemon 受控停机；browser bridge 正常退出、panic 或 abort 均立即把 readiness 降级
 - daemon ownership：把 tracking、power、audio、media、web activity 和 transport 生命周期移入对应 owner 模块，`app/daemon/runtime.rs` 只保留编排和关闭顺序
 - workspace boundary：首个 daemon-backed 里程碑保持当前 Rust package，不把 Cargo workspace 重排混入 owner 迁移
 - verification complete：继续覆盖连接饱和、listener 意外退出和有序 shutdown
