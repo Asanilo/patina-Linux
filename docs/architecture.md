@@ -401,6 +401,22 @@ src-tauri/src/
 
 `bin/*` 只放可执行入口。`patinad` 的装配属于 `app/*`，tracking、API、数据和平台实现仍分别归 `engine / data / platform`。不新增长期根层 `daemon/*` 作为第二套业务 owner。
 
+daemon 宿主生命周期当前按以下结构收口：
+
+```text
+app/daemon/
+  runtime.rs                 # 依赖装配、启动顺序、关闭顺序
+  runtime/
+    tracking.rs              # tracking/watchdog 任务、重试与退出封口
+    power.rs                 # logind 任务、重连与事件转交
+    audio.rs                 # audio source 的设置加载、运行与取消
+    media.rs                 # MPRIS source 的运行与取消
+    web_activity.rs          # browser bridge、网页边界同步与退出封口
+    restart.rs               # owner 间共享的可取消退避等待
+```
+
+这些模块拥有的是 daemon host 生命周期，不复制 `engine` 行为、`data` 仓储或 `platform` source 实现。新增 daemon 能力时应继续先判断真实 owner，不能把 `runtime.rs` 重新扩张成后台业务入口。
+
 ### 6.1 `main.rs` 与 `lib.rs`
 
 它们负责应用入口与总装配。

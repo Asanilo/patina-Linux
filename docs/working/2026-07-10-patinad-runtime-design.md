@@ -1,6 +1,6 @@
 # `patinad` 后台运行时设计
 
-> 状态：Stage 0 至 Stage 2F 的 preview 能力迁移，以及 Stage 2F.1 的异常恢复与浏览器心跳数据语义已完成并验证；Stage 2F.1 transport/readiness/owner 收口、默认 owner 切换与客户端迁移待实施。
+> 状态：Stage 0 至 Stage 2F 的 preview 能力迁移，以及 Stage 2F.1 的异常恢复、浏览器心跳、transport/readiness 和 daemon owner 收口已完成并验证；默认 owner 切换与客户端迁移待实施。
 > 生命周期：本设计是当前 `patinad` 实施依据；后台接管稳定完成后移入 `docs/archive/`。
 
 ## 1. 目标
@@ -63,10 +63,10 @@
 - tracking 事件会在离开浏览器、AFK 或暂停时封口网页段；异常退出按 active row 最后可信 `updated_at` 修复，不计入停机空白
 - 浏览器 connected 使用 75 秒心跳宽限；desktop 与 daemon watchdog 每 15 秒检查一次，并在扩展过期时按最后成功上报时间封口
 - desktop 继续通过薄 Tauri adapter 使用同一桥接核心
+- daemon tracking、power、audio、media 与 web activity 的任务状态、重试、取消和退出封口已拆入对应 `app/daemon/runtime/*` owner 模块；聚合 `runtime.rs` 只保留依赖装配和有序关闭
 
 当前实现仍不能发布为正式后台服务，原因包括：
 
-- `app/daemon/runtime.rs` 同时编排 tracking、power、audio、MPRIS、browser bridge 和 API，继续扩展前需要按 owner 拆分
 - 浏览器端口和 Token 仅在 daemon 启动时读取，运行中修改需要重启
 - daemon 尚无 systemd user service 和浏览器 UI
 - Tauri desktop 尚未改为 daemon client
@@ -172,7 +172,7 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 
 ### 阶段 2：daemon 接管后台
 
-状态：Stage 2A 至 Stage 2F 的 preview 能力迁移、Stage 2F.1 数据语义和 Stage 2F.2 全部 loopback transport 已完成；owner 收口、默认 owner 切换与客户端化待实施。
+状态：Stage 2A 至 Stage 2F 的 preview 能力迁移、Stage 2F.1 数据语义、Stage 2F.2 全部 loopback transport 和 daemon owner 收口已完成；默认 owner 切换与客户端化待实施。
 
 - 已完成：有界事件中心、受认证 SSE、replay/resync、能力协商和干净关闭
 - 已完成：显式模式下 daemon 接管 tracking/watchdog、实时快照、session 写入和退出封口
@@ -181,7 +181,7 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 - 已完成：daemon 接管 Linux MPRIS source，多播放器按当前窗口优先解析并在退出时取消
 - 已完成：daemon 接管 browser activity bridge，共用鉴权、隐私、记录、事件和受限请求生命周期
 - 已完成：通用 API/SSE 和浏览器 bridge 使用 Axum + Tower，具有独立并发预算、各自 Host/origin 边界、task readiness 和有界关闭
-- 待实施：daemon owner 拆分
+- 已完成：daemon owner 拆分，聚合 runtime 只保留装配和有序关闭
 - 待实施：运行中设置写侧与完整本地 API owner
 - 待实施：desktop 通过 daemon client 和 event stream 获取状态
 - 待实施：desktop 不再启动第二套 tracker
@@ -200,7 +200,7 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 - 已完成 API boundary：API 使用严格 origin/CORS 与 loopback Host 校验；无 Origin 的 Bearer 客户端保持兼容
 - 已完成 browser boundary：浏览器扩展保留独立 listener 和 Token，只回显 Firefox/Chromium 扩展 Origin，不复用通用 API 的 origin policy
 - 已完成 transport health：通用 API listener/task readiness 已联动，意外退出会使 desktop 诊断降级或触发 daemon 受控停机；browser bridge 正常退出、panic 或 abort 均立即把 readiness 降级
-- daemon ownership：把 tracking、power、audio、media、web activity 和 transport 生命周期移入对应 owner 模块，`app/daemon/runtime.rs` 只保留编排和关闭顺序
+- 已完成 daemon ownership：tracking、power、audio、media 和 web activity 生命周期已移入对应 owner 模块，`app/daemon/runtime.rs` 只保留编排和关闭顺序
 - workspace boundary：首个 daemon-backed 里程碑保持当前 Rust package，不把 Cargo workspace 重排混入 owner 迁移
 - verification complete：继续覆盖连接饱和、listener 意外退出和有序 shutdown
 
