@@ -691,6 +691,9 @@ mod tests {
             .connect("sqlite::memory:")
             .await
             .unwrap();
+        sqlx::Executor::execute(&pool, crate::data::schema::CURRENT_BASELINE_SCHEMA_SQL)
+            .await
+            .unwrap();
         ApiRuntimeContext::new(crate::engine::runtime_context::RuntimeContext::system(pool))
     }
 
@@ -811,6 +814,20 @@ mod tests {
         )
         .await;
         assert!(missing_token.starts_with("HTTP/1.1 401 Unauthorized"));
+
+        let unauthorized_write = request(
+            port,
+            b"POST /api/v1/settings/tracker/pause HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 15\r\nConnection: close\r\n\r\n{\"paused\":true}",
+        )
+        .await;
+        assert!(unauthorized_write.starts_with("HTTP/1.1 401 Unauthorized"));
+
+        let authorized_write = request(
+            port,
+            b"POST /api/v1/settings/tracker/pause HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer test-token\r\nContent-Type: application/json\r\nContent-Length: 15\r\nConnection: close\r\n\r\n{\"paused\":true}",
+        )
+        .await;
+        assert!(authorized_write.starts_with("HTTP/1.1 200 OK"));
 
         let oversized = request(
             port,

@@ -115,6 +115,25 @@ export const PATINA_MCP_TOOLS: PatinaMcpTool[] = [
     inputSchema: objectSchema({}),
   },
   {
+    name: "set_idle_threshold",
+    description: "Set the Patina idle threshold in seconds.",
+    inputSchema: objectSchema({
+      seconds: {
+        type: "integer",
+        minimum: 60,
+        maximum: 86400,
+        description: "Idle threshold in seconds.",
+      },
+    }, ["seconds"]),
+  },
+  {
+    name: "set_tracking_paused",
+    description: "Set whether Patina automatic tracking is paused.",
+    inputSchema: objectSchema({
+      paused: { type: "boolean", description: "Whether tracking should be paused." },
+    }, ["paused"]),
+  },
+  {
     name: "classify_app",
     description: "Assign a Patina category to an app exe_name.",
     inputSchema: objectSchema({
@@ -271,6 +290,10 @@ function toolNameToApiRequest(name: string, args: Record<string, unknown>) {
       return getRequest("/api/v1/tools/snapshot");
     case "list_apps":
       return getRequest("/api/v1/apps");
+    case "set_idle_threshold":
+      return setIdleThresholdRequest(args);
+    case "set_tracking_paused":
+      return setTrackingPausedRequest(args);
     case "classify_app":
       return classifyAppRequest(args);
     case "rename_app":
@@ -280,6 +303,39 @@ function toolNameToApiRequest(name: string, args: Record<string, unknown>) {
     default:
       return null;
   }
+}
+
+function setIdleThresholdRequest(args: Record<string, unknown>) {
+  const seconds = numberValue(args.seconds);
+  if (
+    seconds === null
+    || !Number.isInteger(seconds)
+    || seconds < 60
+    || seconds > 86400
+  ) {
+    return { error: "set_idle_threshold requires integer seconds from 60 through 86400" };
+  }
+  return {
+    path: "/api/v1/settings/tracker/afk-threshold",
+    init: {
+      method: "POST" as const,
+      body: { seconds },
+    },
+  };
+}
+
+function setTrackingPausedRequest(args: Record<string, unknown>) {
+  const paused = booleanValue(args.paused);
+  if (paused === null) {
+    return { error: "set_tracking_paused requires paused" };
+  }
+  return {
+    path: "/api/v1/settings/tracker/pause",
+    init: {
+      method: "POST" as const,
+      body: { paused },
+    },
+  };
 }
 
 function renameAppRequest(args: Record<string, unknown>) {
@@ -390,6 +446,10 @@ function stringValue(value: unknown) {
 
 function booleanValue(value: unknown) {
   return typeof value === "boolean" ? value : null;
+}
+
+function numberValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function ok(id: string | number | null, result: Record<string, unknown>): JsonRpcResponse {

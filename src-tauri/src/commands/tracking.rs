@@ -78,8 +78,5 @@ pub fn cmd_get_tracker_health_snapshot(
 
 #[tauri::command]
 pub fn cmd_set_afk_threshold(threshold_secs: u64) {
-    #[cfg(target_os = "windows")]
-    crate::platform::windows::foreground::cmd_set_afk_threshold(threshold_secs);
-    #[cfg(target_os = "linux")]
-    crate::platform::linux::foreground::cmd_set_afk_threshold(threshold_secs);
+    crate::engine::tracking::runtime_settings::set_idle_threshold(threshold_secs);
 }

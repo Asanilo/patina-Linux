@@ -82,9 +82,10 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
             runtime_context.clone(),
             tracking_snapshot.clone(),
             web_activity_state.clone(),
+            event_hub.clone(),
         );
         let surface = if options.track {
-            crate::engine::api::surface::ApiSurface::DaemonTrackingReadOnly
+            crate::engine::api::surface::ApiSurface::DaemonTracking
         } else {
             crate::engine::api::surface::ApiSurface::DaemonReadOnly
         };

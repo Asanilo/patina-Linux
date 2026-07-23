@@ -34,7 +34,7 @@ Current caveats:
 - `/api/v1/openapi.json` exposes the machine-readable OpenAPI 3.1 schema with paths, query/path parameters, request bodies, response envelopes, auth, error envelopes, and field-level component schemas.
 - The OpenAPI server URL uses a configurable `{port}` variable whose default is `14840`.
 - This document remains the human-maintained reference for behavior notes and implementation caveats.
-- The desktop runtime exposes the JSON endpoints below. Development-only `patinad` exposes every authenticated `GET` endpoint through the same handlers, plus capability negotiation and an authenticated SSE stream; it rejects all `POST` endpoints.
+- The desktop runtime exposes the JSON endpoints below. Default `patinad` mode exposes authenticated reads plus SSE and rejects all `POST` endpoints. Explicit `--track` mode is the current runtime owner and additionally exposes the bounded app-mapping, classification, and tracker-settings writes listed by `/api/v1/capabilities`.
 - Default daemon mode remains historical/read-only: `GET /api/v1/current` returns `503` and live tracker/browser diagnostics are `null`.
 - Stage 2F preview mode is explicit: run `patinad --profile dev --serve-api --track --port 0`. It owns tracking for that profile, serves a live `/current`, observes Linux lock/suspend/resume/shutdown, runs audio/MPRIS participation sources, and owns the browser activity bridge configured for that profile. Never run desktop and daemon tracking against the same profile.
 - Stage 2F capability migration, Stage 2F.1 browser crash/heartbeat semantics, and Stage 2F.2 loopback transport migration are complete. API, SSE, and the independent browser extension bridge use Axum with 32/8/8 fail-fast concurrency budgets, bounded handlers, strict Host/origin policies, and task-coupled listener readiness. The extension protocol remains `POST /web-activity` with its separate Token; its CORS response only echoes Firefox/Zen or Chromium extension origins and never returns `Access-Control-Allow-Origin: *`.
@@ -67,6 +67,8 @@ Current caveats:
 | `/api/v1/apps/{exe_name}/exclude` | `POST` | Implemented | Save app exclusion flag |
 | `/api/v1/settings/tracker` | `GET` | Implemented | Tracker settings snapshot |
 | `/api/v1/settings/tracker/afk-threshold` | `POST` | Implemented | Update idle timeout threshold |
+| `/api/v1/settings/tracker/pause` | `POST` | Implemented | Set tracking pause state |
+| `/api/v1/settings/classification` | `POST` | Implemented | Commit a validated classification mutation batch |
 | `/api/v1/tools/snapshot` | `GET` | Implemented | Current Tools runtime snapshot |
 
 ---
@@ -88,7 +90,7 @@ Current scope:
 - Auth model: bearer token through `components.securitySchemes.bearerAuth`
 - Paths: the exact endpoints enabled for the current desktop or daemon API surface
 - Parameters: query params for sessions, summary range, trend, web activity; path params for app management
-- Request bodies: classify, rename, exclude, and AFK threshold writes
+- Request bodies: classify, rename, exclude, AFK threshold, tracking pause, and classification batch writes
 - Responses: success envelopes and standard `400` / `401` / `403` / `404` / `413` / `500` / `503` error envelopes
 - Components: field-level schemas for health, capabilities, runtime event envelopes, diagnostics, current window, sessions, active session, summaries, trend, web activity, apps, tracker settings, AI activity context, and Tools snapshot
 
@@ -137,19 +139,27 @@ Default daemon schema:
 ```json
 {
   "data": {
+    "server_version": "1.8.3",
     "protocol_version": 1,
+    "protocol": {
+      "current": 1,
+      "min_supported_client": 1,
+      "max_supported_client": 1
+    },
     "runtime_host": "daemon",
     "event_stream": { "available": true },
     "tracking": { "owned": false, "ready": false },
     "browser_activity_bridge": { "owned": false, "ready": false },
-    "write_api": { "available": false }
+    "write_api": { "available": false, "operations": [] }
   }
 }
 ```
 
 `owned` means that host is responsible for running the capability. `ready` is never true when `owned` is false. This prevents clients from confusing a readable historical API with a live tracking owner.
 
-With Stage 2F `--track`, the same response changes `tracking` to `{ "owned": true, "ready": false }` during startup and `{ "owned": true, "ready": true }` after the first runtime snapshot. `browser_activity_bridge.owned` is also `true`; its current `ready` value becomes `true` after the configured loopback listener binds successfully. Stage 2F.1 must additionally make that value fall back to `false` if the listener task exits unexpectedly. Default daemon mode keeps both capabilities unowned.
+Clients compare their supported protocol against `protocol.min_supported_client` and `protocol.max_supported_client` before using the daemon. `protocol_version` remains as the compatibility alias for `protocol.current`.
+
+With Stage 2F `--track`, the same response changes `tracking` to `{ "owned": true, "ready": false }` during startup and `{ "owned": true, "ready": true }` after the first runtime snapshot. `browser_activity_bridge.owned` is also `true`; its current `ready` value follows the configured listener task. `write_api` becomes `{ "available": true, "operations": ["app-mapping", "classification", "tracker-settings"] }`. Default daemon mode keeps both runtime capabilities unowned and the write API unavailable.
 
 ### `GET /api/v1/events`
 
@@ -678,6 +688,8 @@ Schema:
 { "data": { "ok": true } }
 ```
 
+App mapping writes use one transactional `__app_override::<canonical exe_name>` record. Updating one field preserves the existing category, display name, color, exclusion and title-capture fields; old API-only category/exclusion keys are migrated during the write.
+
 ### `POST /api/v1/apps/{exe_name}/rename`
 
 Curl:
@@ -782,6 +794,38 @@ Current behavior:
 
 - Updates in-memory AFK threshold.
 - Persists `idle_timeout_secs`.
+- Accepts values from 60 through 86400 seconds.
+- Returns an error if persistence fails instead of reporting a false success.
+
+### `POST /api/v1/settings/tracker/pause`
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/settings/tracker/pause" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"paused":true}'
+```
+
+Body:
+
+```json
+{ "paused": true }
+```
+
+The tracking owner observes this persisted state on its next loop, seals active activity when paused, and publishes a refresh event.
+
+### `POST /api/v1/settings/classification`
+
+This endpoint is for the desktop classification editor and other trusted local clients that already hold explicit user intent. It accepts at most 256 mutations and only classification key prefixes validated by the data owner.
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/settings/classification" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"mutations":[{"key":"__web_domain_override::example.com","value":"{\"category\":\"research\",\"enabled\":true}"}]}'
+```
+
+`value: null` deletes the key. Invalid keys or malformed override JSON reject the whole batch before any write; valid batches commit in one transaction.
 
 ### `GET /api/v1/tools/snapshot`
 
@@ -933,13 +977,14 @@ Current MCP tools:
 | `get_activity_context` | `GET /api/v1/ai/activity-context` | none | Fetch diagnostics, active session, summaries, and recent web activity for external AI analysis |
 | `get_tools_snapshot` | `GET /api/v1/tools/snapshot` | none | Fetch current Tools runtime snapshot |
 | `list_apps` | `GET /api/v1/apps` | none | List known apps from recorded sessions |
+| `set_idle_threshold` | `POST /api/v1/settings/tracker/afk-threshold` | `seconds` | Set idle threshold |
+| `set_tracking_paused` | `POST /api/v1/settings/tracker/pause` | `paused` | Set tracking pause state |
 | `classify_app` | `POST /api/v1/apps/{exe_name}/classify` | `exeName`, `category` | Save an app category |
 | `rename_app` | `POST /api/v1/apps/{exe_name}/rename` | `exeName`, `displayName` | Save an app display name |
 | `set_app_excluded` | `POST /api/v1/apps/{exe_name}/exclude` | `exeName`, `excluded` | Save an app exclusion flag |
 
 Remaining MCP wrapper gaps:
 
-- Tracker settings write-side tools.
 - Local API configuration tools.
 - Tools write-side actions such as creating reminders or starting timers.
 - Generated MCP tool metadata does not yet consume `/api/v1/openapi.json`; the wrapper keeps an explicit hand-written tool list for now.

@@ -34,6 +34,8 @@ await runTest("Patina MCP tool list exposes core local API tools", () => {
     "get_activity_context",
     "get_tools_snapshot",
     "list_apps",
+    "set_idle_threshold",
+    "set_tracking_paused",
     "classify_app",
     "rename_app",
     "set_app_excluded",
@@ -52,7 +54,7 @@ await runTest("Patina MCP tools/list returns tool metadata", async () => {
   });
 
   assert.equal(response.id, 1);
-  assert.equal(response.result.tools.length, 14);
+  assert.equal(response.result.tools.length, 16);
   assert.equal(response.result.tools[0].name, "get_diagnostics");
 });
 
@@ -64,6 +66,8 @@ await runTest("Patina MCP write tools declare required arguments", () => {
   assert.deepEqual(requiredByTool.get("classify_app"), ["exeName", "category"]);
   assert.deepEqual(requiredByTool.get("rename_app"), ["exeName", "displayName"]);
   assert.deepEqual(requiredByTool.get("set_app_excluded"), ["exeName", "excluded"]);
+  assert.deepEqual(requiredByTool.get("set_idle_threshold"), ["seconds"]);
+  assert.deepEqual(requiredByTool.get("set_tracking_paused"), ["paused"]);
 });
 
 await runTest("Patina MCP ignores initialized notifications", async () => {
@@ -265,6 +269,72 @@ await runTest("Patina MCP set_app_excluded sends POST body", async () => {
   ]);
 });
 
+await runTest("Patina MCP tracker setting tools send bounded POST bodies", async () => {
+  const calls: Array<{ path: string; init?: { method?: string; body?: unknown } }> = [];
+  const deps = {
+    apiBase: "http://127.0.0.1:14840",
+    apiToken: "token",
+    callApi: async (path: string, _deps: unknown, init?: { method?: string; body?: unknown }) => {
+      calls.push({ path, init });
+      return { data: { ok: true } };
+    },
+  };
+
+  await handleMcpRequest({
+    jsonrpc: "2.0",
+    id: 20,
+    method: "tools/call",
+    params: {
+      name: "set_idle_threshold",
+      arguments: { seconds: 900 },
+    },
+  }, deps);
+  await handleMcpRequest({
+    jsonrpc: "2.0",
+    id: 21,
+    method: "tools/call",
+    params: {
+      name: "set_tracking_paused",
+      arguments: { paused: true },
+    },
+  }, deps);
+
+  assert.deepEqual(calls, [
+    {
+      path: "/api/v1/settings/tracker/afk-threshold",
+      init: { method: "POST", body: { seconds: 900 } },
+    },
+    {
+      path: "/api/v1/settings/tracker/pause",
+      init: { method: "POST", body: { paused: true } },
+    },
+  ]);
+});
+
+await runTest("Patina MCP rejects out-of-range idle thresholds before the API call", async () => {
+  let called = false;
+  const response = await handleMcpRequest({
+    jsonrpc: "2.0",
+    id: 22,
+    method: "tools/call",
+    params: {
+      name: "set_idle_threshold",
+      arguments: { seconds: 30 },
+    },
+  }, {
+    apiBase: "http://127.0.0.1:14840",
+    apiToken: "token",
+    callApi: async () => {
+      called = true;
+      return { data: { ok: true } };
+    },
+  });
+
+  assert.equal(called, false);
+  assert.equal(response.error.code, -32602);
+  assert.match(response.error.message, /60 through 86400/);
+});
+
 await runTest("Patina MCP reports API failures as tool results", async () => {
   const response = await handleMcpRequest({
     jsonrpc: "2.0",
@@ -318,7 +388,7 @@ await runTest("Patina MCP stdio uses newline-delimited JSON and processes each m
   const responses = encodedResponses.map((line) => JSON.parse(line));
 
   assert.deepEqual(responses.map((response) => response.id), [10, 11]);
-  assert.equal(responses[1].result.tools.length, 14);
+  assert.equal(responses[1].result.tools.length, 16);
   assert.equal(encodedResponses.every((line) => !line.startsWith("Content-Length:")), true);
 });
 

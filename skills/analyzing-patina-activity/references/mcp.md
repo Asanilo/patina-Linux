@@ -29,8 +29,10 @@ Use only after explicit user intent:
 | `classify_app` | `exeName`, `category` | Persist an app category |
 | `rename_app` | `exeName`, `displayName` | Persist an app display name |
 | `set_app_excluded` | `exeName`, `excluded` | Change whether the app contributes to statistics |
+| `set_idle_threshold` | `seconds` | Set the idle threshold; accepted range is 60 through 86400 seconds |
+| `set_tracking_paused` | `paused` | Explicitly pause or resume automatic tracking |
 
-Before writing, use `list_apps` to verify the exact `exe_name`. Do not infer permission from a general request to analyze data.
+Before app writes, use `list_apps` to verify the exact `exe_name`. Do not infer permission for any write from a general request to analyze data.
 
 ## Recommended Sequences
 

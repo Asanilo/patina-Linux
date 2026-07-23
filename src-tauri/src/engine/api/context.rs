@@ -38,6 +38,7 @@ pub struct ApiRuntimeContext {
     version: String,
     platform: String,
     state: Arc<dyn ApiRuntimeStateProvider>,
+    event_sink: Option<Arc<dyn crate::engine::runtime_event::RuntimeEventSink>>,
 }
 
 impl ApiRuntimeContext {
@@ -51,17 +52,29 @@ impl ApiRuntimeContext {
         )
     }
 
+    #[cfg(test)]
     pub fn with_state(
         runtime: RuntimeContext,
         version: impl Into<String>,
         platform: impl Into<String>,
         state: Arc<dyn ApiRuntimeStateProvider>,
     ) -> Self {
+        Self::with_state_and_events(runtime, version, platform, state, None)
+    }
+
+    pub fn with_state_and_events(
+        runtime: RuntimeContext,
+        version: impl Into<String>,
+        platform: impl Into<String>,
+        state: Arc<dyn ApiRuntimeStateProvider>,
+        event_sink: Option<Arc<dyn crate::engine::runtime_event::RuntimeEventSink>>,
+    ) -> Self {
         Self {
             runtime,
             version: version.into(),
             platform: platform.into(),
             state,
+            event_sink,
         }
     }
 
@@ -90,6 +103,21 @@ impl ApiRuntimeContext {
         settings: &WebActivitySettings,
     ) -> Option<WebActivityBridgeSnapshot> {
         self.state.web_activity_snapshot(settings, self.now_ms())
+    }
+
+    pub fn emit_tracking_data_changed(&self, reason: &str) {
+        let Some(event_sink) = self.event_sink.as_ref() else {
+            return;
+        };
+        let changed_at_ms = self.now_ms().max(0) as u64;
+        if let Err(error) = event_sink.emit(
+            crate::engine::runtime_event::RuntimeEvent::TrackingDataChanged {
+                reason: reason.to_string(),
+                changed_at_ms,
+            },
+        ) {
+            eprintln!("[api] failed to emit data change event: {error}");
+        }
     }
 }
 

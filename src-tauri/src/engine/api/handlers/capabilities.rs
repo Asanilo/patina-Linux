@@ -3,7 +3,7 @@ use crate::engine::api::context::ApiRuntimeContext;
 use crate::engine::api::surface::ApiSurface;
 use crate::engine::api::types::{
     ApiResponse, AvailabilityCapability, CapabilitiesResponse, OwnedRuntimeCapability,
-    RouteResponse,
+    ProtocolCapability, RouteResponse, WriteApiCapability,
 };
 
 pub fn get_capabilities(context: &ApiRuntimeContext, surface: ApiSurface) -> RouteResponse {
@@ -15,13 +15,19 @@ pub fn get_capabilities(context: &ApiRuntimeContext, surface: ApiSurface) -> Rou
     RouteResponse {
         status: 200,
         body: serde_json::to_value(ApiResponse {
-            data: build_capabilities(surface, tracking_ready, browser_bridge_ready),
+            data: build_capabilities(
+                context.version(),
+                surface,
+                tracking_ready,
+                browser_bridge_ready,
+            ),
         })
         .unwrap_or_default(),
     }
 }
 
 fn build_capabilities(
+    server_version: &str,
     surface: ApiSurface,
     tracking_ready: bool,
     browser_bridge_ready: bool,
@@ -29,7 +35,15 @@ fn build_capabilities(
     let owns_tracking = surface.owns_tracking();
     let owns_browser_activity_bridge = surface.owns_browser_activity_bridge();
     CapabilitiesResponse {
-        protocol_version: 1,
+        server_version: server_version.to_string(),
+        protocol_version: crate::engine::api::protocol::CURRENT_PROTOCOL_VERSION,
+        protocol: ProtocolCapability {
+            current: crate::engine::api::protocol::CURRENT_PROTOCOL_VERSION,
+            min_supported_client:
+                crate::engine::api::protocol::MIN_SUPPORTED_CLIENT_PROTOCOL_VERSION,
+            max_supported_client:
+                crate::engine::api::protocol::MAX_SUPPORTED_CLIENT_PROTOCOL_VERSION,
+        },
         runtime_host: surface.runtime_host().to_string(),
         event_stream: AvailabilityCapability {
             available: surface.has_event_stream(),
@@ -42,8 +56,13 @@ fn build_capabilities(
             owned: owns_browser_activity_bridge,
             ready: owns_browser_activity_bridge && browser_bridge_ready,
         },
-        write_api: AvailabilityCapability {
+        write_api: WriteApiCapability {
             available: surface.has_write_api(),
+            operations: surface
+                .write_operations()
+                .iter()
+                .map(|operation| (*operation).to_string())
+                .collect(),
         },
     }
 }
@@ -54,9 +73,11 @@ mod tests {
 
     #[test]
     fn daemon_capabilities_do_not_claim_runtime_owners_before_migration() {
-        let capabilities = build_capabilities(ApiSurface::DaemonReadOnly, true, true);
+        let capabilities = build_capabilities("1.8.3", ApiSurface::DaemonReadOnly, true, true);
 
+        assert_eq!(capabilities.server_version, "1.8.3");
         assert_eq!(capabilities.protocol_version, 1);
+        assert_eq!(capabilities.protocol.current, 1);
         assert_eq!(capabilities.runtime_host, "daemon");
         assert!(capabilities.event_stream.available);
         assert!(!capabilities.tracking.owned);
@@ -68,7 +89,7 @@ mod tests {
 
     #[test]
     fn desktop_capabilities_reflect_live_snapshot_readiness() {
-        let ready = build_capabilities(ApiSurface::Desktop, true, true);
+        let ready = build_capabilities("1.8.3", ApiSurface::Desktop, true, true);
         assert_eq!(ready.runtime_host, "desktop");
         assert!(!ready.event_stream.available);
         assert!(ready.tracking.owned);
@@ -77,7 +98,7 @@ mod tests {
         assert!(ready.browser_activity_bridge.ready);
         assert!(ready.write_api.available);
 
-        let unavailable = build_capabilities(ApiSurface::Desktop, false, false);
+        let unavailable = build_capabilities("1.8.3", ApiSurface::Desktop, false, false);
         assert!(unavailable.tracking.owned);
         assert!(!unavailable.tracking.ready);
         assert!(unavailable.browser_activity_bridge.owned);
@@ -86,14 +107,18 @@ mod tests {
 
     #[test]
     fn tracking_daemon_capabilities_are_owned_before_the_first_sample() {
-        let starting = build_capabilities(ApiSurface::DaemonTrackingReadOnly, false, false);
+        let starting = build_capabilities("1.8.3", ApiSurface::DaemonTracking, false, false);
         assert!(starting.tracking.owned);
         assert!(!starting.tracking.ready);
         assert!(starting.browser_activity_bridge.owned);
         assert!(!starting.browser_activity_bridge.ready);
-        assert!(!starting.write_api.available);
+        assert!(starting.write_api.available);
+        assert!(starting
+            .write_api
+            .operations
+            .contains(&"classification".to_string()));
 
-        let ready = build_capabilities(ApiSurface::DaemonTrackingReadOnly, true, false);
+        let ready = build_capabilities("1.8.3", ApiSurface::DaemonTracking, true, false);
         assert!(ready.tracking.owned);
         assert!(ready.tracking.ready);
         assert!(ready.browser_activity_bridge.owned);

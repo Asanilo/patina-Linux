@@ -24,6 +24,7 @@ pub async fn commit_classification_setting_mutations(
     if mutations.is_empty() {
         return Ok(());
     }
+    validate_classification_setting_mutations(mutations)?;
 
     let mut tx = pool
         .begin()
@@ -31,7 +32,6 @@ pub async fn commit_classification_setting_mutations(
         .map_err(|error| format!("failed to start classification settings transaction: {error}"))?;
 
     for mutation in mutations {
-        validate_classification_setting_mutation(mutation)?;
         if let Some(value) = &mutation.value {
             sqlx::query(
                 "INSERT INTO settings (key, value) VALUES (?, ?)
@@ -55,6 +55,15 @@ pub async fn commit_classification_setting_mutations(
         format!("failed to commit classification settings transaction: {error}")
     })?;
 
+    Ok(())
+}
+
+pub fn validate_classification_setting_mutations(
+    mutations: &[ClassificationSettingMutation],
+) -> Result<(), String> {
+    for mutation in mutations {
+        validate_classification_setting_mutation(mutation)?;
+    }
     Ok(())
 }
 

@@ -1,6 +1,7 @@
 use crate::engine::api::context::ApiRuntimeContext;
 use crate::engine::api::types::{
     AfkThresholdRequest, ApiError, ApiResponse, RouteResponse, TrackerSettingsResponse,
+    TrackingPausedRequest,
 };
 
 const DEFAULT_IDLE_TIMEOUT_SECS: u64 = 180;
@@ -76,20 +77,66 @@ pub async fn set_afk_threshold(context: &ApiRuntimeContext, body: &[u8]) -> Rout
             };
         }
     };
+    if !(60..=86_400).contains(&req.seconds) {
+        return RouteResponse {
+            status: 400,
+            body: serde_json::to_value(ApiError::bad_request(
+                "seconds must be between 60 and 86400",
+            ))
+            .unwrap_or_default(),
+        };
+    }
 
-    // Update in-memory atomic
-    crate::commands::tracking::cmd_set_afk_threshold(req.seconds);
-
-    // Persist to database
     let key = "idle_timeout_secs";
     let value = req.seconds.to_string();
-    let _ = crate::data::repositories::tracker_settings::save_setting_value(
-        context.pool(),
-        key,
-        &value,
-    )
-    .await;
+    if let Err(error) =
+        crate::data::repositories::tracker_settings::save_setting_value(context.pool(), key, &value)
+            .await
+    {
+        return RouteResponse {
+            status: 500,
+            body: serde_json::to_value(ApiError::internal(&error.to_string())).unwrap_or_default(),
+        };
+    }
+    crate::engine::tracking::runtime_settings::set_idle_threshold(req.seconds);
+    context.emit_tracking_data_changed(
+        crate::domain::tracking::TRACKING_REASON_TRACKER_SETTINGS_CHANGED,
+    );
 
+    ok_response()
+}
+
+pub async fn set_tracking_paused(context: &ApiRuntimeContext, body: &[u8]) -> RouteResponse {
+    let request: TrackingPausedRequest = match serde_json::from_slice(body) {
+        Ok(request) => request,
+        Err(_) => {
+            return RouteResponse {
+                status: 400,
+                body: serde_json::to_value(ApiError::bad_request("invalid JSON body"))
+                    .unwrap_or_default(),
+            }
+        }
+    };
+    if let Err(error) = crate::data::repositories::tracker_settings::save_tracking_paused_setting(
+        context.pool(),
+        request.paused,
+    )
+    .await
+    {
+        return RouteResponse {
+            status: 500,
+            body: serde_json::to_value(ApiError::internal(&error.to_string())).unwrap_or_default(),
+        };
+    }
+    context.emit_tracking_data_changed(if request.paused {
+        "tracking-paused"
+    } else {
+        "tracking-resumed"
+    });
+    ok_response()
+}
+
+fn ok_response() -> RouteResponse {
     RouteResponse {
         status: 200,
         body: serde_json::to_value(ApiResponse {

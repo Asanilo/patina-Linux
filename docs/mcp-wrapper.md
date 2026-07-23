@@ -34,7 +34,7 @@ The npm script runs:
 node --experimental-strip-types scripts/patina-mcp.ts
 ```
 
-The Patina desktop app must be running, and the local API must be listening.
+The Patina local API must be listening. During migration this can be the desktop runtime or an explicit tracking-owner `patinad`; use `/api/v1/capabilities` to verify the runtime host and write scopes.
 
 For an MCP client, launch the Node script directly with an absolute path. Do not put `npm run` between the client and server because package-manager output can contaminate the stdio protocol stream.
 
@@ -117,6 +117,8 @@ If the client does not inherit your shell environment, set either `PATINA_API_TO
 | `get_activity_context` | `GET /api/v1/ai/activity-context` | none | Fetch an AI-oriented activity context bundle |
 | `get_tools_snapshot` | `GET /api/v1/tools/snapshot` | none | Fetch Tools runtime state |
 | `list_apps` | `GET /api/v1/apps` | none | List known apps |
+| `set_idle_threshold` | `POST /api/v1/settings/tracker/afk-threshold` | required: `seconds` | Set idle threshold |
+| `set_tracking_paused` | `POST /api/v1/settings/tracker/pause` | required: `paused` | Set tracking pause state |
 | `classify_app` | `POST /api/v1/apps/{exe_name}/classify` | required: `exeName`, `category` | Save app category |
 | `rename_app` | `POST /api/v1/apps/{exe_name}/rename` | required: `exeName`, `displayName` | Save app display name |
 | `set_app_excluded` | `POST /api/v1/apps/{exe_name}/exclude` | required: `exeName`, `excluded` | Save app exclusion flag |
@@ -142,7 +144,6 @@ The repository includes [`skills/analyzing-patina-activity`](../skills/analyzing
 ## 7. Current Gaps
 
 - The wrapper does not generate tools from `/api/v1/openapi.json` yet.
-- Tracker settings write-side tools are not implemented yet.
 - Local API configuration write-side tools are not implemented yet.
 - Tools write-side actions such as creating reminders, starting timers, and pausing timers are not implemented yet.
 - Browser extension installation and GNOME extension installation remain app/docs workflows, not MCP tools.

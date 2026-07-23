@@ -32,10 +32,13 @@ impl ApiRuntimeStateProvider for DesktopApiRuntimeState {
 }
 
 pub fn build_context(app: &tauri::AppHandle, pool: Pool<Sqlite>) -> ApiRuntimeContext {
-    ApiRuntimeContext::with_state(
+    let event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink> =
+        Arc::new(crate::engine::tracking::runtime::TauriRuntimeEventSink::new(app.clone()));
+    ApiRuntimeContext::with_state_and_events(
         RuntimeContext::system(pool),
         app.package_info().version.to_string(),
         std::env::consts::OS,
         Arc::new(DesktopApiRuntimeState { app: app.clone() }),
+        Some(event_sink),
     )
 }

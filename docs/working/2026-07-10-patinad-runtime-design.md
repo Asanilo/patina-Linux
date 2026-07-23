@@ -208,7 +208,8 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 
 ### 阶段 3：Linux 服务化与桌面客户端切换
 
-- 补齐 Patina Desktop 当前操作所需的 daemon 写侧 API、版本协商和受控 service restart
+- 已完成第一批写侧基础：capabilities 暴露服务版本、协议上下限和 write scopes；tracking owner daemon 开放事务化 app mapping、classification、AFK threshold 与 tracking pause，默认 daemon 仍严格只读
+- 待实施：运行中 browser/audio 配置、Tools 写侧、API listener/token 原子切换和受控 service restart
 - Tauri 改为 daemon desktop client，并保留 tray、通知、文件选择和 updater
 - 默认切换后 desktop 不启动或自动回退 embedded tracker；daemon 不可用时明确暂停、诊断和重启
 - 一个 `patina` 产品包同时交付 Patina Desktop、`patinad` 和 systemd user unit

@@ -28,6 +28,7 @@ curl -fsS "$PATINA_API_BASE/api/v1/diagnostics" \
 ```
 
 Prefer the live OpenAPI schema over remembered fields. Successful responses use `{ "data": ... }`; failures use `{ "error": { "code", "message" } }`.
+Read `/api/v1/capabilities` before writes. Default daemon mode is read-only; the tracking-owner daemon advertises the exact write scopes it supports.
 
 ## Analysis Queries
 
@@ -62,5 +63,6 @@ Only perform writes on explicit user intent. Verify the exact app from `GET /api
 - `POST /api/v1/apps/{exe_name}/rename` with `{ "display_name": "..." }`.
 - `POST /api/v1/apps/{exe_name}/exclude` with `{ "excluded": true|false }`.
 - `POST /api/v1/settings/tracker/afk-threshold` with `{ "seconds": integer }`.
+- `POST /api/v1/settings/tracker/pause` with `{ "paused": true|false }`.
 
 Send `Content-Type: application/json` and the same Authorization header. Do not call routes listed as planned in the human API index.

@@ -23,6 +23,8 @@ const implementedEndpoints = [
   "POST /api/v1/apps/{exe_name}/exclude",
   "GET /api/v1/settings/tracker",
   "POST /api/v1/settings/tracker/afk-threshold",
+  "POST /api/v1/settings/tracker/pause",
+  "POST /api/v1/settings/classification",
   "GET /api/v1/tools/snapshot",
 ];
 

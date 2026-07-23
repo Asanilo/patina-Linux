@@ -155,6 +155,22 @@ fn paths(surface: ApiSurface) -> Value {
                 "OkResponse",
             )
         },
+        "/api/v1/settings/tracker/pause": {
+            "post": post_operation(
+                "Set tracking paused state.",
+                vec![],
+                "TrackingPausedRequest",
+                "OkResponse",
+            )
+        },
+        "/api/v1/settings/classification": {
+            "post": post_operation(
+                "Commit a validated batch of classification setting mutations.",
+                vec![],
+                "ClassificationMutationsRequest",
+                "OkResponse",
+            )
+        },
         "/api/v1/tools/snapshot": {
             "get": get_operation("Current Tools runtime snapshot.", "ToolsSnapshotResponse")
         }
@@ -206,13 +222,37 @@ fn schemas() -> Value {
         object_schema(vec![("available", bool_schema())]),
     );
     schemas.insert(
+        "ProtocolCapability".to_string(),
+        object_schema(vec![
+            ("current", integer_schema()),
+            ("min_supported_client", integer_schema()),
+            ("max_supported_client", integer_schema()),
+        ]),
+    );
+    schemas.insert(
+        "WriteApiCapability".to_string(),
+        object_schema(vec![
+            ("available", bool_schema()),
+            (
+                "operations",
+                array_schema(enum_schema(vec![
+                    "app-mapping",
+                    "classification",
+                    "tracker-settings",
+                ])),
+            ),
+        ]),
+    );
+    schemas.insert(
         "OwnedRuntimeCapability".to_string(),
         object_schema(vec![("owned", bool_schema()), ("ready", bool_schema())]),
     );
     schemas.insert(
         "CapabilitiesData".to_string(),
         object_schema(vec![
+            ("server_version", string_schema()),
             ("protocol_version", integer_schema()),
+            ("protocol", schema_ref("ProtocolCapability")),
             ("runtime_host", enum_schema(vec!["desktop", "daemon"])),
             ("event_stream", schema_ref("AvailabilityCapability")),
             ("tracking", schema_ref("OwnedRuntimeCapability")),
@@ -220,7 +260,7 @@ fn schemas() -> Value {
                 "browser_activity_bridge",
                 schema_ref("OwnedRuntimeCapability"),
             ),
-            ("write_api", schema_ref("AvailabilityCapability")),
+            ("write_api", schema_ref("WriteApiCapability")),
         ]),
     );
     schemas.insert(
@@ -605,7 +645,25 @@ fn schemas() -> Value {
     );
     schemas.insert(
         "AfkThresholdRequest".to_string(),
-        object_schema(vec![("seconds", integer_schema())]),
+        object_schema(vec![("seconds", bounded_integer_schema(60, 86_400))]),
+    );
+    schemas.insert(
+        "TrackingPausedRequest".to_string(),
+        object_schema(vec![("paused", bool_schema())]),
+    );
+    schemas.insert(
+        "ClassificationMutationRequest".to_string(),
+        object_schema(vec![
+            ("key", bounded_string_schema(1, 256)),
+            ("value", bounded_nullable_string_schema(4096)),
+        ]),
+    );
+    schemas.insert(
+        "ClassificationMutationsRequest".to_string(),
+        object_schema(vec![(
+            "mutations",
+            bounded_array_schema(schema_ref("ClassificationMutationRequest"), 256),
+        )]),
     );
 
     Value::Object(schemas)
@@ -831,6 +889,14 @@ fn array_schema(item_schema: Value) -> Value {
     })
 }
 
+fn bounded_array_schema(item_schema: Value, max_items: usize) -> Value {
+    json!({
+        "type": "array",
+        "items": item_schema,
+        "maxItems": max_items
+    })
+}
+
 fn schema_ref(name: &str) -> Value {
     json!({ "$ref": format!("#/components/schemas/{name}") })
 }
@@ -867,12 +933,36 @@ fn string_schema() -> Value {
     json!({ "type": "string" })
 }
 
+fn bounded_string_schema(min_length: usize, max_length: usize) -> Value {
+    json!({
+        "type": "string",
+        "minLength": min_length,
+        "maxLength": max_length
+    })
+}
+
 fn nullable_string_schema() -> Value {
     json!({ "type": ["string", "null"] })
 }
 
+fn bounded_nullable_string_schema(max_length: usize) -> Value {
+    json!({
+        "type": ["string", "null"],
+        "maxLength": max_length
+    })
+}
+
 fn integer_schema() -> Value {
     json!({ "type": "integer", "format": "int64" })
+}
+
+fn bounded_integer_schema(minimum: i64, maximum: i64) -> Value {
+    json!({
+        "type": "integer",
+        "format": "int64",
+        "minimum": minimum,
+        "maximum": maximum
+    })
 }
 
 fn nullable_integer_schema() -> Value {
@@ -896,6 +986,8 @@ fn enum_schema(values: Vec<&str>) -> Value {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     #[test]
     fn openapi_exposes_field_level_schemas_and_parameters() {
         let response = super::get_openapi(crate::engine::api::surface::ApiSurface::Desktop);
@@ -915,6 +1007,10 @@ mod tests {
         assert!(schemas.contains_key("ActivityContextResponse"));
         assert!(schemas.contains_key("ToolsRuntimeSnapshot"));
         assert!(schemas.contains_key("ClassifyRequest"));
+        assert!(schemas.contains_key("ProtocolCapability"));
+        assert!(schemas.contains_key("WriteApiCapability"));
+        assert!(schemas.contains_key("TrackingPausedRequest"));
+        assert!(schemas.contains_key("ClassificationMutationsRequest"));
 
         assert_eq!(
             response
@@ -950,6 +1046,31 @@ mod tests {
                 .pointer("/paths/~1api~1v1~1apps~1{exe_name}~1rename/post/requestBody/content/application~1json/schema/$ref")
                 .and_then(|value| value.as_str()),
             Some("#/components/schemas/RenameRequest")
+        );
+        assert_eq!(
+            response
+                .body
+                .pointer("/paths/~1api~1v1~1settings~1tracker~1pause/post/requestBody/content/application~1json/schema/$ref")
+                .and_then(|value| value.as_str()),
+            Some("#/components/schemas/TrackingPausedRequest")
+        );
+        assert_eq!(
+            response
+                .body
+                .pointer("/components/schemas/AfkThresholdRequest/properties/seconds/minimum"),
+            Some(&json!(60))
+        );
+        assert_eq!(
+            response
+                .body
+                .pointer("/components/schemas/AfkThresholdRequest/properties/seconds/maximum"),
+            Some(&json!(86_400))
+        );
+        assert_eq!(
+            response.body.pointer(
+                "/components/schemas/ClassificationMutationsRequest/properties/mutations/maxItems"
+            ),
+            Some(&json!(256))
         );
         assert_eq!(
             response

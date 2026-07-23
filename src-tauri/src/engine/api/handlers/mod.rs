@@ -1,6 +1,7 @@
 pub mod ai;
 pub mod apps;
 pub mod capabilities;
+pub mod classification;
 pub mod diagnostics;
 pub mod health;
 pub mod openapi;

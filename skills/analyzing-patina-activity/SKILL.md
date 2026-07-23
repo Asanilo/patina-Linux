@@ -23,7 +23,7 @@ Analyze Patina's local activity data without inventing missing context or exposi
 3. Drill into summaries, sessions, trends, or web activity only as needed.
 4. State the time range and whether current active time is included.
 5. Separate recorded facts from interpretations about intent, focus, or productivity.
-6. Execute app classification, rename, or exclusion writes only on explicit user intent; report exactly what changed.
+6. Execute app classification, rename, exclusion, idle-threshold, or pause writes only on explicit user intent; report exactly what changed.
 
 ## Quick Reference
 
@@ -38,6 +38,7 @@ Analyze Patina's local activity data without inventing missing context or exposi
 | Browser domain/title detail | web activity |
 | Timer/reminder/pomodoro state | Tools snapshot |
 | App names/categories/exclusions | app list and explicit write tools |
+| Idle threshold or tracking pause | explicit tracker setting tools |
 
 ## Common Mistakes
 

@@ -2,7 +2,7 @@
 pub enum ApiSurface {
     Desktop,
     DaemonReadOnly,
-    DaemonTrackingReadOnly,
+    DaemonTracking,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -89,6 +89,14 @@ const DESKTOP_ENDPOINTS: &[ApiEndpoint] = &[
         path: "/api/v1/settings/tracker/afk-threshold",
     },
     ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/settings/tracker/pause",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/settings/classification",
+    },
+    ApiEndpoint {
         method: "GET",
         path: "/api/v1/tools/snapshot",
     },
@@ -165,20 +173,118 @@ const DAEMON_READ_ONLY_ENDPOINTS: &[ApiEndpoint] = &[
     },
 ];
 
+const DAEMON_TRACKING_ENDPOINTS: &[ApiEndpoint] = &[
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/health",
+    },
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/capabilities",
+    },
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/events",
+    },
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/openapi.json",
+    },
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/diagnostics",
+    },
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/current",
+    },
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/sessions",
+    },
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/sessions/active",
+    },
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/summary/today",
+    },
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/summary/range",
+    },
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/summary/week",
+    },
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/trend",
+    },
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/web-activity",
+    },
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/ai/activity-context",
+    },
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/apps",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/apps/{exe_name}/classify",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/apps/{exe_name}/rename",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/apps/{exe_name}/exclude",
+    },
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/settings/tracker",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/settings/tracker/afk-threshold",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/settings/tracker/pause",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/settings/classification",
+    },
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/tools/snapshot",
+    },
+];
+
+const WRITE_OPERATIONS: &[&str] = &["app-mapping", "classification", "tracker-settings"];
+const NO_WRITE_OPERATIONS: &[&str] = &[];
+
 impl ApiSurface {
     pub fn runtime_host(self) -> &'static str {
         match self {
             Self::Desktop => "desktop",
-            Self::DaemonReadOnly | Self::DaemonTrackingReadOnly => "daemon",
+            Self::DaemonReadOnly | Self::DaemonTracking => "daemon",
         }
     }
 
     pub fn owns_tracking(self) -> bool {
-        matches!(self, Self::Desktop | Self::DaemonTrackingReadOnly)
+        matches!(self, Self::Desktop | Self::DaemonTracking)
     }
 
     pub fn owns_browser_activity_bridge(self) -> bool {
-        matches!(self, Self::Desktop | Self::DaemonTrackingReadOnly)
+        matches!(self, Self::Desktop | Self::DaemonTracking)
     }
 
     pub fn has_event_stream(self) -> bool {
@@ -191,10 +297,19 @@ impl ApiSurface {
             .any(|endpoint| endpoint.method != "GET")
     }
 
+    pub fn write_operations(self) -> &'static [&'static str] {
+        if self.has_write_api() {
+            WRITE_OPERATIONS
+        } else {
+            NO_WRITE_OPERATIONS
+        }
+    }
+
     pub fn endpoints(self) -> &'static [ApiEndpoint] {
         match self {
             Self::Desktop => DESKTOP_ENDPOINTS,
-            Self::DaemonReadOnly | Self::DaemonTrackingReadOnly => DAEMON_READ_ONLY_ENDPOINTS,
+            Self::DaemonReadOnly => DAEMON_READ_ONLY_ENDPOINTS,
+            Self::DaemonTracking => DAEMON_TRACKING_ENDPOINTS,
         }
     }
 
@@ -231,8 +346,8 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
-    fn desktop_surface_keeps_existing_method_and_path_set() {
-        assert_eq!(ApiSurface::Desktop.endpoints().len(), 20);
+    fn desktop_surface_keeps_shared_client_method_and_path_set() {
+        assert_eq!(ApiSurface::Desktop.endpoints().len(), 22);
         assert!(ApiSurface::Desktop.allows("GET", "/api/v1/sessions"));
         assert!(ApiSurface::Desktop.allows("GET", "/api/v1/capabilities"));
         assert!(!ApiSurface::Desktop.allows("GET", "/api/v1/events"));
@@ -301,13 +416,44 @@ mod tests {
     }
 
     #[test]
-    fn daemon_tracking_surface_owns_tracking_without_exposing_writes() {
-        let surface = ApiSurface::DaemonTrackingReadOnly;
+    fn daemon_tracking_surface_owns_tracking_and_exposes_bounded_writes() {
+        let surface = ApiSurface::DaemonTracking;
 
         assert!(surface.owns_tracking());
         assert!(surface.owns_browser_activity_bridge());
         assert!(surface.has_event_stream());
-        assert!(!surface.has_write_api());
-        assert_eq!(surface.endpoints(), ApiSurface::DaemonReadOnly.endpoints());
+        assert!(surface.has_write_api());
+        assert!(surface.allows_request("POST", "/api/v1/apps/ghostty/rename"));
+        assert!(surface.allows("POST", "/api/v1/settings/classification"));
+        assert!(surface.allows("POST", "/api/v1/settings/tracker/pause"));
+        assert_eq!(
+            surface.write_operations(),
+            ["app-mapping", "classification", "tracker-settings"]
+        );
+    }
+
+    #[test]
+    fn daemon_tracking_routes_and_openapi_are_bidirectionally_equal() {
+        let response =
+            crate::engine::api::handlers::openapi::get_openapi(ApiSurface::DaemonTracking);
+        let advertised = response.body["paths"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .flat_map(|(path, operations)| {
+                operations
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .map(move |method| (method.to_ascii_uppercase(), path.clone()))
+            })
+            .collect::<BTreeSet<_>>();
+        let enabled = ApiSurface::DaemonTracking
+            .endpoints()
+            .iter()
+            .map(|endpoint| (endpoint.method.to_string(), endpoint.path.to_string()))
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(advertised, enabled);
     }
 }

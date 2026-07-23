@@ -32,8 +32,9 @@ pub fn build_context(
     runtime: RuntimeContext,
     tracking: Option<Arc<TrackingRuntimeSnapshotState>>,
     web_activity: Option<Arc<WebActivityRuntimeState>>,
+    event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
 ) -> ApiRuntimeContext {
-    ApiRuntimeContext::with_state(
+    ApiRuntimeContext::with_state_and_events(
         runtime,
         env!("CARGO_PKG_VERSION"),
         std::env::consts::OS,
@@ -41,6 +42,7 @@ pub fn build_context(
             tracking,
             web_activity,
         }),
+        Some(event_sink),
     )
 }
 
@@ -77,12 +79,21 @@ mod tests {
         }
     }
 
+    fn event_sink() -> Arc<dyn crate::engine::runtime_event::RuntimeEventSink> {
+        Arc::new(crate::engine::runtime_event::MemoryRuntimeEventSink::default())
+    }
+
     #[tokio::test]
     async fn daemon_context_exposes_owned_tracking_snapshot() {
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
         let state = Arc::new(TrackingRuntimeSnapshotState::default());
         state.replace(snapshot());
-        let context = build_context(RuntimeContext::system(pool.clone()), Some(state), None);
+        let context = build_context(
+            RuntimeContext::system(pool.clone()),
+            Some(state),
+            None,
+            event_sink(),
+        );
 
         let current = crate::engine::api::handlers::health::get_current(&context);
 
@@ -95,7 +106,12 @@ mod tests {
     #[tokio::test]
     async fn daemon_context_without_tracking_keeps_live_state_unavailable() {
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
-        let context = build_context(RuntimeContext::system(pool.clone()), None, None);
+        let context = build_context(
+            RuntimeContext::system(pool.clone()),
+            None,
+            None,
+            event_sink(),
+        );
 
         assert_eq!(
             crate::engine::api::handlers::health::get_current(&context).status,
@@ -113,11 +129,12 @@ mod tests {
             RuntimeContext::system(pool.clone()),
             None,
             Some(web_activity),
+            event_sink(),
         );
 
         let capabilities = crate::engine::api::handlers::capabilities::get_capabilities(
             &context,
-            crate::engine::api::surface::ApiSurface::DaemonTrackingReadOnly,
+            crate::engine::api::surface::ApiSurface::DaemonTracking,
         );
 
         assert_eq!(capabilities.status, 200);

@@ -3109,6 +3109,7 @@ dependencies = [
  "image",
  "libpulse-binding",
  "notify-rust",
+ "percent-encoding",
  "reqwest 0.12.28",
  "rfd",
  "serde",

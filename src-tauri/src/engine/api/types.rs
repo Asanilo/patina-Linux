@@ -91,6 +91,19 @@ pub struct AvailabilityCapability {
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct ProtocolCapability {
+    pub current: u32,
+    pub min_supported_client: u32,
+    pub max_supported_client: u32,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct WriteApiCapability {
+    pub available: bool,
+    pub operations: Vec<String>,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct OwnedRuntimeCapability {
     pub owned: bool,
     pub ready: bool,
@@ -98,12 +111,14 @@ pub struct OwnedRuntimeCapability {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct CapabilitiesResponse {
+    pub server_version: String,
     pub protocol_version: u32,
+    pub protocol: ProtocolCapability,
     pub runtime_host: String,
     pub event_stream: AvailabilityCapability,
     pub tracking: OwnedRuntimeCapability,
     pub browser_activity_bridge: OwnedRuntimeCapability,
-    pub write_api: AvailabilityCapability,
+    pub write_api: WriteApiCapability,
 }
 
 #[derive(Debug, Serialize)]
@@ -182,6 +197,22 @@ pub struct TitleRecordingRequest {
 #[derive(Debug, Deserialize)]
 pub struct AfkThresholdRequest {
     pub seconds: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TrackingPausedRequest {
+    pub paused: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ClassificationMutationRequest {
+    pub key: String,
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ClassificationMutationsRequest {
+    pub mutations: Vec<ClassificationMutationRequest>,
 }
 
 #[derive(Debug, Serialize)]
