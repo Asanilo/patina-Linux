@@ -77,12 +77,53 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
         .then(|| Arc::new(crate::engine::web_activity::WebActivityRuntimeState::default()));
     let runtime_context =
         crate::engine::runtime_context::RuntimeContext::system(sqlite_runtime.pool.clone());
+    let event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink> = event_hub.clone();
+    let web_activity_control = match (tracking_snapshot.as_ref(), web_activity_state.as_ref()) {
+        (Some(snapshot), Some(state)) => Some(runtime::DaemonWebActivityControl::new(
+            runtime_context.clone(),
+            snapshot.clone(),
+            state.clone(),
+            event_sink.clone(),
+        )),
+        _ => None,
+    };
+    #[cfg(target_os = "linux")]
+    let audio_source = if options.track {
+        let enabled = runtime
+            .block_on(
+                crate::data::repositories::app_settings::load_audio_participation_enabled(
+                    runtime_context.pool(),
+                ),
+            )
+            .unwrap_or_else(|error| {
+                eprintln!("[patinad] failed to load audio participation setting: {error}");
+                crate::domain::settings::DEFAULT_AUDIO_PARTICIPATION_ENABLED
+            });
+        Some(crate::platform::linux::audio::AudioSignalSource::new(
+            enabled,
+        ))
+    } else {
+        None
+    };
+    let api_runtime_control = web_activity_control.as_ref().map(|web_activity| {
+        Arc::new(runtime::DaemonApiRuntimeControl::new(
+            runtime_context.clone(),
+            web_activity.clone(),
+            event_sink.clone(),
+            #[cfg(target_os = "linux")]
+            audio_source
+                .as_ref()
+                .expect("tracking daemon audio source")
+                .clone(),
+        )) as Arc<dyn crate::engine::api::runtime_control::ApiRuntimeControl>
+    });
     let api_server = if options.serve_api {
         let context = api_runtime::build_context(
             runtime_context.clone(),
             tracking_snapshot.clone(),
             web_activity_state.clone(),
             event_hub.clone(),
+            api_runtime_control,
         );
         let surface = if options.track {
             crate::engine::api::surface::ApiSurface::DaemonTracking
@@ -140,7 +181,7 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     println!("[{}] sqlite ready", status.service_name);
     let api_handle = if let Some(server) = api_server {
         println!(
-            "[{}] read-only API listening on http://127.0.0.1:{}",
+            "[{}] local API listening on http://127.0.0.1:{}",
             status.service_name,
             server.port()
         );
@@ -149,13 +190,15 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
         None
     };
     let background_tasks = runtime.block_on(async {
-        match (tracking_snapshot, web_activity_state) {
-            (Some(snapshot), Some(web_activity_state)) => Some(
+        match (tracking_snapshot, web_activity_control) {
+            (Some(snapshot), Some(web_activity)) => Some(
                 runtime::DaemonBackgroundTasks::start(
                     runtime_context,
                     snapshot,
-                    web_activity_state,
+                    web_activity,
                     event_hub.clone(),
+                    #[cfg(target_os = "linux")]
+                    audio_source.expect("tracking daemon audio source"),
                 )
                 .await,
             ),

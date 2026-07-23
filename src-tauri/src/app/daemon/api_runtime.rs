@@ -33,8 +33,9 @@ pub fn build_context(
     tracking: Option<Arc<TrackingRuntimeSnapshotState>>,
     web_activity: Option<Arc<WebActivityRuntimeState>>,
     event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
+    runtime_control: Option<Arc<dyn crate::engine::api::runtime_control::ApiRuntimeControl>>,
 ) -> ApiRuntimeContext {
-    ApiRuntimeContext::with_state_and_events(
+    let context = ApiRuntimeContext::with_state_and_events(
         runtime,
         env!("CARGO_PKG_VERSION"),
         std::env::consts::OS,
@@ -43,7 +44,11 @@ pub fn build_context(
             web_activity,
         }),
         Some(event_sink),
-    )
+    );
+    match runtime_control {
+        Some(runtime_control) => context.with_runtime_control(runtime_control),
+        None => context,
+    }
 }
 
 #[cfg(test)]
@@ -93,6 +98,7 @@ mod tests {
             Some(state),
             None,
             event_sink(),
+            None,
         );
 
         let current = crate::engine::api::handlers::health::get_current(&context);
@@ -111,6 +117,7 @@ mod tests {
             None,
             None,
             event_sink(),
+            None,
         );
 
         assert_eq!(
@@ -130,6 +137,7 @@ mod tests {
             None,
             Some(web_activity),
             event_sink(),
+            None,
         );
 
         let capabilities = crate::engine::api::handlers::capabilities::get_capabilities(

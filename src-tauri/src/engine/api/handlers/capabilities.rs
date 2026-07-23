@@ -117,6 +117,10 @@ mod tests {
             .write_api
             .operations
             .contains(&"classification".to_string()));
+        assert!(starting
+            .write_api
+            .operations
+            .contains(&"runtime-settings".to_string()));
 
         let ready = build_capabilities("1.8.3", ApiSurface::DaemonTracking, true, false);
         assert!(ready.tracking.owned);

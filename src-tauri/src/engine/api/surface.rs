@@ -85,6 +85,10 @@ const DESKTOP_ENDPOINTS: &[ApiEndpoint] = &[
         path: "/api/v1/settings/tracker",
     },
     ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/settings/runtime",
+    },
+    ApiEndpoint {
         method: "POST",
         path: "/api/v1/settings/tracker/afk-threshold",
     },
@@ -166,6 +170,10 @@ const DAEMON_READ_ONLY_ENDPOINTS: &[ApiEndpoint] = &[
     ApiEndpoint {
         method: "GET",
         path: "/api/v1/settings/tracker",
+    },
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/settings/runtime",
     },
     ApiEndpoint {
         method: "GET",
@@ -251,6 +259,10 @@ const DAEMON_TRACKING_ENDPOINTS: &[ApiEndpoint] = &[
         path: "/api/v1/settings/tracker",
     },
     ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/settings/runtime",
+    },
+    ApiEndpoint {
         method: "POST",
         path: "/api/v1/settings/tracker/afk-threshold",
     },
@@ -263,12 +275,26 @@ const DAEMON_TRACKING_ENDPOINTS: &[ApiEndpoint] = &[
         path: "/api/v1/settings/classification",
     },
     ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/settings/runtime/audio-participation",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/settings/runtime/browser-activity",
+    },
+    ApiEndpoint {
         method: "GET",
         path: "/api/v1/tools/snapshot",
     },
 ];
 
-const WRITE_OPERATIONS: &[&str] = &["app-mapping", "classification", "tracker-settings"];
+const DESKTOP_WRITE_OPERATIONS: &[&str] = &["app-mapping", "classification", "tracker-settings"];
+const DAEMON_TRACKING_WRITE_OPERATIONS: &[&str] = &[
+    "app-mapping",
+    "classification",
+    "runtime-settings",
+    "tracker-settings",
+];
 const NO_WRITE_OPERATIONS: &[&str] = &[];
 
 impl ApiSurface {
@@ -298,10 +324,10 @@ impl ApiSurface {
     }
 
     pub fn write_operations(self) -> &'static [&'static str] {
-        if self.has_write_api() {
-            WRITE_OPERATIONS
-        } else {
-            NO_WRITE_OPERATIONS
+        match self {
+            Self::Desktop => DESKTOP_WRITE_OPERATIONS,
+            Self::DaemonReadOnly => NO_WRITE_OPERATIONS,
+            Self::DaemonTracking => DAEMON_TRACKING_WRITE_OPERATIONS,
         }
     }
 
@@ -347,9 +373,10 @@ mod tests {
 
     #[test]
     fn desktop_surface_keeps_shared_client_method_and_path_set() {
-        assert_eq!(ApiSurface::Desktop.endpoints().len(), 22);
+        assert_eq!(ApiSurface::Desktop.endpoints().len(), 23);
         assert!(ApiSurface::Desktop.allows("GET", "/api/v1/sessions"));
         assert!(ApiSurface::Desktop.allows("GET", "/api/v1/capabilities"));
+        assert!(ApiSurface::Desktop.allows("GET", "/api/v1/settings/runtime"));
         assert!(!ApiSurface::Desktop.allows("GET", "/api/v1/events"));
         assert!(ApiSurface::Desktop.allows("POST", "/api/v1/apps/{exe_name}/rename"));
         assert!(ApiSurface::Desktop.allows("GET", "/api/v1/tools/snapshot"));
@@ -426,9 +453,15 @@ mod tests {
         assert!(surface.allows_request("POST", "/api/v1/apps/ghostty/rename"));
         assert!(surface.allows("POST", "/api/v1/settings/classification"));
         assert!(surface.allows("POST", "/api/v1/settings/tracker/pause"));
+        assert!(surface.allows("POST", "/api/v1/settings/runtime/browser-activity"));
         assert_eq!(
             surface.write_operations(),
-            ["app-mapping", "classification", "tracker-settings"]
+            [
+                "app-mapping",
+                "classification",
+                "runtime-settings",
+                "tracker-settings"
+            ]
         );
     }
 

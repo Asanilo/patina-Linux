@@ -107,6 +107,7 @@ If the client does not inherit your shell environment, set either `PATINA_API_TO
 | Tool | HTTP API | Arguments | Purpose |
 |---|---|---|---|
 | `get_diagnostics` | `GET /api/v1/diagnostics` | none | Check Linux/window/browser/API runtime health |
+| `get_runtime_settings` | `GET /api/v1/settings/runtime` | none | Read sanitized audio and browser activity settings |
 | `get_current_activity` | `GET /api/v1/current` | none | Read current foreground activity snapshot |
 | `query_sessions` | `GET /api/v1/sessions` | `from`, `to`, `app`, `limit` | Query closed activity sessions |
 | `get_active_session` | `GET /api/v1/sessions/active` | none | Read current active session |
@@ -119,6 +120,8 @@ If the client does not inherit your shell environment, set either `PATINA_API_TO
 | `list_apps` | `GET /api/v1/apps` | none | List known apps |
 | `set_idle_threshold` | `POST /api/v1/settings/tracker/afk-threshold` | required: `seconds` | Set idle threshold |
 | `set_tracking_paused` | `POST /api/v1/settings/tracker/pause` | required: `paused` | Set tracking pause state |
+| `set_audio_participation` | `POST /api/v1/settings/runtime/audio-participation` | required: `enabled` | Apply the Linux audio participation switch |
+| `configure_browser_activity` | `POST /api/v1/settings/runtime/browser-activity` | required: `enabled`, `port`, `token`, `urlPrivacy` | Replace the browser activity runtime configuration |
 | `classify_app` | `POST /api/v1/apps/{exe_name}/classify` | required: `exeName`, `category` | Save app category |
 | `rename_app` | `POST /api/v1/apps/{exe_name}/rename` | required: `exeName`, `displayName` | Save app display name |
 | `set_app_excluded` | `POST /api/v1/apps/{exe_name}/exclude` | required: `exeName`, `excluded` | Save app exclusion flag |
@@ -147,3 +150,5 @@ The repository includes [`skills/analyzing-patina-activity`](../skills/analyzing
 - Local API configuration write-side tools are not implemented yet.
 - Tools write-side actions such as creating reminders, starting timers, and pausing timers are not implemented yet.
 - Browser extension installation and GNOME extension installation remain app/docs workflows, not MCP tools.
+
+`configure_browser_activity` is a complete replacement operation and must only be used after explicit confirmation. Do not echo its Token in summaries, logs, or analysis output.

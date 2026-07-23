@@ -57,12 +57,30 @@ pub struct WebActivitySettings {
     pub url_privacy: WebActivityUrlPrivacyMode,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RuntimeActivitySettings {
+    pub audio_participation_enabled: bool,
+    pub web_activity_bridge: WebActivityBridgeSettings,
+    pub web_activity_url_privacy: WebActivityUrlPrivacyMode,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum WebActivityUrlPrivacyMode {
     #[default]
     Full,
     StripQuery,
     DomainOnly,
+}
+
+impl WebActivityUrlPrivacyMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::StripQuery => "strip_query",
+            Self::DomainOnly => "domain_only",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

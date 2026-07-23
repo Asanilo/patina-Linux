@@ -52,6 +52,11 @@ export const PATINA_MCP_TOOLS: PatinaMcpTool[] = [
     inputSchema: objectSchema({}),
   },
   {
+    name: "get_runtime_settings",
+    description: "Read sanitized Patina audio and browser activity runtime settings.",
+    inputSchema: objectSchema({}),
+  },
+  {
     name: "get_current_activity",
     description: "Read the current foreground window snapshot.",
     inputSchema: objectSchema({}),
@@ -132,6 +137,36 @@ export const PATINA_MCP_TOOLS: PatinaMcpTool[] = [
     inputSchema: objectSchema({
       paused: { type: "boolean", description: "Whether tracking should be paused." },
     }, ["paused"]),
+  },
+  {
+    name: "set_audio_participation",
+    description: "Enable or disable Patina's Linux audio participation signal.",
+    inputSchema: objectSchema({
+      enabled: { type: "boolean", description: "Whether audio participation is enabled." },
+    }, ["enabled"]),
+  },
+  {
+    name: "configure_browser_activity",
+    description: "Replace Patina's browser activity listener, token, and URL privacy settings.",
+    inputSchema: objectSchema({
+      enabled: { type: "boolean", description: "Whether browser activity synchronization is enabled." },
+      port: {
+        type: "integer",
+        minimum: 1024,
+        maximum: 65535,
+        description: "Loopback browser activity listener port.",
+      },
+      token: {
+        type: "string",
+        maxLength: 512,
+        description: "Browser extension bearer token.",
+      },
+      urlPrivacy: {
+        type: "string",
+        enum: ["full", "strip_query", "domain_only"],
+        description: "Stored URL detail level.",
+      },
+    }, ["enabled", "port", "token", "urlPrivacy"]),
   },
   {
     name: "classify_app",
@@ -270,6 +305,8 @@ function toolNameToApiRequest(name: string, args: Record<string, unknown>) {
   switch (name) {
     case "get_diagnostics":
       return getRequest("/api/v1/diagnostics");
+    case "get_runtime_settings":
+      return getRequest("/api/v1/settings/runtime");
     case "get_current_activity":
       return getRequest("/api/v1/current");
     case "get_active_session":
@@ -294,6 +331,10 @@ function toolNameToApiRequest(name: string, args: Record<string, unknown>) {
       return setIdleThresholdRequest(args);
     case "set_tracking_paused":
       return setTrackingPausedRequest(args);
+    case "set_audio_participation":
+      return setAudioParticipationRequest(args);
+    case "configure_browser_activity":
+      return configureBrowserActivityRequest(args);
     case "classify_app":
       return classifyAppRequest(args);
     case "rename_app":
@@ -334,6 +375,54 @@ function setTrackingPausedRequest(args: Record<string, unknown>) {
     init: {
       method: "POST" as const,
       body: { paused },
+    },
+  };
+}
+
+function setAudioParticipationRequest(args: Record<string, unknown>) {
+  const enabled = booleanValue(args.enabled);
+  if (enabled === null) {
+    return { error: "set_audio_participation requires enabled" };
+  }
+  return {
+    path: "/api/v1/settings/runtime/audio-participation",
+    init: {
+      method: "POST" as const,
+      body: { enabled },
+    },
+  };
+}
+
+function configureBrowserActivityRequest(args: Record<string, unknown>) {
+  const enabled = booleanValue(args.enabled);
+  const port = numberValue(args.port);
+  const token = stringValue(args.token);
+  const urlPrivacy = stringValue(args.urlPrivacy);
+  if (
+    enabled === null
+    || port === null
+    || !Number.isInteger(port)
+    || port < 1024
+    || port > 65535
+    || token === null
+    || token.length > 512
+    || (enabled && token.trim().length === 0)
+    || !["full", "strip_query", "domain_only"].includes(urlPrivacy ?? "")
+  ) {
+    return {
+      error: "configure_browser_activity requires enabled, port 1024-65535, a valid token, and urlPrivacy",
+    };
+  }
+  return {
+    path: "/api/v1/settings/runtime/browser-activity",
+    init: {
+      method: "POST" as const,
+      body: {
+        enabled,
+        port,
+        token: token.trim(),
+        url_privacy: urlPrivacy,
+      },
     },
   };
 }

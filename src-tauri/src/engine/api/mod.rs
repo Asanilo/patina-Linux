@@ -4,6 +4,7 @@ pub mod context;
 pub mod handlers;
 pub mod protocol;
 pub mod router;
+pub mod runtime_control;
 pub mod server;
 pub mod surface;
 pub mod types;

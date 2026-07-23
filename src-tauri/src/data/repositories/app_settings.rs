@@ -1,6 +1,7 @@
 use crate::domain::settings::{
     parse_audio_participation_enabled, DesktopBehaviorSettings, LocalApiSettings,
-    RemoteStatusBridgeSettings, WebActivityBridgeSettings, WebActivitySettings,
+    RemoteStatusBridgeSettings, RuntimeActivitySettings, WebActivityBridgeSettings,
+    WebActivitySettings,
 };
 use sqlx::{Pool, Row, Sqlite};
 
@@ -210,6 +211,98 @@ pub async fn load_audio_participation_enabled(pool: &Pool<Sqlite>) -> Result<boo
         .map(|row| row.get::<String, _>("value"));
 
     Ok(parse_audio_participation_enabled(value.as_deref()))
+}
+
+pub async fn save_audio_participation_enabled(
+    pool: &Pool<Sqlite>,
+    enabled: bool,
+) -> Result<(), String> {
+    commit_app_setting_mutations(
+        pool,
+        &[AppSettingMutation {
+            key: AUDIO_PARTICIPATION_ENABLED_KEY.to_string(),
+            value: if enabled { "1" } else { "0" }.to_string(),
+        }],
+    )
+    .await
+}
+
+pub async fn load_runtime_activity_settings(
+    pool: &Pool<Sqlite>,
+) -> Result<RuntimeActivitySettings, sqlx::Error> {
+    let rows = sqlx::query("SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?, ?)")
+        .bind(AUDIO_PARTICIPATION_ENABLED_KEY)
+        .bind(WEB_ACTIVITY_ENABLED_KEY)
+        .bind(WEB_ACTIVITY_PORT_KEY)
+        .bind(WEB_ACTIVITY_TOKEN_KEY)
+        .bind(WEB_ACTIVITY_URL_PRIVACY_KEY)
+        .fetch_all(pool)
+        .await?;
+
+    let mut audio_enabled: Option<String> = None;
+    let mut web_enabled: Option<String> = None;
+    let mut web_port: Option<String> = None;
+    let mut web_token: Option<String> = None;
+    let mut web_url_privacy: Option<String> = None;
+
+    for row in rows {
+        let key: String = row.get("key");
+        let value: String = row.get("value");
+        match key.as_str() {
+            AUDIO_PARTICIPATION_ENABLED_KEY => audio_enabled = Some(value),
+            WEB_ACTIVITY_ENABLED_KEY => web_enabled = Some(value),
+            WEB_ACTIVITY_PORT_KEY => web_port = Some(value),
+            WEB_ACTIVITY_TOKEN_KEY => web_token = Some(value),
+            WEB_ACTIVITY_URL_PRIVACY_KEY => web_url_privacy = Some(value),
+            _ => {}
+        }
+    }
+
+    let bridge = WebActivityBridgeSettings::from_storage_values(
+        web_port.as_deref(),
+        web_enabled.as_deref(),
+        web_token.as_deref(),
+    );
+    let web_activity = WebActivitySettings::from_storage_values(
+        web_enabled.as_deref(),
+        web_token.as_deref(),
+        web_url_privacy.as_deref(),
+    );
+
+    Ok(RuntimeActivitySettings {
+        audio_participation_enabled: parse_audio_participation_enabled(audio_enabled.as_deref()),
+        web_activity_bridge: bridge,
+        web_activity_url_privacy: web_activity.url_privacy,
+    })
+}
+
+pub async fn save_web_activity_runtime_settings(
+    pool: &Pool<Sqlite>,
+    settings: &WebActivityBridgeSettings,
+    url_privacy: crate::domain::settings::WebActivityUrlPrivacyMode,
+) -> Result<(), String> {
+    commit_app_setting_mutations(
+        pool,
+        &[
+            AppSettingMutation {
+                key: WEB_ACTIVITY_ENABLED_KEY.to_string(),
+                value: if settings.enabled { "1" } else { "0" }.to_string(),
+            },
+            AppSettingMutation {
+                key: WEB_ACTIVITY_PORT_KEY.to_string(),
+                value: settings.port.to_string(),
+            },
+            AppSettingMutation {
+                key: WEB_ACTIVITY_TOKEN_KEY.to_string(),
+                value: settings.token.clone(),
+            },
+            AppSettingMutation {
+                key: WEB_ACTIVITY_URL_PRIVACY_KEY.to_string(),
+                value: url_privacy.as_str().to_string(),
+            },
+        ],
+    )
+    .await
 }
 
 pub async fn load_web_activity_bridge_settings(
@@ -425,6 +518,42 @@ mod tests {
             .unwrap();
 
             assert!(!load_audio_participation_enabled(&pool).await.unwrap());
+        });
+    }
+
+    #[test]
+    fn browser_runtime_settings_commit_as_one_validated_batch() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            let settings = WebActivityBridgeSettings {
+                enabled: true,
+                port: 18_080,
+                token: "browser-token".to_string(),
+            };
+
+            save_web_activity_runtime_settings(
+                &pool,
+                &settings,
+                crate::domain::settings::WebActivityUrlPrivacyMode::DomainOnly,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(
+                load_web_activity_bridge_settings(&pool).await.unwrap(),
+                settings
+            );
+            assert_eq!(
+                load_web_activity_settings(&pool).await.unwrap().url_privacy,
+                crate::domain::settings::WebActivityUrlPrivacyMode::DomainOnly
+            );
+            let runtime = load_runtime_activity_settings(&pool).await.unwrap();
+            assert!(runtime.audio_participation_enabled);
+            assert_eq!(runtime.web_activity_bridge, settings);
+            assert_eq!(
+                runtime.web_activity_url_privacy,
+                crate::domain::settings::WebActivityUrlPrivacyMode::DomainOnly
+            );
         });
     }
 

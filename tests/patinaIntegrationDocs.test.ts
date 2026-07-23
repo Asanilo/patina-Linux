@@ -25,6 +25,9 @@ const implementedEndpoints = [
   "POST /api/v1/settings/tracker/afk-threshold",
   "POST /api/v1/settings/tracker/pause",
   "POST /api/v1/settings/classification",
+  "GET /api/v1/settings/runtime",
+  "POST /api/v1/settings/runtime/audio-participation",
+  "POST /api/v1/settings/runtime/browser-activity",
   "GET /api/v1/tools/snapshot",
 ];
 

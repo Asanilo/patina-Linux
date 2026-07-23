@@ -147,6 +147,12 @@ fn paths(surface: ApiSurface) -> Value {
         "/api/v1/settings/tracker": {
             "get": get_operation("Tracker settings snapshot.", "TrackerSettingsResponse")
         },
+        "/api/v1/settings/runtime": {
+            "get": get_operation(
+                "Sanitized audio and browser activity runtime settings.",
+                "RuntimeSettingsResponse",
+            )
+        },
         "/api/v1/settings/tracker/afk-threshold": {
             "post": post_operation(
                 "Update idle timeout threshold.",
@@ -169,6 +175,22 @@ fn paths(surface: ApiSurface) -> Value {
                 vec![],
                 "ClassificationMutationsRequest",
                 "OkResponse",
+            )
+        },
+        "/api/v1/settings/runtime/audio-participation": {
+            "post": post_operation(
+                "Enable or disable the Linux audio participation signal source.",
+                vec![],
+                "AudioParticipationRequest",
+                "AudioParticipationResponse",
+            )
+        },
+        "/api/v1/settings/runtime/browser-activity": {
+            "post": post_operation(
+                "Atomically apply browser activity listener, credential, and URL privacy settings.",
+                vec![],
+                "BrowserActivityConfigurationRequest",
+                "BrowserActivityConfigurationResponse",
             )
         },
         "/api/v1/tools/snapshot": {
@@ -238,6 +260,7 @@ fn schemas() -> Value {
                 array_schema(enum_schema(vec![
                     "app-mapping",
                     "classification",
+                    "runtime-settings",
                     "tracker-settings",
                 ])),
             ),
@@ -437,6 +460,26 @@ fn schemas() -> Value {
     schemas.insert(
         "TrackerSettingsResponse".to_string(),
         envelope(schema_ref("TrackerSettingsData")),
+    );
+    let browser_activity_settings = object_schema(vec![
+        ("enabled", bool_schema()),
+        ("port", bounded_integer_schema(1024, 65_535)),
+        ("token_present", bool_schema()),
+        (
+            "url_privacy",
+            enum_schema(vec!["full", "strip_query", "domain_only"]),
+        ),
+    ]);
+    schemas.insert(
+        "BrowserActivitySettings".to_string(),
+        browser_activity_settings.clone(),
+    );
+    schemas.insert(
+        "RuntimeSettingsResponse".to_string(),
+        envelope(object_schema(vec![
+            ("audio_participation_enabled", bool_schema()),
+            ("browser_activity", schema_ref("BrowserActivitySettings")),
+        ])),
     );
     schemas.insert(
         "WindowTrackingDiagnostics".to_string(),
@@ -652,6 +695,31 @@ fn schemas() -> Value {
         object_schema(vec![("paused", bool_schema())]),
     );
     schemas.insert(
+        "AudioParticipationRequest".to_string(),
+        object_schema(vec![("enabled", bool_schema())]),
+    );
+    schemas.insert(
+        "AudioParticipationResponse".to_string(),
+        envelope(object_schema(vec![("enabled", bool_schema())])),
+    );
+    let browser_activity_configuration = object_schema(vec![
+        ("enabled", bool_schema()),
+        ("port", bounded_integer_schema(1024, 65_535)),
+        ("token", bounded_string_schema(0, 512)),
+        (
+            "url_privacy",
+            enum_schema(vec!["full", "strip_query", "domain_only"]),
+        ),
+    ]);
+    schemas.insert(
+        "BrowserActivityConfigurationRequest".to_string(),
+        browser_activity_configuration.clone(),
+    );
+    schemas.insert(
+        "BrowserActivityConfigurationResponse".to_string(),
+        envelope(browser_activity_settings),
+    );
+    schemas.insert(
         "ClassificationMutationRequest".to_string(),
         object_schema(vec![
             ("key", bounded_string_schema(1, 256)),
@@ -793,6 +861,14 @@ fn standard_responses(schema: &str) -> Value {
         },
         "404": {
             "description": "Endpoint or resource not found.",
+            "content": {
+                "application/json": {
+                    "schema": schema_ref("ApiError")
+                }
+            }
+        },
+        "409": {
+            "description": "Requested runtime resource conflicts with an active local resource.",
             "content": {
                 "application/json": {
                     "schema": schema_ref("ApiError")
@@ -1010,7 +1086,24 @@ mod tests {
         assert!(schemas.contains_key("ProtocolCapability"));
         assert!(schemas.contains_key("WriteApiCapability"));
         assert!(schemas.contains_key("TrackingPausedRequest"));
+        assert!(schemas.contains_key("AudioParticipationRequest"));
+        assert!(schemas.contains_key("RuntimeSettingsResponse"));
+        assert!(schemas.contains_key("BrowserActivitySettings"));
+        assert!(schemas.contains_key("BrowserActivityConfigurationRequest"));
         assert!(schemas.contains_key("ClassificationMutationsRequest"));
+        assert!(response
+            .body
+            .pointer("/components/schemas/BrowserActivitySettings/properties/token")
+            .is_none());
+        assert_eq!(
+            response
+                .body
+                .pointer(
+                    "/components/schemas/BrowserActivitySettings/properties/token_present/type"
+                )
+                .and_then(|value| value.as_str()),
+            Some("boolean")
+        );
 
         assert_eq!(
             response

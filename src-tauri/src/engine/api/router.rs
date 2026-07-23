@@ -51,6 +51,9 @@ pub(crate) async fn route_request(
         ("GET", "/api/v1/settings/tracker") => {
             handlers::settings::get_tracker_settings(context).await
         }
+        ("GET", "/api/v1/settings/runtime") => {
+            handlers::runtime_settings::get_runtime_settings(context).await
+        }
         ("POST", "/api/v1/settings/tracker/afk-threshold") => {
             handlers::settings::set_afk_threshold(context, body).await
         }
@@ -59,6 +62,12 @@ pub(crate) async fn route_request(
         }
         ("POST", "/api/v1/settings/classification") => {
             handlers::classification::commit_classification_settings(context, body).await
+        }
+        ("POST", "/api/v1/settings/runtime/audio-participation") => {
+            handlers::runtime_settings::set_audio_participation(context, body).await
+        }
+        ("POST", "/api/v1/settings/runtime/browser-activity") => {
+            handlers::runtime_settings::configure_browser_activity(context, body).await
         }
         ("GET", "/api/v1/tools/snapshot") => handlers::tools::get_tools_snapshot(context).await,
         _ => RouteResponse {
@@ -77,10 +86,44 @@ mod tests {
     use sqlx::Executor;
     use std::sync::Arc;
 
+    #[derive(Default)]
+    struct TestRuntimeControl {
+        audio_enabled: std::sync::Mutex<Option<bool>>,
+        browser_configuration: std::sync::Mutex<
+            Option<crate::engine::api::runtime_control::BrowserActivityRuntimeConfiguration>,
+        >,
+    }
+
+    impl crate::engine::api::runtime_control::ApiRuntimeControl for TestRuntimeControl {
+        fn set_audio_participation_enabled(
+            &self,
+            enabled: bool,
+        ) -> crate::engine::api::runtime_control::RuntimeControlFuture<'_, bool> {
+            Box::pin(async move {
+                *self.audio_enabled.lock().unwrap() = Some(enabled);
+                Ok(enabled)
+            })
+        }
+
+        fn configure_browser_activity(
+            &self,
+            configuration: crate::engine::api::runtime_control::BrowserActivityRuntimeConfiguration,
+        ) -> crate::engine::api::runtime_control::RuntimeControlFuture<
+            '_,
+            crate::engine::api::runtime_control::BrowserActivityRuntimeConfiguration,
+        > {
+            Box::pin(async move {
+                *self.browser_configuration.lock().unwrap() = Some(configuration.clone());
+                Ok(configuration)
+            })
+        }
+    }
+
     async fn test_context() -> (
         sqlx::SqlitePool,
         ApiRuntimeContext,
         Arc<crate::engine::runtime_event::MemoryRuntimeEventSink>,
+        Arc<TestRuntimeControl>,
     ) {
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
         pool.execute(crate::data::schema::CURRENT_BASELINE_SCHEMA_SQL)
@@ -88,14 +131,18 @@ mod tests {
             .unwrap();
         let sink = Arc::new(crate::engine::runtime_event::MemoryRuntimeEventSink::default());
         let event_sink: Arc<dyn RuntimeEventSink> = sink.clone();
+        let control = Arc::new(TestRuntimeControl::default());
+        let runtime_control: Arc<dyn crate::engine::api::runtime_control::ApiRuntimeControl> =
+            control.clone();
         let context = ApiRuntimeContext::with_state_and_events(
             crate::engine::runtime_context::RuntimeContext::system(pool.clone()),
             "1.8.3",
             "linux",
             Arc::new(crate::engine::api::context::UnavailableApiRuntimeState),
             Some(event_sink),
-        );
-        (pool, context, sink)
+        )
+        .with_runtime_control(runtime_control);
+        (pool, context, sink, control)
     }
 
     async fn route(
@@ -124,7 +171,7 @@ mod tests {
 
     #[tokio::test]
     async fn daemon_tracking_writes_preserve_app_override_shape_and_emit_refresh_events() {
-        let (pool, context, sink) = test_context().await;
+        let (pool, context, sink, _control) = test_context().await;
 
         let rejected = route(
             &context,
@@ -198,7 +245,7 @@ mod tests {
 
     #[tokio::test]
     async fn daemon_tracker_and_classification_writes_are_validated_and_advertised() {
-        let (pool, context, sink) = test_context().await;
+        let (pool, context, sink, control) = test_context().await;
         let surface = crate::engine::api::surface::ApiSurface::DaemonTracking;
 
         let capabilities = route(
@@ -298,6 +345,106 @@ mod tests {
             Some("{\"category\":\"research\",\"enabled\":true}".to_string())
         );
         assert_eq!(sink.events().len(), 3);
+
+        let read_only_runtime_write = route(
+            &context,
+            crate::engine::api::surface::ApiSurface::DaemonReadOnly,
+            "POST",
+            "/api/v1/settings/runtime/audio-participation",
+            serde_json::json!({"enabled": false}),
+        )
+        .await;
+        assert_eq!(read_only_runtime_write.status, 404);
+        assert_eq!(
+            route(
+                &context,
+                surface,
+                "POST",
+                "/api/v1/settings/runtime/audio-participation",
+                serde_json::json!({"enabled": false}),
+            )
+            .await
+            .status,
+            200
+        );
+        assert_eq!(*control.audio_enabled.lock().unwrap(), Some(false));
+
+        let browser = route(
+            &context,
+            surface,
+            "POST",
+            "/api/v1/settings/runtime/browser-activity",
+            serde_json::json!({
+                "enabled": true,
+                "port": 12345,
+                "token": "browser-token",
+                "url_privacy": "domain_only"
+            }),
+        )
+        .await;
+        assert_eq!(browser.status, 200);
+        assert_eq!(browser.body["data"]["port"], 12_345);
+        assert_eq!(browser.body["data"]["token_present"], true);
+        assert!(browser.body["data"].get("token").is_none());
+        assert!(!serde_json::to_string(&browser.body)
+            .unwrap()
+            .contains("browser-token"));
+        assert_eq!(
+            control
+                .browser_configuration
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .url_privacy,
+            crate::domain::settings::WebActivityUrlPrivacyMode::DomainOnly
+        );
+
+        crate::data::repositories::app_settings::save_audio_participation_enabled(&pool, false)
+            .await
+            .unwrap();
+        crate::data::repositories::app_settings::save_web_activity_runtime_settings(
+            &pool,
+            &crate::domain::settings::WebActivityBridgeSettings {
+                enabled: true,
+                port: 18_080,
+                token: "stored-browser-token".to_string(),
+            },
+            crate::domain::settings::WebActivityUrlPrivacyMode::StripQuery,
+        )
+        .await
+        .unwrap();
+        let runtime_settings = route(
+            &context,
+            crate::engine::api::surface::ApiSurface::DaemonReadOnly,
+            "GET",
+            "/api/v1/settings/runtime",
+            serde_json::Value::Null,
+        )
+        .await;
+        assert_eq!(runtime_settings.status, 200);
+        assert_eq!(
+            runtime_settings.body["data"]["audio_participation_enabled"],
+            false
+        );
+        assert_eq!(
+            runtime_settings.body["data"]["browser_activity"]["port"],
+            18_080
+        );
+        assert_eq!(
+            runtime_settings.body["data"]["browser_activity"]["token_present"],
+            true
+        );
+        assert_eq!(
+            runtime_settings.body["data"]["browser_activity"]["url_privacy"],
+            "strip_query"
+        );
+        assert!(runtime_settings.body["data"]["browser_activity"]
+            .get("token")
+            .is_none());
+        assert!(!serde_json::to_string(&runtime_settings.body)
+            .unwrap()
+            .contains("stored-browser-token"));
 
         pool.close().await;
     }

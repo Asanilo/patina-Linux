@@ -51,6 +51,7 @@ pub struct PreparedWebActivityBridgeServer {
 }
 
 impl PreparedWebActivityBridgeServer {
+    #[cfg(test)]
     pub fn port(&self) -> u16 {
         self.address.port()
     }
@@ -136,42 +137,69 @@ impl WebActivityBridgeRuntimeState {
         settings: WebActivityBridgeSettings,
         handler: WebActivityBridgeHttpHandler,
         readiness: WebActivityBridgeReadinessHandler,
-    ) -> bool {
+    ) -> Result<bool, String> {
+        self.update_with_commit(settings, handler, readiness, || async { Ok(()) })
+            .await
+    }
+
+    pub async fn update_with_commit<F, Fut>(
+        &self,
+        settings: WebActivityBridgeSettings,
+        handler: WebActivityBridgeHttpHandler,
+        readiness: WebActivityBridgeReadinessHandler,
+        commit: F,
+    ) -> Result<bool, String>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<(), String>>,
+    {
         let mut inner = self.inner.lock().await;
         let has_ready_server = inner
             .server
             .as_ref()
             .is_some_and(WebActivityBridgeServerHandle::is_ready);
-        let should_restart = should_restart_server(&inner.settings, &settings, has_ready_server);
+        let same_ready_listener =
+            has_ready_server && inner.settings.enabled && inner.settings.port == settings.port;
 
-        if should_restart || (inner.server.is_some() && !has_ready_server) {
+        if same_ready_listener && settings.enabled {
+            commit().await?;
+            inner.settings = settings;
+            return Ok(true);
+        }
+
+        if !settings.enabled {
+            commit().await?;
+            if let Some(server) = inner.server.take() {
+                server.shutdown().await;
+            }
+            inner.settings = settings;
+            readiness(false);
+            return Ok(false);
+        }
+
+        if inner.server.is_some() && !has_ready_server && inner.settings.port == settings.port {
             if let Some(server) = inner.server.take() {
                 server.shutdown().await;
             }
         }
 
-        if settings.enabled && (should_restart || inner.server.is_none()) {
-            match prepare_web_activity_bridge_server(settings.port, handler) {
-                Ok(server) => {
-                    inner.server = Some(server.start_with_readiness(readiness.clone()));
-                }
-                Err(error) => {
-                    readiness(false);
-                    eprintln!(
-                        "[web-activity-bridge] failed to bind 127.0.0.1:{}: {error}",
-                        settings.port
-                    );
-                }
-            }
-        } else if !settings.enabled {
-            readiness(false);
+        let prepared =
+            prepare_web_activity_bridge_server(settings.port, handler).map_err(|error| {
+                format!(
+                    "failed to bind browser activity bridge on 127.0.0.1:{}: {error}",
+                    settings.port
+                )
+            })?;
+        commit().await?;
+        if let Some(server) = inner.server.take() {
+            server.shutdown().await;
         }
-
+        inner.server = Some(prepared.start_with_readiness(readiness));
         inner.settings = settings;
-        inner
+        Ok(inner
             .server
             .as_ref()
-            .is_some_and(WebActivityBridgeServerHandle::is_ready)
+            .is_some_and(WebActivityBridgeServerHandle::is_ready))
     }
 
     pub async fn shutdown(&self) {
@@ -192,18 +220,6 @@ pub fn prepare_web_activity_bridge_server(
         listener,
         handler,
     })
-}
-
-fn should_restart_server(
-    previous_settings: &WebActivityBridgeSettings,
-    settings: &WebActivityBridgeSettings,
-    has_ready_server: bool,
-) -> bool {
-    previous_settings.enabled != settings.enabled
-        || previous_settings.port != settings.port
-        || previous_settings.token != settings.token
-        || (settings.enabled && !has_ready_server)
-        || (!settings.enabled && has_ready_server)
 }
 
 #[derive(Clone)]
@@ -453,7 +469,7 @@ fn header_text(value: &HeaderValue) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     fn ok_handler() -> WebActivityBridgeHttpHandler {
@@ -472,6 +488,11 @@ mod tests {
         response
     }
 
+    fn available_port() -> u16 {
+        let listener = StdTcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        listener.local_addr().unwrap().port()
+    }
+
     #[test]
     fn listener_bind_can_recover_after_occupied_port_is_released() {
         let (_address, occupied_listener) = open_web_activity_bridge_listener(0).unwrap();
@@ -483,18 +504,42 @@ mod tests {
         drop(recovered_listener);
     }
 
-    #[test]
-    fn token_rotation_requires_server_restart() {
+    #[tokio::test]
+    async fn same_port_update_keeps_the_ready_listener_running() {
+        let runtime = WebActivityBridgeRuntimeState::default();
+        let port = available_port();
+        let readiness_changes = Arc::new(AtomicUsize::new(0));
+        let readiness: WebActivityBridgeReadinessHandler = {
+            let readiness_changes = readiness_changes.clone();
+            Arc::new(move |_| {
+                readiness_changes.fetch_add(1, Ordering::SeqCst);
+            })
+        };
         let previous = WebActivityBridgeSettings {
             enabled: true,
-            port: 12_345,
+            port,
             token: "old-token".to_string(),
         };
+        runtime
+            .update(previous.clone(), ok_handler(), readiness.clone())
+            .await
+            .unwrap();
+        assert_eq!(readiness_changes.load(Ordering::SeqCst), 1);
+
         let next = WebActivityBridgeSettings {
             token: "new-token".to_string(),
-            ..previous.clone()
+            ..previous
         };
-        assert!(should_restart_server(&previous, &next, true));
+        runtime.update(next, ok_handler(), readiness).await.unwrap();
+
+        assert_eq!(readiness_changes.load(Ordering::SeqCst), 1);
+        let response = exchange(
+            port,
+            b"POST /web-activity HTTP/1.1\r\nHost: localhost\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+        )
+        .await;
+        assert!(response.starts_with("HTTP/1.1 200 OK"));
+        runtime.shutdown().await;
     }
 
     #[test]
@@ -538,6 +583,47 @@ mod tests {
         .await;
         assert!(hostile.starts_with("HTTP/1.1 403 Forbidden"));
         handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn runtime_update_keeps_old_listener_when_persistence_fails() {
+        let runtime = WebActivityBridgeRuntimeState::default();
+        let old_port = available_port();
+        let old_settings = WebActivityBridgeSettings {
+            enabled: true,
+            port: old_port,
+            token: "old-token".to_string(),
+        };
+        runtime
+            .update(old_settings, ok_handler(), Arc::new(|_| {}))
+            .await
+            .unwrap();
+
+        let new_port = available_port();
+        let error = runtime
+            .update_with_commit(
+                WebActivityBridgeSettings {
+                    enabled: true,
+                    port: new_port,
+                    token: "new-token".to_string(),
+                },
+                ok_handler(),
+                Arc::new(|_| {}),
+                || async { Err("database unavailable".to_string()) },
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(error, "database unavailable");
+        let response = exchange(
+            old_port,
+            b"POST /web-activity HTTP/1.1\r\nHost: localhost\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+        )
+        .await;
+        assert!(response.starts_with("HTTP/1.1 200 OK"));
+        let rebound = StdTcpListener::bind((Ipv4Addr::LOCALHOST, new_port)).unwrap();
+        drop(rebound);
+        runtime.shutdown().await;
     }
 
     #[tokio::test]

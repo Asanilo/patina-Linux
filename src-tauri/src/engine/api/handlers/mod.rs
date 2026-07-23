@@ -5,6 +5,7 @@ pub mod classification;
 pub mod diagnostics;
 pub mod health;
 pub mod openapi;
+pub mod runtime_settings;
 pub mod sessions;
 pub mod settings;
 pub mod tools;

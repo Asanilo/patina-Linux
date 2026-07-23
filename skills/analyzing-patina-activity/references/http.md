@@ -53,7 +53,7 @@ curl -fsS "$PATINA_API_BASE/api/v1/web-activity?from=START_MS&to=END_MS&limit=10
   -H "Authorization: Bearer $PATINA_API_TOKEN"
 ```
 
-Other stable read paths are `/current`, `/sessions`, `/sessions/active`, `/summary/today`, `/summary/week`, `/trend`, `/apps`, `/settings/tracker`, and `/tools/snapshot`, all under `/api/v1`.
+Other stable read paths are `/current`, `/sessions`, `/sessions/active`, `/summary/today`, `/summary/week`, `/trend`, `/apps`, `/settings/tracker`, `/settings/runtime`, and `/tools/snapshot`, all under `/api/v1`. Runtime settings are sanitized: browser credentials are represented only by `token_present`.
 
 ## Writes
 
@@ -64,5 +64,9 @@ Only perform writes on explicit user intent. Verify the exact app from `GET /api
 - `POST /api/v1/apps/{exe_name}/exclude` with `{ "excluded": true|false }`.
 - `POST /api/v1/settings/tracker/afk-threshold` with `{ "seconds": integer }`.
 - `POST /api/v1/settings/tracker/pause` with `{ "paused": true|false }`.
+- `POST /api/v1/settings/runtime/audio-participation` with `{ "enabled": true|false }`.
+- `POST /api/v1/settings/runtime/browser-activity` with the complete `enabled`, `port`, `token`, and `url_privacy` configuration.
+
+Browser activity configuration is a complete replacement operation. Confirm the requested port, whether synchronization should be enabled, and the URL privacy mode before sending it. Never expose either API or browser extension Tokens in analysis output.
 
 Send `Content-Type: application/json` and the same Authorization header. Do not call routes listed as planned in the human API index.

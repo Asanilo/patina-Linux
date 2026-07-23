@@ -1,27 +1,109 @@
+use crate::domain::settings::WebActivityBridgeSettings;
+use crate::platform::web_activity_bridge::{
+    WebActivityBridgeHttpHandler, WebActivityBridgeReadinessHandler, WebActivityBridgeRuntimeState,
+};
+use std::future::Future;
 use std::sync::Arc;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
-pub(super) struct DaemonWebActivityTask {
-    server: Option<crate::platform::web_activity_bridge::WebActivityBridgeServerHandle>,
-    shutdown_tx: watch::Sender<bool>,
-    event_handle: JoinHandle<()>,
+#[derive(Clone)]
+pub(crate) struct DaemonWebActivityControl {
     context: crate::engine::runtime_context::RuntimeContext,
     tracking_snapshot: Arc<crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState>,
     state: Arc<crate::engine::web_activity::WebActivityRuntimeState>,
     event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
+    runtime: Arc<WebActivityBridgeRuntimeState>,
 }
 
-impl DaemonWebActivityTask {
-    pub(super) async fn start(
+impl DaemonWebActivityControl {
+    pub(crate) fn new(
         context: crate::engine::runtime_context::RuntimeContext,
         tracking_snapshot: Arc<
             crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState,
         >,
         state: Arc<crate::engine::web_activity::WebActivityRuntimeState>,
+        event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
+    ) -> Self {
+        Self {
+            context,
+            tracking_snapshot,
+            state,
+            event_sink,
+            runtime: Arc::new(WebActivityBridgeRuntimeState::default()),
+        }
+    }
+
+    pub(super) async fn apply(&self, settings: WebActivityBridgeSettings) -> Result<bool, String> {
+        self.apply_with_commit(settings, || async { Ok(()) }).await
+    }
+
+    pub(super) async fn apply_with_commit<F, Fut>(
+        &self,
+        settings: WebActivityBridgeSettings,
+        commit: F,
+    ) -> Result<bool, String>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<(), String>>,
+    {
+        self.runtime
+            .update_with_commit(settings, self.handler(), self.readiness_handler(), commit)
+            .await
+    }
+
+    pub(super) async fn shutdown(&self) {
+        self.runtime.shutdown().await;
+        self.state.set_listening(false);
+    }
+
+    fn handler(&self) -> WebActivityBridgeHttpHandler {
+        let context = self.context.clone();
+        let state = self.state.clone();
+        let tracking = self.tracking_snapshot.clone();
+        let events = self.event_sink.clone();
+        Arc::new(move |request| {
+            let context = context.clone();
+            let state = state.clone();
+            let tracking = tracking.clone();
+            let events = events.clone();
+            Box::pin(async move {
+                crate::engine::web_activity::handle_http_request(
+                    &context,
+                    state.as_ref(),
+                    tracking.snapshot(),
+                    events.as_ref(),
+                    request,
+                )
+                .await
+            })
+        })
+    }
+
+    fn readiness_handler(&self) -> WebActivityBridgeReadinessHandler {
+        let state = self.state.clone();
+        Arc::new(move |listening| state.set_listening(listening))
+    }
+}
+
+pub(super) struct DaemonWebActivityTask {
+    control: DaemonWebActivityControl,
+    shutdown_tx: watch::Sender<bool>,
+    event_handle: JoinHandle<()>,
+    context: crate::engine::runtime_context::RuntimeContext,
+    tracking_snapshot: Arc<crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState>,
+    event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
+}
+
+impl DaemonWebActivityTask {
+    pub(super) async fn start(
+        control: DaemonWebActivityControl,
         event_hub: Arc<crate::engine::runtime_event::RuntimeEventHub>,
     ) -> Self {
-        let event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink> = event_hub.clone();
+        let context = control.context.clone();
+        let tracking_snapshot = control.tracking_snapshot.clone();
+        let state = control.state.clone();
+        let event_sink = control.event_sink.clone();
         let startup_at_ms = context.now_ms();
         match crate::engine::web_activity::repair_active_segment_after_restart(
             context.pool(),
@@ -44,55 +126,17 @@ impl DaemonWebActivityTask {
             eprintln!("[patinad] failed to load browser activity bridge settings: {error}");
             crate::domain::settings::WebActivityBridgeSettings::default()
         });
-        let server = if settings.enabled {
-            let handler_context = context.clone();
-            let handler_state = state.clone();
-            let handler_tracking = tracking_snapshot.clone();
-            let handler_events = event_sink.clone();
-            let handler: crate::platform::web_activity_bridge::WebActivityBridgeHttpHandler =
-                Arc::new(move |request| {
-                    let context = handler_context.clone();
-                    let state = handler_state.clone();
-                    let tracking = handler_tracking.clone();
-                    let events = handler_events.clone();
-                    Box::pin(async move {
-                        crate::engine::web_activity::handle_http_request(
-                            &context,
-                            state.as_ref(),
-                            tracking.snapshot(),
-                            events.as_ref(),
-                            request,
-                        )
-                        .await
-                    })
-                });
-            match crate::platform::web_activity_bridge::prepare_web_activity_bridge_server(
-                settings.port,
-                handler,
-            ) {
-                Ok(server) => {
-                    let port = server.port();
-                    println!(
-                        "[patinad] browser activity bridge listening on http://127.0.0.1:{port}"
-                    );
-                    let readiness_state = state.clone();
-                    Some(server.start_with_readiness(Arc::new(move |listening| {
-                        readiness_state.set_listening(listening);
-                    })))
-                }
-                Err(error) => {
-                    state.set_listening(false);
-                    eprintln!(
-                        "[patinad] failed to bind browser activity bridge 127.0.0.1:{}: {error}",
-                        settings.port
-                    );
-                    None
-                }
+        match control.apply(settings.clone()).await {
+            Ok(true) => println!(
+                "[patinad] browser activity bridge listening on http://127.0.0.1:{}",
+                settings.port
+            ),
+            Ok(false) => {}
+            Err(error) => {
+                state.set_listening(false);
+                eprintln!("[patinad] failed to apply browser activity bridge settings: {error}");
             }
-        } else {
-            state.set_listening(false);
-            None
-        };
+        }
 
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let event_handle = tokio::spawn(run_web_activity_event_sync(
@@ -104,21 +148,17 @@ impl DaemonWebActivityTask {
             shutdown_rx,
         ));
         Self {
-            server,
+            control,
             shutdown_tx,
             event_handle,
             context,
             tracking_snapshot,
-            state,
             event_sink,
         }
     }
 
     pub(super) async fn shutdown(self) {
-        if let Some(server) = self.server {
-            server.shutdown().await;
-        }
-        self.state.set_listening(false);
+        self.control.shutdown().await;
         let _ = self.shutdown_tx.send(true);
         let mut event_handle = self.event_handle;
         if tokio::time::timeout(std::time::Duration::from_secs(5), &mut event_handle)

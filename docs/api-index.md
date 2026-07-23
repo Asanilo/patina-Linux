@@ -34,11 +34,11 @@ Current caveats:
 - `/api/v1/openapi.json` exposes the machine-readable OpenAPI 3.1 schema with paths, query/path parameters, request bodies, response envelopes, auth, error envelopes, and field-level component schemas.
 - The OpenAPI server URL uses a configurable `{port}` variable whose default is `14840`.
 - This document remains the human-maintained reference for behavior notes and implementation caveats.
-- The desktop runtime exposes the JSON endpoints below. Default `patinad` mode exposes authenticated reads plus SSE and rejects all `POST` endpoints. Explicit `--track` mode is the current runtime owner and additionally exposes the bounded app-mapping, classification, and tracker-settings writes listed by `/api/v1/capabilities`.
+- The desktop runtime exposes the shared JSON endpoints below. Default `patinad` mode exposes authenticated reads plus SSE and rejects all `POST` endpoints. Explicit `--track` mode is the current runtime owner and additionally exposes the bounded app-mapping, classification, tracker-settings, and runtime-settings writes listed by `/api/v1/capabilities`.
 - Default daemon mode remains historical/read-only: `GET /api/v1/current` returns `503` and live tracker/browser diagnostics are `null`.
 - Stage 2F preview mode is explicit: run `patinad --profile dev --serve-api --track --port 0`. It owns tracking for that profile, serves a live `/current`, observes Linux lock/suspend/resume/shutdown, runs audio/MPRIS participation sources, and owns the browser activity bridge configured for that profile. Never run desktop and daemon tracking against the same profile.
 - Stage 2F capability migration, Stage 2F.1 browser crash/heartbeat semantics, and Stage 2F.2 loopback transport migration are complete. API, SSE, and the independent browser extension bridge use Axum with 32/8/8 fail-fast concurrency budgets, bounded handlers, strict Host/origin policies, and task-coupled listener readiness. The extension protocol remains `POST /web-activity` with its separate Token; its CORS response only echoes Firefox/Zen or Chromium extension origins and never returns `Access-Control-Allow-Origin: *`.
-- The daemon reads the browser bridge port and token when it starts. Changing either setting currently requires restarting the daemon.
+- The tracking-owner daemon can apply audio participation and the complete browser bridge configuration while running. Browser port changes reserve the new listener and commit storage before the old listener is stopped; bind or persistence failures preserve the old configuration.
 - `/api/v1/events` accepts the token only through the `Authorization` header. It does not accept tokens in URLs or query strings.
 
 ---
@@ -69,6 +69,9 @@ Current caveats:
 | `/api/v1/settings/tracker/afk-threshold` | `POST` | Implemented | Update idle timeout threshold |
 | `/api/v1/settings/tracker/pause` | `POST` | Implemented | Set tracking pause state |
 | `/api/v1/settings/classification` | `POST` | Implemented | Commit a validated classification mutation batch |
+| `/api/v1/settings/runtime` | `GET` | Implemented | Sanitized audio and browser activity runtime settings |
+| `/api/v1/settings/runtime/audio-participation` | `POST` | Tracking daemon | Apply and persist the Linux audio participation switch |
+| `/api/v1/settings/runtime/browser-activity` | `POST` | Tracking daemon | Atomically replace browser listener, Token, and URL privacy settings |
 | `/api/v1/tools/snapshot` | `GET` | Implemented | Current Tools runtime snapshot |
 
 ---
@@ -90,9 +93,9 @@ Current scope:
 - Auth model: bearer token through `components.securitySchemes.bearerAuth`
 - Paths: the exact endpoints enabled for the current desktop or daemon API surface
 - Parameters: query params for sessions, summary range, trend, web activity; path params for app management
-- Request bodies: classify, rename, exclude, AFK threshold, tracking pause, and classification batch writes
-- Responses: success envelopes and standard `400` / `401` / `403` / `404` / `413` / `500` / `503` error envelopes
-- Components: field-level schemas for health, capabilities, runtime event envelopes, diagnostics, current window, sessions, active session, summaries, trend, web activity, apps, tracker settings, AI activity context, and Tools snapshot
+- Request bodies: classify, rename, exclude, AFK threshold, tracking pause, classification batch, audio participation, and complete browser runtime configuration writes
+- Responses: success envelopes and standard `400` / `401` / `403` / `404` / `409` / `413` / `500` / `503` error envelopes
+- Components: field-level schemas for health, capabilities, runtime event envelopes, diagnostics, current window, sessions, active session, summaries, trend, web activity, apps, tracker/runtime settings, AI activity context, and Tools snapshot
 
 Known gap:
 
@@ -159,7 +162,7 @@ Default daemon schema:
 
 Clients compare their supported protocol against `protocol.min_supported_client` and `protocol.max_supported_client` before using the daemon. `protocol_version` remains as the compatibility alias for `protocol.current`.
 
-With Stage 2F `--track`, the same response changes `tracking` to `{ "owned": true, "ready": false }` during startup and `{ "owned": true, "ready": true }` after the first runtime snapshot. `browser_activity_bridge.owned` is also `true`; its current `ready` value follows the configured listener task. `write_api` becomes `{ "available": true, "operations": ["app-mapping", "classification", "tracker-settings"] }`. Default daemon mode keeps both runtime capabilities unowned and the write API unavailable.
+With Stage 2F `--track`, the same response changes `tracking` to `{ "owned": true, "ready": false }` during startup and `{ "owned": true, "ready": true }` after the first runtime snapshot. `browser_activity_bridge.owned` is also `true`; its current `ready` value follows the configured listener task. `write_api` becomes `{ "available": true, "operations": ["app-mapping", "classification", "runtime-settings", "tracker-settings"] }`. Default daemon mode keeps both runtime capabilities unowned and the write API unavailable.
 
 ### `GET /api/v1/events`
 
@@ -827,6 +830,57 @@ curl -s -X POST "$PATINA_API_BASE/api/v1/settings/classification" \
 
 `value: null` deletes the key. Invalid keys or malformed override JSON reject the whole batch before any write; valid batches commit in one transaction.
 
+### `GET /api/v1/settings/runtime`
+
+```bash
+curl -s "$PATINA_API_BASE/api/v1/settings/runtime" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN"
+```
+
+Schema:
+
+```json
+{
+  "data": {
+    "audio_participation_enabled": true,
+    "browser_activity": {
+      "enabled": true,
+      "port": 12345,
+      "token_present": true,
+      "url_privacy": "domain_only"
+    }
+  }
+}
+```
+
+This endpoint is available on every API surface and reports persisted configuration. It deliberately exposes only `token_present`; the browser extension Token is never returned. Use diagnostics to distinguish configured state from whether a runtime owner is currently listening or connected.
+
+### `POST /api/v1/settings/runtime/audio-participation`
+
+Available only when `/api/v1/capabilities` advertises the `runtime-settings` write scope.
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/settings/runtime/audio-participation" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled":false}'
+```
+
+The daemon persists the setting before changing the live Linux audio signal source. This controls only audio-based participation accuracy; Patina does not capture or store microphone audio.
+
+### `POST /api/v1/settings/runtime/browser-activity`
+
+This is a complete replacement operation. Confirm all four fields before calling it.
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/settings/runtime/browser-activity" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled":true,"port":12345,"token":"replace-with-extension-token","url_privacy":"domain_only"}'
+```
+
+`port` must be `1024..65535`; `url_privacy` is `full`, `strip_query`, or `domain_only`; enabling requires a non-empty Token. For a port change, the daemon first binds the requested port, then commits all browser settings in one transaction, and only then replaces the old listener. A bind conflict returns `409` without changing stored or live settings. Disabling also seals any active web segment at the current trusted boundary. The response reports `token_present` and never echoes the Token value.
+
 ### `GET /api/v1/tools/snapshot`
 
 Curl:
@@ -967,6 +1021,7 @@ Current MCP tools:
 | Tool | HTTP API | Arguments | Purpose |
 |---|---|---|---|
 | `get_diagnostics` | `GET /api/v1/diagnostics` | none | Check Linux/window/browser/API runtime health |
+| `get_runtime_settings` | `GET /api/v1/settings/runtime` | none | Read sanitized audio and browser activity settings |
 | `get_current_activity` | `GET /api/v1/current` | none | Read current foreground activity snapshot |
 | `query_sessions` | `GET /api/v1/sessions` | `from`, `to`, `app`, `limit` | Query closed activity sessions |
 | `get_active_session` | `GET /api/v1/sessions/active` | none | Read the currently active session with realtime duration |
@@ -979,6 +1034,8 @@ Current MCP tools:
 | `list_apps` | `GET /api/v1/apps` | none | List known apps from recorded sessions |
 | `set_idle_threshold` | `POST /api/v1/settings/tracker/afk-threshold` | `seconds` | Set idle threshold |
 | `set_tracking_paused` | `POST /api/v1/settings/tracker/pause` | `paused` | Set tracking pause state |
+| `set_audio_participation` | `POST /api/v1/settings/runtime/audio-participation` | `enabled` | Apply the Linux audio participation switch |
+| `configure_browser_activity` | `POST /api/v1/settings/runtime/browser-activity` | `enabled`, `port`, `token`, `urlPrivacy` | Replace browser activity runtime configuration |
 | `classify_app` | `POST /api/v1/apps/{exe_name}/classify` | `exeName`, `category` | Save an app category |
 | `rename_app` | `POST /api/v1/apps/{exe_name}/rename` | `exeName`, `displayName` | Save an app display name |
 | `set_app_excluded` | `POST /api/v1/apps/{exe_name}/exclude` | `exeName`, `excluded` | Save an app exclusion flag |

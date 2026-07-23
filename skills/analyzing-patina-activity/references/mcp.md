@@ -7,6 +7,7 @@ Use this workflow when the host exposes the Patina MCP server. Tool names may ca
 | Tool | Arguments | Use |
 |---|---|---|
 | `get_diagnostics` | none | Validate window tracking, tracker runtime, and browser bridge |
+| `get_runtime_settings` | none | Read sanitized audio and browser activity configuration |
 | `get_current_activity` | none | Read the foreground-window sample |
 | `get_active_session` | none | Read the realtime active session or `null` |
 | `get_today_summary` | none | Read the local-day aggregate |
@@ -31,8 +32,10 @@ Use only after explicit user intent:
 | `set_app_excluded` | `exeName`, `excluded` | Change whether the app contributes to statistics |
 | `set_idle_threshold` | `seconds` | Set the idle threshold; accepted range is 60 through 86400 seconds |
 | `set_tracking_paused` | `paused` | Explicitly pause or resume automatic tracking |
+| `set_audio_participation` | `enabled` | Enable or disable the Linux audio participation signal |
+| `configure_browser_activity` | `enabled`, `port`, `token`, `urlPrivacy` | Replace the complete browser extension bridge configuration |
 
-Before app writes, use `list_apps` to verify the exact `exe_name`. Do not infer permission for any write from a general request to analyze data.
+Before app writes, use `list_apps` to verify the exact `exe_name`. Before browser configuration, restate the port and URL privacy mode without printing the Token. Do not infer permission for any write from a general request to analyze data.
 
 ## Recommended Sequences
 
@@ -51,9 +54,10 @@ Before app writes, use `list_apps` to verify the exact `exe_name`. Do not infer 
 
 ### Browser investigation
 
-1. Confirm `web_activity_bridge.enabled` and recent reporting in diagnostics.
-2. Call `query_web_activity` with the narrowest useful range/domain.
-3. Respect `url: null`; it represents Patina's configured privacy mode, not missing data to reconstruct.
+1. Use `get_runtime_settings` to read configured port/privacy state without exposing the Token.
+2. Confirm `web_activity_bridge.enabled` and recent reporting in diagnostics.
+3. Call `query_web_activity` with the narrowest useful range/domain.
+4. Respect `url: null`; it represents Patina's configured privacy mode, not missing data to reconstruct.
 
 ## Errors
 

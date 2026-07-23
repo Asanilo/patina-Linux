@@ -7,23 +7,10 @@ pub(super) struct DaemonAudioTask {
 }
 
 impl DaemonAudioTask {
-    pub(super) fn start(
-        context: crate::engine::runtime_context::RuntimeContext,
-        source: crate::platform::linux::audio::AudioSignalSource,
-    ) -> Self {
+    pub(super) fn start(source: crate::platform::linux::audio::AudioSignalSource) -> Self {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let handle = tokio::spawn(async move {
-            let enabled =
-                crate::data::repositories::app_settings::load_audio_participation_enabled(
-                    context.pool(),
-                )
-                .await
-                .unwrap_or_else(|error| {
-                    eprintln!("[patinad] failed to load audio participation setting: {error}");
-                    false
-                });
-            source.set_enabled(enabled);
-            if enabled {
+            if source.is_enabled() {
                 println!("[patinad] audio participation source ready");
             }
             source.run_with_shutdown(shutdown_rx).await;

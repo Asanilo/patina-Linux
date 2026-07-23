@@ -1,5 +1,6 @@
 #[cfg(target_os = "linux")]
 mod audio;
+mod control;
 #[cfg(target_os = "linux")]
 mod media;
 #[cfg(target_os = "linux")]
@@ -12,8 +13,10 @@ use super::DaemonSqliteRuntime;
 use crate::app::runtime_lease::RuntimeLease;
 use crate::engine::api::server::ApiServerHandle;
 use crate::engine::runtime_event::RuntimeEventHub;
+pub(super) use control::DaemonApiRuntimeControl;
 use std::sync::Arc;
 use tracking::DaemonTrackingTasks;
+pub(super) use web_activity::DaemonWebActivityControl;
 use web_activity::DaemonWebActivityTask;
 
 #[cfg(target_os = "linux")]
@@ -38,21 +41,14 @@ impl DaemonBackgroundTasks {
     pub async fn start(
         context: crate::engine::runtime_context::RuntimeContext,
         snapshot: Arc<crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState>,
-        web_activity_state: Arc<crate::engine::web_activity::WebActivityRuntimeState>,
+        web_activity: DaemonWebActivityControl,
         event_hub: Arc<crate::engine::runtime_event::RuntimeEventHub>,
+        #[cfg(target_os = "linux")] audio_source: crate::platform::linux::audio::AudioSignalSource,
     ) -> Self {
         let event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink> = event_hub.clone();
-        let browser_activity = DaemonWebActivityTask::start(
-            context.clone(),
-            snapshot.clone(),
-            web_activity_state,
-            event_hub,
-        )
-        .await;
+        let browser_activity = DaemonWebActivityTask::start(web_activity, event_hub).await;
         #[cfg(target_os = "linux")]
-        let audio_source = crate::platform::linux::audio::AudioSignalSource::new(false);
-        #[cfg(target_os = "linux")]
-        let audio = DaemonAudioTask::start(context.clone(), audio_source.clone());
+        let audio = DaemonAudioTask::start(audio_source.clone());
         #[cfg(target_os = "linux")]
         let media_source = crate::platform::linux::media::MediaSignalSource::new();
         #[cfg(target_os = "linux")]
@@ -264,13 +260,25 @@ mod tests {
         .unwrap();
         let web_activity_state =
             Arc::new(crate::engine::web_activity::WebActivityRuntimeState::default());
-        let background_tasks = DaemonBackgroundTasks::start(
-            crate::engine::runtime_context::RuntimeContext::system(sqlite.pool.clone()),
-            Arc::new(
-                crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState::default(),
-            ),
+        let runtime_context =
+            crate::engine::runtime_context::RuntimeContext::system(sqlite.pool.clone());
+        let tracking_snapshot = Arc::new(
+            crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState::default(),
+        );
+        let event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink> = event_hub.clone();
+        let web_activity = DaemonWebActivityControl::new(
+            runtime_context.clone(),
+            tracking_snapshot.clone(),
             web_activity_state.clone(),
+            event_sink,
+        );
+        let background_tasks = DaemonBackgroundTasks::start(
+            runtime_context,
+            tracking_snapshot,
+            web_activity,
             event_hub.clone(),
+            #[cfg(target_os = "linux")]
+            crate::platform::linux::audio::AudioSignalSource::new(false),
         )
         .await;
         assert!(

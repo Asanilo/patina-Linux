@@ -23,13 +23,14 @@ Analyze Patina's local activity data without inventing missing context or exposi
 3. Drill into summaries, sessions, trends, or web activity only as needed.
 4. State the time range and whether current active time is included.
 5. Separate recorded facts from interpretations about intent, focus, or productivity.
-6. Execute app classification, rename, exclusion, idle-threshold, or pause writes only on explicit user intent; report exactly what changed.
+6. Execute app classification, rename, exclusion, tracker, audio, or browser-bridge writes only on explicit user intent; report exactly what changed. Treat browser port, Token, and URL privacy replacement as a high-impact configuration change.
 
 ## Quick Reference
 
 | Need | Preferred operation |
 |---|---|
 | Tracking or browser health | diagnostics |
+| Audio/browser configuration | sanitized runtime settings |
 | Current foreground window | current activity |
 | Current running segment | active session |
 | Today or this week | summary |
@@ -39,12 +40,13 @@ Analyze Patina's local activity data without inventing missing context or exposi
 | Timer/reminder/pomodoro state | Tools snapshot |
 | App names/categories/exclusions | app list and explicit write tools |
 | Idle threshold or tracking pause | explicit tracker setting tools |
+| Audio participation or browser bridge configuration | explicit runtime setting tools |
 
 ## Common Mistakes
 
 - Do not add active-session duration to today/week summaries; those summaries already include it.
 - Do not treat closed-session queries as complete realtime totals.
 - Do not assume missing web activity means no browser use; inspect bridge diagnostics first.
-- Do not print, log, summarize, or persist the bearer token.
+- Do not print, log, summarize, or persist API or browser extension bearer tokens.
 - Do not expose full URLs or window titles unless they are needed for the user's request.
 - Do not call planned Tools write endpoints; they are not implemented.

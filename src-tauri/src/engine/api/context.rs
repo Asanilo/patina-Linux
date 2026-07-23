@@ -39,6 +39,7 @@ pub struct ApiRuntimeContext {
     platform: String,
     state: Arc<dyn ApiRuntimeStateProvider>,
     event_sink: Option<Arc<dyn crate::engine::runtime_event::RuntimeEventSink>>,
+    runtime_control: Option<Arc<dyn crate::engine::api::runtime_control::ApiRuntimeControl>>,
 }
 
 impl ApiRuntimeContext {
@@ -75,7 +76,16 @@ impl ApiRuntimeContext {
             platform: platform.into(),
             state,
             event_sink,
+            runtime_control: None,
         }
+    }
+
+    pub fn with_runtime_control(
+        mut self,
+        runtime_control: Arc<dyn crate::engine::api::runtime_control::ApiRuntimeControl>,
+    ) -> Self {
+        self.runtime_control = Some(runtime_control);
+        self
     }
 
     pub fn pool(&self) -> &sqlx::Pool<sqlx::Sqlite> {
@@ -118,6 +128,12 @@ impl ApiRuntimeContext {
         ) {
             eprintln!("[api] failed to emit data change event: {error}");
         }
+    }
+
+    pub fn runtime_control(
+        &self,
+    ) -> Option<&Arc<dyn crate::engine::api::runtime_control::ApiRuntimeControl>> {
+        self.runtime_control.as_ref()
     }
 }
 

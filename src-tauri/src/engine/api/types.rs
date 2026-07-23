@@ -59,6 +59,15 @@ impl ApiError {
         }
     }
 
+    pub fn conflict(message: &str) -> Self {
+        Self {
+            error: ApiErrorDetail {
+                code: "conflict".to_string(),
+                message: message.to_string(),
+            },
+        }
+    }
+
     pub fn internal(message: &str) -> Self {
         Self {
             error: ApiErrorDetail {
@@ -205,6 +214,11 @@ pub struct TrackingPausedRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct AudioParticipationRequest {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ClassificationMutationRequest {
     pub key: String,
     pub value: Option<String>,
@@ -279,6 +293,20 @@ pub struct TrackerSettingsResponse {
     pub idle_timeout_secs: u64,
     pub timeline_merge_gap_secs: u64,
     pub tracking_paused: bool,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct RuntimeSettingsResponse {
+    pub audio_participation_enabled: bool,
+    pub browser_activity: BrowserActivitySettingsResponse,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct BrowserActivitySettingsResponse {
+    pub enabled: bool,
+    pub port: u16,
+    pub token_present: bool,
+    pub url_privacy: crate::domain::settings::WebActivityUrlPrivacyMode,
 }
 
 #[derive(Debug, Serialize)]
