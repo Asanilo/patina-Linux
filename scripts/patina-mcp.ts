@@ -77,6 +77,18 @@ export const PATINA_MCP_TOOLS: PatinaMcpTool[] = [
     }, ["confirmed"]),
   },
   {
+    name: "get_daemon_service",
+    description: "Read the patinad systemd user-service identity and latest restart ticket.",
+    inputSchema: objectSchema({}),
+  },
+  {
+    name: "restart_daemon_service",
+    description: "Request a graceful patinad restart through systemd. Requires explicit confirmation and returns a ticket to verify after reconnecting.",
+    inputSchema: objectSchema({
+      confirmed: { type: "boolean", description: "Must be true after explicit user confirmation." },
+    }, ["confirmed"]),
+  },
+  {
     name: "get_current_activity",
     description: "Read the current foreground window snapshot.",
     inputSchema: objectSchema({}),
@@ -383,6 +395,10 @@ function toolNameToApiRequest(name: string, args: Record<string, unknown>) {
       return setLocalApiPortRequest(args);
     case "rotate_local_api_token":
       return rotateLocalApiTokenRequest(args);
+    case "get_daemon_service":
+      return getRequest("/api/v1/system/service");
+    case "restart_daemon_service":
+      return restartDaemonServiceRequest(args);
     case "get_current_activity":
       return getRequest("/api/v1/current");
     case "get_active_session":
@@ -479,6 +495,13 @@ function rotateLocalApiTokenRequest(args: Record<string, unknown>) {
     return { error: "rotate_local_api_token requires confirmed=true after explicit user confirmation" };
   }
   return postRequest("/api/v1/settings/local-api/token/rotate");
+}
+
+function restartDaemonServiceRequest(args: Record<string, unknown>) {
+  if (args.confirmed !== true) {
+    return { error: "restart_daemon_service requires confirmed=true after explicit user confirmation" };
+  }
+  return postRequest("/api/v1/system/service/restart", { confirmed: true });
 }
 
 function createReminderRequest(args: Record<string, unknown>) {

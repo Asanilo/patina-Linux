@@ -118,6 +118,37 @@ Persistent Firefox/Zen installation requires a signed XPI. Temporary development
 
 Settings -> Diagnostics shows the current `~/.config/autostart/Patina.desktop` state. When the `Exec` path points to a stale launcher, such as a terminal executable used during development, the Desktop Integration row exposes a repair action that rewrites it to the current Patina executable with `--autostart`.
 
+## patinad Service Preview
+
+The Debian bundle now includes both:
+
+```text
+/usr/bin/patinad
+/usr/lib/systemd/user/patinad.service
+```
+
+The package does not enable or start the unit. Desktop remains the default production tracking owner until the client cutover stage migrates the current user's XDG autostart and enables the daemon from the user session. Do not manually start the production unit while Patina Desktop is tracking the same profile.
+
+Validate the source packaging contract without installing it:
+
+```bash
+npm run test:release
+```
+
+After installing a daemon-backed DEB, systemd can also validate the real installed executable and unit paths:
+
+```bash
+systemd-analyze verify --user /usr/lib/systemd/user/patinad.service
+```
+
+For an isolated manual preview, use a non-production profile:
+
+```bash
+src-tauri/target/debug/patinad --profile dev --serve-api --track --port 0
+```
+
+A manual preview exposes service state but rejects controlled restart because no supervisor can bring it back. A systemd-managed instance advertises `service-lifecycle`; restart persists a ticket, responds before shutdown, exits through the graceful runtime path, and the next instance confirms the same ticket.
+
 ## Linux Release Bundles
 
 Tagged releases build on Ubuntu 22.04 and publish:
@@ -127,7 +158,7 @@ Tagged releases build on Ubuntu 22.04 and publish:
 - GNOME Shell extension zip
 - signed Firefox / Zen XPI
 
-The Debian package installs the GNOME extension source under:
+The Debian package installs `patinad`, the default-disabled systemd user unit, and the GNOME extension source under:
 
 ```text
 /usr/share/gnome-shell/extensions/patina-window-tracker@patina/
@@ -185,24 +216,7 @@ It reads:
 - `PATINA_API_TOKEN`
 - `PATINA_API_TOKEN_FILE`
 
-Current tools:
-
-- `get_diagnostics`
-- `get_current_activity`
-- `query_sessions`
-- `get_active_session`
-- `get_today_summary`
-- `get_week_summary`
-- `get_activity_trend`
-- `query_web_activity`
-- `get_activity_context`
-- `get_tools_snapshot`
-- `list_apps`
-- `classify_app`
-- `rename_app`
-- `set_app_excluded`
-
-The full MCP client setup and tool-to-endpoint mapping lives in [`mcp-wrapper.md`](./mcp-wrapper.md).
+The wrapper exposes read tools for activity, diagnostics, settings, Tools state, and service state, plus explicitly confirmed writes for app mapping, runtime/API settings, Tools actions, and managed daemon restart. The canonical tool list and client setup live in [`mcp-wrapper.md`](./mcp-wrapper.md).
 
 ## Current Validation Commands
 

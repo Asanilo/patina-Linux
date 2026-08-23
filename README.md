@@ -62,10 +62,10 @@ Windows code follows a freeze-then-remove policy:
 | GNOME Wayland window tracking | Working prototype | Uses `org.patina.WindowTracker` from the GNOME Shell extension. |
 | X11 tracking | Implemented fallback / limited verification | Used on X11 sessions; GNOME Wayland does not silently fall back to X11. |
 | KDE / wlroots Wayland | Not promised | Needs compositor-specific work later. |
-| `patinad` | Runtime-owner preview | `--serve-api --track` runs tracking/watchdog, Linux participation sources, browser activity, Tools, and atomic local API listener/credential management for an isolated profile. Desktop remains the default owner. |
+| `patinad` | Runtime-owner and service preview | `--serve-api --track` owns the isolated runtime; DEB packaging now includes a default-disabled systemd user unit and ticketed controlled restart. Desktop remains the default owner. |
 | Local browser UI | Planned after daemon cutover | The first version will be a read-only loopback client served by `patinad`; not implemented yet. |
 | Local API | Implemented | Binds to `127.0.0.1:14840`, uses a bearer token, and exposes daemon capabilities plus an authenticated SSE stream. |
-| MCP wrapper and Agent Skill | Implemented | `npm run mcp:patina`; controlled writes cover app/settings, local API configuration, and Tools reminders, timers, and pomodoro. |
+| MCP wrapper and Agent Skill | Implemented | `npm run mcp:patina`; controlled writes cover app/settings, local API configuration, daemon restart verification, and Tools reminders, timers, and pomodoro. |
 | Chromium Web Sync | Implemented | `extensions/chromium`. |
 | Firefox / Zen Web Sync | Implemented | The signed `0.1.1` XPI can be installed directly and identifies Firefox-family forks before generic Firefox. |
 | Linux packaging | Current stable pipeline configured | Current stable tags build x86_64 AppImage and `.deb`; the first daemon-backed beta will intentionally publish DEB only until AppImage service ownership and atomic updates are designed. |
@@ -129,7 +129,7 @@ The current stable release workflow produces:
 - `patina-firefox-extension-v<version>.xpi`
 - `latest.json`
 
-Ubuntu and Debian users should prefer the `.deb`. It installs the GNOME Shell extension files into the system extension directory, but the extension must still be enabled for the current user:
+Ubuntu and Debian users should prefer the `.deb`. It installs the GNOME Shell extension files, `patinad`, and a default-disabled systemd user unit into system directories. The current release still uses Patina Desktop as the default tracking owner; do not enable `patinad.service` against the same production profile yet. The GNOME extension must still be enabled for the current user:
 
 ```bash
 gnome-extensions enable patina-window-tracker@patina

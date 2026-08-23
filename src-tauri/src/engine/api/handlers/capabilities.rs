@@ -11,6 +11,9 @@ pub fn get_capabilities(context: &ApiRuntimeContext, surface: ApiSurface) -> Rou
     let browser_bridge_ready = context
         .web_activity_snapshot(&WebActivitySettings::default())
         .is_some_and(|snapshot| snapshot.listening);
+    let daemon_service_managed = context
+        .runtime_control()
+        .is_some_and(|control| control.daemon_service_managed());
 
     RouteResponse {
         status: 200,
@@ -21,6 +24,7 @@ pub fn get_capabilities(context: &ApiRuntimeContext, surface: ApiSurface) -> Rou
                 tracking_ready,
                 browser_bridge_ready,
                 context.tools_runtime_ready(),
+                daemon_service_managed,
             ),
         })
         .unwrap_or_default(),
@@ -33,6 +37,7 @@ fn build_capabilities(
     tracking_ready: bool,
     browser_bridge_ready: bool,
     tools_ready: bool,
+    daemon_service_managed: bool,
 ) -> CapabilitiesResponse {
     let owns_tracking = surface.owns_tracking();
     let owns_browser_activity_bridge = surface.owns_browser_activity_bridge();
@@ -63,11 +68,16 @@ fn build_capabilities(
             owned: owns_tools_runtime,
             ready: owns_tools_runtime && tools_ready,
         },
+        daemon_service: OwnedRuntimeCapability {
+            owned: daemon_service_managed,
+            ready: daemon_service_managed,
+        },
         write_api: WriteApiCapability {
             available: surface.has_write_api(),
             operations: surface
                 .write_operations()
                 .iter()
+                .filter(|operation| **operation != "service-lifecycle" || daemon_service_managed)
                 .map(|operation| (*operation).to_string())
                 .collect(),
         },
@@ -81,7 +91,7 @@ mod tests {
     #[test]
     fn daemon_capabilities_do_not_claim_runtime_owners_before_migration() {
         let capabilities =
-            build_capabilities("1.8.3", ApiSurface::DaemonReadOnly, true, true, true);
+            build_capabilities("1.8.3", ApiSurface::DaemonReadOnly, true, true, true, false);
 
         assert_eq!(capabilities.server_version, "1.8.3");
         assert_eq!(capabilities.protocol_version, 1);
@@ -94,12 +104,13 @@ mod tests {
         assert!(!capabilities.browser_activity_bridge.ready);
         assert!(!capabilities.tools.owned);
         assert!(!capabilities.tools.ready);
+        assert!(!capabilities.daemon_service.owned);
         assert!(!capabilities.write_api.available);
     }
 
     #[test]
     fn desktop_capabilities_reflect_live_snapshot_readiness() {
-        let ready = build_capabilities("1.8.3", ApiSurface::Desktop, true, true, true);
+        let ready = build_capabilities("1.8.3", ApiSurface::Desktop, true, true, true, false);
         assert_eq!(ready.runtime_host, "desktop");
         assert!(!ready.event_stream.available);
         assert!(ready.tracking.owned);
@@ -110,7 +121,8 @@ mod tests {
         assert!(ready.tools.ready);
         assert!(ready.write_api.available);
 
-        let unavailable = build_capabilities("1.8.3", ApiSurface::Desktop, false, false, false);
+        let unavailable =
+            build_capabilities("1.8.3", ApiSurface::Desktop, false, false, false, false);
         assert!(unavailable.tracking.owned);
         assert!(!unavailable.tracking.ready);
         assert!(unavailable.browser_activity_bridge.owned);
@@ -121,7 +133,14 @@ mod tests {
 
     #[test]
     fn tracking_daemon_capabilities_are_owned_before_the_first_sample() {
-        let starting = build_capabilities("1.8.3", ApiSurface::DaemonTracking, false, false, false);
+        let starting = build_capabilities(
+            "1.8.3",
+            ApiSurface::DaemonTracking,
+            false,
+            false,
+            false,
+            false,
+        );
         assert!(starting.tracking.owned);
         assert!(!starting.tracking.ready);
         assert!(starting.browser_activity_bridge.owned);
@@ -137,11 +156,21 @@ mod tests {
             .write_api
             .operations
             .contains(&"runtime-settings".to_string()));
+        assert!(!starting
+            .write_api
+            .operations
+            .contains(&"service-lifecycle".to_string()));
 
-        let ready = build_capabilities("1.8.3", ApiSurface::DaemonTracking, true, false, true);
+        let ready =
+            build_capabilities("1.8.3", ApiSurface::DaemonTracking, true, false, true, true);
         assert!(ready.tracking.owned);
         assert!(ready.tracking.ready);
         assert!(ready.browser_activity_bridge.owned);
         assert!(ready.tools.ready);
+        assert!(ready.daemon_service.owned);
+        assert!(ready
+            .write_api
+            .operations
+            .contains(&"service-lifecycle".to_string()));
     }
 }

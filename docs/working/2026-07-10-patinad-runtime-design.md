@@ -18,7 +18,7 @@
 - 不扩大 KDE、wlroots 或移动端支持
 - 不为 MCP 提供任意文件操作能力
 
-## 3. 当前 Stage 2G 状态
+## 3. 当前 Stage 2H.2 状态
 
 当前分支已经提供并验证：
 
@@ -67,8 +67,9 @@
 
 当前实现仍不能发布为正式后台服务，原因包括：
 
-- API listener 端口/Token 已迁移到 daemon owner；systemd service restart 尚未实现
-- daemon 尚无 systemd user service 和浏览器 UI
+- API listener 端口/Token 已迁移到 daemon owner；systemd service 和可验证 restart ticket 已完成 preview
+- DEB 尚未自动启用 systemd user service，desktop 也尚未切换为 daemon client
+- daemon 尚无浏览器 UI
 - Tauri desktop 尚未改为 daemon client
 
 ## 4. 目标结构
@@ -212,7 +213,8 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 - 已完成 runtime settings owner：audio participation 可热切换；browser bridge 端口、Token、启停和 URL 隐私以完整配置原子应用，换端口失败时保留旧 listener 与旧存储
 - 已完成：Tools runtime tick、启动恢复、Linux 通知、SSE 事件和 HTTP/MCP 写侧由 daemon owner 接管
 - 已完成 Stage 2H.1：API listener 换端口使用预绑定/提交/切换，Token 文件原子轮换并撤销旧 bearer/SSE，HTTP/MCP 响应不返回密钥
-- 待实施 Stage 2H.2：systemd user service 和受控 service restart
+- 已完成 Stage 2H.2：DEB 构建输入包含 daemon 与默认禁用的 user unit；受控 restart 使用跨实例持久化 ticket，手工 preview 不可误触发
+- 待实施 Stage 2H.3：首次桌面启动迁移旧 autostart、服务启停设置、desktop client 切换和双 owner 验收
 - Tauri 改为 daemon desktop client，并保留 tray、通知、文件选择和 updater
 - 默认切换后 desktop 不启动或自动回退 embedded tracker；daemon 不可用时明确暂停、诊断和重启
 - 一个 `patina` 产品包同时交付 Patina Desktop、`patinad` 和 systemd user unit

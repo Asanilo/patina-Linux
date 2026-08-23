@@ -263,6 +263,9 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   const chineseReadme = await readFile("README.zh-CN.md", "utf8");
   const linuxSetup = await readFile("docs/linux-development-setup.md", "utf8");
   const versionPolicy = await readFile("docs/versioning-and-release-policy.md", "utf8");
+  const packageJson = JSON.parse(await readFile("package.json", "utf8"));
+  const cargoManifest = await readFile("src-tauri/Cargo.toml", "utf8");
+  const daemonUnit = await readFile("packaging/systemd/patinad.service", "utf8");
   const tauriConfig = JSON.parse(await readFile("src-tauri/tauri.conf.json", "utf8"));
   const { stdout: trackedFirefoxAssets } = await execFileAsync("git", [
     "ls-files",
@@ -306,6 +309,29 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   assert.deepEqual(tauriConfig.plugins.updater.endpoints, [
     "https://github.com/Asanilo/patina-Linux/releases/latest/download/latest.json",
   ]);
+  assert.match(
+    tauriConfig.build.beforeBuildCommand,
+    /npm run build:patinad:release/,
+  );
+  assert.equal(
+    packageJson.scripts["build:patinad:release"],
+    "cargo build --manifest-path src-tauri/Cargo.toml --release --bin patinad",
+  );
+  assert.match(cargoManifest, /^default-run = "patina"$/m);
+  assert.equal(
+    tauriConfig.bundle.linux.deb.files["/usr/bin/patinad"],
+    "target/release/patinad",
+  );
+  assert.equal(
+    tauriConfig.bundle.linux.deb.files["/usr/lib/systemd/user/patinad.service"],
+    "../packaging/systemd/patinad.service",
+  );
+  assert.match(daemonUnit, /^ExecStart=\/usr\/bin\/patinad --profile production --serve-api --track$/m);
+  assert.match(daemonUnit, /^Environment=PATINA_SYSTEMD_SERVICE=patinad\.service$/m);
+  assert.match(daemonUnit, /^Restart=on-failure$/m);
+  assert.match(daemonUnit, /^KillSignal=SIGINT$/m);
+  assert.match(daemonUnit, /^WantedBy=default\.target$/m);
+  assert.doesNotMatch(daemonUnit, /systemctl|enable --now/);
   assert.equal(
     tauriConfig.bundle.linux.deb.files[
       "/usr/share/gnome-shell/extensions/patina-window-tracker@patina/extension.js"

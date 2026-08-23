@@ -7,7 +7,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://127.0.0.1:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build && npm run build:patinad:release",
     "frontendDist": "../dist"
   },
   "app": {
@@ -36,6 +36,8 @@
     "linux": {
       "deb": {
         "files": {
+          "/usr/bin/patinad": "target/release/patinad",
+          "/usr/lib/systemd/user/patinad.service": "../packaging/systemd/patinad.service",
           "/usr/share/gnome-shell/extensions/patina-window-tracker@patina/extension.js": "../extensions/gnome-shell/patina-window-tracker@patina/extension.js",
           "/usr/share/gnome-shell/extensions/patina-window-tracker@patina/metadata.json": "../extensions/gnome-shell/patina-window-tracker@patina/metadata.json"
         }

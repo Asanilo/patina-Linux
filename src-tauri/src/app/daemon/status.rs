@@ -33,7 +33,7 @@ pub fn build_startup_status(
         profile,
         version: version.into(),
         stage: if tracking_enabled {
-            "stage-2h1-api-configuration-preview"
+            "stage-2h2-systemd-service-preview"
         } else {
             "stage-2a-event-stream"
         },
@@ -143,7 +143,7 @@ mod tests {
             &paths,
         );
 
-        assert_eq!(status.stage, "stage-2h1-api-configuration-preview");
+        assert_eq!(status.stage, "stage-2h2-systemd-service-preview");
         assert!(status.tracking_enabled);
         assert!(status
             .notes

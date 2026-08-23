@@ -128,6 +128,7 @@ pub struct CapabilitiesResponse {
     pub tracking: OwnedRuntimeCapability,
     pub browser_activity_bridge: OwnedRuntimeCapability,
     pub tools: OwnedRuntimeCapability,
+    pub daemon_service: OwnedRuntimeCapability,
     pub write_api: WriteApiCapability,
 }
 
@@ -222,6 +223,11 @@ pub struct AudioParticipationRequest {
 #[derive(Debug, Deserialize)]
 pub struct LocalApiPortRequest {
     pub port: u16,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ConfirmedActionRequest {
+    pub confirmed: bool,
 }
 
 #[derive(Debug, Deserialize)]

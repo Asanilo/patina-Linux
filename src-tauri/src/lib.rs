@@ -11,6 +11,12 @@ pub fn run_daemon(args: impl IntoIterator<Item = impl AsRef<str>>) -> Result<(),
     app::daemon::run(args)
 }
 
+pub fn is_controlled_daemon_restart(error: &str) -> bool {
+    app::daemon::is_controlled_restart_error(error)
+}
+
+pub const CONTROLLED_DAEMON_RESTART_EXIT_CODE: i32 = app::daemon::CONTROLLED_RESTART_EXIT_CODE;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(debug_assertions)]

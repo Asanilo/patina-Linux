@@ -87,7 +87,7 @@
 
 当前 `Patina` 默认不维护复杂的 `beta / rc` 预发布线。除非用户明确要求测试版、候选版或灰度验证，否则准备完成后直接按稳定版本发布。
 
-`patinad` 从 preview 切换为默认 runtime owner 是明确例外：首个 daemon-backed 产品包必须使用 `X.Y.Z-beta.N` 预发布版本，完成真实 DEB 安装、登录启动、关闭 UI 后持续记录、崩溃恢复、锁屏/睡眠、浏览器活动、升级、卸载和数据保留验收后，才能以对应稳定版本发布。该 beta 必须同时交付版本兼容的 Patina Desktop、`patinad` 与 systemd user unit，不能分别发布后依赖用户自行配对版本。首个 beta 只发布 DEB；AppImage 在版本化 daemon extraction、固定 service owner 和 updater 原子切换得到独立验证前不得作为同等可用资产发布。
+`patinad` 从 preview 切换为默认 runtime owner 是明确例外：首个 daemon-backed 产品包必须使用 `X.Y.Z-beta.N` 预发布版本，完成真实 DEB 安装、登录启动、关闭 UI 后持续记录、崩溃恢复、锁屏/睡眠、浏览器活动、升级、卸载和数据保留验收后，才能以对应稳定版本发布。该 beta 必须同时交付版本兼容的 Patina Desktop、`patinad` 与 systemd user unit，不能分别发布后依赖用户自行配对版本。打包预览阶段 unit 只安装、不自动启用；默认 owner 切换必须由当前用户会话中的迁移流程显式完成，不能在 `postinst` 替所有用户选择。首个 beta 只发布 DEB；AppImage 在版本化 daemon extraction、固定 service owner 和 updater 原子切换得到独立验证前不得作为同等可用资产发布。
 
 不应为了“先放着以后再改成 Latest”而默认把稳定 tag 做成预发布。GitHub Release 界面允许修改 `Pre-release / Latest` 标记，但本项目的长期默认是：稳定版本成熟后再发布稳定版本；如果确实需要预发布，就使用带语义后缀的版本号，例如 `1.6.0-rc.1`，正式发布再使用 `1.6.0`。
 

@@ -28,6 +28,8 @@ await runTest("Patina MCP tool list exposes core local API tools", () => {
     "get_local_api_configuration",
     "set_local_api_port",
     "rotate_local_api_token",
+    "get_daemon_service",
+    "restart_daemon_service",
     "get_current_activity",
     "get_active_session",
     "get_today_summary",
@@ -74,7 +76,7 @@ await runTest("Patina MCP tools/list returns tool metadata", async () => {
   });
 
   assert.equal(response.id, 1);
-  assert.equal(response.result.tools.length, 36);
+  assert.equal(response.result.tools.length, 38);
   assert.equal(response.result.tools[0].name, "get_diagnostics");
 });
 
@@ -91,6 +93,7 @@ await runTest("Patina MCP write tools declare required arguments", () => {
   assert.deepEqual(requiredByTool.get("set_audio_participation"), ["enabled"]);
   assert.deepEqual(requiredByTool.get("set_local_api_port"), ["port"]);
   assert.deepEqual(requiredByTool.get("rotate_local_api_token"), ["confirmed"]);
+  assert.deepEqual(requiredByTool.get("restart_daemon_service"), ["confirmed"]);
   assert.deepEqual(
     requiredByTool.get("configure_browser_activity"),
     ["enabled", "port", "token", "urlPrivacy"],
@@ -106,6 +109,51 @@ await runTest("Patina MCP write tools declare required arguments", () => {
     requiredByTool.get("start_pomodoro"),
     ["focusMs", "shortBreakMs", "longBreakMs", "longBreakEvery"],
   );
+});
+
+await runTest("Patina MCP daemon service tools require confirmation and preserve restart tickets", async () => {
+  const calls: Array<{ path: string; init?: Record<string, unknown> }> = [];
+  const deps = {
+    apiBase: "http://127.0.0.1:14840",
+    apiToken: "token",
+    callApi: async (path: string, _auth: unknown, init?: Record<string, unknown>) => {
+      calls.push({ path, init });
+      return {
+        data: {
+          service_name: "patinad.service",
+          restart: { request_id: "restart_test", status: "pending" },
+        },
+      };
+    },
+  };
+
+  await handleMcpRequest({
+    id: 93,
+    method: "tools/call",
+    params: { name: "get_daemon_service", arguments: {} },
+  }, deps);
+  const rejected = await handleMcpRequest({
+    id: 94,
+    method: "tools/call",
+    params: { name: "restart_daemon_service", arguments: { confirmed: false } },
+  }, deps);
+  const accepted = await handleMcpRequest({
+    id: 95,
+    method: "tools/call",
+    params: { name: "restart_daemon_service", arguments: { confirmed: true } },
+  }, deps);
+
+  assert.deepEqual(calls, [
+    { path: "/api/v1/system/service", init: undefined },
+    {
+      path: "/api/v1/system/service/restart",
+      init: { method: "POST", body: { confirmed: true } },
+    },
+  ]);
+  assert.equal(rejected.error.code, -32602);
+  assert.match(rejected.error.message, /confirmed=true/);
+  assert.match(accepted.result.content[0].text, /restart_test/);
+  assert.match(accepted.result.content[0].text, /pending/);
 });
 
 await runTest("Patina MCP Tools writes map to bounded daemon API calls", async () => {
@@ -633,7 +681,7 @@ await runTest("Patina MCP stdio uses newline-delimited JSON and processes each m
   const responses = encodedResponses.map((line) => JSON.parse(line));
 
   assert.deepEqual(responses.map((response) => response.id), [10, 11]);
-  assert.equal(responses[1].result.tools.length, 36);
+  assert.equal(responses[1].result.tools.length, 38);
   assert.equal(encodedResponses.every((line) => !line.startsWith("Content-Length:")), true);
 });
 

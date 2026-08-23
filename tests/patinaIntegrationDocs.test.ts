@@ -33,6 +33,8 @@ const implementedEndpoints = [
   "GET /api/v1/settings/local-api",
   "POST /api/v1/settings/local-api/port",
   "POST /api/v1/settings/local-api/token/rotate",
+  "GET /api/v1/system/service",
+  "POST /api/v1/system/service/restart",
   "GET /api/v1/tools/snapshot",
   "POST /api/v1/tools/reminders",
   "POST /api/v1/tools/reminders/{id}/cancel",
@@ -83,6 +85,8 @@ for (const tool of [
   "get_local_api_configuration",
   "set_local_api_port",
   "rotate_local_api_token",
+  "get_daemon_service",
+  "restart_daemon_service",
 ]) {
   assert.match(mcpDocs, new RegExp("`" + tool + "`"), `MCP docs are missing ${tool}`);
 }

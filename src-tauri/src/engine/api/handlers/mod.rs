@@ -7,6 +7,7 @@ pub mod health;
 pub mod local_api;
 pub mod openapi;
 pub mod runtime_settings;
+pub mod service;
 pub mod sessions;
 pub mod settings;
 pub mod tools;

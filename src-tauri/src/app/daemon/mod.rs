@@ -1,6 +1,7 @@
 mod api_runtime;
 mod options;
 mod runtime;
+mod service_lifecycle;
 mod status;
 mod storage;
 
@@ -12,6 +13,9 @@ use std::sync::Arc;
 pub use options::DaemonRunOptions;
 pub use runtime::DaemonRuntime;
 pub use status::DaemonStartupStatus;
+
+pub const CONTROLLED_RESTART_EXIT_CODE: i32 = 75;
+const CONTROLLED_RESTART_ERROR_PREFIX: &str = "controlled service restart requested";
 
 #[derive(Debug)]
 pub struct DaemonSqliteRuntime {
@@ -40,6 +44,10 @@ pub fn run(args: impl IntoIterator<Item = impl AsRef<str>>) -> Result<(), String
     run_with_options(DaemonRunOptions::from_args(args)?)
 }
 
+pub fn is_controlled_restart_error(error: &str) -> bool {
+    error.starts_with(CONTROLLED_RESTART_ERROR_PREFIX)
+}
+
 pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     let runtime = tokio::runtime::Runtime::new()
         .map_err(|error| format!("failed to create daemon async runtime: {error}"))?;
@@ -57,6 +65,12 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
         runtime_lease.owner.profile, runtime_lease.owner.role
     );
     let storage_paths = storage::resolve(&roots, options.profile)?;
+    let service_lifecycle = Arc::new(
+        service_lifecycle::DaemonServiceLifecycleOwner::from_environment(
+            &storage_paths.control_root,
+            crate::app::runtime::now_ms().min(i64::MAX as u64) as i64,
+        )?,
+    );
     let sqlite_runtime = runtime.block_on(prepare_sqlite_runtime_at_path(
         storage_paths.db_path.clone(),
         storage_paths.database_creation_allowed,
@@ -146,6 +160,7 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
                 event_sink.clone(),
                 api_listener.clone(),
                 api_credentials.clone(),
+                service_lifecycle.clone(),
                 #[cfg(target_os = "linux")]
                 audio_source
                     .as_ref()
@@ -248,6 +263,10 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
                 _ = daemon_runtime.wait_for_api_stop() => {
                     daemon_runtime.shutdown().await;
                     return Err("local API task stopped unexpectedly".to_string());
+                }
+                request_id = service_lifecycle.wait_for_restart_request() => {
+                    daemon_runtime.shutdown().await;
+                    return Err(format!("{CONTROLLED_RESTART_ERROR_PREFIX}: {request_id}"));
                 }
             }
         }

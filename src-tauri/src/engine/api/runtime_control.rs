@@ -34,6 +34,30 @@ pub struct LocalApiTokenRotationResult {
     pub reauthentication_required: bool,
 }
 
+#[derive(Clone, Debug, serde::Serialize, PartialEq, Eq)]
+pub struct DaemonServiceRestartSnapshot {
+    pub request_id: String,
+    pub status: String,
+    pub requested_at_ms: i64,
+    pub requested_instance_id: String,
+    pub completed_at_ms: Option<i64>,
+    pub completed_instance_id: Option<String>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, PartialEq, Eq)]
+pub struct DaemonServiceRuntimeSnapshot {
+    pub service_name: String,
+    pub managed_by_systemd: bool,
+    pub instance_id: String,
+    pub restart: Option<DaemonServiceRestartSnapshot>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, PartialEq, Eq)]
+pub struct DaemonServiceRestartResult {
+    pub service: DaemonServiceRuntimeSnapshot,
+    pub reconnect_required: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RuntimeControlError {
     InvalidInput(String),
@@ -42,6 +66,14 @@ pub enum RuntimeControlError {
 }
 
 pub trait ApiRuntimeControl: Send + Sync {
+    fn daemon_service_managed(&self) -> bool;
+
+    fn daemon_service_snapshot(&self) -> RuntimeControlFuture<'_, DaemonServiceRuntimeSnapshot>;
+
+    fn request_daemon_service_restart(
+        &self,
+    ) -> RuntimeControlFuture<'_, DaemonServiceRestartResult>;
+
     fn set_audio_participation_enabled(&self, enabled: bool) -> RuntimeControlFuture<'_, bool>;
 
     fn configure_browser_activity(

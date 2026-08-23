@@ -149,6 +149,15 @@ All Tools write tools require the tracking-owner daemon and the `tools` write sc
 
 Local API changes require the `local-api-configuration` write scope and explicit user intent. After a successful port change, the wrapper updates its in-process base URL. After Token rotation, the running wrapper rereads the owner-only path returned by the daemon; clients that supplied a fixed `PATINA_API_TOKEN` should still update their external configuration before restarting. Neither response contains the Token value.
 
+Service lifecycle tools are available only when capabilities advertise `service-lifecycle`:
+
+| Tool | HTTP API | Arguments | Purpose |
+|---|---|---|---|
+| `get_daemon_service` | `GET /api/v1/system/service` | none | Read service identity, current instance, and latest restart ticket |
+| `restart_daemon_service` | `POST /api/v1/system/service/restart` | required: `confirmed=true` | Persist a restart ticket, gracefully stop, and let systemd start the next instance |
+
+Before restart, call `get_daemon_service` and record its `instance_id`. A successful restart request returns a `pending` ticket and disconnects the client shortly afterward. Reconnect, call `get_daemon_service` again, and accept success only when the same `request_id` is `completed` with a different `completed_instance_id`. A manually launched preview daemon rejects restart because no supervisor can bring it back.
+
 ### Errors
 
 - Invalid tool names or missing required arguments return JSON-RPC `-32602` errors.
@@ -168,9 +177,10 @@ The repository includes [`skills/analyzing-patina-activity`](../skills/analyzing
 ## 7. Current Gaps
 
 - The wrapper does not generate tools from `/api/v1/openapi.json` yet.
-- Controlled daemon service restart is not implemented until the systemd user-service owner exists.
 - Browser extension installation and GNOME extension installation remain app/docs workflows, not MCP tools.
 
 `configure_browser_activity` is a complete replacement operation and must only be used after explicit confirmation. Do not echo its Token in summaries, logs, or analysis output.
 
 `rotate_local_api_token` requires `confirmed=true`, invalidates existing API and SSE authentication, and does not rotate the separate browser extension Token.
+
+`restart_daemon_service` requires `confirmed=true`. A `pending` response proves only that the restart was scheduled; verify the persisted ticket after reconnecting.

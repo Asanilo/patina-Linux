@@ -29,11 +29,14 @@ assert.match(mcp, /query_sessions/);
 assert.match(mcp, /get_active_session/);
 assert.match(mcp, /query_web_activity/);
 assert.match(mcp, /rotate_local_api_token/);
+assert.match(mcp, /get_daemon_service/);
+assert.match(mcp, /restart_daemon_service/);
 
 assert.match(http, /Authorization: Bearer/);
 assert.match(http, /api\/v1\/openapi\.json/);
 assert.match(http, /PATINA_API_TOKEN_FILE/);
 assert.match(http, /settings\/local-api\/token\/rotate/);
+assert.match(http, /system\/service\/restart/);
 assert.doesNotMatch(http, /patina_api_[a-f0-9]{8,}/);
 
 assert.match(analysis, /diagnostics/i);

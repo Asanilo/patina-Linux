@@ -36,10 +36,11 @@ Current caveats:
 - This document remains the human-maintained reference for behavior notes and implementation caveats.
 - The desktop runtime exposes the shared JSON endpoints below. Default `patinad` mode exposes authenticated reads plus SSE and rejects all `POST` endpoints. Explicit `--track` mode is the current runtime owner and additionally exposes the bounded app-mapping, classification, tracker-settings, runtime-settings, and Tools writes listed by `/api/v1/capabilities`.
 - Default daemon mode remains historical/read-only: `GET /api/v1/current` returns `503` and live tracker/browser diagnostics are `null`.
-- Stage 2H.1 preview mode is explicit: run `patinad --profile dev --serve-api --track --port 0`. It owns tracking, Tools, and the local API listener for that profile, serves a live `/current`, observes Linux lock/suspend/resume/shutdown, runs audio/MPRIS participation sources, and owns the browser activity bridge configured for that profile. Never run desktop and daemon tracking against the same profile.
+- Stage 2H.2 preview mode is explicit: run `patinad --profile dev --serve-api --track --port 0`. It owns tracking, Tools, and the local API listener for that profile, serves a live `/current`, observes Linux lock/suspend/resume/shutdown, runs audio/MPRIS participation sources, and owns the browser activity bridge configured for that profile. Never run desktop and daemon tracking against the same profile.
 - Stage 2F capability migration, Stage 2F.1 browser crash/heartbeat semantics, and Stage 2F.2 loopback transport migration are complete. API, SSE, and the independent browser extension bridge use Axum with 32/8/8 fail-fast concurrency budgets, bounded handlers, strict Host/origin policies, and task-coupled listener readiness. The extension protocol remains `POST /web-activity` with its separate Token; its CORS response only echoes Firefox/Zen or Chromium extension origins and never returns `Access-Control-Allow-Origin: *`.
 - The tracking-owner daemon can apply audio participation and the complete browser bridge configuration while running. Browser port changes reserve the new listener and commit storage before the old listener is stopped; bind or persistence failures preserve the old configuration.
 - The tracking-owner daemon also owns local API port and credential changes. Local API port changes use the same reserve/commit/swap order. Token rotation updates the owner-only file atomically, revokes the old bearer value, and closes existing SSE authentication sessions without returning the new Token in JSON.
+- A DEB can install `patinad.service` without enabling it. Only a daemon actually launched by that unit advertises the `service-lifecycle` scope. Controlled restart returns a persistent `pending` ticket with HTTP `202`; the next systemd-managed instance changes the same ticket to `completed`.
 - `/api/v1/events` accepts the token only through the `Authorization` header. It does not accept tokens in URLs or query strings.
 
 ---
@@ -76,6 +77,8 @@ Current caveats:
 | `/api/v1/settings/local-api` | `GET` | Tracking daemon | Read sanitized local API listener and credential-file state |
 | `/api/v1/settings/local-api/port` | `POST` | Tracking daemon | Atomically move the local API listener |
 | `/api/v1/settings/local-api/token/rotate` | `POST` | Tracking daemon | Rotate the owner-only API Token and revoke old clients |
+| `/api/v1/system/service` | `GET` | Managed tracking daemon | Read systemd service identity and latest restart ticket |
+| `/api/v1/system/service/restart` | `POST` | Managed tracking daemon | Persist a restart ticket and gracefully return control to systemd |
 | `/api/v1/tools/snapshot` | `GET` | Implemented | Current Tools runtime snapshot |
 | `/api/v1/tools/reminders` | `POST` | Tracking daemon | Create a scheduled reminder |
 | `/api/v1/tools/reminders/{id}/cancel` | `POST` | Tracking daemon | Cancel a scheduled reminder |
@@ -111,7 +114,7 @@ Current scope:
 - Auth model: bearer token through `components.securitySchemes.bearerAuth`
 - Paths: the exact endpoints enabled for the current desktop or daemon API surface
 - Parameters: query params for sessions, summary range, trend, web activity; path params for app management
-- Request bodies: classify, rename, exclude, AFK threshold, tracking pause, classification batch, audio participation, complete browser runtime configuration, reminders, timers, software reminders, and pomodoro writes
+- Request bodies: classify, rename, exclude, AFK threshold, tracking pause, classification batch, audio participation, complete browser runtime configuration, confirmed service restart, reminders, timers, software reminders, and pomodoro writes
 - Responses: success envelopes and standard `400` / `401` / `403` / `404` / `409` / `413` / `500` / `503` error envelopes
 - Components: field-level schemas for health, capabilities, all runtime event variants, diagnostics, current window, sessions, active session, summaries, trend, web activity, apps, tracker/runtime settings, AI activity context, Tools snapshots, alerts, and Tools write requests
 
@@ -168,6 +171,7 @@ Default daemon schema:
     "tracking": { "owned": false, "ready": false },
     "browser_activity_bridge": { "owned": false, "ready": false },
     "tools": { "owned": false, "ready": false },
+    "daemon_service": { "owned": false, "ready": false },
     "write_api": { "available": false, "operations": [] }
   }
 }
@@ -177,7 +181,7 @@ Default daemon schema:
 
 Clients compare their supported protocol against `protocol.min_supported_client` and `protocol.max_supported_client` before using the daemon. `protocol_version` remains as the compatibility alias for `protocol.current`.
 
-With Stage 2G `--track`, the same response changes `tracking` to `{ "owned": true, "ready": false }` during startup and `{ "owned": true, "ready": true }` after the first runtime snapshot. `browser_activity_bridge.owned` is also `true`; its current `ready` value follows the configured listener task. `tools.owned` is `true` and becomes ready only after startup recovery and the first Tools snapshot. `write_api` becomes `{ "available": true, "operations": ["app-mapping", "classification", "runtime-settings", "tools", "tracker-settings"] }`. Default daemon mode keeps all runtime capabilities unowned and the write API unavailable.
+With `--track`, the same response changes `tracking` to `{ "owned": true, "ready": false }` during startup and `{ "owned": true, "ready": true }` after the first runtime snapshot. `browser_activity_bridge.owned` is also `true`; its current `ready` value follows the configured listener task. `tools.owned` is `true` and becomes ready only after startup recovery and the first Tools snapshot. `write_api` includes the daemon-owned app mapping, classification, local API configuration, runtime settings, Tools, and tracker settings scopes. A process launched by `patinad.service` additionally reports `daemon_service` as owned/ready and includes `service-lifecycle`; a manually launched preview does not. Default daemon mode keeps all runtime capabilities unowned and the write API unavailable.
 
 ### `GET /api/v1/events`
 
@@ -952,6 +956,48 @@ PATINA_API_TOKEN="$(cat "$PATINA_API_TOKEN_FILE")"
 
 The Token file is replaced atomically with owner-only permissions. The response reports `reauthentication_required: true` and sanitized configuration only. The old Token becomes invalid immediately, including for existing SSE streams; reconnect using the new file value. The browser extension Token is separate and is not changed.
 
+### `GET /api/v1/system/service`
+
+Available only on the tracking-daemon API surface. A manually launched preview reports `managed_by_systemd: false`; only an instance launched by the packaged user unit advertises the `service-lifecycle` write scope.
+
+```bash
+curl -s "$PATINA_API_BASE/api/v1/system/service" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN"
+```
+
+```json
+{
+  "data": {
+    "service_name": "patinad.service",
+    "managed_by_systemd": true,
+    "instance_id": "instance_...",
+    "restart": {
+      "request_id": "restart_...",
+      "status": "completed",
+      "requested_at_ms": 1787528000000,
+      "requested_instance_id": "instance_...",
+      "completed_at_ms": 1787528002500,
+      "completed_instance_id": "instance_..."
+    }
+  }
+}
+```
+
+`restart` is `null` before the first request. Instance and request IDs are opaque identifiers, not credentials.
+
+### `POST /api/v1/system/service/restart`
+
+This is a lifecycle operation. Call it only after explicit user confirmation and only when capabilities include `service-lifecycle`.
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/system/service/restart" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"confirmed":true}'
+```
+
+A successful request returns HTTP `202` with `reconnect_required: true` and a service snapshot whose restart status is `pending`. The daemon persists the ticket before replying, shuts down its runtime gracefully, and exits with the code expected by the unit's restart policy. After reconnecting, call `GET /api/v1/system/service` and verify that the same `request_id` is `completed`, with a different `completed_instance_id`. A manual daemon returns `409`; a second request while the current ticket is pending also returns `409`.
+
 ### `GET /api/v1/tools/snapshot`
 
 Curl:
@@ -1184,7 +1230,7 @@ curl -s "$PATINA_API_BASE/api/v1/missing" \
 
 ## 4. Planned Endpoints
 
-No additional endpoint path is committed. Controlled service restart remains Stage 2H.2 runtime-owner work and will not receive a public route until the systemd user-service lifecycle and acknowledgement contract exist.
+No additional endpoint path is committed. The next daemon migration work is client/service activation and owner cutover, not a new public route.
 
 ---
 
@@ -1214,6 +1260,8 @@ Current MCP tools:
 | `get_local_api_configuration` | `GET /api/v1/settings/local-api` | none | Read sanitized API connection state |
 | `set_local_api_port` | `POST /api/v1/settings/local-api/port` | `port` | Atomically move the loopback listener |
 | `rotate_local_api_token` | `POST /api/v1/settings/local-api/token/rotate` | `confirmed` must be `true` | Rotate credentials and revoke old clients |
+| `get_daemon_service` | `GET /api/v1/system/service` | none | Read systemd ownership and the latest restart ticket |
+| `restart_daemon_service` | `POST /api/v1/system/service/restart` | `confirmed` must be `true` | Request graceful restart and return a ticket for post-reconnect verification |
 | `get_current_activity` | `GET /api/v1/current` | none | Read current foreground activity snapshot |
 | `query_sessions` | `GET /api/v1/sessions` | `from`, `to`, `app`, `limit` | Query closed activity sessions |
 | `get_active_session` | `GET /api/v1/sessions/active` | none | Read the currently active session with realtime duration |
@@ -1248,5 +1296,4 @@ Current MCP tools:
 
 Remaining MCP wrapper gaps:
 
-- Local API configuration tools.
 - Generated MCP tool metadata does not yet consume `/api/v1/openapi.json`; the wrapper keeps an explicit hand-written tool list for now.

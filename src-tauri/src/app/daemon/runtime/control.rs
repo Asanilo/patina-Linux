@@ -1,8 +1,8 @@
 use super::web_activity::DaemonWebActivityControl;
 use crate::engine::api::runtime_control::{
-    ApiRuntimeControl, BrowserActivityRuntimeConfiguration, LocalApiPortApplyResult,
-    LocalApiRuntimeSnapshot, LocalApiTokenRotationResult, RuntimeControlError,
-    RuntimeControlFuture,
+    ApiRuntimeControl, BrowserActivityRuntimeConfiguration, DaemonServiceRestartResult,
+    DaemonServiceRuntimeSnapshot, LocalApiPortApplyResult, LocalApiRuntimeSnapshot,
+    LocalApiTokenRotationResult, RuntimeControlError, RuntimeControlFuture,
 };
 use std::sync::Arc;
 
@@ -15,6 +15,7 @@ pub(crate) struct DaemonApiRuntimeControl {
     event_sink: std::sync::Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
     api_listener: Arc<crate::engine::api::listener_owner::LocalApiListenerOwner>,
     api_credentials: crate::engine::api::auth::ApiCredentialStore,
+    service_lifecycle: Arc<crate::app::daemon::service_lifecycle::DaemonServiceLifecycleOwner>,
     #[cfg(target_os = "linux")]
     audio_source: crate::platform::linux::audio::AudioSignalSource,
 }
@@ -26,6 +27,7 @@ impl DaemonApiRuntimeControl {
         event_sink: std::sync::Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
         api_listener: Arc<crate::engine::api::listener_owner::LocalApiListenerOwner>,
         api_credentials: crate::engine::api::auth::ApiCredentialStore,
+        service_lifecycle: Arc<crate::app::daemon::service_lifecycle::DaemonServiceLifecycleOwner>,
         #[cfg(target_os = "linux")] audio_source: crate::platform::linux::audio::AudioSignalSource,
     ) -> Self {
         Self {
@@ -34,6 +36,7 @@ impl DaemonApiRuntimeControl {
             event_sink,
             api_listener,
             api_credentials,
+            service_lifecycle,
             #[cfg(target_os = "linux")]
             audio_source,
         }
@@ -75,6 +78,23 @@ impl DaemonApiRuntimeControl {
 }
 
 impl ApiRuntimeControl for DaemonApiRuntimeControl {
+    fn daemon_service_managed(&self) -> bool {
+        self.service_lifecycle.managed_by_systemd()
+    }
+
+    fn daemon_service_snapshot(&self) -> RuntimeControlFuture<'_, DaemonServiceRuntimeSnapshot> {
+        Box::pin(async move { Ok(self.service_lifecycle.snapshot()) })
+    }
+
+    fn request_daemon_service_restart(
+        &self,
+    ) -> RuntimeControlFuture<'_, DaemonServiceRestartResult> {
+        Box::pin(async move {
+            self.service_lifecycle
+                .request_restart(self.context.now_ms())
+        })
+    }
+
     fn set_audio_participation_enabled(&self, enabled: bool) -> RuntimeControlFuture<'_, bool> {
         Box::pin(async move {
             #[cfg(not(target_os = "linux"))]
@@ -262,6 +282,7 @@ mod tests {
         crate::platform::linux::audio::AudioSignalSource,
         Arc<crate::engine::api::listener_owner::LocalApiListenerOwner>,
         crate::engine::api::auth::ApiCredentialStore,
+        Arc<crate::app::daemon::service_lifecycle::DaemonServiceLifecycleOwner>,
         std::path::PathBuf,
     ) {
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
@@ -294,12 +315,21 @@ mod tests {
                 Arc::new(crate::engine::runtime_event::RuntimeEventHub::new(8)),
             ),
         );
+        let service_lifecycle = Arc::new(
+            crate::app::daemon::service_lifecycle::DaemonServiceLifecycleOwner::new(
+                token_path.parent().unwrap(),
+                false,
+                1_000,
+            )
+            .unwrap(),
+        );
         let control = Arc::new(DaemonApiRuntimeControl::new(
             context,
             web_control.clone(),
             event_sink,
             api_listener.clone(),
             api_credentials.clone(),
+            service_lifecycle.clone(),
             audio_source.clone(),
         ));
         (
@@ -310,6 +340,7 @@ mod tests {
             audio_source,
             api_listener,
             api_credentials,
+            service_lifecycle,
             token_path,
         )
     }
@@ -344,7 +375,7 @@ mod tests {
 
     #[tokio::test]
     async fn audio_setting_is_persisted_before_the_live_source_changes() {
-        let (pool, control, web_control, sink, audio_source, api_listener, _, token_path) =
+        let (pool, control, web_control, sink, audio_source, api_listener, _, _, token_path) =
             test_control().await;
 
         assert!(!control
@@ -367,7 +398,7 @@ mod tests {
 
     #[tokio::test]
     async fn browser_port_conflict_preserves_the_live_and_persisted_configuration() {
-        let (pool, control, web_control, _sink, _audio_source, api_listener, _, token_path) =
+        let (pool, control, web_control, _sink, _audio_source, api_listener, _, _, token_path) =
             test_control().await;
         let old_port = available_port();
         let original = BrowserActivityRuntimeConfiguration {
@@ -417,6 +448,7 @@ mod tests {
             _audio_source,
             api_listener,
             credentials,
+            _service_lifecycle,
             token_path,
         ) = test_control().await;
         let context = crate::engine::api::context::ApiRuntimeContext::new(

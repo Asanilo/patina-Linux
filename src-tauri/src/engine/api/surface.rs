@@ -296,6 +296,14 @@ const DAEMON_TRACKING_ENDPOINTS: &[ApiEndpoint] = &[
     },
     ApiEndpoint {
         method: "GET",
+        path: "/api/v1/system/service",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/system/service/restart",
+    },
+    ApiEndpoint {
+        method: "GET",
         path: "/api/v1/tools/snapshot",
     },
     ApiEndpoint {
@@ -362,6 +370,7 @@ const DAEMON_TRACKING_WRITE_OPERATIONS: &[&str] = &[
     "classification",
     "local-api-configuration",
     "runtime-settings",
+    "service-lifecycle",
     "tools",
     "tracker-settings",
 ];
@@ -535,6 +544,7 @@ mod tests {
                 "classification",
                 "local-api-configuration",
                 "runtime-settings",
+                "service-lifecycle",
                 "tools",
                 "tracker-settings"
             ]

@@ -298,6 +298,25 @@ fn paths(surface: ApiSurface) -> Value {
             )
         }),
     );
+    object.insert(
+        "/api/v1/system/service".to_string(),
+        json!({
+            "get": get_operation(
+                "Current patinad systemd user-service identity and restart ticket state.",
+                "DaemonServiceResponse",
+            )
+        }),
+    );
+    object.insert(
+        "/api/v1/system/service/restart".to_string(),
+        json!({
+            "post": accepted_post_operation(
+                "Persist a restart ticket and gracefully hand the daemon back to systemd.",
+                "ConfirmedActionRequest",
+                "DaemonServiceRestartResponse",
+            )
+        }),
+    );
     object.retain(|path, operations| {
         let Some(operations) = operations.as_object_mut() else {
             return false;
@@ -362,6 +381,7 @@ fn schemas() -> Value {
                     "classification",
                     "local-api-configuration",
                     "runtime-settings",
+                    "service-lifecycle",
                     "tools",
                     "tracker-settings",
                 ])),
@@ -386,6 +406,7 @@ fn schemas() -> Value {
                 schema_ref("OwnedRuntimeCapability"),
             ),
             ("tools", schema_ref("OwnedRuntimeCapability")),
+            ("daemon_service", schema_ref("OwnedRuntimeCapability")),
             ("write_api", schema_ref("WriteApiCapability")),
         ]),
     );
@@ -640,6 +661,41 @@ fn schemas() -> Value {
         envelope(object_schema(vec![
             ("configuration", schema_ref("LocalApiConfiguration")),
             ("reauthentication_required", bool_schema()),
+        ])),
+    );
+    schemas.insert(
+        "ConfirmedActionRequest".to_string(),
+        object_schema(vec![("confirmed", bool_schema())]),
+    );
+    schemas.insert(
+        "DaemonServiceRestart".to_string(),
+        object_schema(vec![
+            ("request_id", string_schema()),
+            ("status", enum_schema(vec!["pending", "completed"])),
+            ("requested_at_ms", integer_schema()),
+            ("requested_instance_id", string_schema()),
+            ("completed_at_ms", nullable_integer_schema()),
+            ("completed_instance_id", nullable_string_schema()),
+        ]),
+    );
+    schemas.insert(
+        "DaemonService".to_string(),
+        object_schema(vec![
+            ("service_name", string_schema()),
+            ("managed_by_systemd", bool_schema()),
+            ("instance_id", string_schema()),
+            ("restart", nullable_ref_schema("DaemonServiceRestart")),
+        ]),
+    );
+    schemas.insert(
+        "DaemonServiceResponse".to_string(),
+        envelope(schema_ref("DaemonService")),
+    );
+    schemas.insert(
+        "DaemonServiceRestartResponse".to_string(),
+        envelope(object_schema(vec![
+            ("service", schema_ref("DaemonService")),
+            ("reconnect_required", bool_schema()),
         ])),
     );
     schemas.insert(
@@ -1054,6 +1110,18 @@ fn post_action_operation(summary: &str, parameters: Vec<Value>, response_schema:
     })
 }
 
+fn accepted_post_operation(summary: &str, request_schema: &str, response_schema: &str) -> Value {
+    let mut operation = post_operation(summary, vec![], request_schema, response_schema);
+    let responses = operation
+        .get_mut("responses")
+        .and_then(Value::as_object_mut)
+        .expect("post operation responses");
+    if let Some(success) = responses.remove("200") {
+        responses.insert("202".to_string(), success);
+    }
+    operation
+}
+
 fn standard_responses(schema: &str) -> Value {
     json!({
         "200": {
@@ -1343,6 +1411,10 @@ mod tests {
         assert!(schemas.contains_key("LocalApiPortRequest"));
         assert!(schemas.contains_key("LocalApiPortApplyResponse"));
         assert!(schemas.contains_key("LocalApiTokenRotationResponse"));
+        assert!(schemas.contains_key("DaemonService"));
+        assert!(schemas.contains_key("DaemonServiceRestart"));
+        assert!(schemas.contains_key("DaemonServiceRestartResponse"));
+        assert!(schemas.contains_key("ConfirmedActionRequest"));
         assert!(schemas.contains_key("ClassificationMutationsRequest"));
         assert!(response
             .body

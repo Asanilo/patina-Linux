@@ -78,6 +78,10 @@ pub(crate) async fn route_request(
         ("POST", "/api/v1/settings/local-api/token/rotate") => {
             handlers::local_api::rotate_token(context).await
         }
+        ("GET", "/api/v1/system/service") => handlers::service::get_service(context).await,
+        ("POST", "/api/v1/system/service/restart") => {
+            handlers::service::restart_service(context, body).await
+        }
         ("GET", "/api/v1/tools/snapshot") => handlers::tools::get_tools_snapshot(context).await,
         ("POST", path) if path.starts_with("/api/v1/tools/") => {
             handlers::tools::handle_tools_action(context, path, body).await
@@ -107,6 +111,35 @@ mod tests {
     }
 
     impl crate::engine::api::runtime_control::ApiRuntimeControl for TestRuntimeControl {
+        fn daemon_service_managed(&self) -> bool {
+            true
+        }
+
+        fn daemon_service_snapshot(
+            &self,
+        ) -> crate::engine::api::runtime_control::RuntimeControlFuture<
+            '_,
+            crate::engine::api::runtime_control::DaemonServiceRuntimeSnapshot,
+        > {
+            Box::pin(async { Ok(test_service_snapshot(None)) })
+        }
+
+        fn request_daemon_service_restart(
+            &self,
+        ) -> crate::engine::api::runtime_control::RuntimeControlFuture<
+            '_,
+            crate::engine::api::runtime_control::DaemonServiceRestartResult,
+        > {
+            Box::pin(async {
+                Ok(
+                    crate::engine::api::runtime_control::DaemonServiceRestartResult {
+                        service: test_service_snapshot(Some("pending")),
+                        reconnect_required: true,
+                    },
+                )
+            })
+        }
+
         fn set_audio_participation_enabled(
             &self,
             enabled: bool,
@@ -193,6 +226,26 @@ mod tests {
                     },
                 )
             })
+        }
+    }
+
+    fn test_service_snapshot(
+        restart_status: Option<&str>,
+    ) -> crate::engine::api::runtime_control::DaemonServiceRuntimeSnapshot {
+        crate::engine::api::runtime_control::DaemonServiceRuntimeSnapshot {
+            service_name: "patinad.service".to_string(),
+            managed_by_systemd: true,
+            instance_id: "instance_test".to_string(),
+            restart: restart_status.map(|status| {
+                crate::engine::api::runtime_control::DaemonServiceRestartSnapshot {
+                    request_id: "restart_test".to_string(),
+                    status: status.to_string(),
+                    requested_at_ms: 1_000,
+                    requested_instance_id: "instance_test".to_string(),
+                    completed_at_ms: None,
+                    completed_instance_id: None,
+                }
+            }),
         }
     }
 
@@ -378,6 +431,60 @@ mod tests {
             crate::engine::api::surface::ApiSurface::DaemonReadOnly,
             "GET",
             "/api/v1/settings/local-api",
+            serde_json::Value::Null,
+        )
+        .await;
+        assert_eq!(unavailable.status, 404);
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn daemon_service_restart_requires_confirmation_and_returns_a_ticket() {
+        let (pool, context, _sink, _control) = test_context().await;
+        let surface = crate::engine::api::surface::ApiSurface::DaemonTracking;
+
+        let snapshot = route(
+            &context,
+            surface,
+            "GET",
+            "/api/v1/system/service",
+            serde_json::Value::Null,
+        )
+        .await;
+        assert_eq!(snapshot.status, 200);
+        assert_eq!(snapshot.body["data"]["service_name"], "patinad.service");
+        assert_eq!(snapshot.body["data"]["managed_by_systemd"], true);
+
+        let rejected = route(
+            &context,
+            surface,
+            "POST",
+            "/api/v1/system/service/restart",
+            serde_json::json!({"confirmed": false}),
+        )
+        .await;
+        assert_eq!(rejected.status, 400);
+
+        let accepted = route(
+            &context,
+            surface,
+            "POST",
+            "/api/v1/system/service/restart",
+            serde_json::json!({"confirmed": true}),
+        )
+        .await;
+        assert_eq!(accepted.status, 202);
+        assert_eq!(
+            accepted.body["data"]["service"]["restart"]["request_id"],
+            "restart_test"
+        );
+        assert_eq!(accepted.body["data"]["reconnect_required"], true);
+
+        let unavailable = route(
+            &context,
+            crate::engine::api::surface::ApiSurface::DaemonReadOnly,
+            "GET",
+            "/api/v1/system/service",
             serde_json::Value::Null,
         )
         .await;
