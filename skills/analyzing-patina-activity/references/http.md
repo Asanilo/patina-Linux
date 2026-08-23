@@ -66,7 +66,12 @@ Only perform writes on explicit user intent. Verify the exact app from `GET /api
 - `POST /api/v1/settings/tracker/pause` with `{ "paused": true|false }`.
 - `POST /api/v1/settings/runtime/audio-participation` with `{ "enabled": true|false }`.
 - `POST /api/v1/settings/runtime/browser-activity` with the complete `enabled`, `port`, `token`, and `url_privacy` configuration.
+- `POST /api/v1/tools/reminders` and `/api/v1/tools/software-reminder-rules` for explicit reminder creation.
+- `POST /api/v1/tools/timer/*` for explicit stopwatch/countdown control.
+- `POST /api/v1/tools/pomodoro/*` for explicit pomodoro control.
 
 Browser activity configuration is a complete replacement operation. Confirm the requested port, whether synchronization should be enabled, and the URL privacy mode before sending it. Never expose either API or browser extension Tokens in analysis output.
+
+Tools writes are available only when capabilities advertise the `tools` write scope. Read `/api/v1/tools/snapshot` before state-dependent transitions and use the live OpenAPI request schemas for exact fields and bounds.
 
 Send `Content-Type: application/json` and the same Authorization header. Do not call routes listed as planned in the human API index.

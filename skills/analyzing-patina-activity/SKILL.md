@@ -23,7 +23,7 @@ Analyze Patina's local activity data without inventing missing context or exposi
 3. Drill into summaries, sessions, trends, or web activity only as needed.
 4. State the time range and whether current active time is included.
 5. Separate recorded facts from interpretations about intent, focus, or productivity.
-6. Execute app classification, rename, exclusion, tracker, audio, or browser-bridge writes only on explicit user intent; report exactly what changed. Treat browser port, Token, and URL privacy replacement as a high-impact configuration change.
+6. Execute app classification, rename, exclusion, tracker, audio, browser-bridge, reminder, timer, or pomodoro writes only on explicit user intent; report exactly what changed. Treat browser port, Token, and URL privacy replacement as a high-impact configuration change.
 
 ## Quick Reference
 
@@ -38,6 +38,7 @@ Analyze Patina's local activity data without inventing missing context or exposi
 | Exact custom range | HTTP summary range |
 | Browser domain/title detail | web activity |
 | Timer/reminder/pomodoro state | Tools snapshot |
+| Create or control reminders/timers/pomodoro | explicit Tools write tools |
 | App names/categories/exclusions | app list and explicit write tools |
 | Idle threshold or tracking pause | explicit tracker setting tools |
 | Audio participation or browser bridge configuration | explicit runtime setting tools |
@@ -49,4 +50,4 @@ Analyze Patina's local activity data without inventing missing context or exposi
 - Do not assume missing web activity means no browser use; inspect bridge diagnostics first.
 - Do not print, log, summarize, or persist API or browser extension bearer tokens.
 - Do not expose full URLs or window titles unless they are needed for the user's request.
-- Do not call planned Tools write endpoints; they are not implemented.
+- Do not infer consent to create or control Tools state from a request that only asks to inspect or analyze it.

@@ -6,6 +6,7 @@ mod media;
 #[cfg(target_os = "linux")]
 mod power;
 mod restart;
+mod tools;
 mod tracking;
 mod web_activity;
 
@@ -15,6 +16,8 @@ use crate::engine::api::server::ApiServerHandle;
 use crate::engine::runtime_event::RuntimeEventHub;
 pub(super) use control::DaemonApiRuntimeControl;
 use std::sync::Arc;
+pub(super) use tools::DaemonToolsRuntimeSink;
+use tools::DaemonToolsTask;
 use tracking::DaemonTrackingTasks;
 pub(super) use web_activity::DaemonWebActivityControl;
 use web_activity::DaemonWebActivityTask;
@@ -27,6 +30,7 @@ use media::DaemonMediaTask;
 use power::DaemonPowerTask;
 
 pub struct DaemonBackgroundTasks {
+    tools: DaemonToolsTask,
     browser_activity: DaemonWebActivityTask,
     #[cfg(target_os = "linux")]
     audio: DaemonAudioTask,
@@ -41,11 +45,14 @@ impl DaemonBackgroundTasks {
     pub async fn start(
         context: crate::engine::runtime_context::RuntimeContext,
         snapshot: Arc<crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState>,
+        tools_owner: crate::engine::tools::ToolsRuntimeOwner,
+        tools_ready: Arc<std::sync::atomic::AtomicBool>,
         web_activity: DaemonWebActivityControl,
         event_hub: Arc<crate::engine::runtime_event::RuntimeEventHub>,
         #[cfg(target_os = "linux")] audio_source: crate::platform::linux::audio::AudioSignalSource,
     ) -> Self {
         let event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink> = event_hub.clone();
+        let tools = DaemonToolsTask::start(tools_owner, tools_ready);
         let browser_activity = DaemonWebActivityTask::start(web_activity, event_hub).await;
         #[cfg(target_os = "linux")]
         let audio = DaemonAudioTask::start(audio_source.clone());
@@ -65,6 +72,7 @@ impl DaemonBackgroundTasks {
             media_source,
         );
         Self {
+            tools,
             browser_activity,
             #[cfg(target_os = "linux")]
             audio,
@@ -77,6 +85,7 @@ impl DaemonBackgroundTasks {
     }
 
     async fn shutdown(self) {
+        self.tools.shutdown().await;
         self.browser_activity.shutdown().await;
         #[cfg(target_os = "linux")]
         self.power.shutdown().await;
@@ -266,6 +275,12 @@ mod tests {
             crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState::default(),
         );
         let event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink> = event_hub.clone();
+        let tools_ready = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let tools_sink: Arc<dyn crate::engine::tools::ToolsRuntimeSink> = Arc::new(
+            DaemonToolsRuntimeSink::new(event_sink.clone(), tools_ready.clone()),
+        );
+        let tools_owner =
+            crate::engine::tools::ToolsRuntimeOwner::new(runtime_context.clone(), tools_sink);
         let web_activity = DaemonWebActivityControl::new(
             runtime_context.clone(),
             tracking_snapshot.clone(),
@@ -275,6 +290,8 @@ mod tests {
         let background_tasks = DaemonBackgroundTasks::start(
             runtime_context,
             tracking_snapshot,
+            tools_owner,
+            tools_ready,
             web_activity,
             event_hub.clone(),
             #[cfg(target_os = "linux")]

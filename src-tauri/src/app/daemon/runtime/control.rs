@@ -52,15 +52,15 @@ impl ApiRuntimeControl for DaemonApiRuntimeControl {
 
             #[cfg(target_os = "linux")]
             {
-            crate::data::repositories::app_settings::save_audio_participation_enabled(
-                self.context.pool(),
-                enabled,
-            )
-            .await
-            .map_err(RuntimeControlError::Internal)?;
-            self.audio_source.set_enabled(enabled);
-            self.emit_settings_changed();
-            Ok(enabled)
+                crate::data::repositories::app_settings::save_audio_participation_enabled(
+                    self.context.pool(),
+                    enabled,
+                )
+                .await
+                .map_err(RuntimeControlError::Internal)?;
+                self.audio_source.set_enabled(enabled);
+                self.emit_settings_changed();
+                Ok(enabled)
             }
         })
     }

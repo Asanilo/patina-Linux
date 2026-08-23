@@ -29,6 +29,12 @@ impl ApiRuntimeStateProvider for DesktopApiRuntimeState {
             .try_state::<WebActivityRuntimeState>()
             .map(|state| state.snapshot(settings, now_ms))
     }
+
+    fn tools_runtime_ready(&self) -> bool {
+        self.app
+            .try_state::<crate::engine::tools::ToolsRuntimeState>()
+            .is_some_and(|state| state.is_ready())
+    }
 }
 
 pub fn build_context(app: &tauri::AppHandle, pool: Pool<Sqlite>) -> ApiRuntimeContext {

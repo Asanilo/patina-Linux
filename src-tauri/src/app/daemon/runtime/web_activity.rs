@@ -221,7 +221,9 @@ async fn run_web_activity_event_sync(
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
                 };
-                let crate::engine::runtime_event::RuntimeEvent::TrackingDataChanged { reason, changed_at_ms } = envelope.event;
+                let crate::engine::runtime_event::RuntimeEvent::TrackingDataChanged { reason, changed_at_ms } = envelope.event else {
+                    continue;
+                };
                 if reason == crate::domain::web_activity::WEB_ACTIVITY_CHANGED_REASON {
                     continue;
                 }

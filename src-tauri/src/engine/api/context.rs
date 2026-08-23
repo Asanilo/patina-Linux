@@ -11,6 +11,8 @@ pub trait ApiRuntimeStateProvider: Send + Sync {
         settings: &WebActivitySettings,
         now_ms: i64,
     ) -> Option<WebActivityBridgeSnapshot>;
+
+    fn tools_runtime_ready(&self) -> bool;
 }
 
 #[cfg(test)]
@@ -30,6 +32,10 @@ impl ApiRuntimeStateProvider for UnavailableApiRuntimeState {
     ) -> Option<WebActivityBridgeSnapshot> {
         None
     }
+
+    fn tools_runtime_ready(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Clone)]
@@ -40,6 +46,7 @@ pub struct ApiRuntimeContext {
     state: Arc<dyn ApiRuntimeStateProvider>,
     event_sink: Option<Arc<dyn crate::engine::runtime_event::RuntimeEventSink>>,
     runtime_control: Option<Arc<dyn crate::engine::api::runtime_control::ApiRuntimeControl>>,
+    tools_owner: Option<Arc<crate::engine::tools::ToolsRuntimeOwner>>,
 }
 
 impl ApiRuntimeContext {
@@ -77,6 +84,7 @@ impl ApiRuntimeContext {
             state,
             event_sink,
             runtime_control: None,
+            tools_owner: None,
         }
     }
 
@@ -85,6 +93,14 @@ impl ApiRuntimeContext {
         runtime_control: Arc<dyn crate::engine::api::runtime_control::ApiRuntimeControl>,
     ) -> Self {
         self.runtime_control = Some(runtime_control);
+        self
+    }
+
+    pub fn with_tools_owner(
+        mut self,
+        tools_owner: Arc<crate::engine::tools::ToolsRuntimeOwner>,
+    ) -> Self {
+        self.tools_owner = Some(tools_owner);
         self
     }
 
@@ -115,6 +131,10 @@ impl ApiRuntimeContext {
         self.state.web_activity_snapshot(settings, self.now_ms())
     }
 
+    pub fn tools_runtime_ready(&self) -> bool {
+        self.state.tools_runtime_ready()
+    }
+
     pub fn emit_tracking_data_changed(&self, reason: &str) {
         let Some(event_sink) = self.event_sink.as_ref() else {
             return;
@@ -134,6 +154,10 @@ impl ApiRuntimeContext {
         &self,
     ) -> Option<&Arc<dyn crate::engine::api::runtime_control::ApiRuntimeControl>> {
         self.runtime_control.as_ref()
+    }
+
+    pub fn tools_owner(&self) -> Option<&Arc<crate::engine::tools::ToolsRuntimeOwner>> {
+        self.tools_owner.as_ref()
     }
 }
 

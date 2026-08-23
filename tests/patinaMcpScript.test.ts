@@ -34,6 +34,20 @@ await runTest("Patina MCP tool list exposes core local API tools", () => {
     "query_web_activity",
     "get_activity_context",
     "get_tools_snapshot",
+    "create_reminder",
+    "cancel_reminder",
+    "create_software_reminder_rule",
+    "disable_software_reminder_rule",
+    "start_timer",
+    "pause_timer",
+    "resume_timer",
+    "reset_timer",
+    "add_timer_lap",
+    "start_pomodoro",
+    "pause_pomodoro",
+    "resume_pomodoro",
+    "skip_pomodoro_phase",
+    "reset_pomodoro",
     "list_apps",
     "set_idle_threshold",
     "set_tracking_paused",
@@ -57,7 +71,7 @@ await runTest("Patina MCP tools/list returns tool metadata", async () => {
   });
 
   assert.equal(response.id, 1);
-  assert.equal(response.result.tools.length, 19);
+  assert.equal(response.result.tools.length, 33);
   assert.equal(response.result.tools[0].name, "get_diagnostics");
 });
 
@@ -76,6 +90,79 @@ await runTest("Patina MCP write tools declare required arguments", () => {
     requiredByTool.get("configure_browser_activity"),
     ["enabled", "port", "token", "urlPrivacy"],
   );
+  assert.deepEqual(requiredByTool.get("create_reminder"), ["label", "scheduledAt"]);
+  assert.deepEqual(requiredByTool.get("cancel_reminder"), ["id"]);
+  assert.deepEqual(
+    requiredByTool.get("create_software_reminder_rule"),
+    ["appName", "limitMs", "message"],
+  );
+  assert.deepEqual(requiredByTool.get("start_timer"), ["mode"]);
+  assert.deepEqual(
+    requiredByTool.get("start_pomodoro"),
+    ["focusMs", "shortBreakMs", "longBreakMs", "longBreakEvery"],
+  );
+});
+
+await runTest("Patina MCP Tools writes map to bounded daemon API calls", async () => {
+  const calls: Array<{ path: string; init?: Record<string, unknown> }> = [];
+  const deps = {
+    apiBase: "http://127.0.0.1:14840",
+    apiToken: "token",
+    callApi: async (path: string, _auth: unknown, init?: Record<string, unknown>) => {
+      calls.push({ path, init });
+      return { data: { sampled_at_ms: 1 } };
+    },
+  };
+
+  await handleMcpRequest({
+    id: 90,
+    method: "tools/call",
+    params: {
+      name: "create_reminder",
+      arguments: { label: "Review", scheduledAt: 1_900_000_000_000 },
+    },
+  }, deps);
+  await handleMcpRequest({
+    id: 91,
+    method: "tools/call",
+    params: {
+      name: "start_pomodoro",
+      arguments: {
+        focusMs: 1_500_000,
+        shortBreakMs: 300_000,
+        longBreakMs: 900_000,
+        longBreakEvery: 4,
+      },
+    },
+  }, deps);
+  await handleMcpRequest({
+    id: 92,
+    method: "tools/call",
+    params: { name: "pause_timer", arguments: {} },
+  }, deps);
+
+  assert.deepEqual(calls, [
+    {
+      path: "/api/v1/tools/reminders",
+      init: {
+        method: "POST",
+        body: { label: "Review", scheduled_at: 1_900_000_000_000 },
+      },
+    },
+    {
+      path: "/api/v1/tools/pomodoro/start",
+      init: {
+        method: "POST",
+        body: {
+          focus_ms: 1_500_000,
+          short_break_ms: 300_000,
+          long_break_ms: 900_000,
+          long_break_every: 4,
+        },
+      },
+    },
+    { path: "/api/v1/tools/timer/pause", init: { method: "POST" } },
+  ]);
 });
 
 await runTest("Patina MCP ignores initialized notifications", async () => {
@@ -485,7 +572,7 @@ await runTest("Patina MCP stdio uses newline-delimited JSON and processes each m
   const responses = encodedResponses.map((line) => JSON.parse(line));
 
   assert.deepEqual(responses.map((response) => response.id), [10, 11]);
-  assert.equal(responses[1].result.tools.length, 19);
+  assert.equal(responses[1].result.tools.length, 33);
   assert.equal(encodedResponses.every((line) => !line.startsWith("Content-Length:")), true);
 });
 

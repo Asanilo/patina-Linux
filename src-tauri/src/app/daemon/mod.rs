@@ -78,6 +78,15 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     let runtime_context =
         crate::engine::runtime_context::RuntimeContext::system(sqlite_runtime.pool.clone());
     let event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink> = event_hub.clone();
+    let tools_ready = options
+        .track
+        .then(|| Arc::new(std::sync::atomic::AtomicBool::new(false)));
+    let tools_owner = tools_ready.as_ref().map(|ready| {
+        let sink: Arc<dyn crate::engine::tools::ToolsRuntimeSink> = Arc::new(
+            runtime::DaemonToolsRuntimeSink::new(event_sink.clone(), ready.clone()),
+        );
+        crate::engine::tools::ToolsRuntimeOwner::new(runtime_context.clone(), sink)
+    });
     let web_activity_control = match (tracking_snapshot.as_ref(), web_activity_state.as_ref()) {
         (Some(snapshot), Some(state)) => Some(runtime::DaemonWebActivityControl::new(
             runtime_context.clone(),
@@ -122,8 +131,10 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
             runtime_context.clone(),
             tracking_snapshot.clone(),
             web_activity_state.clone(),
+            tools_ready.clone(),
             event_hub.clone(),
             api_runtime_control,
+            tools_owner.clone().map(Arc::new),
         );
         let surface = if options.track {
             crate::engine::api::surface::ApiSurface::DaemonTracking
@@ -190,11 +201,18 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
         None
     };
     let background_tasks = runtime.block_on(async {
-        match (tracking_snapshot, web_activity_control) {
-            (Some(snapshot), Some(web_activity)) => Some(
+        match (
+            tracking_snapshot,
+            tools_owner,
+            tools_ready,
+            web_activity_control,
+        ) {
+            (Some(snapshot), Some(tools_owner), Some(tools_ready), Some(web_activity)) => Some(
                 runtime::DaemonBackgroundTasks::start(
                     runtime_context,
                     snapshot,
+                    tools_owner,
+                    tools_ready,
                     web_activity,
                     event_hub.clone(),
                     #[cfg(target_os = "linux")]

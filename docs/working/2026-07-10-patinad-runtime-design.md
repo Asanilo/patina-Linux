@@ -1,6 +1,6 @@
 # `patinad` 后台运行时设计
 
-> 状态：Stage 0 至 Stage 2F 的 preview 能力迁移，以及 Stage 2F.1 的异常恢复、浏览器心跳、transport/readiness 和 daemon owner 收口已完成并验证；默认 owner 切换与客户端迁移待实施。
+> 状态：Stage 0 至 Stage 2G 的 preview 能力迁移，以及 Stage 2F.1 的异常恢复、浏览器心跳、transport/readiness 和 daemon owner 收口已完成并验证；默认 owner 切换与客户端迁移待实施。
 > 生命周期：本设计是当前 `patinad` 实施依据；后台接管稳定完成后移入 `docs/archive/`。
 
 ## 1. 目标
@@ -18,7 +18,7 @@
 - 不扩大 KDE、wlroots 或移动端支持
 - 不为 MCP 提供任意文件操作能力
 
-## 3. 当前 Stage 2F 状态
+## 3. 当前 Stage 2G 状态
 
 当前分支已经提供并验证：
 
@@ -67,7 +67,7 @@
 
 当前实现仍不能发布为正式后台服务，原因包括：
 
-- API listener 端口/Token、Tools runtime 和 service restart 尚未迁移到 daemon owner
+- API listener 端口/Token 和 service restart 尚未迁移到 daemon owner；Tools runtime 已迁移
 - daemon 尚无 systemd user service 和浏览器 UI
 - Tauri desktop 尚未改为 daemon client
 
@@ -172,7 +172,7 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 
 ### 阶段 2：daemon 接管后台
 
-状态：Stage 2A 至 Stage 2F 的 preview 能力迁移、Stage 2F.1 数据语义、Stage 2F.2 全部 loopback transport 和 daemon owner 收口已完成；默认 owner 切换与客户端化待实施。
+状态：Stage 2A 至 Stage 2G 的 preview 能力迁移、Stage 2F.1 数据语义、Stage 2F.2 全部 loopback transport 和 daemon owner 收口已完成；默认 owner 切换与客户端化待实施。
 
 - 已完成：有界事件中心、受认证 SSE、replay/resync、能力协商和干净关闭
 - 已完成：显式模式下 daemon 接管 tracking/watchdog、实时快照、session 写入和退出封口
@@ -210,7 +210,8 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 
 - 已完成第一批写侧基础：capabilities 暴露服务版本、协议上下限和 write scopes；tracking owner daemon 开放事务化 app mapping、classification、AFK threshold 与 tracking pause，默认 daemon 仍严格只读
 - 已完成 runtime settings owner：audio participation 可热切换；browser bridge 端口、Token、启停和 URL 隐私以完整配置原子应用，换端口失败时保留旧 listener 与旧存储
-- 待实施：Tools runtime owner 与写侧、API listener/token 原子切换和受控 service restart
+- 已完成：Tools runtime tick、启动恢复、Linux 通知、SSE 事件和 HTTP/MCP 写侧由 daemon owner 接管
+- 待实施：API listener/token 原子切换和受控 service restart
 - Tauri 改为 daemon desktop client，并保留 tray、通知、文件选择和 updater
 - 默认切换后 desktop 不启动或自动回退 embedded tracker；daemon 不可用时明确暂停、诊断和重启
 - 一个 `patina` 产品包同时交付 Patina Desktop、`patinad` 和 systemd user unit

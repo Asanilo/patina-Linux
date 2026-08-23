@@ -6,6 +6,8 @@ const mcpDocs = await readFile("docs/mcp-wrapper.md", "utf8");
 
 const implementedEndpoints = [
   "GET /api/v1/health",
+  "GET /api/v1/capabilities",
+  "GET /api/v1/events",
   "GET /api/v1/openapi.json",
   "GET /api/v1/diagnostics",
   "GET /api/v1/current",
@@ -29,6 +31,20 @@ const implementedEndpoints = [
   "POST /api/v1/settings/runtime/audio-participation",
   "POST /api/v1/settings/runtime/browser-activity",
   "GET /api/v1/tools/snapshot",
+  "POST /api/v1/tools/reminders",
+  "POST /api/v1/tools/reminders/{id}/cancel",
+  "POST /api/v1/tools/software-reminder-rules",
+  "POST /api/v1/tools/software-reminder-rules/{id}/disable",
+  "POST /api/v1/tools/timer/start",
+  "POST /api/v1/tools/timer/pause",
+  "POST /api/v1/tools/timer/resume",
+  "POST /api/v1/tools/timer/reset",
+  "POST /api/v1/tools/timer/laps",
+  "POST /api/v1/tools/pomodoro/start",
+  "POST /api/v1/tools/pomodoro/pause",
+  "POST /api/v1/tools/pomodoro/resume",
+  "POST /api/v1/tools/pomodoro/skip",
+  "POST /api/v1/tools/pomodoro/reset",
 ];
 
 for (const endpoint of implementedEndpoints) {
@@ -45,6 +61,25 @@ assert.match(mcpDocs, /"--experimental-strip-types"/);
 assert.match(mcpDocs, /\/absolute\/path\/to\/patina\/scripts\/patina-mcp\.ts/);
 assert.match(mcpDocs, /notifications\/initialized/);
 assert.match(mcpDocs, /tool execution errors/i);
+
+for (const tool of [
+  "create_reminder",
+  "cancel_reminder",
+  "create_software_reminder_rule",
+  "disable_software_reminder_rule",
+  "start_timer",
+  "pause_timer",
+  "resume_timer",
+  "reset_timer",
+  "add_timer_lap",
+  "start_pomodoro",
+  "pause_pomodoro",
+  "resume_pomodoro",
+  "skip_pomodoro_phase",
+  "reset_pomodoro",
+]) {
+  assert.match(mcpDocs, new RegExp("`" + tool + "`"), `MCP docs are missing ${tool}`);
+}
 
 console.log(`Validated ${implementedEndpoints.length} API sections and MCP transport documentation`);
 

@@ -18,15 +18,16 @@ App note en: TBD.
 
 ### Added
 
-- 暂无。
+- `patinad --track` 接管提醒、软件使用提醒、计时器和番茄钟运行时，并通过 Linux 系统通知与 SSE 发布完成事件。
+- 本地 API 和 MCP wrapper 新增受 capability 限制的 Tools 创建与控制操作，OpenAPI 提供完整请求、响应和事件 schema。
 
 ### Changed
 
-- 暂无。
+- Tools 业务运行时提取为桌面端与 daemon 共用的宿主无关 owner；成功写操作统一返回完整 snapshot。
 
 ### Fixed
 
-- 暂无。
+- Tools 启动恢复完成前拒绝写请求，并统一使用同一次时钟观测计算本地日期边界，避免启动竞态和跨日不一致。
 
 ### Removed
 
@@ -34,7 +35,7 @@ App note en: TBD.
 
 ### Internal
 
-- 暂无。
+- 新增 Tools owner、daemon readiness、HTTP/MCP 路由、OpenAPI/文档契约和真实 loopback smoke 验证。
 
 ## [1.8.3] - 2026-07-03
 

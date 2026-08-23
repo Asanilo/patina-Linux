@@ -61,10 +61,10 @@ Windows 代码采用冻结后删除策略：
 | GNOME Wayland 窗口追踪 | 原型可用 | 依赖 GNOME Shell 扩展提供的 `org.patina.WindowTracker`。 |
 | X11 追踪 | 已实现 fallback / 验证有限 | X11 session 可走 fallback；GNOME Wayland 不会静默降级到 X11。 |
 | KDE / wlroots Wayland | 暂不承诺 | 后续需要按桌面环境分别适配。 |
-| `patinad` | Stage 2E MPRIS 预览 | 显式使用 `--serve-api --track` 后，daemon 可为隔离 profile 运行 tracking/watchdog、电源生命周期处理、PulseAudio/pipewire-pulse 和 MPRIS 参与信号。桌面端仍是默认 owner，当前不作为正式后台服务发布。 |
+| `patinad` | Runtime owner 预览 | 显式使用 `--serve-api --track` 后，daemon 可为隔离 profile 运行 tracking/watchdog、Linux 参与信号、浏览器活动和 Tools 提醒/计时运行时。桌面端仍是默认 owner。 |
 | 本机浏览器 UI | 已规划 | 将由 `patinad` 在 loopback 提供；当前尚未实现。 |
 | 本地 API | 已实现 | 监听 `127.0.0.1:14840`，使用 bearer token，并提供 daemon 能力查询和受认证 SSE。 |
-| MCP wrapper | 已实现，查询优先 | `npm run mcp:patina`；写侧当前覆盖应用分类、重命名和排除。 |
+| MCP wrapper | 已实现 | `npm run mcp:patina`；受控写侧覆盖应用/设置，以及提醒、计时器和番茄钟。 |
 | Chromium 网页同步 | 已实现 | `extensions/chromium`。 |
 | Firefox / Zen 网页同步 | 原型已实现 | 已签名 XPI 可直接安装。 |
 | Linux 打包 | 发布链已配置 | 后续版本 tag 会生成 x86_64 AppImage、`.deb`、浏览器/桌面扩展资产和 Linux-only updater 清单。 |
@@ -221,7 +221,7 @@ curl -s "$PATINA_API_BASE/api/v1/diagnostics" \
 
 - [docs/api-index.md](docs/api-index.md)
 
-当前已实现 diagnostics、current activity、sessions、summary、trend、web activity、apps、tracker settings、外接 AI context 和 Tools snapshot 等接口组。本地 API 也提供 `GET /api/v1/openapi.json`，其中包含字段级 OpenAPI 3.1 schema。
+当前已实现 diagnostics、current activity、sessions、summary、trend、web activity、apps、tracker settings、外接 AI context 和 Tools 读写等接口组。本地 API 也提供 `GET /api/v1/openapi.json`，其中包含字段级 OpenAPI 3.1 schema。
 
 ## MCP Wrapper
 

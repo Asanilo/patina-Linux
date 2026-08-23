@@ -115,6 +115,55 @@ export const PATINA_MCP_TOOLS: PatinaMcpTool[] = [
     inputSchema: objectSchema({}),
   },
   {
+    name: "create_reminder",
+    description: "Create a Patina reminder. This changes local Tools state.",
+    inputSchema: objectSchema({
+      label: { type: "string", maxLength: 256, description: "Reminder label." },
+      scheduledAt: { type: "integer", description: "Future local timestamp in milliseconds." },
+    }, ["label", "scheduledAt"]),
+  },
+  {
+    name: "cancel_reminder",
+    description: "Cancel a scheduled Patina reminder. This changes local Tools state.",
+    inputSchema: positiveIdSchema("Reminder ID."),
+  },
+  {
+    name: "create_software_reminder_rule",
+    description: "Create a daily software usage reminder rule. This changes local Tools state.",
+    inputSchema: objectSchema({
+      appName: { type: "string", minLength: 1, maxLength: 256 },
+      exeName: { type: ["string", "null"], maxLength: 256 },
+      limitMs: { type: "integer", minimum: 60000, maximum: 86400000 },
+      message: { type: "string", maxLength: 1024 },
+    }, ["appName", "limitMs", "message"]),
+  },
+  {
+    name: "disable_software_reminder_rule",
+    description: "Disable a software usage reminder rule. This changes local Tools state.",
+    inputSchema: positiveIdSchema("Software reminder rule ID."),
+  },
+  {
+    name: "start_timer",
+    description: "Start a Patina stopwatch or countdown. This changes local Tools state.",
+    inputSchema: objectSchema({
+      mode: { type: "string", enum: ["stopwatch", "countdown"] },
+      durationMs: { type: ["integer", "null"], minimum: 60000, maximum: 10800000 },
+      label: { type: ["string", "null"], maxLength: 256 },
+    }, ["mode"]),
+  },
+  ...toolsActionMetadata(),
+  {
+    name: "start_pomodoro",
+    description: "Start a Patina Pomodoro run. This changes local Tools state.",
+    inputSchema: objectSchema({
+      focusMs: { type: "integer", minimum: 60000, maximum: 10800000 },
+      shortBreakMs: { type: "integer", minimum: 60000, maximum: 3600000 },
+      longBreakMs: { type: "integer", minimum: 60000, maximum: 7200000 },
+      longBreakEvery: { type: "integer", minimum: 2, maximum: 12 },
+    }, ["focusMs", "shortBreakMs", "longBreakMs", "longBreakEvery"]),
+  },
+  ...pomodoroActionMetadata(),
+  {
     name: "list_apps",
     description: "List known apps from recorded Patina sessions.",
     inputSchema: objectSchema({}),
@@ -325,6 +374,39 @@ function toolNameToApiRequest(name: string, args: Record<string, unknown>) {
       return getRequest("/api/v1/ai/activity-context");
     case "get_tools_snapshot":
       return getRequest("/api/v1/tools/snapshot");
+    case "create_reminder":
+      return createReminderRequest(args);
+    case "cancel_reminder":
+      return idActionRequest(args, "/api/v1/tools/reminders", "cancel_reminder", "cancel");
+    case "create_software_reminder_rule":
+      return createSoftwareReminderRuleRequest(args);
+    case "disable_software_reminder_rule":
+      return idActionRequest(
+        args,
+        "/api/v1/tools/software-reminder-rules",
+        "disable_software_reminder_rule",
+        "disable",
+      );
+    case "start_timer":
+      return startTimerRequest(args);
+    case "pause_timer":
+      return postRequest("/api/v1/tools/timer/pause");
+    case "resume_timer":
+      return postRequest("/api/v1/tools/timer/resume");
+    case "reset_timer":
+      return postRequest("/api/v1/tools/timer/reset");
+    case "add_timer_lap":
+      return postRequest("/api/v1/tools/timer/laps");
+    case "start_pomodoro":
+      return startPomodoroRequest(args);
+    case "pause_pomodoro":
+      return postRequest("/api/v1/tools/pomodoro/pause");
+    case "resume_pomodoro":
+      return postRequest("/api/v1/tools/pomodoro/resume");
+    case "skip_pomodoro_phase":
+      return postRequest("/api/v1/tools/pomodoro/skip");
+    case "reset_pomodoro":
+      return postRequest("/api/v1/tools/pomodoro/reset");
     case "list_apps":
       return getRequest("/api/v1/apps");
     case "set_idle_threshold":
@@ -344,6 +426,105 @@ function toolNameToApiRequest(name: string, args: Record<string, unknown>) {
     default:
       return null;
   }
+}
+
+function createReminderRequest(args: Record<string, unknown>) {
+  const label = optionalString(args.label, 256);
+  const scheduledAt = integerValue(args.scheduledAt);
+  if (label === null || scheduledAt === null || scheduledAt <= 0) {
+    return { error: "create_reminder requires a label up to 256 characters and a future scheduledAt timestamp" };
+  }
+  return postRequest("/api/v1/tools/reminders", {
+    label,
+    scheduled_at: scheduledAt,
+  });
+}
+
+function createSoftwareReminderRuleRequest(args: Record<string, unknown>) {
+  const appName = optionalString(args.appName, 256)?.trim();
+  const exeName = args.exeName === undefined || args.exeName === null
+    ? null
+    : optionalString(args.exeName, 256)?.trim();
+  const limitMs = integerValue(args.limitMs);
+  const message = optionalString(args.message, 1024);
+  if (
+    !appName
+    || exeName === undefined
+    || limitMs === null
+    || limitMs < 60_000
+    || limitMs > 86_400_000
+    || message === null
+  ) {
+    return { error: "create_software_reminder_rule requires valid appName, optional exeName, limitMs, and message" };
+  }
+  return postRequest("/api/v1/tools/software-reminder-rules", {
+    app_name: appName,
+    exe_name: exeName || null,
+    limit_ms: limitMs,
+    message,
+  });
+}
+
+function startTimerRequest(args: Record<string, unknown>) {
+  const mode = stringValue(args.mode);
+  const label = args.label === undefined || args.label === null
+    ? null
+    : optionalString(args.label, 256)?.trim();
+  const durationMs = args.durationMs === undefined || args.durationMs === null
+    ? null
+    : integerValue(args.durationMs);
+  if (
+    !["stopwatch", "countdown"].includes(mode)
+    || label === undefined
+    || (mode === "countdown"
+      && (durationMs === null || durationMs < 60_000 || durationMs > 10_800_000))
+  ) {
+    return { error: "start_timer requires mode and a 60000-10800000 durationMs for countdowns" };
+  }
+  return postRequest("/api/v1/tools/timer/start", {
+    mode,
+    duration_ms: mode === "countdown" ? durationMs : null,
+    label: label || null,
+  });
+}
+
+function startPomodoroRequest(args: Record<string, unknown>) {
+  const focusMs = boundedInteger(args.focusMs, 60_000, 10_800_000);
+  const shortBreakMs = boundedInteger(args.shortBreakMs, 60_000, 3_600_000);
+  const longBreakMs = boundedInteger(args.longBreakMs, 60_000, 7_200_000);
+  const longBreakEvery = boundedInteger(args.longBreakEvery, 2, 12);
+  if ([focusMs, shortBreakMs, longBreakMs, longBreakEvery].some((value) => value === null)) {
+    return { error: "start_pomodoro requires valid focus, break, and cycle durations" };
+  }
+  return postRequest("/api/v1/tools/pomodoro/start", {
+    focus_ms: focusMs,
+    short_break_ms: shortBreakMs,
+    long_break_ms: longBreakMs,
+    long_break_every: longBreakEvery,
+  });
+}
+
+function idActionRequest(
+  args: Record<string, unknown>,
+  basePath: string,
+  toolName: string,
+  action: string,
+) {
+  const id = integerValue(args.id);
+  if (id === null || id <= 0) {
+    return { error: `${toolName} requires a positive integer id` };
+  }
+  return postRequest(`${basePath}/${id}/${action}`);
+}
+
+function postRequest(path: string, body?: unknown) {
+  return {
+    path,
+    init: {
+      method: "POST" as const,
+      ...(body === undefined ? {} : { body }),
+    },
+  };
 }
 
 function setIdleThresholdRequest(args: Record<string, unknown>) {
@@ -541,6 +722,20 @@ function numberValue(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function integerValue(value: unknown) {
+  const number = numberValue(value);
+  return number !== null && Number.isSafeInteger(number) ? number : null;
+}
+
+function boundedInteger(value: unknown, minimum: number, maximum: number) {
+  const number = integerValue(value);
+  return number !== null && number >= minimum && number <= maximum ? number : null;
+}
+
+function optionalString(value: unknown, maxLength: number) {
+  return typeof value === "string" && value.length <= maxLength ? value : null;
+}
+
 function ok(id: string | number | null, result: Record<string, unknown>): JsonRpcResponse {
   return {
     jsonrpc: "2.0",
@@ -567,6 +762,38 @@ function objectSchema(properties: Record<string, unknown>, required: string[] = 
     ...(required.length > 0 ? { required } : {}),
     additionalProperties: false,
   };
+}
+
+function positiveIdSchema(description: string) {
+  return objectSchema({
+    id: { type: "integer", minimum: 1, description },
+  }, ["id"]);
+}
+
+function toolsActionMetadata(): PatinaMcpTool[] {
+  return [
+    ["pause_timer", "Pause the current Patina timer."],
+    ["resume_timer", "Resume the current Patina timer."],
+    ["reset_timer", "Reset the current Patina timer."],
+    ["add_timer_lap", "Add a lap to the running Patina stopwatch."],
+  ].map(([name, description]) => ({
+    name,
+    description: `${description} This changes local Tools state.`,
+    inputSchema: objectSchema({}),
+  }));
+}
+
+function pomodoroActionMetadata(): PatinaMcpTool[] {
+  return [
+    ["pause_pomodoro", "Pause the current Patina Pomodoro run."],
+    ["resume_pomodoro", "Resume the current Patina Pomodoro run."],
+    ["skip_pomodoro_phase", "Skip the current Patina Pomodoro phase."],
+    ["reset_pomodoro", "Reset the current Patina Pomodoro run."],
+  ].map(([name, description]) => ({
+    name,
+    description: `${description} This changes local Tools state.`,
+    inputSchema: objectSchema({}),
+  }));
 }
 
 function stringField(params: Record<string, unknown> | undefined, field: string) {

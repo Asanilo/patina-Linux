@@ -176,7 +176,7 @@ Raw DTO 只能停留在明确边界：
 
 ### 4.5 运行时宿主与长期所有权
 
-Tauri desktop 仍是默认 tracking owner。`patinad` Stage 0、Stage 1、Stage 2A、Stage 2B tracking preview、Stage 2C power preview、Stage 2D audio preview、Stage 2E MPRIS preview 和 Stage 2F browser bridge preview 已完成 profile-safe storage bootstrap、单 owner `RuntimeLease`、共享 runtime/event 边界、完整只读 API、受认证 SSE、宿主无关的 tracking/watchdog、共享 systemd-logind lifecycle source、可取消的 Linux audio/MPRIS sources，以及共用的浏览器活动记录与 loopback transport。显式 `--serve-api --track` 模式可以让 daemon 为隔离 profile 记录 session，处理锁屏、休眠、恢复和关机，使用 PulseAudio/pipewire-pulse 与 MPRIS 参与信号，并接收带独立 Token 的浏览器扩展上报；默认 daemon 模式仍不记录或监听 browser bridge。迁移期间不得复制第二套业务实现，也不得让 desktop 与 daemon 同时追踪同一 profile。
+Tauri desktop 仍是默认 tracking owner。`patinad` Stage 0、Stage 1、Stage 2A、Stage 2B tracking preview、Stage 2C power preview、Stage 2D audio preview、Stage 2E MPRIS preview 和 Stage 2F browser bridge preview 已完成 profile-safe storage bootstrap、单 owner `RuntimeLease`、共享 runtime/event 边界、完整只读 API、受认证 SSE、宿主无关的 tracking/watchdog、共享 systemd-logind lifecycle source、可取消的 Linux audio/MPRIS sources，以及共用的浏览器活动记录与 loopback transport。显式 `--serve-api --track` 模式还接管 Tools tick、启动恢复、提醒/计时器/番茄钟写入和 Linux 系统通知，并通过同一 SSE 发布 Tools 变化；默认 daemon 模式仍不记录、不监听 browser bridge，也不拥有 Tools runtime。迁移期间不得复制第二套业务实现，也不得让 desktop 与 daemon 同时追踪同一 profile。
 
 “preview owner 已迁移”不等于“默认服务质量已成立”。在 `patinad` 成为默认 owner 或进入 systemd 服务化之前，必须同时满足以下运行时门槛：
 
@@ -220,7 +220,7 @@ domain ─────────┘          │
 
 这些名字表达的是职责，不要求一次性建立大而全 trait 系统。只有真实调用方出现时才提取最小接口。
 
-daemon 写侧按 capability 和真实 runtime owner 开放。默认 daemon surface 保持只读；只有 tracking owner surface 才能写 app mapping、classification、tracker settings 和已迁移的 runtime settings。普通写入先进入 `data` owner 的校验与事务，再通过 `RuntimeEventSink` 发布刷新事件；需要切换 listener 的配置由 runtime owner 先预留新资源、在提交持久化后切换旧资源。`/api/v1/capabilities` 同时返回服务版本、当前协议、支持的客户端协议上下限和 write operation scopes；客户端必须先协商，不能只根据端口可连接推断兼容或可写。
+daemon 写侧按 capability 和真实 runtime owner 开放。默认 daemon surface 保持只读；只有 tracking owner surface 才能写 app mapping、classification、tracker settings、已迁移的 runtime settings 和 Tools。普通写入先进入 `data` owner 的校验与事务，再通过 `RuntimeEventSink` 发布刷新事件；Tools 写入统一经过宿主无关的 `ToolsRuntimeOwner` 并返回完整 snapshot。需要切换 listener 的配置由 runtime owner 先预留新资源、在提交持久化后切换旧资源。`/api/v1/capabilities` 同时返回服务版本、当前协议、支持的客户端协议上下限、tracking/browser/Tools ownership readiness 和 write operation scopes；客户端必须先协商，不能只根据端口可连接推断兼容或可写。
 
 需要重建运行资源的配置不属于普通 settings upsert：browser bridge 端口/Token/隐私和 audio source 启停现已由 daemon runtime control 应用；browser 换端口使用“预绑定、事务提交、切换旧 listener”的顺序。API listener 端口与 Token、service restart 仍必须由后续对应 owner 原子应用并返回确认状态，不能只写数据库后报告成功。
 

@@ -62,10 +62,10 @@ Windows code follows a freeze-then-remove policy:
 | GNOME Wayland window tracking | Working prototype | Uses `org.patina.WindowTracker` from the GNOME Shell extension. |
 | X11 tracking | Implemented fallback / limited verification | Used on X11 sessions; GNOME Wayland does not silently fall back to X11. |
 | KDE / wlroots Wayland | Not promised | Needs compositor-specific work later. |
-| `patinad` | Stage 2F browser bridge preview | `--serve-api --track` runs tracking/watchdog, Linux participation sources, and the authenticated browser activity bridge for an isolated profile. Desktop remains the default owner; Stage 2F reliability gates still precede release as a background service. |
+| `patinad` | Runtime-owner preview | `--serve-api --track` runs tracking/watchdog, Linux participation sources, browser activity, and the Tools reminder/timer runtime for an isolated profile. Desktop remains the default owner. |
 | Local browser UI | Planned after daemon cutover | The first version will be a read-only loopback client served by `patinad`; not implemented yet. |
 | Local API | Implemented | Binds to `127.0.0.1:14840`, uses a bearer token, and exposes daemon capabilities plus an authenticated SSE stream. |
-| MCP wrapper and Agent Skill | Implemented, query-first | `npm run mcp:patina`; write side currently covers app classify/rename/exclude, with HTTP and MCP skill references. |
+| MCP wrapper and Agent Skill | Implemented | `npm run mcp:patina`; controlled writes cover app/settings and Tools reminders, timers, and pomodoro. |
 | Chromium Web Sync | Implemented | `extensions/chromium`. |
 | Firefox / Zen Web Sync | Implemented | The signed `0.1.1` XPI can be installed directly and identifies Firefox-family forks before generic Firefox. |
 | Linux packaging | Current stable pipeline configured | Current stable tags build x86_64 AppImage and `.deb`; the first daemon-backed beta will intentionally publish DEB only until AppImage service ownership and atomic updates are designed. |
@@ -226,7 +226,7 @@ Main endpoint index:
 
 - [docs/api-index.md](docs/api-index.md)
 
-Implemented API groups include diagnostics, current activity, sessions, summaries, trends, web activity, apps, tracker settings, external AI context, and Tools snapshot. The local API also exposes `GET /api/v1/openapi.json` with a field-level OpenAPI 3.1 schema.
+Implemented API groups include diagnostics, current activity, sessions, summaries, trends, web activity, apps, tracker settings, external AI context, and Tools reads/writes. The local API also exposes `GET /api/v1/openapi.json` with a field-level OpenAPI 3.1 schema.
 
 ## MCP Wrapper
 
@@ -254,6 +254,8 @@ Current tools include:
 - `query_web_activity`
 - `get_activity_context`
 - `get_tools_snapshot`
+- `create_reminder`, `cancel_reminder`
+- timer and pomodoro control tools
 - `list_apps`
 - `classify_app`
 - `rename_app`
@@ -270,7 +272,7 @@ For MCP client configuration, invoke `scripts/patina-mcp.ts` directly with Node 
 - MCP tools when the Patina MCP server is configured.
 - Direct localhost HTTP with bearer authentication as a fallback.
 
-Both workflows share rules for diagnostics-first analysis, local-time boundaries, active-session handling, URL privacy, and explicit confirmation before app-management writes.
+Both workflows share rules for diagnostics-first analysis, local-time boundaries, active-session handling, URL privacy, and explicit confirmation before all writes.
 
 ## Useful Checks
 

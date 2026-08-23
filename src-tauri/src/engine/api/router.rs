@@ -70,6 +70,9 @@ pub(crate) async fn route_request(
             handlers::runtime_settings::configure_browser_activity(context, body).await
         }
         ("GET", "/api/v1/tools/snapshot") => handlers::tools::get_tools_snapshot(context).await,
+        ("POST", path) if path.starts_with("/api/v1/tools/") => {
+            handlers::tools::handle_tools_action(context, path, body).await
+        }
         _ => RouteResponse {
             status: 404,
             body: serde_json::to_value(ApiError::not_found("endpoint not found"))
@@ -119,6 +122,37 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct TestToolsSink;
+
+    struct TestRuntimeState;
+
+    impl crate::engine::api::context::ApiRuntimeStateProvider for TestRuntimeState {
+        fn tracking_snapshot(
+            &self,
+        ) -> Option<crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshot> {
+            None
+        }
+
+        fn web_activity_snapshot(
+            &self,
+            _settings: &crate::domain::settings::WebActivitySettings,
+            _now_ms: i64,
+        ) -> Option<crate::domain::web_activity::WebActivityBridgeSnapshot> {
+            None
+        }
+
+        fn tools_runtime_ready(&self) -> bool {
+            true
+        }
+    }
+
+    impl crate::engine::tools::ToolsRuntimeSink for TestToolsSink {
+        fn snapshot_changed(&self, _snapshot: &crate::domain::tools::ToolsRuntimeSnapshot) {}
+
+        fn alert(&self, _alert: &crate::domain::tools::ToolAlert) {}
+    }
+
     async fn test_context() -> (
         sqlx::SqlitePool,
         ApiRuntimeContext,
@@ -129,20 +163,98 @@ mod tests {
         pool.execute(crate::data::schema::CURRENT_BASELINE_SCHEMA_SQL)
             .await
             .unwrap();
+        pool.execute(crate::data::schema::TOOLS_TABLES_SCHEMA_SQL)
+            .await
+            .unwrap();
+        pool.execute(crate::data::schema::SOFTWARE_REMINDER_RULES_SCHEMA_SQL)
+            .await
+            .unwrap();
         let sink = Arc::new(crate::engine::runtime_event::MemoryRuntimeEventSink::default());
         let event_sink: Arc<dyn RuntimeEventSink> = sink.clone();
         let control = Arc::new(TestRuntimeControl::default());
         let runtime_control: Arc<dyn crate::engine::api::runtime_control::ApiRuntimeControl> =
             control.clone();
+        let runtime = crate::engine::runtime_context::RuntimeContext::system(pool.clone());
+        let tools_owner = Arc::new(crate::engine::tools::ToolsRuntimeOwner::new(
+            runtime.clone(),
+            Arc::new(TestToolsSink),
+        ));
         let context = ApiRuntimeContext::with_state_and_events(
-            crate::engine::runtime_context::RuntimeContext::system(pool.clone()),
+            runtime,
             "1.8.3",
             "linux",
-            Arc::new(crate::engine::api::context::UnavailableApiRuntimeState),
+            Arc::new(TestRuntimeState),
             Some(event_sink),
         )
-        .with_runtime_control(runtime_control);
+        .with_runtime_control(runtime_control)
+        .with_tools_owner(tools_owner);
         (pool, context, sink, control)
+    }
+
+    #[tokio::test]
+    async fn daemon_tools_writes_validate_inputs_and_return_complete_snapshots() {
+        let (pool, context, _sink, _control) = test_context().await;
+        let surface = crate::engine::api::surface::ApiSurface::DaemonTracking;
+
+        let starting_context = ApiRuntimeContext::new(
+            crate::engine::runtime_context::RuntimeContext::system(pool.clone()),
+        );
+        let starting = route(
+            &starting_context,
+            surface,
+            "POST",
+            "/api/v1/tools/timer/pause",
+            serde_json::Value::Null,
+        )
+        .await;
+        assert_eq!(starting.status, 503);
+
+        let rejected = route(
+            &context,
+            surface,
+            "POST",
+            "/api/v1/tools/timer/start",
+            serde_json::json!({"mode": "countdown", "duration_ms": 1}),
+        )
+        .await;
+        assert_eq!(rejected.status, 400);
+
+        let reminder = route(
+            &context,
+            surface,
+            "POST",
+            "/api/v1/tools/reminders",
+            serde_json::json!({
+                "label": "Review",
+                "scheduled_at": 2_000_000_000_000_i64
+            }),
+        )
+        .await;
+        assert_eq!(reminder.status, 200);
+        assert_eq!(reminder.body["data"]["reminders"][0]["label"], "Review");
+        assert!(reminder.body["data"]["settings"].is_object());
+
+        let paused = route(
+            &context,
+            surface,
+            "POST",
+            "/api/v1/tools/timer/pause",
+            serde_json::Value::Null,
+        )
+        .await;
+        assert_eq!(paused.status, 200);
+        assert!(paused.body["data"]["sampled_at_ms"].is_number());
+
+        let unavailable = route(
+            &context,
+            crate::engine::api::surface::ApiSurface::DaemonReadOnly,
+            "POST",
+            "/api/v1/tools/timer/pause",
+            serde_json::Value::Null,
+        )
+        .await;
+        assert_eq!(unavailable.status, 404);
+        pool.close().await;
     }
 
     async fn route(

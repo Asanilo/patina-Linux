@@ -286,6 +286,62 @@ const DAEMON_TRACKING_ENDPOINTS: &[ApiEndpoint] = &[
         method: "GET",
         path: "/api/v1/tools/snapshot",
     },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/tools/reminders",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/tools/reminders/{id}/cancel",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/tools/software-reminder-rules",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/tools/software-reminder-rules/{id}/disable",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/tools/timer/start",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/tools/timer/pause",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/tools/timer/resume",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/tools/timer/reset",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/tools/timer/laps",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/tools/pomodoro/start",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/tools/pomodoro/pause",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/tools/pomodoro/resume",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/tools/pomodoro/skip",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/tools/pomodoro/reset",
+    },
 ];
 
 const DESKTOP_WRITE_OPERATIONS: &[&str] = &["app-mapping", "classification", "tracker-settings"];
@@ -293,6 +349,7 @@ const DAEMON_TRACKING_WRITE_OPERATIONS: &[&str] = &[
     "app-mapping",
     "classification",
     "runtime-settings",
+    "tools",
     "tracker-settings",
 ];
 const NO_WRITE_OPERATIONS: &[&str] = &[];
@@ -310,6 +367,10 @@ impl ApiSurface {
     }
 
     pub fn owns_browser_activity_bridge(self) -> bool {
+        matches!(self, Self::Desktop | Self::DaemonTracking)
+    }
+
+    pub fn owns_tools_runtime(self) -> bool {
         matches!(self, Self::Desktop | Self::DaemonTracking)
     }
 
@@ -346,24 +407,23 @@ impl ApiSurface {
     }
 
     pub fn allows_request(self, method: &str, path: &str) -> bool {
-        if self.allows(method, path) {
-            return true;
-        }
-
-        let Some(remainder) = path.strip_prefix("/api/v1/apps/") else {
-            return false;
-        };
-        let Some((exe_name, action)) = remainder.split_once('/') else {
-            return false;
-        };
-        method == "POST"
-            && !exe_name.is_empty()
-            && !action.contains('/')
-            && self.endpoints().iter().any(|endpoint| {
-                endpoint.method == method
-                    && endpoint.path == format!("/api/v1/apps/{{exe_name}}/{action}")
-            })
+        self.endpoints()
+            .iter()
+            .any(|endpoint| endpoint.method == method && endpoint_path_matches(endpoint.path, path))
     }
+}
+
+fn endpoint_path_matches(template: &str, path: &str) -> bool {
+    let template_segments = template.split('/').collect::<Vec<_>>();
+    let path_segments = path.split('/').collect::<Vec<_>>();
+    template_segments.len() == path_segments.len()
+        && template_segments
+            .iter()
+            .zip(path_segments)
+            .all(|(template, actual)| {
+                (!actual.is_empty() && template.starts_with('{') && template.ends_with('}'))
+                    || template == &actual
+            })
 }
 
 #[cfg(test)]
@@ -448,6 +508,7 @@ mod tests {
 
         assert!(surface.owns_tracking());
         assert!(surface.owns_browser_activity_bridge());
+        assert!(surface.owns_tools_runtime());
         assert!(surface.has_event_stream());
         assert!(surface.has_write_api());
         assert!(surface.allows_request("POST", "/api/v1/apps/ghostty/rename"));
@@ -460,6 +521,7 @@ mod tests {
                 "app-mapping",
                 "classification",
                 "runtime-settings",
+                "tools",
                 "tracker-settings"
             ]
         );

@@ -34,9 +34,9 @@ Current caveats:
 - `/api/v1/openapi.json` exposes the machine-readable OpenAPI 3.1 schema with paths, query/path parameters, request bodies, response envelopes, auth, error envelopes, and field-level component schemas.
 - The OpenAPI server URL uses a configurable `{port}` variable whose default is `14840`.
 - This document remains the human-maintained reference for behavior notes and implementation caveats.
-- The desktop runtime exposes the shared JSON endpoints below. Default `patinad` mode exposes authenticated reads plus SSE and rejects all `POST` endpoints. Explicit `--track` mode is the current runtime owner and additionally exposes the bounded app-mapping, classification, tracker-settings, and runtime-settings writes listed by `/api/v1/capabilities`.
+- The desktop runtime exposes the shared JSON endpoints below. Default `patinad` mode exposes authenticated reads plus SSE and rejects all `POST` endpoints. Explicit `--track` mode is the current runtime owner and additionally exposes the bounded app-mapping, classification, tracker-settings, runtime-settings, and Tools writes listed by `/api/v1/capabilities`.
 - Default daemon mode remains historical/read-only: `GET /api/v1/current` returns `503` and live tracker/browser diagnostics are `null`.
-- Stage 2F preview mode is explicit: run `patinad --profile dev --serve-api --track --port 0`. It owns tracking for that profile, serves a live `/current`, observes Linux lock/suspend/resume/shutdown, runs audio/MPRIS participation sources, and owns the browser activity bridge configured for that profile. Never run desktop and daemon tracking against the same profile.
+- Stage 2G preview mode is explicit: run `patinad --profile dev --serve-api --track --port 0`. It owns tracking and Tools for that profile, serves a live `/current`, observes Linux lock/suspend/resume/shutdown, runs audio/MPRIS participation sources, and owns the browser activity bridge configured for that profile. Never run desktop and daemon tracking against the same profile.
 - Stage 2F capability migration, Stage 2F.1 browser crash/heartbeat semantics, and Stage 2F.2 loopback transport migration are complete. API, SSE, and the independent browser extension bridge use Axum with 32/8/8 fail-fast concurrency budgets, bounded handlers, strict Host/origin policies, and task-coupled listener readiness. The extension protocol remains `POST /web-activity` with its separate Token; its CORS response only echoes Firefox/Zen or Chromium extension origins and never returns `Access-Control-Allow-Origin: *`.
 - The tracking-owner daemon can apply audio participation and the complete browser bridge configuration while running. Browser port changes reserve the new listener and commit storage before the old listener is stopped; bind or persistence failures preserve the old configuration.
 - `/api/v1/events` accepts the token only through the `Authorization` header. It does not accept tokens in URLs or query strings.
@@ -73,6 +73,20 @@ Current caveats:
 | `/api/v1/settings/runtime/audio-participation` | `POST` | Tracking daemon | Apply and persist the Linux audio participation switch |
 | `/api/v1/settings/runtime/browser-activity` | `POST` | Tracking daemon | Atomically replace browser listener, Token, and URL privacy settings |
 | `/api/v1/tools/snapshot` | `GET` | Implemented | Current Tools runtime snapshot |
+| `/api/v1/tools/reminders` | `POST` | Tracking daemon | Create a scheduled reminder |
+| `/api/v1/tools/reminders/{id}/cancel` | `POST` | Tracking daemon | Cancel a scheduled reminder |
+| `/api/v1/tools/software-reminder-rules` | `POST` | Tracking daemon | Create a daily app usage reminder rule |
+| `/api/v1/tools/software-reminder-rules/{id}/disable` | `POST` | Tracking daemon | Disable an app usage reminder rule |
+| `/api/v1/tools/timer/start` | `POST` | Tracking daemon | Start stopwatch or countdown |
+| `/api/v1/tools/timer/pause` | `POST` | Tracking daemon | Pause current timer |
+| `/api/v1/tools/timer/resume` | `POST` | Tracking daemon | Resume current timer |
+| `/api/v1/tools/timer/reset` | `POST` | Tracking daemon | Reset current timer |
+| `/api/v1/tools/timer/laps` | `POST` | Tracking daemon | Add stopwatch lap |
+| `/api/v1/tools/pomodoro/start` | `POST` | Tracking daemon | Start pomodoro run |
+| `/api/v1/tools/pomodoro/pause` | `POST` | Tracking daemon | Pause pomodoro run |
+| `/api/v1/tools/pomodoro/resume` | `POST` | Tracking daemon | Resume pomodoro run |
+| `/api/v1/tools/pomodoro/skip` | `POST` | Tracking daemon | Skip current pomodoro phase |
+| `/api/v1/tools/pomodoro/reset` | `POST` | Tracking daemon | Reset pomodoro run |
 
 ---
 
@@ -93,13 +107,9 @@ Current scope:
 - Auth model: bearer token through `components.securitySchemes.bearerAuth`
 - Paths: the exact endpoints enabled for the current desktop or daemon API surface
 - Parameters: query params for sessions, summary range, trend, web activity; path params for app management
-- Request bodies: classify, rename, exclude, AFK threshold, tracking pause, classification batch, audio participation, and complete browser runtime configuration writes
+- Request bodies: classify, rename, exclude, AFK threshold, tracking pause, classification batch, audio participation, complete browser runtime configuration, reminders, timers, software reminders, and pomodoro writes
 - Responses: success envelopes and standard `400` / `401` / `403` / `404` / `409` / `413` / `500` / `503` error envelopes
-- Components: field-level schemas for health, capabilities, runtime event envelopes, diagnostics, current window, sessions, active session, summaries, trend, web activity, apps, tracker/runtime settings, AI activity context, and Tools snapshot
-
-Known gap:
-
-- OpenAPI does not yet document future Tools write-side endpoints because those routes are not implemented.
+- Components: field-level schemas for health, capabilities, all runtime event variants, diagnostics, current window, sessions, active session, summaries, trend, web activity, apps, tracker/runtime settings, AI activity context, Tools snapshots, alerts, and Tools write requests
 
 ### `GET /api/v1/health`
 
@@ -153,6 +163,7 @@ Default daemon schema:
     "event_stream": { "available": true },
     "tracking": { "owned": false, "ready": false },
     "browser_activity_bridge": { "owned": false, "ready": false },
+    "tools": { "owned": false, "ready": false },
     "write_api": { "available": false, "operations": [] }
   }
 }
@@ -162,7 +173,7 @@ Default daemon schema:
 
 Clients compare their supported protocol against `protocol.min_supported_client` and `protocol.max_supported_client` before using the daemon. `protocol_version` remains as the compatibility alias for `protocol.current`.
 
-With Stage 2F `--track`, the same response changes `tracking` to `{ "owned": true, "ready": false }` during startup and `{ "owned": true, "ready": true }` after the first runtime snapshot. `browser_activity_bridge.owned` is also `true`; its current `ready` value follows the configured listener task. `write_api` becomes `{ "available": true, "operations": ["app-mapping", "classification", "runtime-settings", "tracker-settings"] }`. Default daemon mode keeps both runtime capabilities unowned and the write API unavailable.
+With Stage 2G `--track`, the same response changes `tracking` to `{ "owned": true, "ready": false }` during startup and `{ "owned": true, "ready": true }` after the first runtime snapshot. `browser_activity_bridge.owned` is also `true`; its current `ready` value follows the configured listener task. `tools.owned` is `true` and becomes ready only after startup recovery and the first Tools snapshot. `write_api` becomes `{ "available": true, "operations": ["app-mapping", "classification", "runtime-settings", "tools", "tracker-settings"] }`. Default daemon mode keeps all runtime capabilities unowned and the write API unavailable.
 
 ### `GET /api/v1/events`
 
@@ -182,6 +193,16 @@ event: tracking-data-changed
 data: {"sequence":1,"event":{"type":"tracking-data-changed","reason":"window-changed","changed_at_ms":1782000000000}}
 ```
 
+Other typed events use the same envelope:
+
+```text
+event: tools-runtime-changed
+data: {"sequence":2,"event":{"type":"tools-runtime-changed","changed_at_ms":1782000001000}}
+
+event: tool-alert
+data: {"sequence":3,"event":{"type":"tool-alert","alert":{"id":"reminder:1","kind":"reminder","title":"提醒","body":"Review","occurred_at":1782000002000}}}
+```
+
 Behavior:
 
 - Sequence IDs are monotonic within one daemon process and use a bounded in-memory replay window.
@@ -190,7 +211,7 @@ Behavior:
 - Daemon restart resets the sequence. Clients should call `/api/v1/capabilities` and reload snapshots after reconnect.
 - Keepalive comments prevent idle local connections from being mistaken for a dead daemon.
 - At most eight SSE streams are active at once. Additional streams fail immediately with `503` instead of creating unbounded long-lived tasks.
-- Stage 2F `--track` publishes real session transition, metadata, status, watchdog, runtime-shutdown, lock, suspend, system-shutdown, and browser activity events. Audio and MPRIS participation affect tracking status through the same snapshots and events; default daemon mode still has no tracking producer.
+- Stage 2G `--track` publishes real session transition, metadata, status, watchdog, runtime-shutdown, lock, suspend, system-shutdown, browser activity, Tools snapshot-change, and Tools alert events. Audio and MPRIS participation affect tracking status through the same snapshots and events; default daemon mode still has no tracking or Tools producer.
 
 ### `GET /api/v1/diagnostics`
 
@@ -948,8 +969,133 @@ Schema:
 
 Current behavior:
 
-- This endpoint is read-only. Reminder, timer, and pomodoro write-side HTTP routes are not implemented.
+- This endpoint is read-only and available on all surfaces. Tools writes require a tracking-owner daemon whose capabilities include the `tools` scope.
+- Every successful Tools write returns this same complete snapshot envelope.
 - Live elapsed or remaining time must be interpreted relative to `sampled_at_ms` and the current object's timestamps.
+
+The tracking daemon continues Tools ticks after the desktop window closes. It fires reminders, completes countdown/pomodoro boundaries, sends Linux desktop notifications, and publishes `tools-runtime-changed` or `tool-alert` through `/api/v1/events`.
+
+### `POST /api/v1/tools/reminders`
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/tools/reminders" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"label":"Review notes","scheduled_at":1900000000000}'
+```
+
+`scheduled_at` must be a future epoch-millisecond timestamp. `label` may be empty and is limited to 256 characters.
+
+### `POST /api/v1/tools/reminders/{id}/cancel`
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/tools/reminders/1/cancel" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN"
+```
+
+`id` must be a positive reminder ID. Cancelling an already completed or cancelled reminder is an idempotent no-op.
+
+### `POST /api/v1/tools/software-reminder-rules`
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/tools/software-reminder-rules" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"app_name":"Zen","exe_name":"zen","limit_ms":3600000,"message":"Take a break"}'
+```
+
+`app_name` is required; `exe_name` may be `null`; `limit_ms` is `60000..86400000`; `message` is limited to 1024 characters. A rule fires at most once per local day.
+
+### `POST /api/v1/tools/software-reminder-rules/{id}/disable`
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/tools/software-reminder-rules/1/disable" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN"
+```
+
+`id` must be a positive rule ID. Disabling an already disabled rule is an idempotent no-op.
+
+### `POST /api/v1/tools/timer/start`
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/tools/timer/start" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"countdown","duration_ms":1500000,"label":"Focus"}'
+```
+
+`mode` is `stopwatch` or `countdown`. Countdown duration is required and limited to `60000..10800000`; stopwatch duration is ignored. `label` may be `null` and is limited to 256 characters.
+
+### `POST /api/v1/tools/timer/pause`
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/tools/timer/pause" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN"
+```
+
+### `POST /api/v1/tools/timer/resume`
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/tools/timer/resume" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN"
+```
+
+### `POST /api/v1/tools/timer/reset`
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/tools/timer/reset" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN"
+```
+
+### `POST /api/v1/tools/timer/laps`
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/tools/timer/laps" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN"
+```
+
+Pause, resume, reset, and lap are idempotent when the current timer state cannot perform the requested transition. A lap is added only to a running timer.
+
+### `POST /api/v1/tools/pomodoro/start`
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/tools/pomodoro/start" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"focus_ms":1500000,"short_break_ms":300000,"long_break_ms":900000,"long_break_every":4}'
+```
+
+Focus duration is `60000..10800000`, short break is `60000..3600000`, long break is `60000..7200000`, and `long_break_every` is `2..12`.
+
+### `POST /api/v1/tools/pomodoro/pause`
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/tools/pomodoro/pause" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN"
+```
+
+### `POST /api/v1/tools/pomodoro/resume`
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/tools/pomodoro/resume" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN"
+```
+
+### `POST /api/v1/tools/pomodoro/skip`
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/tools/pomodoro/skip" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN"
+```
+
+### `POST /api/v1/tools/pomodoro/reset`
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/tools/pomodoro/reset" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN"
+```
+
+Pomodoro transition actions are idempotent when no matching active state exists. Skip advances to the next phase and leaves that phase paused.
 
 ### Error responses
 
@@ -988,14 +1134,7 @@ curl -s "$PATINA_API_BASE/api/v1/missing" \
 
 ## 4. Planned Endpoints
 
-| Endpoint | Method | Status | Purpose |
-|---|---:|---|---|
-| `/api/v1/tools/reminders` | `GET` | Not implemented | Query reminder state |
-| `/api/v1/tools/reminders` | `POST` | Not implemented | Create reminder |
-| `/api/v1/tools/reminders/{id}` | `DELETE` | Not implemented | Delete reminder |
-| `/api/v1/tools/pomodoro` | `GET` | Not implemented | Query pomodoro state |
-| `/api/v1/tools/pomodoro/start` | `POST` | Not implemented | Start pomodoro |
-| `/api/v1/tools/pomodoro/stop` | `POST` | Not implemented | Stop pomodoro |
+No additional endpoint path is committed. API listener port/Token ownership and controlled service restart remain runtime-owner work; they will not receive public routes until their atomicity and authorization contract is designed.
 
 ---
 
@@ -1031,6 +1170,20 @@ Current MCP tools:
 | `query_web_activity` | `GET /api/v1/web-activity` | `from`, `to`, `domain`, `limit` | Query browser extension activity segments |
 | `get_activity_context` | `GET /api/v1/ai/activity-context` | none | Fetch diagnostics, active session, summaries, and recent web activity for external AI analysis |
 | `get_tools_snapshot` | `GET /api/v1/tools/snapshot` | none | Fetch current Tools runtime snapshot |
+| `create_reminder` | `POST /api/v1/tools/reminders` | `label`, `scheduledAt` | Create a scheduled reminder |
+| `cancel_reminder` | `POST /api/v1/tools/reminders/{id}/cancel` | `id` | Cancel a reminder |
+| `create_software_reminder_rule` | `POST /api/v1/tools/software-reminder-rules` | `appName`, optional `exeName`, `limitMs`, `message` | Create a daily app usage reminder |
+| `disable_software_reminder_rule` | `POST /api/v1/tools/software-reminder-rules/{id}/disable` | `id` | Disable an app usage reminder |
+| `start_timer` | `POST /api/v1/tools/timer/start` | `mode`, optional `durationMs`, `label` | Start stopwatch or countdown |
+| `pause_timer` | `POST /api/v1/tools/timer/pause` | none | Pause current timer |
+| `resume_timer` | `POST /api/v1/tools/timer/resume` | none | Resume current timer |
+| `reset_timer` | `POST /api/v1/tools/timer/reset` | none | Reset current timer |
+| `add_timer_lap` | `POST /api/v1/tools/timer/laps` | none | Add stopwatch lap |
+| `start_pomodoro` | `POST /api/v1/tools/pomodoro/start` | four duration/cycle fields | Start pomodoro run |
+| `pause_pomodoro` | `POST /api/v1/tools/pomodoro/pause` | none | Pause pomodoro run |
+| `resume_pomodoro` | `POST /api/v1/tools/pomodoro/resume` | none | Resume pomodoro run |
+| `skip_pomodoro_phase` | `POST /api/v1/tools/pomodoro/skip` | none | Skip current phase |
+| `reset_pomodoro` | `POST /api/v1/tools/pomodoro/reset` | none | Reset pomodoro run |
 | `list_apps` | `GET /api/v1/apps` | none | List known apps from recorded sessions |
 | `set_idle_threshold` | `POST /api/v1/settings/tracker/afk-threshold` | `seconds` | Set idle threshold |
 | `set_tracking_paused` | `POST /api/v1/settings/tracker/pause` | `paused` | Set tracking pause state |
@@ -1043,5 +1196,4 @@ Current MCP tools:
 Remaining MCP wrapper gaps:
 
 - Local API configuration tools.
-- Tools write-side actions such as creating reminders or starting timers.
 - Generated MCP tool metadata does not yet consume `/api/v1/openapi.json`; the wrapper keeps an explicit hand-written tool list for now.

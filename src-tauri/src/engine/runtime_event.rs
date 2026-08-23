@@ -8,13 +8,24 @@ pub const DEFAULT_EVENT_REPLAY_CAPACITY: usize = 256;
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum RuntimeEvent {
-    TrackingDataChanged { reason: String, changed_at_ms: u64 },
+    TrackingDataChanged {
+        reason: String,
+        changed_at_ms: u64,
+    },
+    ToolsRuntimeChanged {
+        changed_at_ms: u64,
+    },
+    ToolAlert {
+        alert: crate::domain::tools::ToolAlert,
+    },
 }
 
 impl RuntimeEvent {
     pub fn event_name(&self) -> &'static str {
         match self {
             Self::TrackingDataChanged { .. } => "tracking-data-changed",
+            Self::ToolsRuntimeChanged { .. } => "tools-runtime-changed",
+            Self::ToolAlert { .. } => "tool-alert",
         }
     }
 }

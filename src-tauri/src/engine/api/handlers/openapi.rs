@@ -195,6 +195,76 @@ fn paths(surface: ApiSurface) -> Value {
         },
         "/api/v1/tools/snapshot": {
             "get": get_operation("Current Tools runtime snapshot.", "ToolsSnapshotResponse")
+        },
+        "/api/v1/tools/reminders": {
+            "post": post_operation(
+                "Create a scheduled reminder.",
+                vec![],
+                "CreateReminderRequest",
+                "ToolsSnapshotResponse",
+            )
+        },
+        "/api/v1/tools/reminders/{id}/cancel": {
+            "post": post_action_operation(
+                "Cancel a scheduled reminder.",
+                vec![integer_path_param("id", "Reminder ID.")],
+                "ToolsSnapshotResponse",
+            )
+        },
+        "/api/v1/tools/software-reminder-rules": {
+            "post": post_operation(
+                "Create a daily software usage reminder rule.",
+                vec![],
+                "CreateSoftwareReminderRuleRequest",
+                "ToolsSnapshotResponse",
+            )
+        },
+        "/api/v1/tools/software-reminder-rules/{id}/disable": {
+            "post": post_action_operation(
+                "Disable a software usage reminder rule.",
+                vec![integer_path_param("id", "Software reminder rule ID.")],
+                "ToolsSnapshotResponse",
+            )
+        },
+        "/api/v1/tools/timer/start": {
+            "post": post_operation(
+                "Start a stopwatch or countdown.",
+                vec![],
+                "StartTimerRequest",
+                "ToolsSnapshotResponse",
+            )
+        },
+        "/api/v1/tools/timer/pause": {
+            "post": post_action_operation("Pause the current timer.", vec![], "ToolsSnapshotResponse")
+        },
+        "/api/v1/tools/timer/resume": {
+            "post": post_action_operation("Resume the current timer.", vec![], "ToolsSnapshotResponse")
+        },
+        "/api/v1/tools/timer/reset": {
+            "post": post_action_operation("Reset the current timer.", vec![], "ToolsSnapshotResponse")
+        },
+        "/api/v1/tools/timer/laps": {
+            "post": post_action_operation("Add a lap to the running stopwatch.", vec![], "ToolsSnapshotResponse")
+        },
+        "/api/v1/tools/pomodoro/start": {
+            "post": post_operation(
+                "Start a Pomodoro run.",
+                vec![],
+                "StartPomodoroRequest",
+                "ToolsSnapshotResponse",
+            )
+        },
+        "/api/v1/tools/pomodoro/pause": {
+            "post": post_action_operation("Pause the current Pomodoro run.", vec![], "ToolsSnapshotResponse")
+        },
+        "/api/v1/tools/pomodoro/resume": {
+            "post": post_action_operation("Resume the current Pomodoro run.", vec![], "ToolsSnapshotResponse")
+        },
+        "/api/v1/tools/pomodoro/skip": {
+            "post": post_action_operation("Skip the current Pomodoro phase.", vec![], "ToolsSnapshotResponse")
+        },
+        "/api/v1/tools/pomodoro/reset": {
+            "post": post_action_operation("Reset the current Pomodoro run.", vec![], "ToolsSnapshotResponse")
         }
     });
     let object = paths.as_object_mut().expect("OpenAPI paths object");
@@ -261,6 +331,7 @@ fn schemas() -> Value {
                     "app-mapping",
                     "classification",
                     "runtime-settings",
+                    "tools",
                     "tracker-settings",
                 ])),
             ),
@@ -283,6 +354,7 @@ fn schemas() -> Value {
                 "browser_activity_bridge",
                 schema_ref("OwnedRuntimeCapability"),
             ),
+            ("tools", schema_ref("OwnedRuntimeCapability")),
             ("write_api", schema_ref("WriteApiCapability")),
         ]),
     );
@@ -291,12 +363,37 @@ fn schemas() -> Value {
         envelope(schema_ref("CapabilitiesData")),
     );
     schemas.insert(
-        "RuntimeEvent".to_string(),
+        "TrackingDataChangedEvent".to_string(),
         object_schema(vec![
             ("type", enum_schema(vec!["tracking-data-changed"])),
             ("reason", string_schema()),
             ("changed_at_ms", integer_schema()),
         ]),
+    );
+    schemas.insert(
+        "ToolsRuntimeChangedEvent".to_string(),
+        object_schema(vec![
+            ("type", enum_schema(vec!["tools-runtime-changed"])),
+            ("changed_at_ms", integer_schema()),
+        ]),
+    );
+    schemas.insert(
+        "ToolAlertEvent".to_string(),
+        object_schema(vec![
+            ("type", enum_schema(vec!["tool-alert"])),
+            ("alert", schema_ref("ToolAlert")),
+        ]),
+    );
+    schemas.insert(
+        "RuntimeEvent".to_string(),
+        json!({
+            "oneOf": [
+                schema_ref("TrackingDataChangedEvent"),
+                schema_ref("ToolsRuntimeChangedEvent"),
+                schema_ref("ToolAlertEvent")
+            ],
+            "discriminator": { "propertyName": "type" }
+        }),
     );
     schemas.insert(
         "RuntimeEventEnvelope".to_string(),
@@ -675,6 +772,66 @@ fn schemas() -> Value {
         ]),
     );
     schemas.insert(
+        "ToolAlert".to_string(),
+        object_schema(vec![
+            ("id", string_schema()),
+            (
+                "kind",
+                enum_schema(vec![
+                    "reminder",
+                    "countdown",
+                    "pomodoro",
+                    "software_reminder",
+                ]),
+            ),
+            ("title", string_schema()),
+            ("body", string_schema()),
+            ("occurred_at", integer_schema()),
+        ]),
+    );
+    schemas.insert(
+        "CreateReminderRequest".to_string(),
+        object_schema_with_required(
+            vec![
+                ("label", bounded_string_schema(0, 256)),
+                ("scheduled_at", integer_schema()),
+            ],
+            vec!["label", "scheduled_at"],
+        ),
+    );
+    schemas.insert(
+        "CreateSoftwareReminderRuleRequest".to_string(),
+        object_schema_with_required(
+            vec![
+                ("app_name", bounded_string_schema(1, 256)),
+                ("exe_name", bounded_nullable_string_schema(256)),
+                ("limit_ms", bounded_integer_schema(60_000, 86_400_000)),
+                ("message", bounded_string_schema(0, 1_024)),
+            ],
+            vec!["app_name", "limit_ms", "message"],
+        ),
+    );
+    schemas.insert(
+        "StartTimerRequest".to_string(),
+        object_schema_with_required(
+            vec![
+                ("mode", enum_schema(vec!["stopwatch", "countdown"])),
+                ("duration_ms", nullable_integer_schema()),
+                ("label", bounded_nullable_string_schema(256)),
+            ],
+            vec!["mode"],
+        ),
+    );
+    schemas.insert(
+        "StartPomodoroRequest".to_string(),
+        object_schema(vec![
+            ("focus_ms", bounded_integer_schema(60_000, 10_800_000)),
+            ("short_break_ms", bounded_integer_schema(60_000, 3_600_000)),
+            ("long_break_ms", bounded_integer_schema(60_000, 7_200_000)),
+            ("long_break_every", bounded_integer_schema(2, 12)),
+        ]),
+    );
+    schemas.insert(
         "ClassifyRequest".to_string(),
         object_schema(vec![("category", string_schema())]),
     );
@@ -825,6 +982,14 @@ fn post_operation(
     })
 }
 
+fn post_action_operation(summary: &str, parameters: Vec<Value>, response_schema: &str) -> Value {
+    json!({
+        "summary": summary,
+        "parameters": parameters,
+        "responses": standard_responses(response_schema)
+    })
+}
+
 fn standard_responses(schema: &str) -> Value {
     json!({
         "200": {
@@ -914,6 +1079,10 @@ fn path_param(name: &str, description: &str) -> Value {
     parameter("path", name, "string", description, true)
 }
 
+fn integer_path_param(name: &str, description: &str) -> Value {
+    parameter("path", name, "integer", description, true)
+}
+
 fn parameter(location: &str, name: &str, kind: &str, description: &str, required: bool) -> Value {
     json!({
         "name": name,
@@ -940,6 +1109,19 @@ fn object_schema(properties: Vec<(&str, Value)>) -> Value {
         "additionalProperties": false,
         "required": required,
         "properties": map
+    })
+}
+
+fn object_schema_with_required(properties: Vec<(&str, Value)>, required: Vec<&str>) -> Value {
+    let properties = properties
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), value))
+        .collect::<serde_json::Map<_, _>>();
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": required,
+        "properties": properties
     })
 }
 
@@ -1082,6 +1264,9 @@ mod tests {
         assert!(schemas.contains_key("WebActivityEntry"));
         assert!(schemas.contains_key("ActivityContextResponse"));
         assert!(schemas.contains_key("ToolsRuntimeSnapshot"));
+        assert!(schemas.contains_key("ToolAlert"));
+        assert!(schemas.contains_key("CreateReminderRequest"));
+        assert!(schemas.contains_key("StartPomodoroRequest"));
         assert!(schemas.contains_key("ClassifyRequest"));
         assert!(schemas.contains_key("ProtocolCapability"));
         assert!(schemas.contains_key("WriteApiCapability"));
@@ -1125,6 +1310,27 @@ mod tests {
                 .pointer("/components/schemas/ToolsRuntimeSnapshot/properties/current_timer/oneOf/0/$ref")
                 .and_then(|value| value.as_str()),
             Some("#/components/schemas/ToolTimer")
+        );
+        assert_eq!(
+            response
+                .body
+                .pointer("/components/schemas/RuntimeEvent/oneOf/1/$ref")
+                .and_then(|value| value.as_str()),
+            Some("#/components/schemas/ToolsRuntimeChangedEvent")
+        );
+        assert_eq!(
+            response
+                .body
+                .pointer("/components/schemas/CapabilitiesData/properties/tools/$ref")
+                .and_then(|value| value.as_str()),
+            Some("#/components/schemas/OwnedRuntimeCapability")
+        );
+        assert_eq!(
+            response
+                .body
+                .pointer("/components/schemas/StartTimerRequest/required/0")
+                .and_then(|value| value.as_str()),
+            Some("mode")
         );
         assert_eq!(
             response

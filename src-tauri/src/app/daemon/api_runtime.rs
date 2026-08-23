@@ -5,11 +5,13 @@ use crate::engine::tracking::runtime_snapshot::{
     TrackingRuntimeSnapshot, TrackingRuntimeSnapshotState,
 };
 use crate::engine::web_activity::WebActivityRuntimeState;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 struct DaemonApiRuntimeState {
     tracking: Option<Arc<TrackingRuntimeSnapshotState>>,
     web_activity: Option<Arc<WebActivityRuntimeState>>,
+    tools_ready: Option<Arc<AtomicBool>>,
 }
 
 impl ApiRuntimeStateProvider for DaemonApiRuntimeState {
@@ -26,14 +28,22 @@ impl ApiRuntimeStateProvider for DaemonApiRuntimeState {
             .as_ref()
             .map(|state| state.snapshot(settings, now_ms))
     }
+
+    fn tools_runtime_ready(&self) -> bool {
+        self.tools_ready
+            .as_ref()
+            .is_some_and(|ready| ready.load(Ordering::Acquire))
+    }
 }
 
 pub fn build_context(
     runtime: RuntimeContext,
     tracking: Option<Arc<TrackingRuntimeSnapshotState>>,
     web_activity: Option<Arc<WebActivityRuntimeState>>,
+    tools_ready: Option<Arc<AtomicBool>>,
     event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
     runtime_control: Option<Arc<dyn crate::engine::api::runtime_control::ApiRuntimeControl>>,
+    tools_owner: Option<Arc<crate::engine::tools::ToolsRuntimeOwner>>,
 ) -> ApiRuntimeContext {
     let context = ApiRuntimeContext::with_state_and_events(
         runtime,
@@ -42,11 +52,16 @@ pub fn build_context(
         Arc::new(DaemonApiRuntimeState {
             tracking,
             web_activity,
+            tools_ready,
         }),
         Some(event_sink),
     );
-    match runtime_control {
+    let context = match runtime_control {
         Some(runtime_control) => context.with_runtime_control(runtime_control),
+        None => context,
+    };
+    match tools_owner {
+        Some(tools_owner) => context.with_tools_owner(tools_owner),
         None => context,
     }
 }
@@ -97,7 +112,9 @@ mod tests {
             RuntimeContext::system(pool.clone()),
             Some(state),
             None,
+            None,
             event_sink(),
+            None,
             None,
         );
 
@@ -116,7 +133,9 @@ mod tests {
             RuntimeContext::system(pool.clone()),
             None,
             None,
+            None,
             event_sink(),
+            None,
             None,
         );
 
@@ -136,7 +155,9 @@ mod tests {
             RuntimeContext::system(pool.clone()),
             None,
             Some(web_activity),
+            None,
             event_sink(),
+            None,
             None,
         );
 
@@ -150,6 +171,36 @@ mod tests {
             capabilities.body["data"]["browser_activity_bridge"]["ready"],
             true
         );
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn daemon_context_reports_tools_ready_only_after_runtime_recovery() {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let ready = Arc::new(AtomicBool::new(false));
+        let context = build_context(
+            RuntimeContext::system(pool.clone()),
+            None,
+            None,
+            Some(ready.clone()),
+            event_sink(),
+            None,
+            None,
+        );
+
+        let starting = crate::engine::api::handlers::capabilities::get_capabilities(
+            &context,
+            crate::engine::api::surface::ApiSurface::DaemonTracking,
+        );
+        assert_eq!(starting.body["data"]["tools"]["owned"], true);
+        assert_eq!(starting.body["data"]["tools"]["ready"], false);
+
+        ready.store(true, Ordering::Release);
+        let recovered = crate::engine::api::handlers::capabilities::get_capabilities(
+            &context,
+            crate::engine::api::surface::ApiSurface::DaemonTracking,
+        );
+        assert_eq!(recovered.body["data"]["tools"]["ready"], true);
         pool.close().await;
     }
 }

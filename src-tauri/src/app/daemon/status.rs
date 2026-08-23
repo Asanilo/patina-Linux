@@ -33,7 +33,7 @@ pub fn build_startup_status(
         profile,
         version: version.into(),
         stage: if tracking_enabled {
-            "stage-2f-browser-bridge-preview"
+            "stage-2g-tools-runtime-preview"
         } else {
             "stage-2a-event-stream"
         },
@@ -53,6 +53,7 @@ pub fn build_startup_status(
                 "daemon owns the Linux audio participation source and follows its persisted setting",
                 "daemon owns the Linux MPRIS participation source",
                 "daemon owns the configured loopback browser activity bridge",
+                "daemon owns Tools reminders, timers, pomodoro, and Linux notifications",
                 "tracking preview is explicitly enabled and the desktop must not use the same profile",
             ]
         } else {
@@ -141,7 +142,7 @@ mod tests {
             &paths,
         );
 
-        assert_eq!(status.stage, "stage-2f-browser-bridge-preview");
+        assert_eq!(status.stage, "stage-2g-tools-runtime-preview");
         assert!(status.tracking_enabled);
         assert!(status
             .notes
@@ -156,5 +157,6 @@ mod tests {
             .notes
             .iter()
             .any(|note| note.contains("browser activity bridge")));
+        assert!(status.notes.iter().any(|note| note.contains("Tools")));
     }
 }
