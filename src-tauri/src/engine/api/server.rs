@@ -63,6 +63,7 @@ pub struct StandaloneApiServer {
     port: u16,
     listener: TcpListener,
     app: Router,
+    #[cfg(test)]
     event_hub: Option<Arc<RuntimeEventHub>>,
     #[cfg_attr(not(test), allow(dead_code))]
     shutdown_tx: watch::Sender<bool>,
@@ -71,22 +72,16 @@ pub struct StandaloneApiServer {
 
 pub struct ApiServerHandle {
     shutdown_tx: watch::Sender<bool>,
-    event_hub: Option<Arc<RuntimeEventHub>>,
     readiness_rx: watch::Receiver<bool>,
     task: tokio::task::JoinHandle<()>,
 }
 
 impl ApiServerHandle {
-    pub async fn wait_until_stopped(&mut self) {
-        if *self.readiness_rx.borrow() {
-            let _ = self.readiness_rx.changed().await;
-        }
+    pub fn readiness(&self) -> watch::Receiver<bool> {
+        self.readiness_rx.clone()
     }
 
     pub async fn shutdown(self) {
-        if let Some(event_hub) = self.event_hub.as_ref() {
-            event_hub.shutdown();
-        }
         let _ = self.shutdown_tx.send(true);
         let mut task = self.task;
         if tokio::time::timeout(SERVER_SHUTDOWN_TIMEOUT, &mut task)
@@ -144,7 +139,6 @@ impl StandaloneApiServer {
 
     pub fn start(self) -> ApiServerHandle {
         let shutdown_tx = self.shutdown_tx.clone();
-        let event_hub = self.event_hub.clone();
         let (readiness_tx, readiness_rx) = watch::channel(true);
         let task = tokio::spawn(async move {
             self.run().await;
@@ -152,7 +146,6 @@ impl StandaloneApiServer {
         });
         ApiServerHandle {
             shutdown_tx,
-            event_hub,
             readiness_rx,
             task,
         }
@@ -208,6 +201,7 @@ async fn prepare_standalone_server_internal(
         port: prepared.port,
         listener: prepared.listener,
         app,
+        #[cfg(test)]
         event_hub,
         shutdown_tx,
         shutdown_rx,
@@ -433,15 +427,15 @@ async fn events_handler(State(state): State<ApiTransportState>, headers: HeaderM
         Ok(origin) => origin,
         Err(rejection) => return rejection.into_response(),
     };
-    if !state
+    let Some(credential_revision) = state
         .credentials
-        .validate(headers.get(AUTHORIZATION).and_then(header_text))
-    {
+        .validate_with_revision(headers.get(AUTHORIZATION).and_then(header_text))
+    else {
         return with_cors(
             error_response(StatusCode::UNAUTHORIZED, ApiError::unauthorized()),
             cors_origin,
         );
-    }
+    };
     if !state.surface.allows_request("GET", "/api/v1/events") {
         return with_cors(
             error_response(
@@ -473,7 +467,11 @@ async fn events_handler(State(state): State<ApiTransportState>, headers: HeaderM
             cors_origin,
         );
     };
-    let stream = event_stream(event_hub.subscribe_after(last_event_id), permit);
+    let stream = event_stream(
+        event_hub.subscribe_after(last_event_id),
+        credential_revision,
+        permit,
+    );
     let response = Sse::new(stream)
         .keep_alive(axum::response::sse::KeepAlive::new().interval(Duration::from_secs(15)))
         .into_response();
@@ -489,10 +487,12 @@ async fn preflight_handler(headers: HeaderMap) -> Response {
 
 fn event_stream(
     subscription: RuntimeEventSubscription,
+    credential_revision: watch::Receiver<u64>,
     permit: OwnedSemaphorePermit,
 ) -> impl Stream<Item = Result<Event, Infallible>> {
     struct StreamState {
         subscription: RuntimeEventSubscription,
+        credential_revision: watch::Receiver<u64>,
         pending: VecDeque<Event>,
         _permit: OwnedSemaphorePermit,
     }
@@ -505,10 +505,14 @@ fn event_stream(
     futures_util::stream::unfold(
         StreamState {
             subscription,
+            credential_revision,
             pending,
             _permit: permit,
         },
         |mut state| async move {
+            if state.credential_revision.has_changed().unwrap_or(true) {
+                return None;
+            }
             if let Some(event) = state.pending.pop_front() {
                 return Some((Ok(event), state));
             }
@@ -531,6 +535,7 @@ fn event_stream(
                             return None;
                         }
                     }
+                    _ = state.credential_revision.changed() => return None,
                 }
             }
         },
@@ -899,6 +904,29 @@ mod tests {
             .await
             .expect("server should stop after event hub shutdown")
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn token_rotation_revokes_sse_before_buffered_replay_is_emitted() {
+        use futures_util::StreamExt;
+
+        let credentials = test_credentials();
+        let revision = credentials
+            .validate_with_revision(Some("Bearer test-token"))
+            .unwrap();
+        let hub = RuntimeEventHub::new(8);
+        hub.emit(RuntimeEvent::TrackingDataChanged {
+            reason: "before-rotation".to_string(),
+            changed_at_ms: 1_000,
+        })
+        .unwrap();
+        let permit = Arc::new(Semaphore::new(1)).try_acquire_owned().unwrap();
+        let stream = event_stream(hub.subscribe_after(None), revision, permit);
+        futures_util::pin_mut!(stream);
+
+        credentials.rotate().unwrap();
+
+        assert!(stream.next().await.is_none());
     }
 
     #[tokio::test]

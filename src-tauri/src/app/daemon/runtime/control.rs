@@ -1,8 +1,10 @@
 use super::web_activity::DaemonWebActivityControl;
 use crate::engine::api::runtime_control::{
-    ApiRuntimeControl, BrowserActivityRuntimeConfiguration, RuntimeControlError,
+    ApiRuntimeControl, BrowserActivityRuntimeConfiguration, LocalApiPortApplyResult,
+    LocalApiRuntimeSnapshot, LocalApiTokenRotationResult, RuntimeControlError,
     RuntimeControlFuture,
 };
+use std::sync::Arc;
 
 const MAX_WEB_ACTIVITY_TOKEN_LEN: usize = 512;
 const STORAGE_ERROR_PREFIX: &str = "storage:";
@@ -11,6 +13,8 @@ pub(crate) struct DaemonApiRuntimeControl {
     context: crate::engine::runtime_context::RuntimeContext,
     web_activity: DaemonWebActivityControl,
     event_sink: std::sync::Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
+    api_listener: Arc<crate::engine::api::listener_owner::LocalApiListenerOwner>,
+    api_credentials: crate::engine::api::auth::ApiCredentialStore,
     #[cfg(target_os = "linux")]
     audio_source: crate::platform::linux::audio::AudioSignalSource,
 }
@@ -20,12 +24,16 @@ impl DaemonApiRuntimeControl {
         context: crate::engine::runtime_context::RuntimeContext,
         web_activity: DaemonWebActivityControl,
         event_sink: std::sync::Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
+        api_listener: Arc<crate::engine::api::listener_owner::LocalApiListenerOwner>,
+        api_credentials: crate::engine::api::auth::ApiCredentialStore,
         #[cfg(target_os = "linux")] audio_source: crate::platform::linux::audio::AudioSignalSource,
     ) -> Self {
         Self {
             context,
             web_activity,
             event_sink,
+            api_listener,
+            api_credentials,
             #[cfg(target_os = "linux")]
             audio_source,
         }
@@ -39,6 +47,30 @@ impl DaemonApiRuntimeControl {
                 changed_at_ms: self.context.now_ms().max(0) as u64,
             },
         );
+    }
+
+    async fn local_api_snapshot_value(
+        &self,
+    ) -> Result<LocalApiRuntimeSnapshot, RuntimeControlError> {
+        let port = self.api_listener.confirmed_port().await.ok_or_else(|| {
+            RuntimeControlError::Internal("local API listener is not ready".into())
+        })?;
+        let token_path = self
+            .api_credentials
+            .token_path()
+            .map_err(RuntimeControlError::Internal)?;
+        let token_present = !self
+            .api_credentials
+            .token()
+            .map_err(RuntimeControlError::Internal)?
+            .trim()
+            .is_empty();
+        Ok(LocalApiRuntimeSnapshot {
+            port,
+            base_url: format!("http://127.0.0.1:{port}"),
+            token_path: token_path.display().to_string(),
+            token_present,
+        })
     }
 }
 
@@ -122,6 +154,58 @@ impl ApiRuntimeControl for DaemonApiRuntimeControl {
             Ok(configuration)
         })
     }
+
+    fn local_api_snapshot(&self) -> RuntimeControlFuture<'_, LocalApiRuntimeSnapshot> {
+        Box::pin(self.local_api_snapshot_value())
+    }
+
+    fn apply_local_api_port(
+        &self,
+        context: crate::engine::api::context::ApiRuntimeContext,
+        port: u16,
+    ) -> RuntimeControlFuture<'_, LocalApiPortApplyResult> {
+        Box::pin(async move {
+            let port = crate::domain::settings::parse_local_api_port(&port.to_string())
+                .ok_or_else(|| {
+                    RuntimeControlError::InvalidInput(
+                        "local API port must be between 1024 and 65535".to_string(),
+                    )
+                })?;
+            let previous_port = self.api_listener.confirmed_port().await.ok_or_else(|| {
+                RuntimeControlError::Internal("local API listener is not ready".into())
+            })?;
+            let pool = self.context.pool().clone();
+            self.api_listener
+                .apply_port_with_commit(port, context, move |confirmed_port| async move {
+                    crate::data::repositories::app_settings::save_local_api_port(
+                        &pool,
+                        confirmed_port,
+                    )
+                    .await
+                    .map_err(|error| format!("{STORAGE_ERROR_PREFIX}{error}"))
+                })
+                .await
+                .map_err(map_local_api_apply_error)?;
+            let configuration = self.local_api_snapshot_value().await?;
+            Ok(LocalApiPortApplyResult {
+                reconnect_required: configuration.port != previous_port,
+                previous_port,
+                configuration,
+            })
+        })
+    }
+
+    fn rotate_local_api_token(&self) -> RuntimeControlFuture<'_, LocalApiTokenRotationResult> {
+        Box::pin(async move {
+            self.api_credentials
+                .rotate()
+                .map_err(RuntimeControlError::Internal)?;
+            Ok(LocalApiTokenRotationResult {
+                configuration: self.local_api_snapshot_value().await?,
+                reauthentication_required: true,
+            })
+        })
+    }
 }
 
 fn validate_browser_configuration(
@@ -153,19 +237,32 @@ fn map_browser_apply_error(error: String) -> RuntimeControlError {
     }
 }
 
+fn map_local_api_apply_error(error: String) -> RuntimeControlError {
+    match error.strip_prefix(STORAGE_ERROR_PREFIX) {
+        Some(storage_error) => RuntimeControlError::Internal(storage_error.to_string()),
+        None => RuntimeControlError::Conflict(error),
+    }
+}
+
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
     use crate::engine::api::runtime_control::ApiRuntimeControl;
     use sqlx::Executor;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
+
+    static TEST_PATH_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     async fn test_control() -> (
         sqlx::SqlitePool,
-        DaemonApiRuntimeControl,
+        Arc<DaemonApiRuntimeControl>,
         DaemonWebActivityControl,
         Arc<crate::engine::runtime_event::MemoryRuntimeEventSink>,
         crate::platform::linux::audio::AudioSignalSource,
+        Arc<crate::engine::api::listener_owner::LocalApiListenerOwner>,
+        crate::engine::api::auth::ApiCredentialStore,
+        std::path::PathBuf,
     ) {
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
         pool.execute(crate::data::schema::CURRENT_BASELINE_SCHEMA_SQL)
@@ -181,13 +278,40 @@ mod tests {
         let web_control =
             DaemonWebActivityControl::new(context.clone(), tracking, web_state, event_sink.clone());
         let audio_source = crate::platform::linux::audio::AudioSignalSource::new(true);
-        let control = DaemonApiRuntimeControl::new(
+        let token_path = std::env::temp_dir().join(format!(
+            "patina-daemon-runtime-control-token-{}-{}",
+            std::process::id(),
+            TEST_PATH_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        let api_credentials = crate::engine::api::auth::ApiCredentialStore::new();
+        api_credentials
+            .initialize_at(&token_path, Some("test-token"))
+            .unwrap();
+        let api_listener = Arc::new(
+            crate::engine::api::listener_owner::LocalApiListenerOwner::new(
+                api_credentials.clone(),
+                crate::engine::api::surface::ApiSurface::DaemonTracking,
+                Arc::new(crate::engine::runtime_event::RuntimeEventHub::new(8)),
+            ),
+        );
+        let control = Arc::new(DaemonApiRuntimeControl::new(
             context,
             web_control.clone(),
             event_sink,
+            api_listener.clone(),
+            api_credentials.clone(),
             audio_source.clone(),
-        );
-        (pool, control, web_control, sink, audio_source)
+        ));
+        (
+            pool,
+            control,
+            web_control,
+            sink,
+            audio_source,
+            api_listener,
+            api_credentials,
+            token_path,
+        )
     }
 
     fn available_port() -> u16 {
@@ -220,7 +344,8 @@ mod tests {
 
     #[tokio::test]
     async fn audio_setting_is_persisted_before_the_live_source_changes() {
-        let (pool, control, web_control, sink, audio_source) = test_control().await;
+        let (pool, control, web_control, sink, audio_source, api_listener, _, token_path) =
+            test_control().await;
 
         assert!(!control
             .set_audio_participation_enabled(false)
@@ -235,12 +360,15 @@ mod tests {
         assert_eq!(sink.events().len(), 1);
 
         web_control.shutdown().await;
+        api_listener.shutdown().await;
         pool.close().await;
+        let _ = std::fs::remove_file(token_path);
     }
 
     #[tokio::test]
     async fn browser_port_conflict_preserves_the_live_and_persisted_configuration() {
-        let (pool, control, web_control, _sink, _audio_source) = test_control().await;
+        let (pool, control, web_control, _sink, _audio_source, api_listener, _, token_path) =
+            test_control().await;
         let old_port = available_port();
         let original = BrowserActivityRuntimeConfiguration {
             enabled: true,
@@ -274,6 +402,53 @@ mod tests {
 
         drop(occupied);
         web_control.shutdown().await;
+        api_listener.shutdown().await;
         pool.close().await;
+        let _ = std::fs::remove_file(token_path);
+    }
+
+    #[tokio::test]
+    async fn local_api_port_and_token_changes_apply_to_the_live_owner() {
+        let (
+            pool,
+            control,
+            web_control,
+            _sink,
+            _audio_source,
+            api_listener,
+            credentials,
+            token_path,
+        ) = test_control().await;
+        let context = crate::engine::api::context::ApiRuntimeContext::new(
+            crate::engine::runtime_context::RuntimeContext::system(pool.clone()),
+        );
+        let old_port = api_listener.start(0, context.clone()).await.unwrap();
+        let new_port = available_port();
+
+        let applied = control
+            .apply_local_api_port(context, new_port)
+            .await
+            .unwrap();
+        assert_eq!(applied.previous_port, old_port);
+        assert_eq!(applied.configuration.port, new_port);
+        assert!(applied.reconnect_required);
+        assert_eq!(
+            crate::data::repositories::app_settings::load_local_api_settings(&pool)
+                .await
+                .unwrap()
+                .port,
+            new_port
+        );
+
+        let old_token = credentials.token().unwrap();
+        let rotated = control.rotate_local_api_token().await.unwrap();
+        assert!(rotated.reauthentication_required);
+        assert_ne!(credentials.token().unwrap(), old_token);
+        assert!(!credentials.validate(Some(&format!("Bearer {old_token}"))));
+
+        web_control.shutdown().await;
+        api_listener.shutdown().await;
+        pool.close().await;
+        let _ = std::fs::remove_file(token_path);
     }
 }

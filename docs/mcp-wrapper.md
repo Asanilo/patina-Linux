@@ -108,6 +108,9 @@ If the client does not inherit your shell environment, set either `PATINA_API_TO
 |---|---|---|---|
 | `get_diagnostics` | `GET /api/v1/diagnostics` | none | Check Linux/window/browser/API runtime health |
 | `get_runtime_settings` | `GET /api/v1/settings/runtime` | none | Read sanitized audio and browser activity settings |
+| `get_local_api_configuration` | `GET /api/v1/settings/local-api` | none | Read sanitized local API listener and credential-file state |
+| `set_local_api_port` | `POST /api/v1/settings/local-api/port` | required: `port` | Atomically move the loopback API listener |
+| `rotate_local_api_token` | `POST /api/v1/settings/local-api/token/rotate` | required: `confirmed=true` | Rotate the API Token and revoke old clients |
 | `get_current_activity` | `GET /api/v1/current` | none | Read current foreground activity snapshot |
 | `query_sessions` | `GET /api/v1/sessions` | `from`, `to`, `app`, `limit` | Query closed activity sessions |
 | `get_active_session` | `GET /api/v1/sessions/active` | none | Read current active session |
@@ -144,6 +147,8 @@ Argument timestamps are milliseconds since Unix epoch.
 
 All Tools write tools require the tracking-owner daemon and the `tools` write scope. They return the complete Tools snapshot. Use them only after explicit user intent; creating reminders and starting timers are state-changing even though they are local-only.
 
+Local API changes require the `local-api-configuration` write scope and explicit user intent. After a successful port change, the wrapper updates its in-process base URL. After Token rotation, the running wrapper rereads the owner-only path returned by the daemon; clients that supplied a fixed `PATINA_API_TOKEN` should still update their external configuration before restarting. Neither response contains the Token value.
+
 ### Errors
 
 - Invalid tool names or missing required arguments return JSON-RPC `-32602` errors.
@@ -163,7 +168,9 @@ The repository includes [`skills/analyzing-patina-activity`](../skills/analyzing
 ## 7. Current Gaps
 
 - The wrapper does not generate tools from `/api/v1/openapi.json` yet.
-- Local API configuration write-side tools are not implemented yet.
+- Controlled daemon service restart is not implemented until the systemd user-service owner exists.
 - Browser extension installation and GNOME extension installation remain app/docs workflows, not MCP tools.
 
 `configure_browser_activity` is a complete replacement operation and must only be used after explicit confirmation. Do not echo its Token in summaries, logs, or analysis output.
+
+`rotate_local_api_token` requires `confirmed=true`, invalidates existing API and SSE authentication, and does not rotate the separate browser extension Token.

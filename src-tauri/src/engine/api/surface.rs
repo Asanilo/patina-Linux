@@ -284,6 +284,18 @@ const DAEMON_TRACKING_ENDPOINTS: &[ApiEndpoint] = &[
     },
     ApiEndpoint {
         method: "GET",
+        path: "/api/v1/settings/local-api",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/settings/local-api/port",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/settings/local-api/token/rotate",
+    },
+    ApiEndpoint {
+        method: "GET",
         path: "/api/v1/tools/snapshot",
     },
     ApiEndpoint {
@@ -348,6 +360,7 @@ const DESKTOP_WRITE_OPERATIONS: &[&str] = &["app-mapping", "classification", "tr
 const DAEMON_TRACKING_WRITE_OPERATIONS: &[&str] = &[
     "app-mapping",
     "classification",
+    "local-api-configuration",
     "runtime-settings",
     "tools",
     "tracker-settings",
@@ -520,6 +533,7 @@ mod tests {
             [
                 "app-mapping",
                 "classification",
+                "local-api-configuration",
                 "runtime-settings",
                 "tools",
                 "tracker-settings"

@@ -57,15 +57,25 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
         runtime_lease.owner.profile, runtime_lease.owner.role
     );
     let storage_paths = storage::resolve(&roots, options.profile)?;
-    let api_credentials = crate::engine::api::auth::ApiCredentialStore::new();
-    api_credentials.initialize_at(&storage_paths.api_token_path, None)?;
     let sqlite_runtime = runtime.block_on(prepare_sqlite_runtime_at_path(
         storage_paths.db_path.clone(),
         storage_paths.database_creation_allowed,
     ))?;
-    let requested_port = options
-        .port_override
-        .unwrap_or(crate::engine::api::server::DEFAULT_PORT);
+    let stored_local_api = runtime
+        .block_on(
+            crate::data::repositories::app_settings::load_local_api_settings(&sqlite_runtime.pool),
+        )
+        .map_err(|error| format!("failed to load local API settings: {error}"))?;
+    let api_credentials = crate::engine::api::auth::ApiCredentialStore::new();
+    api_credentials.initialize_at(&storage_paths.api_token_path, Some(&stored_local_api.token))?;
+    if !stored_local_api.token.trim().is_empty() {
+        runtime.block_on(
+            crate::data::repositories::app_settings::delete_legacy_local_api_token(
+                &sqlite_runtime.pool,
+            ),
+        )?;
+    }
+    let requested_port = options.port_override.unwrap_or(stored_local_api.port);
     let event_hub = Arc::new(crate::engine::runtime_event::RuntimeEventHub::new(
         crate::engine::runtime_event::DEFAULT_EVENT_REPLAY_CAPACITY,
     ));
@@ -114,19 +124,39 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     } else {
         None
     };
-    let api_runtime_control = web_activity_control.as_ref().map(|web_activity| {
-        Arc::new(runtime::DaemonApiRuntimeControl::new(
-            runtime_context.clone(),
-            web_activity.clone(),
-            event_sink.clone(),
-            #[cfg(target_os = "linux")]
-            audio_source
-                .as_ref()
-                .expect("tracking daemon audio source")
-                .clone(),
-        )) as Arc<dyn crate::engine::api::runtime_control::ApiRuntimeControl>
+    let api_surface = if options.track {
+        crate::engine::api::surface::ApiSurface::DaemonTracking
+    } else {
+        crate::engine::api::surface::ApiSurface::DaemonReadOnly
+    };
+    let api_listener = options.serve_api.then(|| {
+        Arc::new(
+            crate::engine::api::listener_owner::LocalApiListenerOwner::new(
+                api_credentials.clone(),
+                api_surface,
+                event_hub.clone(),
+            ),
+        )
     });
-    let api_server = if options.serve_api {
+    let api_runtime_control = match (web_activity_control.as_ref(), api_listener.as_ref()) {
+        (Some(web_activity), Some(api_listener)) => Some(Arc::new(
+            runtime::DaemonApiRuntimeControl::new(
+                runtime_context.clone(),
+                web_activity.clone(),
+                event_sink.clone(),
+                api_listener.clone(),
+                api_credentials.clone(),
+                #[cfg(target_os = "linux")]
+                audio_source
+                    .as_ref()
+                    .expect("tracking daemon audio source")
+                    .clone(),
+            ),
+        )
+            as Arc<dyn crate::engine::api::runtime_control::ApiRuntimeControl>),
+        _ => None,
+    };
+    let confirmed_port = if let Some(api_listener) = api_listener.as_ref() {
         let context = api_runtime::build_context(
             runtime_context.clone(),
             tracking_snapshot.clone(),
@@ -136,27 +166,10 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
             api_runtime_control,
             tools_owner.clone().map(Arc::new),
         );
-        let surface = if options.track {
-            crate::engine::api::surface::ApiSurface::DaemonTracking
-        } else {
-            crate::engine::api::surface::ApiSurface::DaemonReadOnly
-        };
-        Some(runtime.block_on(
-            crate::engine::api::server::prepare_standalone_server_with_events(
-                requested_port,
-                api_credentials.clone(),
-                context,
-                surface,
-                event_hub.clone(),
-            ),
-        )?)
+        runtime.block_on(api_listener.start(requested_port, context))?
     } else {
-        None
+        requested_port
     };
-    let confirmed_port = api_server
-        .as_ref()
-        .map(|server| server.port())
-        .unwrap_or(requested_port);
     let status = build_startup_status(
         env!("CARGO_PKG_VERSION"),
         options,
@@ -190,16 +203,12 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     );
     println!("[{}] db {}", status.service_name, status.db_path.display());
     println!("[{}] sqlite ready", status.service_name);
-    let api_handle = if let Some(server) = api_server {
+    if options.serve_api {
         println!(
             "[{}] local API listening on http://127.0.0.1:{}",
-            status.service_name,
-            server.port()
+            status.service_name, confirmed_port
         );
-        Some(runtime.block_on(async move { server.start() }))
-    } else {
-        None
-    };
+    }
     let background_tasks = runtime.block_on(async {
         match (
             tracking_snapshot,
@@ -224,7 +233,7 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
         }
     });
     let mut daemon_runtime = DaemonRuntime::new(
-        api_handle,
+        api_listener,
         event_hub,
         background_tasks,
         sqlite_runtime,

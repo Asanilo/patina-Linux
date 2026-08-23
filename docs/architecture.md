@@ -220,9 +220,9 @@ domain ─────────┘          │
 
 这些名字表达的是职责，不要求一次性建立大而全 trait 系统。只有真实调用方出现时才提取最小接口。
 
-daemon 写侧按 capability 和真实 runtime owner 开放。默认 daemon surface 保持只读；只有 tracking owner surface 才能写 app mapping、classification、tracker settings、已迁移的 runtime settings 和 Tools。普通写入先进入 `data` owner 的校验与事务，再通过 `RuntimeEventSink` 发布刷新事件；Tools 写入统一经过宿主无关的 `ToolsRuntimeOwner` 并返回完整 snapshot。需要切换 listener 的配置由 runtime owner 先预留新资源、在提交持久化后切换旧资源。`/api/v1/capabilities` 同时返回服务版本、当前协议、支持的客户端协议上下限、tracking/browser/Tools ownership readiness 和 write operation scopes；客户端必须先协商，不能只根据端口可连接推断兼容或可写。
+daemon 写侧按 capability 和真实 runtime owner 开放。默认 daemon surface 保持只读；只有 tracking owner surface 才能写 app mapping、classification、tracker settings、已迁移的 runtime settings、local API configuration 和 Tools。普通写入先进入 `data` owner 的校验与事务，再通过 `RuntimeEventSink` 发布刷新事件；Tools 写入统一经过宿主无关的 `ToolsRuntimeOwner` 并返回完整 snapshot。需要切换 listener 的配置由 runtime owner 先预留新资源、在提交持久化后切换旧资源。`/api/v1/capabilities` 同时返回服务版本、当前协议、支持的客户端协议上下限、tracking/browser/Tools ownership readiness 和 write operation scopes；客户端必须先协商，不能只根据端口可连接推断兼容或可写。
 
-需要重建运行资源的配置不属于普通 settings upsert：browser bridge 端口/Token/隐私和 audio source 启停现已由 daemon runtime control 应用；browser 换端口使用“预绑定、事务提交、切换旧 listener”的顺序。API listener 端口与 Token、service restart 仍必须由后续对应 owner 原子应用并返回确认状态，不能只写数据库后报告成功。
+需要重建运行资源的配置不属于普通 settings upsert：browser bridge 端口/Token/隐私、audio source 启停和 local API listener/Token 现已由 daemon runtime control 应用；listener 换端口统一使用“预绑定、事务提交、切换旧 listener”的顺序。local API Token 只原子写入 owner-only 文件，轮换后撤销旧 bearer 与已有 SSE 会话，响应不返回密钥。service restart 仍必须由后续 systemd service owner 返回可验证确认状态，不能只发送退出信号后报告成功。
 
 Stage 2F.2 已使用 Axum + Tower 替换通用 API/SSE 与浏览器 bridge 的自写 HTTP parser、server loop 和 SSE transport。现有 domain handler、DTO、endpoint registry 与 API surface 继续作为协议 owner；框架只拥有 HTTP 解析、路由、middleware、静态资源、并发预算和优雅关闭。API 与浏览器扩展 bridge 保持独立 listener、credential 和 origin policy，不保留两套自写 transport。
 

@@ -69,6 +69,15 @@ pub(crate) async fn route_request(
         ("POST", "/api/v1/settings/runtime/browser-activity") => {
             handlers::runtime_settings::configure_browser_activity(context, body).await
         }
+        ("GET", "/api/v1/settings/local-api") => {
+            handlers::local_api::get_configuration(context).await
+        }
+        ("POST", "/api/v1/settings/local-api/port") => {
+            handlers::local_api::apply_port(context, body).await
+        }
+        ("POST", "/api/v1/settings/local-api/token/rotate") => {
+            handlers::local_api::rotate_token(context).await
+        }
         ("GET", "/api/v1/tools/snapshot") => handlers::tools::get_tools_snapshot(context).await,
         ("POST", path) if path.starts_with("/api/v1/tools/") => {
             handlers::tools::handle_tools_action(context, path, body).await
@@ -118,6 +127,71 @@ mod tests {
             Box::pin(async move {
                 *self.browser_configuration.lock().unwrap() = Some(configuration.clone());
                 Ok(configuration)
+            })
+        }
+
+        fn local_api_snapshot(
+            &self,
+        ) -> crate::engine::api::runtime_control::RuntimeControlFuture<
+            '_,
+            crate::engine::api::runtime_control::LocalApiRuntimeSnapshot,
+        > {
+            Box::pin(async {
+                Ok(
+                    crate::engine::api::runtime_control::LocalApiRuntimeSnapshot {
+                        port: 14_840,
+                        base_url: "http://127.0.0.1:14840".to_string(),
+                        token_path: "/tmp/patina-test-token".to_string(),
+                        token_present: true,
+                    },
+                )
+            })
+        }
+
+        fn apply_local_api_port(
+            &self,
+            _context: crate::engine::api::context::ApiRuntimeContext,
+            port: u16,
+        ) -> crate::engine::api::runtime_control::RuntimeControlFuture<
+            '_,
+            crate::engine::api::runtime_control::LocalApiPortApplyResult,
+        > {
+            Box::pin(async move {
+                Ok(
+                    crate::engine::api::runtime_control::LocalApiPortApplyResult {
+                        configuration:
+                            crate::engine::api::runtime_control::LocalApiRuntimeSnapshot {
+                                port,
+                                base_url: format!("http://127.0.0.1:{port}"),
+                                token_path: "/tmp/patina-test-token".to_string(),
+                                token_present: true,
+                            },
+                        previous_port: 14_840,
+                        reconnect_required: port != 14_840,
+                    },
+                )
+            })
+        }
+
+        fn rotate_local_api_token(
+            &self,
+        ) -> crate::engine::api::runtime_control::RuntimeControlFuture<
+            '_,
+            crate::engine::api::runtime_control::LocalApiTokenRotationResult,
+        > {
+            Box::pin(async {
+                Ok(
+                    crate::engine::api::runtime_control::LocalApiTokenRotationResult {
+                        configuration:
+                            crate::engine::api::runtime_control::LocalApiRuntimeSnapshot {
+                                port: 14_840,
+                                base_url: "http://127.0.0.1:14840".to_string(),
+                                token_path: "/tmp/patina-test-token".to_string(),
+                                token_present: true,
+                            },
+                        reauthentication_required: true,
+                    },
+                )
             })
         }
     }
@@ -250,6 +324,60 @@ mod tests {
             crate::engine::api::surface::ApiSurface::DaemonReadOnly,
             "POST",
             "/api/v1/tools/timer/pause",
+            serde_json::Value::Null,
+        )
+        .await;
+        assert_eq!(unavailable.status, 404);
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn daemon_local_api_configuration_routes_are_sanitized_and_owner_gated() {
+        let (pool, context, _sink, _control) = test_context().await;
+        let surface = crate::engine::api::surface::ApiSurface::DaemonTracking;
+
+        let snapshot = route(
+            &context,
+            surface,
+            "GET",
+            "/api/v1/settings/local-api",
+            serde_json::Value::Null,
+        )
+        .await;
+        assert_eq!(snapshot.status, 200);
+        assert_eq!(snapshot.body["data"]["port"], 14_840);
+        assert!(snapshot.body["data"].get("token").is_none());
+
+        let changed = route(
+            &context,
+            surface,
+            "POST",
+            "/api/v1/settings/local-api/port",
+            serde_json::json!({"port": 15_555}),
+        )
+        .await;
+        assert_eq!(changed.status, 200);
+        assert_eq!(changed.body["data"]["configuration"]["port"], 15_555);
+        assert_eq!(changed.body["data"]["reconnect_required"], true);
+        assert!(changed.body["data"]["configuration"].get("token").is_none());
+
+        let rotated = route(
+            &context,
+            surface,
+            "POST",
+            "/api/v1/settings/local-api/token/rotate",
+            serde_json::Value::Null,
+        )
+        .await;
+        assert_eq!(rotated.status, 200);
+        assert_eq!(rotated.body["data"]["reauthentication_required"], true);
+        assert!(rotated.body["data"]["configuration"].get("token").is_none());
+
+        let unavailable = route(
+            &context,
+            crate::engine::api::surface::ApiSurface::DaemonReadOnly,
+            "GET",
+            "/api/v1/settings/local-api",
             serde_json::Value::Null,
         )
         .await;

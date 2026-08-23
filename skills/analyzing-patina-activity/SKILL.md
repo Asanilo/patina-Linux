@@ -23,7 +23,7 @@ Analyze Patina's local activity data without inventing missing context or exposi
 3. Drill into summaries, sessions, trends, or web activity only as needed.
 4. State the time range and whether current active time is included.
 5. Separate recorded facts from interpretations about intent, focus, or productivity.
-6. Execute app classification, rename, exclusion, tracker, audio, browser-bridge, reminder, timer, or pomodoro writes only on explicit user intent; report exactly what changed. Treat browser port, Token, and URL privacy replacement as a high-impact configuration change.
+6. Execute app classification, rename, exclusion, tracker, audio, browser-bridge, local API, reminder, timer, or pomodoro writes only on explicit user intent; report exactly what changed. Treat either Token rotation and either listener port change as high-impact configuration changes.
 
 ## Quick Reference
 
@@ -31,6 +31,7 @@ Analyze Patina's local activity data without inventing missing context or exposi
 |---|---|
 | Tracking or browser health | diagnostics |
 | Audio/browser configuration | sanitized runtime settings |
+| Local API port/credential state | sanitized local API configuration |
 | Current foreground window | current activity |
 | Current running segment | active session |
 | Today or this week | summary |
@@ -42,6 +43,7 @@ Analyze Patina's local activity data without inventing missing context or exposi
 | App names/categories/exclusions | app list and explicit write tools |
 | Idle threshold or tracking pause | explicit tracker setting tools |
 | Audio participation or browser bridge configuration | explicit runtime setting tools |
+| Local API port or Token rotation | explicit local API configuration tools with reconnection planning |
 
 ## Common Mistakes
 

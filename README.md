@@ -62,10 +62,10 @@ Windows code follows a freeze-then-remove policy:
 | GNOME Wayland window tracking | Working prototype | Uses `org.patina.WindowTracker` from the GNOME Shell extension. |
 | X11 tracking | Implemented fallback / limited verification | Used on X11 sessions; GNOME Wayland does not silently fall back to X11. |
 | KDE / wlroots Wayland | Not promised | Needs compositor-specific work later. |
-| `patinad` | Runtime-owner preview | `--serve-api --track` runs tracking/watchdog, Linux participation sources, browser activity, and the Tools reminder/timer runtime for an isolated profile. Desktop remains the default owner. |
+| `patinad` | Runtime-owner preview | `--serve-api --track` runs tracking/watchdog, Linux participation sources, browser activity, Tools, and atomic local API listener/credential management for an isolated profile. Desktop remains the default owner. |
 | Local browser UI | Planned after daemon cutover | The first version will be a read-only loopback client served by `patinad`; not implemented yet. |
 | Local API | Implemented | Binds to `127.0.0.1:14840`, uses a bearer token, and exposes daemon capabilities plus an authenticated SSE stream. |
-| MCP wrapper and Agent Skill | Implemented | `npm run mcp:patina`; controlled writes cover app/settings and Tools reminders, timers, and pomodoro. |
+| MCP wrapper and Agent Skill | Implemented | `npm run mcp:patina`; controlled writes cover app/settings, local API configuration, and Tools reminders, timers, and pomodoro. |
 | Chromium Web Sync | Implemented | `extensions/chromium`. |
 | Firefox / Zen Web Sync | Implemented | The signed `0.1.1` XPI can be installed directly and identifies Firefox-family forks before generic Firefox. |
 | Linux packaging | Current stable pipeline configured | Current stable tags build x86_64 AppImage and `.deb`; the first daemon-backed beta will intentionally publish DEB only until AppImage service ownership and atomic updates are designed. |
@@ -226,7 +226,7 @@ Main endpoint index:
 
 - [docs/api-index.md](docs/api-index.md)
 
-Implemented API groups include diagnostics, current activity, sessions, summaries, trends, web activity, apps, tracker settings, external AI context, and Tools reads/writes. The local API also exposes `GET /api/v1/openapi.json` with a field-level OpenAPI 3.1 schema.
+Implemented API groups include diagnostics, current activity, sessions, summaries, trends, web activity, apps, tracker settings, local API configuration, external AI context, and Tools reads/writes. The local API also exposes `GET /api/v1/openapi.json` with a field-level OpenAPI 3.1 schema.
 
 ## MCP Wrapper
 
@@ -245,6 +245,7 @@ It reads:
 Current tools include:
 
 - `get_diagnostics`
+- `get_local_api_configuration`, `set_local_api_port`, `rotate_local_api_token`
 - `get_current_activity`
 - `query_sessions`
 - `get_active_session`

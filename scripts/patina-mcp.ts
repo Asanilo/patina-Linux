@@ -30,6 +30,7 @@ type PatinaMcpTool = {
 type McpDeps = {
   apiBase: string;
   apiToken: string;
+  refreshApiToken?: (tokenPath?: string) => Promise<string>;
   callApi: (
     path: string,
     deps: Pick<McpDeps, "apiBase" | "apiToken">,
@@ -55,6 +56,25 @@ export const PATINA_MCP_TOOLS: PatinaMcpTool[] = [
     name: "get_runtime_settings",
     description: "Read sanitized Patina audio and browser activity runtime settings.",
     inputSchema: objectSchema({}),
+  },
+  {
+    name: "get_local_api_configuration",
+    description: "Read sanitized Patina local API listener and credential-file configuration.",
+    inputSchema: objectSchema({}),
+  },
+  {
+    name: "set_local_api_port",
+    description: "Move the Patina local API listener to another loopback port. This changes local service configuration.",
+    inputSchema: objectSchema({
+      port: { type: "integer", minimum: 1024, maximum: 65535 },
+    }, ["port"]),
+  },
+  {
+    name: "rotate_local_api_token",
+    description: "Rotate the Patina local API Token and revoke existing clients. Requires explicit confirmation.",
+    inputSchema: objectSchema({
+      confirmed: { type: "boolean", description: "Must be true after explicit user confirmation." },
+    }, ["confirmed"]),
   },
   {
     name: "get_current_activity",
@@ -285,6 +305,7 @@ export async function handleMcpRequest(
 
     try {
       const payload = await deps.callApi(apiRequest.path, deps, apiRequest.init);
+      await applyConnectionChange(name, payload, deps);
       return ok(id, {
         content: [
           {
@@ -356,6 +377,12 @@ function toolNameToApiRequest(name: string, args: Record<string, unknown>) {
       return getRequest("/api/v1/diagnostics");
     case "get_runtime_settings":
       return getRequest("/api/v1/settings/runtime");
+    case "get_local_api_configuration":
+      return getRequest("/api/v1/settings/local-api");
+    case "set_local_api_port":
+      return setLocalApiPortRequest(args);
+    case "rotate_local_api_token":
+      return rotateLocalApiTokenRequest(args);
     case "get_current_activity":
       return getRequest("/api/v1/current");
     case "get_active_session":
@@ -426,6 +453,32 @@ function toolNameToApiRequest(name: string, args: Record<string, unknown>) {
     default:
       return null;
   }
+}
+
+async function applyConnectionChange(name: string, payload: unknown, deps: McpDeps) {
+  if (name === "set_local_api_port") {
+    const baseUrl = nestedString(payload, ["data", "configuration", "base_url"]);
+    if (baseUrl) deps.apiBase = baseUrl;
+  }
+  if (name === "rotate_local_api_token" && deps.refreshApiToken) {
+    const tokenPath = nestedString(payload, ["data", "configuration", "token_path"]);
+    deps.apiToken = await deps.refreshApiToken(tokenPath || undefined);
+  }
+}
+
+function setLocalApiPortRequest(args: Record<string, unknown>) {
+  const port = boundedInteger(args.port, 1024, 65535);
+  if (port === null) {
+    return { error: "set_local_api_port requires an integer port from 1024 through 65535" };
+  }
+  return postRequest("/api/v1/settings/local-api/port", { port });
+}
+
+function rotateLocalApiTokenRequest(args: Record<string, unknown>) {
+  if (args.confirmed !== true) {
+    return { error: "rotate_local_api_token requires confirmed=true after explicit user confirmation" };
+  }
+  return postRequest("/api/v1/settings/local-api/token/rotate");
 }
 
 function createReminderRequest(args: Record<string, unknown>) {
@@ -714,6 +767,15 @@ function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function nestedString(value: unknown, path: string[]) {
+  let current: unknown = value;
+  for (const key of path) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) return "";
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === "string" ? current.trim() : "";
+}
+
 function booleanValue(value: unknown) {
   return typeof value === "boolean" ? value : null;
 }
@@ -818,6 +880,13 @@ async function readApiToken() {
   return (await readFile(tokenPath, "utf8")).trim();
 }
 
+async function readApiTokenFile(tokenPath?: string) {
+  const resolvedPath = tokenPath
+    || process.env.PATINA_API_TOKEN_FILE?.trim()
+    || defaultTokenPath();
+  return (await readFile(resolvedPath, "utf8")).trim();
+}
+
 function defaultTokenPath() {
   const dataHome = process.env.XDG_DATA_HOME?.trim()
     || join(process.env.HOME || ".", ".local", "share");
@@ -828,6 +897,7 @@ async function main() {
   const deps: McpDeps = {
     apiBase: process.env.PATINA_API_BASE?.trim() || DEFAULT_API_BASE,
     apiToken: await readApiToken(),
+    refreshApiToken: readApiTokenFile,
     callApi: callPatinaApi,
   };
 

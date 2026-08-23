@@ -59,7 +59,7 @@
 - 浏览器活动 HTTP transport 使用 Axum，只绑定 loopback，具有 64 KiB body、5 秒 handler、8 请求并发和 5 秒关闭预算
 - 浏览器 bridge CORS 只回显 `moz-extension://` 或 `chrome-extension://` Origin，不再使用 `Access-Control-Allow-Origin: *`；无 Origin 的本机诊断请求仍可用
 - 浏览器 Token 校验、隐私规则、前台浏览器判断和 SQLite 写入不再依赖 `AppHandle`
-- daemon tracking preview 从 profile 设置读取浏览器桥接端口和 Token；audio 以及 browser bridge 端口、Token、启停和 URL 隐私可由 runtime owner 在线应用
+- daemon tracking preview 从 profile 设置读取浏览器桥接和 local API 端口/Token；audio、browser bridge 和 local API 配置可由对应 runtime owner 在线应用
 - tracking 事件会在离开浏览器、AFK 或暂停时封口网页段；异常退出按 active row 最后可信 `updated_at` 修复，不计入停机空白
 - 浏览器 connected 使用 75 秒心跳宽限；desktop 与 daemon watchdog 每 15 秒检查一次，并在扩展过期时按最后成功上报时间封口
 - desktop 继续通过薄 Tauri adapter 使用同一桥接核心
@@ -67,7 +67,7 @@
 
 当前实现仍不能发布为正式后台服务，原因包括：
 
-- API listener 端口/Token 和 service restart 尚未迁移到 daemon owner；Tools runtime 已迁移
+- API listener 端口/Token 已迁移到 daemon owner；systemd service restart 尚未实现
 - daemon 尚无 systemd user service 和浏览器 UI
 - Tauri desktop 尚未改为 daemon client
 
@@ -211,7 +211,8 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 - 已完成第一批写侧基础：capabilities 暴露服务版本、协议上下限和 write scopes；tracking owner daemon 开放事务化 app mapping、classification、AFK threshold 与 tracking pause，默认 daemon 仍严格只读
 - 已完成 runtime settings owner：audio participation 可热切换；browser bridge 端口、Token、启停和 URL 隐私以完整配置原子应用，换端口失败时保留旧 listener 与旧存储
 - 已完成：Tools runtime tick、启动恢复、Linux 通知、SSE 事件和 HTTP/MCP 写侧由 daemon owner 接管
-- 待实施：API listener/token 原子切换和受控 service restart
+- 已完成 Stage 2H.1：API listener 换端口使用预绑定/提交/切换，Token 文件原子轮换并撤销旧 bearer/SSE，HTTP/MCP 响应不返回密钥
+- 待实施 Stage 2H.2：systemd user service 和受控 service restart
 - Tauri 改为 daemon desktop client，并保留 tray、通知、文件选择和 updater
 - 默认切换后 desktop 不启动或自动回退 embedded tracker；daemon 不可用时明确暂停、诊断和重启
 - 一个 `patina` 产品包同时交付 Patina Desktop、`patinad` 和 systemd user unit

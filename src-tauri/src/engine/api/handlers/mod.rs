@@ -4,6 +4,7 @@ pub mod capabilities;
 pub mod classification;
 pub mod diagnostics;
 pub mod health;
+pub mod local_api;
 pub mod openapi;
 pub mod runtime_settings;
 pub mod sessions;

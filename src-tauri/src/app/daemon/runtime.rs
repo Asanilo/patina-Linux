@@ -12,7 +12,7 @@ mod web_activity;
 
 use super::DaemonSqliteRuntime;
 use crate::app::runtime_lease::RuntimeLease;
-use crate::engine::api::server::ApiServerHandle;
+use crate::engine::api::listener_owner::LocalApiListenerOwner;
 use crate::engine::runtime_event::RuntimeEventHub;
 pub(super) use control::DaemonApiRuntimeControl;
 use std::sync::Arc;
@@ -98,7 +98,7 @@ impl DaemonBackgroundTasks {
 }
 
 pub struct DaemonRuntime {
-    api_server: Option<ApiServerHandle>,
+    api_server: Option<Arc<LocalApiListenerOwner>>,
     event_hub: Option<Arc<RuntimeEventHub>>,
     background_tasks: Option<DaemonBackgroundTasks>,
     sqlite: Option<DaemonSqliteRuntime>,
@@ -107,7 +107,7 @@ pub struct DaemonRuntime {
 
 impl DaemonRuntime {
     pub fn new(
-        api_server: Option<ApiServerHandle>,
+        api_server: Option<Arc<LocalApiListenerOwner>>,
         event_hub: Arc<RuntimeEventHub>,
         background_tasks: Option<DaemonBackgroundTasks>,
         sqlite: DaemonSqliteRuntime,
@@ -140,8 +140,8 @@ impl DaemonRuntime {
     }
 
     pub async fn wait_for_api_stop(&mut self) {
-        if let Some(server) = self.api_server.as_mut() {
-            server.wait_until_stopped().await;
+        if let Some(server) = self.api_server.as_ref() {
+            server.wait_until_failed().await;
         } else {
             std::future::pending::<()>().await;
         }
@@ -192,17 +192,12 @@ mod tests {
         let event_hub = Arc::new(RuntimeEventHub::new(
             crate::engine::runtime_event::DEFAULT_EVENT_REPLAY_CAPACITY,
         ));
-        let server = crate::engine::api::server::prepare_standalone_server_with_events(
-            0,
+        let api_owner = Arc::new(LocalApiListenerOwner::new(
             credentials(&root.join("data/Patina Dev/api_token")),
-            context,
             crate::engine::api::surface::ApiSurface::DaemonReadOnly,
             event_hub.clone(),
-        )
-        .await
-        .unwrap();
-        let port = server.port();
-        let handle = server.start();
+        ));
+        let port = api_owner.start(0, context).await.unwrap();
         let mut stalled = tokio::net::TcpStream::connect(("127.0.0.1", port))
             .await
             .unwrap();
@@ -213,7 +208,7 @@ mod tests {
         .await
         .unwrap();
 
-        DaemonRuntime::new(Some(handle), event_hub, None, sqlite, lease)
+        DaemonRuntime::new(Some(api_owner), event_hub, None, sqlite, lease)
             .shutdown()
             .await;
 

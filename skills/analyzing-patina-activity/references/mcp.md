@@ -8,6 +8,7 @@ Use this workflow when the host exposes the Patina MCP server. Tool names may ca
 |---|---|---|
 | `get_diagnostics` | none | Validate window tracking, tracker runtime, and browser bridge |
 | `get_runtime_settings` | none | Read sanitized audio and browser activity configuration |
+| `get_local_api_configuration` | none | Read sanitized API listener and Token-file state |
 | `get_current_activity` | none | Read the foreground-window sample |
 | `get_active_session` | none | Read the realtime active session or `null` |
 | `get_today_summary` | none | Read the local-day aggregate |
@@ -34,6 +35,8 @@ Use only after explicit user intent:
 | `set_tracking_paused` | `paused` | Explicitly pause or resume automatic tracking |
 | `set_audio_participation` | `enabled` | Enable or disable the Linux audio participation signal |
 | `configure_browser_activity` | `enabled`, `port`, `token`, `urlPrivacy` | Replace the complete browser extension bridge configuration |
+| `set_local_api_port` | `port` | Atomically move the local API listener; accepted range is 1024 through 65535 |
+| `rotate_local_api_token` | `confirmed=true` | Rotate the owner-only API Token and revoke existing clients |
 | `create_reminder` | `label`, `scheduledAt` | Create a future reminder |
 | `cancel_reminder` | `id` | Cancel a scheduled reminder |
 | `create_software_reminder_rule` | `appName`, `limitMs`, `message`; optional `exeName` | Create a daily app usage reminder |
@@ -43,7 +46,7 @@ Use only after explicit user intent:
 | `start_pomodoro` | `focusMs`, `shortBreakMs`, `longBreakMs`, `longBreakEvery` | Start pomodoro |
 | `pause_pomodoro`, `resume_pomodoro`, `skip_pomodoro_phase`, `reset_pomodoro` | none | Control current pomodoro |
 
-Before app writes, use `list_apps` to verify the exact `exe_name`. Before browser configuration, restate the port and URL privacy mode without printing the Token. Before Tools writes, read `get_tools_snapshot` when the existing state affects the requested transition. Do not infer permission for any write from a general request to analyze data.
+Before app writes, use `list_apps` to verify the exact `exe_name`. Before browser configuration, restate the port and URL privacy mode without printing the Token. Before local API changes, read `get_local_api_configuration`, confirm the new connection plan, and warn that Token rotation revokes API and SSE clients but does not change the browser extension Token. Before Tools writes, read `get_tools_snapshot` when the existing state affects the requested transition. Do not infer permission for any write from a general request to analyze data.
 
 ## Recommended Sequences
 

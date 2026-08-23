@@ -33,7 +33,7 @@ pub fn build_startup_status(
         profile,
         version: version.into(),
         stage: if tracking_enabled {
-            "stage-2g-tools-runtime-preview"
+            "stage-2h1-api-configuration-preview"
         } else {
             "stage-2a-event-stream"
         },
@@ -54,6 +54,7 @@ pub fn build_startup_status(
                 "daemon owns the Linux MPRIS participation source",
                 "daemon owns the configured loopback browser activity bridge",
                 "daemon owns Tools reminders, timers, pomodoro, and Linux notifications",
+                "daemon owns the local API listener and owner-only credential lifecycle",
                 "tracking preview is explicitly enabled and the desktop must not use the same profile",
             ]
         } else {
@@ -142,7 +143,7 @@ mod tests {
             &paths,
         );
 
-        assert_eq!(status.stage, "stage-2g-tools-runtime-preview");
+        assert_eq!(status.stage, "stage-2h1-api-configuration-preview");
         assert!(status.tracking_enabled);
         assert!(status
             .notes
@@ -158,5 +159,9 @@ mod tests {
             .iter()
             .any(|note| note.contains("browser activity bridge")));
         assert!(status.notes.iter().any(|note| note.contains("Tools")));
+        assert!(status
+            .notes
+            .iter()
+            .any(|note| note.contains("credential lifecycle")));
     }
 }

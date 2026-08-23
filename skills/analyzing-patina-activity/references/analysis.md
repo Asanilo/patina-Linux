@@ -34,7 +34,7 @@ For exact custom totals, prefer `/api/v1/summary/range`. For forensic detail, us
 
 ## Writes
 
-Classification, rename, exclusion, tracker settings, and future Tools actions change local state. Require explicit user intent before any write. Explain that exclusion changes future statistical interpretation, verify the exact executable name, perform the smallest requested mutation, and report the result.
+Classification, rename, exclusion, tracker settings, local API configuration, and Tools actions change local state. Require explicit user intent before any write. Explain that exclusion changes future statistical interpretation, verify the exact executable name, perform the smallest requested mutation, and report the result. Before API port or Token changes, establish how the client will reconnect without revealing either API or browser extension credentials.
 
 ## Response Shape
 

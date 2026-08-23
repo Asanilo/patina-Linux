@@ -220,6 +220,11 @@ pub struct AudioParticipationRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct LocalApiPortRequest {
+    pub port: u16,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreateReminderRequest {
     pub label: String,
     pub scheduled_at: i64,

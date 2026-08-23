@@ -25,6 +25,9 @@ await runTest("Patina MCP tool list exposes core local API tools", () => {
   assert.deepEqual(toolNames, [
     "get_diagnostics",
     "get_runtime_settings",
+    "get_local_api_configuration",
+    "set_local_api_port",
+    "rotate_local_api_token",
     "get_current_activity",
     "get_active_session",
     "get_today_summary",
@@ -71,7 +74,7 @@ await runTest("Patina MCP tools/list returns tool metadata", async () => {
   });
 
   assert.equal(response.id, 1);
-  assert.equal(response.result.tools.length, 33);
+  assert.equal(response.result.tools.length, 36);
   assert.equal(response.result.tools[0].name, "get_diagnostics");
 });
 
@@ -86,6 +89,8 @@ await runTest("Patina MCP write tools declare required arguments", () => {
   assert.deepEqual(requiredByTool.get("set_idle_threshold"), ["seconds"]);
   assert.deepEqual(requiredByTool.get("set_tracking_paused"), ["paused"]);
   assert.deepEqual(requiredByTool.get("set_audio_participation"), ["enabled"]);
+  assert.deepEqual(requiredByTool.get("set_local_api_port"), ["port"]);
+  assert.deepEqual(requiredByTool.get("rotate_local_api_token"), ["confirmed"]);
   assert.deepEqual(
     requiredByTool.get("configure_browser_activity"),
     ["enabled", "port", "token", "urlPrivacy"],
@@ -541,6 +546,62 @@ await runTest("Patina MCP reports API failures as tool results", async () => {
   assert.match(response.result.content[0].text, /connection refused/);
 });
 
+await runTest("Patina MCP local API controls update their own connection safely", async () => {
+  const calls: Array<{ path: string; apiBase: string; apiToken: string }> = [];
+  const deps = {
+    apiBase: "http://127.0.0.1:14840",
+    apiToken: "old-token",
+    refreshApiToken: async () => "new-token",
+    callApi: async (path, requestDeps) => {
+      calls.push({ path, apiBase: requestDeps.apiBase, apiToken: requestDeps.apiToken });
+      if (path.endsWith("/port")) {
+        return {
+          data: {
+            configuration: { base_url: "http://127.0.0.1:15555" },
+          },
+        };
+      }
+      return { data: { reauthentication_required: true } };
+    },
+  };
+
+  await handleMcpRequest({
+    jsonrpc: "2.0",
+    id: 20,
+    method: "tools/call",
+    params: { name: "set_local_api_port", arguments: { port: 15555 } },
+  }, deps);
+  assert.equal(deps.apiBase, "http://127.0.0.1:15555");
+
+  const rejected = await handleMcpRequest({
+    jsonrpc: "2.0",
+    id: 21,
+    method: "tools/call",
+    params: { name: "rotate_local_api_token", arguments: { confirmed: false } },
+  }, deps);
+  assert.match(rejected.error.message, /confirmed=true/);
+
+  await handleMcpRequest({
+    jsonrpc: "2.0",
+    id: 22,
+    method: "tools/call",
+    params: { name: "rotate_local_api_token", arguments: { confirmed: true } },
+  }, deps);
+  assert.equal(deps.apiToken, "new-token");
+  assert.deepEqual(calls, [
+    {
+      path: "/api/v1/settings/local-api/port",
+      apiBase: "http://127.0.0.1:14840",
+      apiToken: "old-token",
+    },
+    {
+      path: "/api/v1/settings/local-api/token/rotate",
+      apiBase: "http://127.0.0.1:15555",
+      apiToken: "old-token",
+    },
+  ]);
+});
+
 await runTest("Patina MCP stdio uses newline-delimited JSON and processes each message once", async () => {
   const deps = {
     apiBase: "http://127.0.0.1:14840",
@@ -572,7 +633,7 @@ await runTest("Patina MCP stdio uses newline-delimited JSON and processes each m
   const responses = encodedResponses.map((line) => JSON.parse(line));
 
   assert.deepEqual(responses.map((response) => response.id), [10, 11]);
-  assert.equal(responses[1].result.tools.length, 33);
+  assert.equal(responses[1].result.tools.length, 36);
   assert.equal(encodedResponses.every((line) => !line.startsWith("Content-Length:")), true);
 });
 

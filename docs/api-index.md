@@ -36,9 +36,10 @@ Current caveats:
 - This document remains the human-maintained reference for behavior notes and implementation caveats.
 - The desktop runtime exposes the shared JSON endpoints below. Default `patinad` mode exposes authenticated reads plus SSE and rejects all `POST` endpoints. Explicit `--track` mode is the current runtime owner and additionally exposes the bounded app-mapping, classification, tracker-settings, runtime-settings, and Tools writes listed by `/api/v1/capabilities`.
 - Default daemon mode remains historical/read-only: `GET /api/v1/current` returns `503` and live tracker/browser diagnostics are `null`.
-- Stage 2G preview mode is explicit: run `patinad --profile dev --serve-api --track --port 0`. It owns tracking and Tools for that profile, serves a live `/current`, observes Linux lock/suspend/resume/shutdown, runs audio/MPRIS participation sources, and owns the browser activity bridge configured for that profile. Never run desktop and daemon tracking against the same profile.
+- Stage 2H.1 preview mode is explicit: run `patinad --profile dev --serve-api --track --port 0`. It owns tracking, Tools, and the local API listener for that profile, serves a live `/current`, observes Linux lock/suspend/resume/shutdown, runs audio/MPRIS participation sources, and owns the browser activity bridge configured for that profile. Never run desktop and daemon tracking against the same profile.
 - Stage 2F capability migration, Stage 2F.1 browser crash/heartbeat semantics, and Stage 2F.2 loopback transport migration are complete. API, SSE, and the independent browser extension bridge use Axum with 32/8/8 fail-fast concurrency budgets, bounded handlers, strict Host/origin policies, and task-coupled listener readiness. The extension protocol remains `POST /web-activity` with its separate Token; its CORS response only echoes Firefox/Zen or Chromium extension origins and never returns `Access-Control-Allow-Origin: *`.
 - The tracking-owner daemon can apply audio participation and the complete browser bridge configuration while running. Browser port changes reserve the new listener and commit storage before the old listener is stopped; bind or persistence failures preserve the old configuration.
+- The tracking-owner daemon also owns local API port and credential changes. Local API port changes use the same reserve/commit/swap order. Token rotation updates the owner-only file atomically, revokes the old bearer value, and closes existing SSE authentication sessions without returning the new Token in JSON.
 - `/api/v1/events` accepts the token only through the `Authorization` header. It does not accept tokens in URLs or query strings.
 
 ---
@@ -72,6 +73,9 @@ Current caveats:
 | `/api/v1/settings/runtime` | `GET` | Implemented | Sanitized audio and browser activity runtime settings |
 | `/api/v1/settings/runtime/audio-participation` | `POST` | Tracking daemon | Apply and persist the Linux audio participation switch |
 | `/api/v1/settings/runtime/browser-activity` | `POST` | Tracking daemon | Atomically replace browser listener, Token, and URL privacy settings |
+| `/api/v1/settings/local-api` | `GET` | Tracking daemon | Read sanitized local API listener and credential-file state |
+| `/api/v1/settings/local-api/port` | `POST` | Tracking daemon | Atomically move the local API listener |
+| `/api/v1/settings/local-api/token/rotate` | `POST` | Tracking daemon | Rotate the owner-only API Token and revoke old clients |
 | `/api/v1/tools/snapshot` | `GET` | Implemented | Current Tools runtime snapshot |
 | `/api/v1/tools/reminders` | `POST` | Tracking daemon | Create a scheduled reminder |
 | `/api/v1/tools/reminders/{id}/cancel` | `POST` | Tracking daemon | Cancel a scheduled reminder |
@@ -902,6 +906,52 @@ curl -s -X POST "$PATINA_API_BASE/api/v1/settings/runtime/browser-activity" \
 
 `port` must be `1024..65535`; `url_privacy` is `full`, `strip_query`, or `domain_only`; enabling requires a non-empty Token. For a port change, the daemon first binds the requested port, then commits all browser settings in one transaction, and only then replaces the old listener. A bind conflict returns `409` without changing stored or live settings. Disabling also seals any active web segment at the current trusted boundary. The response reports `token_present` and never echoes the Token value.
 
+### `GET /api/v1/settings/local-api`
+
+Available only when `/api/v1/capabilities` advertises the `local-api-configuration` write scope.
+
+```bash
+curl -s "$PATINA_API_BASE/api/v1/settings/local-api" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN"
+```
+
+```json
+{
+  "data": {
+    "port": 14840,
+    "base_url": "http://127.0.0.1:14840",
+    "token_path": "/home/user/.local/share/Patina/api_token",
+    "token_present": true
+  }
+}
+```
+
+The response never contains the Token value. `token_path` identifies the owner-only file for local MCP, CLI, and Agent clients.
+
+### `POST /api/v1/settings/local-api/port`
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/settings/local-api/port" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"port":15555}'
+```
+
+The daemon binds the new loopback port before saving it, then switches the active listener and retires the old listener. A bind or persistence failure keeps the old listener and stored port. A successful response includes `configuration`, `previous_port`, and `reconnect_required`; clients must continue at `configuration.base_url`.
+
+### `POST /api/v1/settings/local-api/token/rotate`
+
+This is a security-sensitive operation. Confirm the user's intent before calling it.
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/settings/local-api/token/rotate" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN"
+
+PATINA_API_TOKEN="$(cat "$PATINA_API_TOKEN_FILE")"
+```
+
+The Token file is replaced atomically with owner-only permissions. The response reports `reauthentication_required: true` and sanitized configuration only. The old Token becomes invalid immediately, including for existing SSE streams; reconnect using the new file value. The browser extension Token is separate and is not changed.
+
 ### `GET /api/v1/tools/snapshot`
 
 Curl:
@@ -1134,7 +1184,7 @@ curl -s "$PATINA_API_BASE/api/v1/missing" \
 
 ## 4. Planned Endpoints
 
-No additional endpoint path is committed. API listener port/Token ownership and controlled service restart remain runtime-owner work; they will not receive public routes until their atomicity and authorization contract is designed.
+No additional endpoint path is committed. Controlled service restart remains Stage 2H.2 runtime-owner work and will not receive a public route until the systemd user-service lifecycle and acknowledgement contract exist.
 
 ---
 
@@ -1161,6 +1211,9 @@ Current MCP tools:
 |---|---|---|---|
 | `get_diagnostics` | `GET /api/v1/diagnostics` | none | Check Linux/window/browser/API runtime health |
 | `get_runtime_settings` | `GET /api/v1/settings/runtime` | none | Read sanitized audio and browser activity settings |
+| `get_local_api_configuration` | `GET /api/v1/settings/local-api` | none | Read sanitized API connection state |
+| `set_local_api_port` | `POST /api/v1/settings/local-api/port` | `port` | Atomically move the loopback listener |
+| `rotate_local_api_token` | `POST /api/v1/settings/local-api/token/rotate` | `confirmed` must be `true` | Rotate credentials and revoke old clients |
 | `get_current_activity` | `GET /api/v1/current` | none | Read current foreground activity snapshot |
 | `query_sessions` | `GET /api/v1/sessions` | `from`, `to`, `app`, `limit` | Query closed activity sessions |
 | `get_active_session` | `GET /api/v1/sessions/active` | none | Read the currently active session with realtime duration |

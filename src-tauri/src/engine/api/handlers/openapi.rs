@@ -268,6 +268,36 @@ fn paths(surface: ApiSurface) -> Value {
         }
     });
     let object = paths.as_object_mut().expect("OpenAPI paths object");
+    object.insert(
+        "/api/v1/settings/local-api".to_string(),
+        json!({
+            "get": get_operation(
+                "Sanitized local API listener and credential-file configuration.",
+                "LocalApiConfigurationResponse",
+            )
+        }),
+    );
+    object.insert(
+        "/api/v1/settings/local-api/port".to_string(),
+        json!({
+            "post": post_operation(
+                "Atomically move the local API listener to a new loopback port.",
+                vec![],
+                "LocalApiPortRequest",
+                "LocalApiPortApplyResponse",
+            )
+        }),
+    );
+    object.insert(
+        "/api/v1/settings/local-api/token/rotate".to_string(),
+        json!({
+            "post": post_action_operation(
+                "Rotate the owner-only local API credential and revoke existing authentication.",
+                vec![],
+                "LocalApiTokenRotationResponse",
+            )
+        }),
+    );
     object.retain(|path, operations| {
         let Some(operations) = operations.as_object_mut() else {
             return false;
@@ -330,6 +360,7 @@ fn schemas() -> Value {
                 array_schema(enum_schema(vec![
                     "app-mapping",
                     "classification",
+                    "local-api-configuration",
                     "runtime-settings",
                     "tools",
                     "tracker-settings",
@@ -576,6 +607,39 @@ fn schemas() -> Value {
         envelope(object_schema(vec![
             ("audio_participation_enabled", bool_schema()),
             ("browser_activity", schema_ref("BrowserActivitySettings")),
+        ])),
+    );
+    let local_api_configuration = object_schema(vec![
+        ("port", bounded_integer_schema(1024, 65_535)),
+        ("base_url", string_schema()),
+        ("token_path", string_schema()),
+        ("token_present", bool_schema()),
+    ]);
+    schemas.insert(
+        "LocalApiConfiguration".to_string(),
+        local_api_configuration.clone(),
+    );
+    schemas.insert(
+        "LocalApiConfigurationResponse".to_string(),
+        envelope(local_api_configuration),
+    );
+    schemas.insert(
+        "LocalApiPortRequest".to_string(),
+        object_schema(vec![("port", bounded_integer_schema(1024, 65_535))]),
+    );
+    schemas.insert(
+        "LocalApiPortApplyResponse".to_string(),
+        envelope(object_schema(vec![
+            ("configuration", schema_ref("LocalApiConfiguration")),
+            ("previous_port", bounded_integer_schema(1024, 65_535)),
+            ("reconnect_required", bool_schema()),
+        ])),
+    );
+    schemas.insert(
+        "LocalApiTokenRotationResponse".to_string(),
+        envelope(object_schema(vec![
+            ("configuration", schema_ref("LocalApiConfiguration")),
+            ("reauthentication_required", bool_schema()),
         ])),
     );
     schemas.insert(
@@ -1275,6 +1339,10 @@ mod tests {
         assert!(schemas.contains_key("RuntimeSettingsResponse"));
         assert!(schemas.contains_key("BrowserActivitySettings"));
         assert!(schemas.contains_key("BrowserActivityConfigurationRequest"));
+        assert!(schemas.contains_key("LocalApiConfiguration"));
+        assert!(schemas.contains_key("LocalApiPortRequest"));
+        assert!(schemas.contains_key("LocalApiPortApplyResponse"));
+        assert!(schemas.contains_key("LocalApiTokenRotationResponse"));
         assert!(schemas.contains_key("ClassificationMutationsRequest"));
         assert!(response
             .body
@@ -1289,6 +1357,10 @@ mod tests {
                 .and_then(|value| value.as_str()),
             Some("boolean")
         );
+        assert!(response
+            .body
+            .pointer("/components/schemas/LocalApiConfiguration/properties/token")
+            .is_none());
 
         assert_eq!(
             response

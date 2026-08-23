@@ -637,31 +637,32 @@ await runTest("Tools time inputs keep editable empty drafts until submit", () =>
 });
 
 await runTest("tools runtime avoids per-second snapshot broadcasts without state changes", () => {
-  const runtime = readUtf8("src-tauri/src/engine/tools/mod.rs");
-  const getSnapshot = runtime.slice(
-    runtime.indexOf("pub async fn get_snapshot"),
-    runtime.indexOf("pub fn get_alerts"),
+  const adapter = readUtf8("src-tauri/src/engine/tools/mod.rs");
+  const owner = readUtf8("src-tauri/src/engine/tools/runtime.rs");
+  const getSnapshot = adapter.slice(
+    adapter.indexOf("pub async fn get_snapshot"),
+    adapter.indexOf("pub async fn get_snapshot_from_pool"),
   );
-  const refreshIfChanged = runtime.slice(
-    runtime.indexOf("async fn tick_and_refresh_if_changed"),
-    runtime.indexOf("async fn tick_and_notify"),
+  const refreshIfChanged = owner.slice(
+    owner.indexOf("async fn tick_and_refresh_if_changed"),
+    owner.indexOf("async fn tick_and_notify"),
   );
-  const loadSnapshot = runtime.slice(
-    runtime.indexOf("async fn load_snapshot"),
-    runtime.indexOf("async fn refresh_snapshot"),
+  const loadSnapshot = adapter.slice(
+    adapter.indexOf("async fn load_snapshot"),
+    adapter.indexOf("async fn refresh_snapshot"),
   );
-  const refreshSnapshot = runtime.slice(
-    runtime.indexOf("async fn refresh_snapshot"),
-    runtime.indexOf("fn send_tool_alert"),
+  const refreshSnapshot = owner.slice(
+    owner.indexOf("async fn refresh_snapshot"),
+    owner.indexOf("pub(crate) fn date_key_at"),
   );
 
-  assert.match(runtime, /ToolsTickOutcome/);
+  assert.match(owner, /ToolsTickOutcome/);
   assert.match(refreshIfChanged, /if outcome\.state_changed/);
-  assert.match(refreshIfChanged, /refresh_snapshot\(app\)\.await/);
+  assert.match(refreshIfChanged, /self\.refresh_snapshot\(\)\.await/);
   assert.match(getSnapshot, /load_snapshot\(app\)\.await/);
   assert.doesNotMatch(getSnapshot, /refresh_snapshot/);
   assert.doesNotMatch(loadSnapshot, /TOOLS_RUNTIME_CHANGED_EVENT/);
-  assert.match(refreshSnapshot, /app\.emit\(TOOLS_RUNTIME_CHANGED_EVENT/);
+  assert.match(refreshSnapshot, /self\.sink\.snapshot_changed\(&snapshot\)/);
 });
 
 await runTest("tools status surfaces share the feature-owned runtime snapshot store", () => {

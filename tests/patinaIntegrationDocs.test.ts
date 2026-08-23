@@ -30,6 +30,9 @@ const implementedEndpoints = [
   "GET /api/v1/settings/runtime",
   "POST /api/v1/settings/runtime/audio-participation",
   "POST /api/v1/settings/runtime/browser-activity",
+  "GET /api/v1/settings/local-api",
+  "POST /api/v1/settings/local-api/port",
+  "POST /api/v1/settings/local-api/token/rotate",
   "GET /api/v1/tools/snapshot",
   "POST /api/v1/tools/reminders",
   "POST /api/v1/tools/reminders/{id}/cancel",
@@ -77,6 +80,9 @@ for (const tool of [
   "resume_pomodoro",
   "skip_pomodoro_phase",
   "reset_pomodoro",
+  "get_local_api_configuration",
+  "set_local_api_port",
+  "rotate_local_api_token",
 ]) {
   assert.match(mcpDocs, new RegExp("`" + tool + "`"), `MCP docs are missing ${tool}`);
 }
