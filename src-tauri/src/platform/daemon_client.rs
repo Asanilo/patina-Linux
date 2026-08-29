@@ -1,14 +1,25 @@
-use futures_util::StreamExt;
-use reqwest::{redirect::Policy, StatusCode};
+use eventsource_stream::{Event, Eventsource};
+use futures_util::{stream::BoxStream, StreamExt};
+use reqwest::{
+    header::{ACCEPT, CONTENT_TYPE},
+    redirect::Policy,
+    StatusCode,
+};
+use serde::de::DeserializeOwned;
 use std::fmt;
 use std::time::Duration;
 
-use crate::engine::api::types::{ApiError, ApiResponse, CapabilitiesResponse};
+use crate::engine::api::types::{
+    ActiveSessionResponse, ApiError, ApiResponse, CapabilitiesResponse, CurrentWindowResponse,
+};
+use crate::engine::runtime_event::RuntimeEventEnvelope;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(750);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
+const MAX_EVENT_DATA_BYTES: usize = 64 * 1024;
 
+#[derive(Clone)]
 pub struct PatinadClient {
     client: reqwest::Client,
     base_url: String,
@@ -31,6 +42,46 @@ pub struct PatinadNegotiation {
     pub protocol_version: u32,
     pub tracking_ready: bool,
     pub event_stream_available: bool,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PatinadStreamEvent {
+    Runtime(RuntimeEventEnvelope),
+    ResyncRequired {
+        reason: String,
+        missed: Option<u64>,
+    },
+    Ignored {
+        event: String,
+        sequence: Option<u64>,
+    },
+}
+
+impl PatinadStreamEvent {
+    pub fn sequence(&self) -> Option<u64> {
+        match self {
+            Self::Runtime(envelope) => Some(envelope.sequence),
+            Self::Ignored { sequence, .. } => *sequence,
+            Self::ResyncRequired { .. } => None,
+        }
+    }
+}
+
+#[allow(dead_code)]
+pub struct PatinadEventStream {
+    inner: BoxStream<'static, Result<Event, String>>,
+}
+
+#[allow(dead_code)]
+impl PatinadEventStream {
+    pub async fn next_event(&mut self) -> Result<Option<PatinadStreamEvent>, PatinadClientError> {
+        let Some(event) = self.inner.next().await else {
+            return Ok(None);
+        };
+        let event = event.map_err(PatinadClientError::Unreachable)?;
+        parse_stream_event(event).map(Some)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -133,7 +184,6 @@ impl PatinadClient {
         }
         let client = reqwest::Client::builder()
             .connect_timeout(CONNECT_TIMEOUT)
-            .timeout(REQUEST_TIMEOUT)
             .redirect(Policy::none())
             .user_agent(format!("Patina-Desktop/{}", env!("CARGO_PKG_VERSION")))
             .build()
@@ -155,10 +205,92 @@ impl PatinadClient {
     }
 
     pub async fn capabilities(&self) -> Result<CapabilitiesResponse, PatinadClientError> {
+        self.get_json("/api/v1/capabilities", "capabilities").await
+    }
+
+    #[allow(dead_code)]
+    pub async fn current_window(&self) -> Result<CurrentWindowResponse, PatinadClientError> {
+        self.get_json("/api/v1/current", "current window").await
+    }
+
+    #[allow(dead_code)]
+    pub async fn active_session(
+        &self,
+    ) -> Result<Option<ActiveSessionResponse>, PatinadClientError> {
+        self.get_json("/api/v1/sessions/active", "active session")
+            .await
+    }
+
+    #[allow(dead_code)]
+    pub async fn open_event_stream(
+        &self,
+        after_sequence: Option<u64>,
+    ) -> Result<PatinadEventStream, PatinadClientError> {
+        let mut request = self
+            .client
+            .get(format!("{}/api/v1/events", self.base_url))
+            .bearer_auth(&self.token)
+            .header(ACCEPT, "text/event-stream");
+        if let Some(sequence) = after_sequence {
+            request = request.header("Last-Event-ID", sequence.to_string());
+        }
+        let response = tokio::time::timeout(REQUEST_TIMEOUT, request.send())
+            .await
+            .map_err(|_| {
+                PatinadClientError::Unreachable(
+                    "timed out while opening patinad event stream".to_string(),
+                )
+            })?
+            .map_err(map_transport_error)?;
+        let status = response.status();
+        if status == StatusCode::UNAUTHORIZED {
+            return Err(PatinadClientError::Unauthorized);
+        }
+        if !status.is_success() {
+            let body = tokio::time::timeout(REQUEST_TIMEOUT, read_limited_body(response))
+                .await
+                .map_err(|_| {
+                    PatinadClientError::Unreachable(
+                        "timed out while reading patinad event stream error".to_string(),
+                    )
+                })??;
+            return Err(map_http_error(status, &body));
+        }
+        let content_type = response
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        if !content_type
+            .to_ascii_lowercase()
+            .starts_with("text/event-stream")
+        {
+            return Err(PatinadClientError::InvalidResponse(
+                "patinad event stream returned an unexpected content type".to_string(),
+            ));
+        }
+        let inner = response
+            .bytes_stream()
+            .eventsource()
+            .map(|event| event.map_err(|error| format!("patinad event stream failed: {error}")))
+            .boxed();
+        Ok(PatinadEventStream { inner })
+    }
+
+    pub async fn negotiate_tracking_owner(&self) -> Result<PatinadNegotiation, PatinadClientError> {
+        let capabilities = self.capabilities().await?;
+        negotiate_tracking_capabilities(capabilities)
+    }
+
+    async fn get_json<T>(&self, path: &str, response_name: &str) -> Result<T, PatinadClientError>
+    where
+        T: DeserializeOwned,
+    {
         let response = self
             .client
-            .get(format!("{}/api/v1/capabilities", self.base_url))
+            .get(format!("{}{path}", self.base_url))
             .bearer_auth(&self.token)
+            .timeout(REQUEST_TIMEOUT)
             .send()
             .await
             .map_err(map_transport_error)?;
@@ -172,19 +304,78 @@ impl PatinadClient {
             return Err(map_http_error(status, &body));
         }
 
-        serde_json::from_slice::<ApiResponse<CapabilitiesResponse>>(&body)
+        serde_json::from_slice::<ApiResponse<T>>(&body)
             .map(|response| response.data)
             .map_err(|error| {
                 PatinadClientError::InvalidResponse(format!(
-                    "failed to decode patinad capabilities: {error}"
+                    "failed to decode patinad {response_name}: {error}"
                 ))
             })
     }
+}
 
-    pub async fn negotiate_tracking_owner(&self) -> Result<PatinadNegotiation, PatinadClientError> {
-        let capabilities = self.capabilities().await?;
-        negotiate_tracking_capabilities(capabilities)
+#[allow(dead_code)]
+fn parse_stream_event(event: Event) -> Result<PatinadStreamEvent, PatinadClientError> {
+    if event.data.len() > MAX_EVENT_DATA_BYTES {
+        return Err(PatinadClientError::ResponseTooLarge);
     }
+    if event.event == "resync-required" {
+        #[derive(serde::Deserialize)]
+        struct ResyncPayload {
+            reason: String,
+            missed: Option<u64>,
+        }
+        let payload = serde_json::from_str::<ResyncPayload>(&event.data).map_err(|error| {
+            PatinadClientError::InvalidResponse(format!(
+                "failed to decode patinad resync event: {error}"
+            ))
+        })?;
+        return Ok(PatinadStreamEvent::ResyncRequired {
+            reason: payload.reason,
+            missed: payload.missed,
+        });
+    }
+
+    let sequence = parse_optional_event_sequence(&event.id)?;
+    let is_known_runtime_event = matches!(
+        event.event.as_str(),
+        "tracking-data-changed" | "tools-runtime-changed" | "tool-alert"
+    );
+    if !is_known_runtime_event {
+        return Ok(PatinadStreamEvent::Ignored {
+            event: event.event,
+            sequence,
+        });
+    }
+
+    let envelope = serde_json::from_str::<RuntimeEventEnvelope>(&event.data).map_err(|error| {
+        PatinadClientError::InvalidResponse(format!(
+            "failed to decode patinad runtime event: {error}"
+        ))
+    })?;
+    let Some(sequence) = sequence else {
+        return Err(PatinadClientError::InvalidResponse(
+            "patinad runtime event is missing its sequence ID".to_string(),
+        ));
+    };
+    if envelope.sequence != sequence || envelope.event.event_name() != event.event {
+        return Err(PatinadClientError::InvalidResponse(
+            "patinad runtime event ID or type does not match its envelope".to_string(),
+        ));
+    }
+    Ok(PatinadStreamEvent::Runtime(envelope))
+}
+
+#[allow(dead_code)]
+fn parse_optional_event_sequence(value: &str) -> Result<Option<u64>, PatinadClientError> {
+    if value.is_empty() {
+        return Ok(None);
+    }
+    value.parse::<u64>().map(Some).map_err(|_| {
+        PatinadClientError::InvalidResponse(
+            "patinad event stream returned an invalid sequence ID".to_string(),
+        )
+    })
 }
 
 fn negotiate_tracking_capabilities(
@@ -315,6 +506,53 @@ mod tests {
 
         assert!(!negotiated.tracking_ready);
         assert!(negotiated.event_stream_available);
+    }
+
+    #[test]
+    fn stream_event_requires_matching_sse_and_envelope_sequences() {
+        let envelope = RuntimeEventEnvelope {
+            sequence: 7,
+            event: crate::engine::runtime_event::RuntimeEvent::TrackingDataChanged {
+                reason: "session-transition".to_string(),
+                changed_at_ms: 2_000,
+            },
+        };
+        let parsed = parse_stream_event(Event {
+            event: "tracking-data-changed".to_string(),
+            data: serde_json::to_string(&envelope).unwrap(),
+            id: "7".to_string(),
+            retry: None,
+        })
+        .unwrap();
+        assert_eq!(parsed, PatinadStreamEvent::Runtime(envelope.clone()));
+
+        let error = parse_stream_event(Event {
+            event: "tracking-data-changed".to_string(),
+            data: serde_json::to_string(&envelope).unwrap(),
+            id: "8".to_string(),
+            retry: None,
+        })
+        .unwrap_err();
+        assert_eq!(error.code(), "invalid-response");
+    }
+
+    #[test]
+    fn stream_event_ignores_forward_compatible_event_names_but_keeps_cursor() {
+        let parsed = parse_stream_event(Event {
+            event: "future-runtime-event".to_string(),
+            data: "{}".to_string(),
+            id: "9".to_string(),
+            retry: None,
+        })
+        .unwrap();
+
+        assert_eq!(
+            parsed,
+            PatinadStreamEvent::Ignored {
+                event: "future-runtime-event".to_string(),
+                sequence: Some(9),
+            }
+        );
     }
 
     fn capabilities(

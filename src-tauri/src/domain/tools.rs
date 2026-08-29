@@ -328,7 +328,7 @@ pub struct ToolsRuntimeSnapshot {
     pub sampled_at_ms: i64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ToolAlert {
     pub id: String,
     pub kind: ToolAlertKind,

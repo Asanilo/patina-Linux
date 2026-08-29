@@ -295,6 +295,7 @@ Returns the latest tracking runtime foreground window snapshot:
 - `is_afk`
 - `idle_time_ms`
 - `process_path`
+- `sampled_at_ms`: daemon 采集该窗口快照的时间；客户端可用它跳过更早的 SSE replay 事件
 
 Schema:
 
@@ -306,7 +307,8 @@ Schema:
     "process_id": 12345,
     "is_afk": false,
     "idle_time_ms": 2400,
-    "process_path": "/usr/bin/ghostty"
+    "process_path": "/usr/bin/ghostty",
+    "sampled_at_ms": 1782000000000
   }
 }
 ```

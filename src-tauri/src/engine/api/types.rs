@@ -132,7 +132,7 @@ pub struct CapabilitiesResponse {
     pub write_api: WriteApiCapability,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct CurrentWindowResponse {
     pub exe_name: String,
     pub title: String,
@@ -140,6 +140,7 @@ pub struct CurrentWindowResponse {
     pub is_afk: bool,
     pub idle_time_ms: u32,
     pub process_path: String,
+    pub sampled_at_ms: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -158,7 +159,7 @@ pub struct SessionsResponse {
     pub sessions: Vec<SessionEntry>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ActiveSessionResponse {
     pub id: i64,
     pub app_name: String,

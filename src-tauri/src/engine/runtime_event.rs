@@ -1,11 +1,11 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::Mutex;
 use tokio::sync::{broadcast, watch};
 
 pub const DEFAULT_EVENT_REPLAY_CAPACITY: usize = 256;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum RuntimeEvent {
     TrackingDataChanged {
@@ -30,7 +30,7 @@ impl RuntimeEvent {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RuntimeEventEnvelope {
     pub sequence: u64,
     pub event: RuntimeEvent,

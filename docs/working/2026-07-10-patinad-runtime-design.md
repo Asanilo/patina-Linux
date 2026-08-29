@@ -1,6 +1,6 @@
 # `patinad` 后台运行时设计
 
-> 状态：Stage 0 至 Stage 2H.2、Stage 2H.3a systemd 诊断和 Stage 2H.3b.1 typed daemon client 协商已完成并验证；Stage 2H.3b.2 的 SSE/只读状态适配与 Stage 2H.3c 默认 owner 切换待实施。
+> 状态：Stage 0 至 Stage 2H.2、Stage 2H.3a systemd 诊断和 Stage 2H.3b.1/2 typed daemon client 与只读 runtime adapter 已完成并验证；Stage 2H.3b.3 显式 desktop client 模式和 Stage 2H.3c 默认 owner 切换待实施。
 > 生命周期：本设计是当前 `patinad` 实施依据；后台接管稳定完成后移入 `docs/archive/`。
 
 ## 1. 目标
@@ -18,7 +18,7 @@
 - 不扩大 KDE、wlroots 或移动端支持
 - 不为 MCP 提供任意文件操作能力
 
-## 3. 当前 Stage 2H.3b.1 状态
+## 3. 当前 Stage 2H.3b.2 状态
 
 当前分支已经提供并验证：
 
@@ -71,6 +71,9 @@
 - desktop 可通过用户会话 D-Bus 查询 `patinad.service` 的安装、启用和运行状态；设置诊断可识别 unit 缺失、systemd 不可用和提前启用造成的 owner 冲突
 - desktop Rust host 已有仅连接 `127.0.0.1`、不跟随重定向、带响应大小与请求超时限制的 typed `patinad` client；Bearer Token 不进入 Debug 或前端 JavaScript
 - client 会先验证 `runtime_host=daemon`、协议版本范围、tracking ownership 和 event stream capability；可连接的 desktop API、错误 Token 与不兼容协议不会被误判为 daemon ready
+- Rust host 已能组合 `/current`、`/sessions/active` 和 `/events` 为只读 runtime snapshot；`/current.sampled_at_ms` 用于过滤早于快照的 replay 事件
+- adapter 先建立 SSE 再读取快照，首次从 sequence `0` 使用有界 replay；断线携带最后确认 cursor 重连，`resync-required` 会清除 cursor 并完整重读
+- JSON、SSE、认证失败、错误 runtime host、replay gap、窗口切换刷新和 watch shutdown 已使用真实 Axum loopback server 验证
 - DEB 尚未自动启用 systemd user service，desktop 也尚未切换为 daemon client
 - daemon 尚无浏览器 UI
 - Tauri desktop 尚未改为 daemon client
@@ -219,7 +222,7 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 - 已完成 Stage 2H.2：DEB 构建输入包含 daemon 与默认禁用的 user unit；受控 restart 使用跨实例持久化 ticket，手工 preview 不可误触发
 - 已完成 Stage 2H.3a：通过用户会话 D-Bus 查询 systemd user service 真实状态，识别旧 desktop autostart 的迁移条件，并在默认 owner 切换前保持服务启用动作关闭
 - 已完成 Stage 2H.3b.1：typed loopback client、Bearer 认证、runtime host 与协议协商，以及真实 API transport 回归测试
-- 待实施 Stage 2H.3b.2：将 `/current`、active session 和 SSE 接入 desktop runtime adapter，但仍保持显式 preview 模式
+- 已完成 Stage 2H.3b.2：`/current`、active session 与标准 SSE parser 已接入只读 runtime adapter，具有 subscribe-before-read、cursor replay、resync 全量重读、有限重连和显式 shutdown
 - 待实施 Stage 2H.3b.3：在不运行 embedded tracker/API/browser/Tools 的显式 desktop client 模式下完成只读 UI 验收，同时保留桌面专属能力
 - 待实施 Stage 2H.3c：写侧切换、首次启动迁移、服务启停设置、默认 owner 切换和双 owner 验收
 - Tauri 改为 daemon desktop client，并保留 tray、通知、文件选择和 updater

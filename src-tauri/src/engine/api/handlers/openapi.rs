@@ -463,6 +463,7 @@ fn schemas() -> Value {
             ("is_afk", bool_schema()),
             ("idle_time_ms", integer_schema()),
             ("process_path", string_schema()),
+            ("sampled_at_ms", integer_schema()),
         ])),
     );
     schemas.insert(
