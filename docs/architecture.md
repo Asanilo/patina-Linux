@@ -201,7 +201,7 @@ domain ─────────┘          │
 
 - `engine / domain / data / platform` 承载共享能力，不能依赖某个具体 UI 宿主
 - `patinad` 最终唯一拥有 tracking、watchdog、SQLite 运行时写侧、Linux 平台信号、浏览器桥接和本地 API
-- 桌面客户端当前由 Tauri 实现，并拥有窗口、tray、WebView、用户交互和桌面 updater；它通过稳定客户端边界访问 daemon
+- 桌面客户端当前由 Tauri 实现，并拥有窗口、tray、WebView、用户交互和桌面 updater；Stage 2H.3 切换完成后，它通过稳定客户端边界访问 daemon
 - 默认 owner 切换后，桌面客户端不得自动启动 embedded tracker；daemon 不可用时必须明确报告暂停状态并通过受控服务入口恢复，不能静默切换 owner
 - browser UI 由 `patinad` 在 loopback 提供，通过 HTTP API 和本机 event stream 访问同一运行时，不直接打开 SQLite
 - 未来 TUI / CLI 只能作为 daemon 客户端，不建立第二套 tracking 或数据库写侧

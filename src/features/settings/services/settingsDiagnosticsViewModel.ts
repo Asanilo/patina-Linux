@@ -1,6 +1,7 @@
 import type { WebActivityBridgeSnapshot } from "../../../platform/runtime/webActivityBridgeGateway.ts";
 import type { LocalApiDiagnosticsSnapshot } from "../../../platform/runtime/localApiDiagnosticsGateway.ts";
 import type { DesktopIntegrationDiagnosticsSnapshot } from "../../../platform/runtime/desktopIntegrationDiagnosticsGateway.ts";
+import type { DaemonServiceDiagnosticsSnapshot } from "../../../platform/runtime/daemonServiceDiagnosticsGateway.ts";
 import type { TrackerHealthSnapshot } from "../../../shared/types/tracking.ts";
 import { resolvePlatformTrackingDiagnosticMessage } from "../../../app/services/platformTrackingDiagnosticsService.ts";
 
@@ -28,6 +29,7 @@ export interface SettingsDiagnosticsInput {
   webActivityBridge: WebActivityBridgeSnapshot | null;
   localApi?: LocalApiDiagnosticsSnapshot | null;
   desktopIntegration?: DesktopIntegrationDiagnosticsSnapshot | null;
+  daemonService?: DaemonServiceDiagnosticsSnapshot | null;
   apiBaseUrl?: string;
   apiTokenPath?: string;
 }
@@ -66,11 +68,75 @@ export function buildSettingsDiagnosticsViewModel(
       metadata: resolveDesktopIntegrationMetadata(input.desktopIntegration),
     },
     {
+      id: "daemon-service",
+      label: "后台服务",
+      value: resolveDaemonServiceValue(input.daemonService),
+      detail: resolveDaemonServiceDetail(input.daemonService),
+      tone: resolveDaemonServiceTone(input.daemonService),
+      metadata: resolveDaemonServiceMetadata(input.daemonService),
+    },
+    {
       id: "browser-bridge",
       label: "浏览器扩展",
       value: resolveBrowserBridgeValue(input.webActivityEnabled, input.webActivityBridge),
       detail: resolveBrowserBridgeDetail(input.webActivityEnabled, input.webActivityToken, input.webActivityBridge, input.webActivityPort),
       tone: resolveBrowserBridgeTone(input.webActivityEnabled, input.webActivityToken, input.webActivityBridge),
+    },
+  ];
+}
+
+function resolveDaemonServiceValue(
+  daemonService: DaemonServiceDiagnosticsSnapshot | null | undefined,
+): string {
+  if (!daemonService) return "状态未知";
+  if (!daemonService.managerAvailable) return "systemd 不可用";
+  if (!daemonService.unitInstalled) return "未安装";
+  if (daemonService.migrationState === "owner-conflict") return "运行冲突";
+  if (daemonService.active) return "运行中";
+  return "已安装 / 未启用";
+}
+
+function resolveDaemonServiceDetail(
+  daemonService: DaemonServiceDiagnosticsSnapshot | null | undefined,
+): string {
+  if (!daemonService) return "等待读取 patinad 服务状态。";
+  if (daemonService.error) return daemonService.error;
+  if (!daemonService.managerAvailable) return "无法连接当前用户的 systemd manager。";
+  if (!daemonService.unitInstalled) return "当前安装未包含 patinad.service；daemon-backed DEB 才会安装该 unit。";
+  if (daemonService.migrationState === "owner-conflict") {
+    return "服务已启用或运行，但当前版本仍由 Patina Desktop 追踪。请先停用 patinad.service，避免两个追踪进程竞争。";
+  }
+  if (daemonService.migrationState === "ready") {
+    return "服务按计划保持禁用；现有桌面自启动满足后续安全迁移条件。";
+  }
+  if (daemonService.migrationState === "blocked") {
+    return "服务保持禁用；需要先修复桌面启动项，之后才能迁移后台追踪。";
+  }
+  return "服务按计划保持禁用，当前追踪仍由 Patina Desktop 负责。";
+}
+
+function resolveDaemonServiceTone(
+  daemonService: DaemonServiceDiagnosticsSnapshot | null | undefined,
+): SettingsDiagnosticTone {
+  if (!daemonService) return "muted";
+  if (daemonService.error || !daemonService.managerAvailable) return "danger";
+  if (daemonService.migrationState === "owner-conflict") return "danger";
+  if (!daemonService.unitInstalled) return "warning";
+  if (daemonService.migrationState === "blocked") return "warning";
+  return "ok";
+}
+
+function resolveDaemonServiceMetadata(
+  daemonService: DaemonServiceDiagnosticsSnapshot | null | undefined,
+): SettingsDiagnosticMetadata[] {
+  if (!daemonService) return [];
+
+  return [
+    { label: "Unit", value: daemonService.serviceName },
+    { label: "Unit file", value: daemonService.unitFileState ?? "未找到" },
+    {
+      label: "Runtime",
+      value: [daemonService.activeState, daemonService.subState].filter(Boolean).join(" / ") || "未加载",
     },
   ];
 }

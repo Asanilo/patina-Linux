@@ -125,6 +125,21 @@ pub fn cmd_get_desktop_integration_diagnostics(
 }
 
 #[tauri::command]
+pub async fn cmd_get_daemon_service_diagnostics(
+    app: tauri::AppHandle,
+) -> Result<crate::app::daemon_service::DaemonServiceDiagnosticsSnapshot, String> {
+    let desktop_settings = app
+        .state::<crate::app::state::DesktopBehaviorState>()
+        .snapshot();
+    let autostart = crate::app::autostart::inspect_autostart_desktop_file();
+
+    Ok(
+        crate::app::daemon_service::inspect(desktop_settings.launch_at_login, autostart.valid())
+            .await,
+    )
+}
+
+#[tauri::command]
 pub fn cmd_repair_autostart_desktop_file(
     desktop_behavior_state: State<crate::app::state::DesktopBehaviorState>,
 ) -> Result<DesktopIntegrationDiagnosticsSnapshot, String> {

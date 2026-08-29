@@ -1,4 +1,4 @@
-import { Activity, Clipboard, Globe2, MonitorCheck, Power, Wrench } from "lucide-react";
+import { Activity, Clipboard, Globe2, MonitorCheck, Power, Server, Wrench } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import QuietSwitch from "../../../shared/components/QuietSwitch";
@@ -18,6 +18,10 @@ import {
   type DesktopIntegrationDiagnosticsSnapshot,
 } from "../../../platform/runtime/desktopIntegrationDiagnosticsGateway.ts";
 import {
+  getDaemonServiceDiagnostics,
+  type DaemonServiceDiagnosticsSnapshot,
+} from "../../../platform/runtime/daemonServiceDiagnosticsGateway.ts";
+import {
   buildSettingsDiagnosticsViewModel,
   type SettingsDiagnosticItem,
 } from "../services/settingsDiagnosticsViewModel.ts";
@@ -34,12 +38,14 @@ type SettingsDiagnosticsPanelProps = {
   onStartMinimizedChange: (nextChecked: boolean) => void;
 };
 
-const BRIDGE_DIAGNOSTICS_REFRESH_MS = 5_000;
+const LIVE_DIAGNOSTICS_REFRESH_MS = 5_000;
+const DAEMON_SERVICE_DIAGNOSTICS_REFRESH_MS = 30_000;
 
 const DIAGNOSTIC_ICONS = {
   "window-tracking": MonitorCheck,
   "local-api": Activity,
   "desktop-integration": Power,
+  "daemon-service": Server,
   "browser-bridge": Globe2,
 };
 
@@ -58,6 +64,8 @@ export default function SettingsDiagnosticsPanel({
   const [localApiSnapshot, setLocalApiSnapshot] = useState<LocalApiDiagnosticsSnapshot | null>(null);
   const [desktopIntegrationSnapshot, setDesktopIntegrationSnapshot] =
     useState<DesktopIntegrationDiagnosticsSnapshot | null>(null);
+  const [daemonServiceSnapshot, setDaemonServiceSnapshot] =
+    useState<DaemonServiceDiagnosticsSnapshot | null>(null);
   const [isRepairingAutostart, setIsRepairingAutostart] = useState(false);
 
   useEffect(() => {
@@ -105,7 +113,33 @@ export default function SettingsDiagnosticsPanel({
     void refresh();
     const timerId = window.setInterval(() => {
       void refresh();
-    }, BRIDGE_DIAGNOSTICS_REFRESH_MS);
+    }, LIVE_DIAGNOSTICS_REFRESH_MS);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(timerId);
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+
+    const refreshDaemonService = async () => {
+      try {
+        const snapshot = await getDaemonServiceDiagnostics();
+        if (!disposed) setDaemonServiceSnapshot(snapshot);
+      } catch (error) {
+        if (!disposed) {
+          setDaemonServiceSnapshot(null);
+          console.warn("load daemon service diagnostics failed", error);
+        }
+      }
+    };
+
+    void refreshDaemonService();
+    const timerId = window.setInterval(() => {
+      void refreshDaemonService();
+    }, DAEMON_SERVICE_DIAGNOSTICS_REFRESH_MS);
 
     return () => {
       disposed = true;
@@ -121,9 +155,11 @@ export default function SettingsDiagnosticsPanel({
     webActivityBridge: bridgeSnapshot,
     localApi: localApiSnapshot,
     desktopIntegration: desktopIntegrationSnapshot,
+    daemonService: daemonServiceSnapshot,
   }), [
     bridgeSnapshot,
     desktopIntegrationSnapshot,
+    daemonServiceSnapshot,
     localApiSnapshot,
     trackerHealth,
     webActivityEnabled,

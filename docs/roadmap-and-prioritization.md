@@ -164,14 +164,15 @@
 12. Stage 2G Tools runtime preview 已完成：服务版本、协议上下限、write scope 协商、app mapping、classification、AFK threshold、tracking pause、运行中 browser/audio 配置，以及 Tools runtime owner、系统通知、SSE 与写侧 HTTP/MCP 已完成。
 13. Stage 2H.1 local API configuration preview 已完成：daemon 从 profile 存储读取端口并迁移旧数据库 Token，运行中换端口采用预绑定/提交/切换，Token 原子轮换后撤销旧 bearer 与 SSE，会通过 HTTP/MCP 暴露不含密钥的确认状态。
 14. Stage 2H.2 systemd service preview 已完成：DEB 构建输入包含 `patinad` 和默认禁用的 user unit；受控重启先持久化 owner-only ticket、返回 `202 pending`，再优雅退出并由 systemd 重启，下一实例确认同一 ticket。下一步仍需首次桌面启动迁移、服务启停设置和默认 owner 切换；切换后不自动回退 embedded tracker。
-15. 用一个 `patina` 产品包同时安装 Patina Desktop、`patinad` 和 systemd user unit；首次桌面启动在用户会话中迁移旧 XDG autostart 并启用后台服务，把“后台追踪随登录启动”与“桌面客户端随登录打开”拆成独立设置。
-16. 首个 daemon-backed DEB 先发布为 beta，验证关闭 UI 后持续记录、登录启动、崩溃重启、锁屏、睡眠、浏览器活动、升级、卸载和数据保留；该 beta 只发布 DEB，不发布无法稳定安装 service owner 的 AppImage。embedded runtime 至少保留一个稳定版本作为显式开发回滚路径。
-17. beta 验收后让完整 monorepo 脱离 Windows 上游 fork network，保留 Git 历史、MIT 许可与 attribution；不拆分独立 `patinad` 仓库。
-18. daemon-backed 稳定版发布前，必须单独决定并验证 AppImage 的版本化 daemon extraction 与原子更新，或设计对现有 AppImage 用户明确且不循环更新的退役迁移；不能让 DEB-only stable 悄悄破坏既有 updater contract。
-19. daemon 稳定后建立只读本机浏览器 UI，先覆盖 Dashboard、History、当前会话和诊断；使用 same-origin HttpOnly session，不向前端 JavaScript 暴露长期 API Token。
-20. 浏览器只读路径稳定后再开放受控写操作；MCP、CLI 和 Agent 继续使用 Bearer Token，并与浏览器 UI 复用同一业务 API 契约而非同一认证方式。
-21. 之后开发 TUI / CLI 并开始 KDE Wayland 适配；桌面端是否从 Tauri 迁往 GPUI、是否拆 Cargo workspace，只按实测资源、构建和独立打包收益评估。
-22. `patinad` 稳定后，单独分阶段删除冻结的 Windows 平台代码，不与 owner 切换、transport 迁移或数据修复混合。
+15. Stage 2H.3 分三步完成默认切换：2H.3a 已完成，通过用户会话 D-Bus 查询 systemd user service 真实状态、识别旧 autostart 迁移条件，并在设置诊断中暴露 unit 缺失、manager 不可用和提前启用冲突；2H.3b 让 desktop 先通过 capability、只读 API 与 SSE 成为 daemon client；2H.3c 再迁移写侧、启用服务并完成双 owner 验收。默认切换前不得暴露会启动第二个 tracking owner 的服务开关。
+16. 用一个 `patina` 产品包同时安装 Patina Desktop、`patinad` 和 systemd user unit；首次桌面启动在用户会话中迁移旧 XDG autostart 并启用后台服务，把“后台追踪随登录启动”与“桌面客户端随登录打开”拆成独立设置。
+17. 首个 daemon-backed DEB 先发布为 beta，验证关闭 UI 后持续记录、登录启动、崩溃重启、锁屏、睡眠、浏览器活动、升级、卸载和数据保留；该 beta 只发布 DEB，不发布无法稳定安装 service owner 的 AppImage。embedded runtime 至少保留一个稳定版本作为显式开发回滚路径。
+18. beta 验收后让完整 monorepo 脱离 Windows 上游 fork network，保留 Git 历史、MIT 许可与 attribution；不拆分独立 `patinad` 仓库。
+19. daemon-backed 稳定版发布前，必须单独决定并验证 AppImage 的版本化 daemon extraction 与原子更新，或设计对现有 AppImage 用户明确且不循环更新的退役迁移；不能让 DEB-only stable 悄悄破坏既有 updater contract。
+20. daemon 稳定后建立只读本机浏览器 UI，先覆盖 Dashboard、History、当前会话和诊断；使用 same-origin HttpOnly session，不向前端 JavaScript 暴露长期 API Token。
+21. 浏览器只读路径稳定后再开放受控写操作；MCP、CLI 和 Agent 继续使用 Bearer Token，并与浏览器 UI 复用同一业务 API 契约而非同一认证方式。
+22. 之后开发 TUI / CLI 并开始 KDE Wayland 适配；桌面端是否从 Tauri 迁往 GPUI、是否拆 Cargo workspace，只按实测资源、构建和独立打包收益评估。
+23. `patinad` 稳定后，单独分阶段删除冻结的 Windows 平台代码，不与 owner 切换、transport 迁移或数据修复混合。
 
 每一阶段必须保持当前桌面主路径可用，不以一次性切换换取架构完成感。
 

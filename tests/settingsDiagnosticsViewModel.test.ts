@@ -167,4 +167,62 @@ await runTest("settings diagnostics mark local API failures as danger without du
   assert.equal(localApi?.metadata?.find((entry) => entry.label === "Token file")?.value, "/home/user/.local/share/Patina/api_token");
 });
 
+await runTest("settings diagnostics treat the installed disabled daemon unit as the expected preview state", () => {
+  const items = buildSettingsDiagnosticsViewModel({
+    trackerHealth: HEALTHY_GNOME,
+    webActivityEnabled: false,
+    webActivityPort: 18080,
+    webActivityToken: "",
+    webActivityBridge: null,
+    daemonService: {
+      serviceName: "patinad.service",
+      managerAvailable: true,
+      unitInstalled: true,
+      unitFileState: "disabled",
+      enabled: false,
+      activeState: "inactive",
+      subState: "dead",
+      active: false,
+      migrationState: "ready",
+      migrationReason: "desktop autostart can be migrated later",
+      controlAvailable: false,
+      error: null,
+    },
+  });
+
+  const daemonService = items.find((item) => item.id === "daemon-service");
+  assert.equal(daemonService?.value, "已安装 / 未启用");
+  assert.equal(daemonService?.tone, "ok");
+  assert.match(daemonService?.detail ?? "", /安全迁移条件/);
+});
+
+await runTest("settings diagnostics expose an early daemon activation as an owner conflict", () => {
+  const items = buildSettingsDiagnosticsViewModel({
+    trackerHealth: HEALTHY_GNOME,
+    webActivityEnabled: false,
+    webActivityPort: 18080,
+    webActivityToken: "",
+    webActivityBridge: null,
+    daemonService: {
+      serviceName: "patinad.service",
+      managerAvailable: true,
+      unitInstalled: true,
+      unitFileState: "enabled",
+      enabled: true,
+      activeState: "failed",
+      subState: "failed",
+      active: false,
+      migrationState: "owner-conflict",
+      migrationReason: "desktop still owns tracking",
+      controlAvailable: false,
+      error: null,
+    },
+  });
+
+  const daemonService = items.find((item) => item.id === "daemon-service");
+  assert.equal(daemonService?.value, "运行冲突");
+  assert.equal(daemonService?.tone, "danger");
+  assert.match(daemonService?.detail ?? "", /两个追踪进程/);
+});
+
 console.log(`Passed ${passed} settings diagnostics view model tests`);

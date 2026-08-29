@@ -1,6 +1,6 @@
 # `patinad` 后台运行时设计
 
-> 状态：Stage 0 至 Stage 2G 的 preview 能力迁移，以及 Stage 2F.1 的异常恢复、浏览器心跳、transport/readiness 和 daemon owner 收口已完成并验证；默认 owner 切换与客户端迁移待实施。
+> 状态：Stage 0 至 Stage 2H.2 的 preview 能力迁移和 Stage 2H.3a 的 systemd user service 只读诊断与迁移判定已完成并验证；Stage 2H.3b desktop client 读取切换与 Stage 2H.3c 默认 owner 切换待实施。
 > 生命周期：本设计是当前 `patinad` 实施依据；后台接管稳定完成后移入 `docs/archive/`。
 
 ## 1. 目标
@@ -18,7 +18,7 @@
 - 不扩大 KDE、wlroots 或移动端支持
 - 不为 MCP 提供任意文件操作能力
 
-## 3. 当前 Stage 2H.2 状态
+## 3. 当前 Stage 2H.3a 状态
 
 当前分支已经提供并验证：
 
@@ -68,6 +68,7 @@
 当前实现仍不能发布为正式后台服务，原因包括：
 
 - API listener 端口/Token 已迁移到 daemon owner；systemd service 和可验证 restart ticket 已完成 preview
+- desktop 可通过用户会话 D-Bus 查询 `patinad.service` 的安装、启用和运行状态；设置诊断可识别 unit 缺失、systemd 不可用和提前启用造成的 owner 冲突
 - DEB 尚未自动启用 systemd user service，desktop 也尚未切换为 daemon client
 - daemon 尚无浏览器 UI
 - Tauri desktop 尚未改为 daemon client
@@ -173,7 +174,7 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 
 ### 阶段 2：daemon 接管后台
 
-状态：Stage 2A 至 Stage 2G 的 preview 能力迁移、Stage 2F.1 数据语义、Stage 2F.2 全部 loopback transport 和 daemon owner 收口已完成；默认 owner 切换与客户端化待实施。
+状态：Stage 2A 至 Stage 2H.2 的 preview 能力迁移、数据语义、loopback transport、daemon owner 收口和 systemd restart handoff 已完成；默认 owner 切换与客户端化待实施。
 
 - 已完成：有界事件中心、受认证 SSE、replay/resync、能力协商和干净关闭
 - 已完成：显式模式下 daemon 接管 tracking/watchdog、实时快照、session 写入和退出封口
@@ -214,7 +215,9 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 - 已完成：Tools runtime tick、启动恢复、Linux 通知、SSE 事件和 HTTP/MCP 写侧由 daemon owner 接管
 - 已完成 Stage 2H.1：API listener 换端口使用预绑定/提交/切换，Token 文件原子轮换并撤销旧 bearer/SSE，HTTP/MCP 响应不返回密钥
 - 已完成 Stage 2H.2：DEB 构建输入包含 daemon 与默认禁用的 user unit；受控 restart 使用跨实例持久化 ticket，手工 preview 不可误触发
-- 待实施 Stage 2H.3：首次桌面启动迁移旧 autostart、服务启停设置、desktop client 切换和双 owner 验收
+- 已完成 Stage 2H.3a：通过用户会话 D-Bus 查询 systemd user service 真实状态，识别旧 desktop autostart 的迁移条件，并在默认 owner 切换前保持服务启用动作关闭
+- 待实施 Stage 2H.3b：desktop 先通过 capability、只读 HTTP API 和 SSE 成为 daemon client，同时保留桌面专属能力
+- 待实施 Stage 2H.3c：写侧切换、首次启动迁移、服务启停设置、默认 owner 切换和双 owner 验收
 - Tauri 改为 daemon desktop client，并保留 tray、通知、文件选择和 updater
 - 默认切换后 desktop 不启动或自动回退 embedded tracker；daemon 不可用时明确暂停、诊断和重启
 - 一个 `patina` 产品包同时交付 Patina Desktop、`patinad` 和 systemd user unit
