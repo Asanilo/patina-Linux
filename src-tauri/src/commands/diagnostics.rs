@@ -140,6 +140,21 @@ pub async fn cmd_get_daemon_service_diagnostics(
 }
 
 #[tauri::command]
+pub async fn cmd_get_daemon_client_diagnostics(
+    app: tauri::AppHandle,
+) -> Result<crate::app::daemon_client::DaemonClientDiagnosticsSnapshot, String> {
+    let port = app
+        .state::<crate::engine::api::server::ApiServerState>()
+        .confirmed_port()
+        .unwrap_or(crate::engine::api::server::DEFAULT_PORT);
+    let token = app
+        .state::<crate::engine::api::auth::ApiCredentialStore>()
+        .token()
+        .unwrap_or_default();
+    Ok(crate::app::daemon_client::diagnose(port, token).await)
+}
+
+#[tauri::command]
 pub fn cmd_repair_autostart_desktop_file(
     desktop_behavior_state: State<crate::app::state::DesktopBehaviorState>,
 ) -> Result<DesktopIntegrationDiagnosticsSnapshot, String> {

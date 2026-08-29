@@ -234,6 +234,8 @@ Stage 2F.2 已使用 Axum + Tower 替换通用 API/SSE 与浏览器 bridge 的�
 - tray、系统通知、文件选择、安装更新和窗口激活仍属于桌面客户端能力
 - 浏览器端遇到桌面专属操作时应显示明确不可用状态或请求桌面客户端处理，不复制不安全的文件系统能力
 
+Tauri desktop 的 daemon transport 由 Rust host 持有 Bearer Token，前端 JavaScript 不直接读取 owner-only credential。客户端只连接固定 loopback 地址，不跟随重定向，并限制连接时间、总请求时间与响应大小；使用任何运行状态前必须先确认 `runtime_host=daemon`、协议兼容范围、tracking ownership 和 event stream capability。端口可连接或 HTTP 200 本身不构成成功协商。
+
 浏览器 UI 不是公开 Web 部署面。daemon 默认只监听 loopback，并校验 loopback Host 与严格 Origin；浏览器 UI 使用 same-origin、HttpOnly、SameSite session，不获得长期 API Token。owner-only Bearer Token 只供 MCP、CLI 和 Agent 使用；浏览器扩展继续使用独立 bridge credential。浏览器写侧开放前，必须增加 CSRF 防护和操作确认，并验证跨站请求、DNS rebinding 与日志泄漏边界。
 
 Tauri 是当前桌面客户端实现，不是长期协议 owner。未来可以在不改变 daemon、数据库、浏览器 UI、TUI 和 MCP 契约的前提下评估 GPUI 或其他 Linux 桌面 UI 框架；框架替换必须作为独立项目，以实测内存、启动速度、桌面集成完整性和维护成本决定。

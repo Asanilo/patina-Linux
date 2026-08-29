@@ -62,7 +62,7 @@ Windows code follows a freeze-then-remove policy:
 | GNOME Wayland window tracking | Working prototype | Uses `org.patina.WindowTracker` from the GNOME Shell extension. |
 | X11 tracking | Implemented fallback / limited verification | Used on X11 sessions; GNOME Wayland does not silently fall back to X11. |
 | KDE / wlroots Wayland | Not promised | Needs compositor-specific work later. |
-| `patinad` | Runtime-owner and service preview | `--serve-api --track` owns the isolated runtime; DEB packaging includes a default-disabled systemd user unit and ticketed controlled restart. Settings can diagnose the installed/enabled/active unit state without enabling a second owner. Desktop remains the default owner. |
+| `patinad` | Runtime-owner and service preview | `--serve-api --track` owns the isolated runtime; DEB packaging includes a default-disabled systemd user unit and ticketed controlled restart. Settings can diagnose the unit without enabling a second owner, and the desktop Rust host can negotiate the daemon protocol without exposing its credential to JavaScript. Desktop remains the default owner. |
 | Local browser UI | Planned after daemon cutover | The first version will be a read-only loopback client served by `patinad`; not implemented yet. |
 | Local API | Implemented | Binds to `127.0.0.1:14840`, uses a bearer token, and exposes daemon capabilities plus an authenticated SSE stream. |
 | MCP wrapper and Agent Skill | Implemented | `npm run mcp:patina`; controlled writes cover app/settings, local API configuration, daemon restart verification, and Tools reminders, timers, and pomodoro. |

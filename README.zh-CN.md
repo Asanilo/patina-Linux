@@ -61,7 +61,7 @@ Windows 代码采用冻结后删除策略：
 | GNOME Wayland 窗口追踪 | 原型可用 | 依赖 GNOME Shell 扩展提供的 `org.patina.WindowTracker`。 |
 | X11 追踪 | 已实现 fallback / 验证有限 | X11 session 可走 fallback；GNOME Wayland 不会静默降级到 X11。 |
 | KDE / wlroots Wayland | 暂不承诺 | 后续需要按桌面环境分别适配。 |
-| `patinad` | Runtime owner 与服务预览 | 显式使用 `--serve-api --track` 后，daemon 可为隔离 profile 运行 tracking/watchdog、Linux 参与信号、浏览器活动和 Tools 提醒/计时运行时。DEB 包含默认禁用的 systemd user unit，设置诊断可只读检查其安装、启用和运行状态；桌面端仍是默认 owner。 |
+| `patinad` | Runtime owner 与服务预览 | 显式使用 `--serve-api --track` 后，daemon 可为隔离 profile 运行 tracking/watchdog、Linux 参与信号、浏览器活动和 Tools 提醒/计时运行时。DEB 包含默认禁用的 systemd user unit；桌面 Rust host 已可在不向 JavaScript 暴露凭据的前提下协商 daemon 协议，但桌面端仍是默认 owner。 |
 | 本机浏览器 UI | 已规划 | 将由 `patinad` 在 loopback 提供；当前尚未实现。 |
 | 本地 API | 已实现 | 监听 `127.0.0.1:14840`，使用 bearer token，并提供 daemon 能力查询和受认证 SSE。 |
 | MCP wrapper | 已实现 | `npm run mcp:patina`；受控写侧覆盖应用/设置，以及提醒、计时器和番茄钟。 |

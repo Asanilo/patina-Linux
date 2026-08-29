@@ -152,6 +152,7 @@ fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Build
         commands::diagnostics::cmd_get_local_api_settings,
         commands::diagnostics::cmd_get_desktop_integration_diagnostics,
         commands::diagnostics::cmd_get_daemon_service_diagnostics,
+        commands::diagnostics::cmd_get_daemon_client_diagnostics,
         commands::diagnostics::cmd_repair_autostart_desktop_file,
         commands::diagnostics::cmd_get_resource_diagnostics
     ])

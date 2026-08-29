@@ -6,17 +6,17 @@ use crate::engine::tracking::runtime_snapshot::{
 };
 use crate::platform::tracking_diagnostics::WindowTrackingDiagnostics;
 
-#[derive(Debug, Serialize)]
-pub struct ApiResponse<T: Serialize> {
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ApiResponse<T> {
     pub data: T,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ApiError {
     pub error: ApiErrorDetail,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ApiErrorDetail {
     pub code: String,
     pub message: String,
@@ -94,31 +94,31 @@ pub struct HealthResponse {
     pub platform: String,
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct AvailabilityCapability {
     pub available: bool,
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ProtocolCapability {
     pub current: u32,
     pub min_supported_client: u32,
     pub max_supported_client: u32,
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct WriteApiCapability {
     pub available: bool,
     pub operations: Vec<String>,
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct OwnedRuntimeCapability {
     pub owned: bool,
     pub ready: bool,
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct CapabilitiesResponse {
     pub server_version: String,
     pub protocol_version: u32,
