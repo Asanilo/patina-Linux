@@ -188,6 +188,7 @@ src/
     classification/
     data/
     dashboard/
+    destination/
     history/
     settings/
     tools/
@@ -197,6 +198,8 @@ src/
 ```
 
 `src/styles/` 是 CSS-only 的 Quiet Pro 样式资产区，由 `src/App.css` 作为单入口汇总导入；它不承接 TypeScript 业务代码、平台适配或跨层逻辑，因此不视为新的前端 owner 层。
+
+`features/destination/*` 拥有应用与网站活动详情的共享只读领域模型和详情界面；`Data`、`History`、`Dashboard` 只能通过其公开 target/request 契约启动详情，不各自复制聚合与时间线规则。
 
 前端终局结构中不再保留：
 

@@ -34,7 +34,7 @@ App note en: TBD.
 
 ### Internal
 
-- 暂无。
+- 新增应用与网站活动详情的共享只读领域模型，统一本地日期边界、连续活动、标题/URL 明细和 stale tracker 截断，为后续 Data、History 与 daemon 客户端共用详情能力建立 owner。
 
 ## [1.8.4] - 2026-08-30
 
