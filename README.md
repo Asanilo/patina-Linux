@@ -45,12 +45,17 @@ Already synced from upstream v1.8 work:
 - History timeline zoom.
 - History category distribution fix when Web Sync is disabled.
 - Custom-category rename/merge and excluded filtering, restricted so built-in categories cannot be renamed or deleted.
+- Upgrade protection for invalid Data bootstrap snapshots.
+- Automatic browser bridge recovery after temporary port conflicts.
+- Removal of the `framer-motion` runtime while retaining Quiet Pro CSS feedback.
+- Linux-native data-directory and WebView-cache management.
 
-Upstream-inspired work still needs Linux-specific design before porting:
+Upstream work that still needs Linux-specific architecture review:
 
-- Local data directory and WebView cache management.
-- Web Sync setup guide polish.
-- Engineering cleanup around copy modules, quality hotspot checks, and bundle budget checks.
+- Startup-source and first-frame lifecycle work, including independent launch-at-login and silent-start preferences.
+- Activity import, app/site details, web/category trends, and scheduled backup/export.
+- Cross-view quick classification, cumulative reminders, persistent widget status, and labeled navigation.
+- Localization, quality gates, and read-model restructuring alongside the Linux API, diagnostics, extensions, and `patinad` roadmap.
 
 ## Interface Preview
 |  |  |

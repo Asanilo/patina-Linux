@@ -9,9 +9,13 @@ use tauri::{AppHandle, Runtime};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
+use tokio::time::{sleep, Duration};
 
 const WEB_ACTIVITY_BRIDGE_HTTP_BODY_MAX_BYTES: usize = 64 * 1024;
 const WEB_ACTIVITY_BRIDGE_HTTP_HEADER_MAX_BYTES: usize = 16 * 1024;
+const WEB_ACTIVITY_BRIDGE_RETRY_INITIAL_DELAY_MS: u64 = 1_000;
+const WEB_ACTIVITY_BRIDGE_RETRY_MAX_DELAY_MS: u64 = 30_000;
+const WEB_ACTIVITY_BRIDGE_RETRY_MAX_FAILURES: u32 = 7;
 pub const WEB_ACTIVITY_BRIDGE_SETTINGS_CHANGED_EVENT: &str = "app-settings-changed";
 pub const WEB_ACTIVITY_BRIDGE_ACTIVE_WINDOW_EVENT: &str = "active-window-changed";
 pub const WEB_ACTIVITY_BRIDGE_TRACKING_DATA_EVENT: &str = "tracking-data-changed";
@@ -97,8 +101,12 @@ impl WebActivityBridgeRuntimeState {
         }
 
         if settings.enabled && (should_restart || inner.server_task.is_none()) {
-            inner.server_task =
-                spawn_server(app, self.shutdown_tx.subscribe(), settings.clone(), deps);
+            inner.server_task = Some(spawn_server(
+                app,
+                self.shutdown_tx.subscribe(),
+                settings.clone(),
+                deps,
+            ));
         }
 
         inner.settings = settings;
@@ -127,19 +135,17 @@ fn spawn_server<R: Runtime + 'static>(
     mut shutdown_rx: watch::Receiver<u64>,
     settings: WebActivityBridgeSettings,
     deps: WebActivityBridgeRuntimeDeps<R>,
-) -> Option<tauri::async_runtime::JoinHandle<()>> {
-    let (address, std_listener) = match open_web_activity_bridge_listener(settings.port) {
-        Ok(listener) => listener,
-        Err(error) => {
-            eprintln!(
-                "[web-activity-bridge] failed to bind 127.0.0.1:{}: {error}",
-                settings.port
-            );
-            return None;
-        }
-    };
-
-    Some(tauri::async_runtime::spawn(async move {
+) -> tauri::async_runtime::JoinHandle<()> {
+    tauri::async_runtime::spawn(async move {
+        let Some((address, std_listener)) = acquire_listener_with_retry(
+            settings.port,
+            &mut shutdown_rx,
+            WebActivityBridgeRetryPolicy::PRODUCTION,
+        )
+        .await
+        else {
+            return;
+        };
         let listener = match TcpListener::from_std(std_listener) {
             Ok(listener) => listener,
             Err(error) => {
@@ -177,7 +183,92 @@ fn spawn_server<R: Runtime + 'static>(
                 }
             });
         }
-    }))
+    })
+}
+
+#[derive(Clone, Copy, Debug)]
+struct WebActivityBridgeRetryPolicy {
+    initial_delay_ms: u64,
+    max_delay_ms: u64,
+    max_failures: u32,
+}
+
+impl WebActivityBridgeRetryPolicy {
+    const PRODUCTION: Self = Self {
+        initial_delay_ms: WEB_ACTIVITY_BRIDGE_RETRY_INITIAL_DELAY_MS,
+        max_delay_ms: WEB_ACTIVITY_BRIDGE_RETRY_MAX_DELAY_MS,
+        max_failures: WEB_ACTIVITY_BRIDGE_RETRY_MAX_FAILURES,
+    };
+
+    fn should_retry(self, failure_count: u32) -> bool {
+        failure_count < self.max_failures
+    }
+
+    fn delay(self, failure_count: u32) -> Duration {
+        let exponent = failure_count.saturating_sub(1).min(31);
+        let delay_ms = self
+            .initial_delay_ms
+            .saturating_mul(1_u64 << exponent)
+            .min(self.max_delay_ms);
+        Duration::from_millis(delay_ms)
+    }
+
+    #[cfg(test)]
+    const fn for_tests(delay_ms: u64, max_failures: u32) -> Self {
+        Self {
+            initial_delay_ms: delay_ms,
+            max_delay_ms: delay_ms,
+            max_failures,
+        }
+    }
+}
+
+async fn acquire_listener_with_retry(
+    port: u16,
+    shutdown_rx: &mut watch::Receiver<u64>,
+    retry_policy: WebActivityBridgeRetryPolicy,
+) -> Option<(SocketAddr, StdTcpListener)> {
+    let mut failure_count = 0_u32;
+
+    loop {
+        match open_web_activity_bridge_listener(port) {
+            Ok(listener) => return Some(listener),
+            Err(error) => {
+                failure_count = failure_count.saturating_add(1);
+                if !is_retryable_bind_error(&error) || !retry_policy.should_retry(failure_count) {
+                    eprintln!(
+                        "[web-activity-bridge] failed to bind 127.0.0.1:{port} after {failure_count} attempt(s): {error}"
+                    );
+                    return None;
+                }
+
+                let delay = retry_policy.delay(failure_count);
+                eprintln!(
+                    "[web-activity-bridge] bind 127.0.0.1:{port} failed; retrying in {}ms: {error}",
+                    delay.as_millis(),
+                );
+                tokio::select! {
+                    changed = shutdown_rx.changed() => {
+                        if changed.is_err() {
+                            eprintln!("[web-activity-bridge] shutdown channel closed while waiting to retry");
+                        }
+                        return None;
+                    }
+                    _ = sleep(delay) => {}
+                }
+            }
+        }
+    }
+}
+
+fn is_retryable_bind_error(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::AddrInUse
+            | io::ErrorKind::AddrNotAvailable
+            | io::ErrorKind::OutOfMemory
+            | io::ErrorKind::Interrupted
+    )
 }
 
 fn open_web_activity_bridge_listener(port: u16) -> io::Result<(SocketAddr, StdTcpListener)> {
@@ -382,6 +473,65 @@ mod tests {
 
         let (_address, recovered_listener) = open_web_activity_bridge_listener(port).unwrap();
         assert_eq!(recovered_listener.local_addr().unwrap().port(), port);
+    }
+
+    #[test]
+    fn retry_policy_uses_bounded_exponential_backoff() {
+        let policy = WebActivityBridgeRetryPolicy::PRODUCTION;
+        let delays = (1..=7)
+            .map(|failure| policy.delay(failure).as_millis() as u64)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            delays,
+            vec![1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000]
+        );
+        assert!(policy.should_retry(6));
+        assert!(!policy.should_retry(7));
+    }
+
+    #[test]
+    fn retrying_listener_recovers_when_occupied_port_is_released() {
+        tauri::async_runtime::block_on(async {
+            let (_address, occupied_listener) = open_web_activity_bridge_listener(0).unwrap();
+            let port = occupied_listener.local_addr().unwrap().port();
+            let (_shutdown_tx, mut shutdown_rx) = watch::channel(0);
+            let release = async move {
+                sleep(Duration::from_millis(12)).await;
+                drop(occupied_listener);
+            };
+            let acquire = acquire_listener_with_retry(
+                port,
+                &mut shutdown_rx,
+                WebActivityBridgeRetryPolicy::for_tests(5, 6),
+            );
+
+            let (_, listener) = tokio::join!(release, acquire);
+            let (address, _listener) =
+                listener.expect("listener should recover before retry budget is exhausted");
+            assert_eq!(address.port(), port);
+        });
+    }
+
+    #[test]
+    fn retrying_listener_stops_when_settings_generation_changes() {
+        tauri::async_runtime::block_on(async {
+            let (_address, occupied_listener) = open_web_activity_bridge_listener(0).unwrap();
+            let port = occupied_listener.local_addr().unwrap().port();
+            let (shutdown_tx, mut shutdown_rx) = watch::channel(0);
+            let cancel = async move {
+                sleep(Duration::from_millis(5)).await;
+                signal_shutdown(&shutdown_tx);
+            };
+            let acquire = acquire_listener_with_retry(
+                port,
+                &mut shutdown_rx,
+                WebActivityBridgeRetryPolicy::for_tests(50, 6),
+            );
+
+            let (_, listener) = tokio::join!(cancel, acquire);
+            assert!(listener.is_none());
+        });
     }
 
     #[test]

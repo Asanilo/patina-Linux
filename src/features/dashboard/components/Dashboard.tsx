@@ -1,5 +1,4 @@
-﻿import { motion } from "framer-motion";
-import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import { Layers3, Monitor, Minus, TrendingDown, TrendingUp } from "lucide-react";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import { UI_TEXT } from "../../../shared/copy/uiText.ts";
@@ -252,12 +251,12 @@ export default function Dashboard({
                         {formatDashboardDuration(app.duration)}
                       </div>
                       <div className="w-20 h-1.5 bg-[var(--qp-track-muted)] rounded-full mt-2.5 overflow-hidden">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${app.percentage}%` }}
-                          transition={{ duration: 0.22, ease: "easeOut" }}
-                          className="h-full rounded-full"
-                          style={{ backgroundColor: accentColor }}
+                        <div
+                          className="dashboard-top-app-progress h-full rounded-full"
+                          style={{
+                            backgroundColor: accentColor,
+                            width: `${app.percentage}%`,
+                          }}
                         />
                       </div>
                     </div>

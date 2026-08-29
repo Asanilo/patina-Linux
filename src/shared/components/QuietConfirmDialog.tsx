@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import QuietDialog from "./QuietDialog";
 import { UI_TEXT } from "../copy/uiText.ts";
 
@@ -26,15 +27,19 @@ export default function QuietConfirmDialog({
   onCancel,
   onConfirm,
 }: QuietConfirmDialogProps) {
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
+
   return (
     <QuietDialog
       open={open}
       title={title}
       description={description}
       onClose={onCancel}
+      initialFocusRef={cancelButtonRef}
       actions={(
         <>
           <button
+            ref={cancelButtonRef}
             type="button"
             onClick={onCancel}
             className="qp-button-secondary qp-dialog-action"

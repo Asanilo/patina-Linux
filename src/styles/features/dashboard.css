@@ -137,3 +137,6 @@
     min-height: 240px;
   }
 }
+.dashboard-top-app-progress {
+  transition: width var(--qp-motion-base) var(--qp-motion-ease);
+}

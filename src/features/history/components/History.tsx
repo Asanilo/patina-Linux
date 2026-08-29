@@ -1,7 +1,6 @@
 ﻿import { useState, useEffect, useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import type { CSSProperties, WheelEvent } from "react";
 import { createPortal } from "react-dom";
-import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, Expand, Globe2, Layers3, Minus, Plus, Tags, X, ZoomIn } from "lucide-react";
 import { type HistorySession } from "../../../shared/types/sessions";
 import type { WebActivitySegment } from "../../../shared/types/webActivity.ts";
@@ -1161,7 +1160,6 @@ export default function History({
 
     return (
       <div className={`history-timeline-list flex-1 overflow-y-auto custom-scrollbar space-y-2 pr-1 ${className}`.trim()}>
-        <AnimatePresence initial={false}>
           {timelineSessions.map((session) => {
             const mapped = AppClassification.mapApp(session.exeName, { appName: session.displayName });
             const overrideColor = AppClassification.getUserOverride(session.exeName)?.color;
@@ -1246,7 +1244,6 @@ export default function History({
               </div>
             );
           })}
-        </AnimatePresence>
       </div>
     );
   };
@@ -1265,7 +1262,6 @@ export default function History({
 
     return (
       <div className={`history-timeline-list flex-1 overflow-y-auto custom-scrollbar space-y-2 pr-1 ${className}`.trim()}>
-        <AnimatePresence initial={false}>
           {webTimelineItems.map((item) => (
             <div
               key={item.id}
@@ -1305,7 +1301,6 @@ export default function History({
               </div>
             </div>
           ))}
-        </AnimatePresence>
       </div>
     );
   };
@@ -1357,12 +1352,12 @@ export default function History({
                   </span>
                 </div>
                 <div className="h-1.5 bg-[var(--qp-track-muted)] rounded-full overflow-hidden">
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: `${item.percentage}%` }}
-                    transition={{ duration: 0.2, ease: "easeOut" }}
-                    className="h-full rounded-full"
-                    style={{ backgroundColor: item.color }}
+                  <div
+                    className="history-distribution-progress h-full rounded-full"
+                    style={{
+                      backgroundColor: item.color,
+                      width: `${item.percentage}%`,
+                    }}
                   />
                 </div>
               </div>
@@ -1402,14 +1397,13 @@ export default function History({
         subtitle={`${formatDateLabel(selectedDate)} · ${UI_TEXT.history.sessionCount(timelineSessions.length)}`}
         rightSlot={(
           <div className="flex items-center gap-2 shrink-0">
-            <motion.button
-              whileTap={{ scale: 0.995 }}
-              transition={{ duration: 0.1, ease: "easeOut" }}
+            <button
+              type="button"
               onClick={() => changeDate(-1)}
               className="qp-control w-9 h-9 !min-h-0 flex items-center justify-center text-[var(--qp-text-secondary)] hover:text-[var(--qp-text-primary)]"
             >
               <ChevronLeft size={16} />
-            </motion.button>
+            </button>
             <div ref={datePickerRef} className="relative">
               <span
                 role="button"
@@ -1425,15 +1419,10 @@ export default function History({
               >
                 {formatDateLabel(selectedDate)}
               </span>
-              {createPortal((
-              <AnimatePresence>
-                {calendarOpen && (
-                  <motion.div
+              {createPortal(
+                calendarOpen ? (
+                  <div
                     ref={calendarPopoverRef}
-                    initial={{ opacity: 0, y: -4, scale: 0.99 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -4, scale: 0.99 }}
-                    transition={{ duration: 0.12, ease: "easeOut" }}
                     className="history-calendar-popover"
                     style={{
                       left: calendarPosition.left,
@@ -1485,20 +1474,19 @@ export default function History({
                         );
                       })}
                     </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-              ), document.body)}
+                  </div>
+                ) : null,
+                document.body,
+              )}
             </div>
-            <motion.button
-              whileTap={{ scale: 0.995 }}
-              transition={{ duration: 0.1, ease: "easeOut" }}
+            <button
+              type="button"
               onClick={() => changeDate(1)}
               disabled={isToday}
               className="qp-control w-9 h-9 !min-h-0 flex items-center justify-center text-[var(--qp-text-secondary)] hover:text-[var(--qp-text-primary)] disabled:opacity-35 disabled:cursor-not-allowed"
             >
               <ChevronRight size={16} />
-            </motion.button>
+            </button>
           </div>
         )}
       />
@@ -1551,44 +1539,39 @@ export default function History({
         </div>
       </div>
 
-      {createPortal((
-        <AnimatePresence>
-          {timelineDetailsPopover && (
-            <motion.div
-              ref={timelineDetailsPopoverRef}
-              initial={{ opacity: 0, y: -4, scale: 0.99 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -4, scale: 0.99 }}
-              transition={{ duration: 0.12, ease: "easeOut" }}
-              className={`history-activity-popover history-activity-popover-${timelineDetailsPopover.placement}`}
-              style={{
-                left: timelineDetailsPopover.left,
-                top: timelineDetailsPopover.top,
-              }}
-            >
-              <div className="history-activity-popover-title">
-                {UI_TEXT.history.titleDetails}
-              </div>
-              <div className="history-activity-popover-list">
-                {timelineDetailsPopover.titleSamples.map((sample, index) => (
-                  <div
-                    key={`${timelineDetailsPopover.sessionId}-${index}-${sample.title}`}
-                    className="history-activity-popover-item"
-                  >
-                    <span className="history-activity-popover-item-title">
-                      {sample.title}
-                    </span>
-                    <span className="history-activity-popover-item-time">
-                      {formatTime(sample.startTime)}
-                      {sample.endTime ? ` - ${formatTime(sample.endTime)}` : ` ${UI_TEXT.history.untilNow}`}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      ), document.body)}
+      {createPortal(
+        timelineDetailsPopover ? (
+          <div
+            ref={timelineDetailsPopoverRef}
+            className={`history-activity-popover history-activity-popover-${timelineDetailsPopover.placement}`}
+            style={{
+              left: timelineDetailsPopover.left,
+              top: timelineDetailsPopover.top,
+            }}
+          >
+            <div className="history-activity-popover-title">
+              {UI_TEXT.history.titleDetails}
+            </div>
+            <div className="history-activity-popover-list">
+              {timelineDetailsPopover.titleSamples.map((sample, index) => (
+                <div
+                  key={`${timelineDetailsPopover.sessionId}-${index}-${sample.title}`}
+                  className="history-activity-popover-item"
+                >
+                  <span className="history-activity-popover-item-title">
+                    {sample.title}
+                  </span>
+                  <span className="history-activity-popover-item-time">
+                    {formatTime(sample.startTime)}
+                    {sample.endTime ? ` - ${formatTime(sample.endTime)}` : ` ${UI_TEXT.history.untilNow}`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null,
+        document.body,
+      )}
 
       <QuietDialog
         open={timelineDialogOpen}

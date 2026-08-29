@@ -444,6 +444,29 @@ await runTest("data bootstrap snapshot loads a valid persisted payload into cach
   assert.equal(loaded?.overviewTrendViewModel.totalDuration, snapshot.overviewTrendViewModel.totalDuration);
 });
 
+await runTest("data bootstrap snapshot rejects incomplete app options and clears the payload", async () => {
+  const snapshot = makeBootstrapSnapshot();
+  const staleOption = snapshot.appTrendViewModel.appOptions[0] as unknown as Record<string, unknown>;
+  delete staleOption.exeName;
+  let cleared = false;
+
+  const loaded = await loadPersistedDataBootstrapSnapshot({
+    loadPayload: async () => JSON.stringify(snapshot),
+    savePayload: async () => {
+      throw new Error("unexpected save");
+    },
+    clearPayload: async () => {
+      cleared = true;
+    },
+    warn: () => {
+      throw new Error("unexpected warning");
+    },
+  });
+
+  assert.equal(loaded, null);
+  assert.equal(cleared, true);
+});
+
 await runTest("data bootstrap snapshot refuses oversized payloads", async () => {
   const warnings: string[] = [];
   let saved = false;

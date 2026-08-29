@@ -2133,7 +2133,7 @@ try {
           return Boolean(
             dialog
             && dialog.getAttribute("role") === "dialog"
-            && dialog.getAttribute("aria-label") === "时间线"
+            && document.getElementById(dialog.getAttribute("aria-labelledby") ?? "")?.textContent === "时间线"
             && dialogList
             && dialogDurationControls
             && compactTrack
@@ -2221,7 +2221,7 @@ try {
           hasDialog: Boolean(
             dialog
             && dialog.getAttribute("role") === "dialog"
-            && dialog.getAttribute("aria-label") === "时间轴缩放"
+            && document.getElementById(dialog.getAttribute("aria-labelledby") ?? "")?.textContent === "时间轴缩放"
             && timeline
           ),
           zoomHours: timeline?.getAttribute("data-history-timeline-zoom-hours") ?? null,

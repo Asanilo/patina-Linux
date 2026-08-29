@@ -129,47 +129,6 @@ function tauriStubFor(path: string) {
   throw new Error(`Missing Tauri smoke stub for ${path}`);
 }
 
-function createMotionStub() {
-  const React = require("react") as typeof import("react");
-  const cache = new Map<string | symbol, unknown>();
-  const ignoredMotionProps = new Set([
-    "animate",
-    "exit",
-    "initial",
-    "layout",
-    "transition",
-    "variants",
-    "whileHover",
-    "whileTap",
-  ]);
-
-  const motion = new Proxy({}, {
-    get(_target, prop) {
-      if (prop === "__esModule") return false;
-      if (cache.has(prop)) return cache.get(prop);
-      const tag = String(prop);
-      const Component = React.forwardRef((props: Record<string, unknown>, ref) => {
-        const domProps: Record<string, unknown> = {};
-        for (const [key, value] of Object.entries(props)) {
-          if (!ignoredMotionProps.has(key)) {
-            domProps[key] = value;
-          }
-        }
-        return React.createElement(tag, { ...domProps, ref });
-      });
-      cache.set(prop, Component);
-      return Component;
-    },
-  });
-
-  return {
-    AnimatePresence: ({ children }: { children?: unknown }) => (
-      React.createElement(React.Fragment, null, children)
-    ),
-    motion,
-  };
-}
-
 function createRechartsStub() {
   const React = require("react") as typeof import("react");
   const Container = ({ children }: { children?: unknown }) => (
@@ -254,9 +213,6 @@ function installSmokeRenderHooks() {
   Module._load = function smokeLoad(request: string, parent: unknown, isMain: boolean) {
     if (request.startsWith("@tauri-apps/")) {
       return tauriStubFor(request);
-    }
-    if (request === "framer-motion") {
-      return createMotionStub();
     }
     if (request === "lucide-react") {
       return createLucideStub();
