@@ -22,7 +22,7 @@
 
 截至当前发布线：
 
-- 代码版本为 `1.8.3`
+- 代码版本为 `1.8.4`
 - 稳定发布线为 `1.x`
 - 仓库已进入公开稳定阶段，后续版本按标准 `SemVer` 管理
 - 默认通过推送 `vX.Y.Z` / `vX.Y.Z-prerelease` 版本 tag 自动触发 GitHub Actions 工作流 [prepare-release.yml](../.github/workflows/prepare-release.yml) 中的 `Publish Linux Release` 流程；必要时也可手动触发已有 tag 的发布流程补跑
@@ -158,6 +158,16 @@
 - 不应通过重写 tag、强推 tag、删除后重发同版本稳定版来覆盖既有发布
 - 如果 `1.0.1` 已发布，后续修复默认进入 `1.0.2`
 - 只有目标版本尚未正式发布时，才继续沿用同一版本号准备发布
+
+### 7.1 Fork 与上游 tag 隔离
+
+GitHub 上的 fork 与上游仓库可以各自拥有同名 tag；但同一个本地 clone 的 `refs/tags/*` 不按 remote 分区。为避免审查上游版本时覆盖 Linux 发布 tag：
+
+- `origin` 的 Linux 正式版本继续使用 `vX.Y.Z`。
+- `upstream` remote 应配置为不自动获取 tag：`git config remote.upstream.tagOpt --no-tags`。
+- 日常更新上游代码使用 `git fetch upstream --no-tags`。
+- 需要保留某个上游 tag 时，将它显式映射到命名空间，例如：`git fetch --no-tags upstream refs/tags/v1.9.4:refs/tags/upstream/v1.9.4`。
+- 不得为了处理本地同名 ref 而改写或强推 `origin` 已发布 tag；应先确认 `git ls-remote --tags origin`，再只整理本地或 `upstream/*` ref。
 
 ---
 

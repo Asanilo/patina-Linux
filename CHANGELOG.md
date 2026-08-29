@@ -22,11 +22,39 @@ App note en: TBD.
 
 ### Changed
 
+- 暂无。
+
+### Fixed
+
+- 暂无。
+
+### Removed
+
+- 暂无。
+
+### Internal
+
+- 暂无。
+
+## [1.8.4] - 2026-08-30
+
+Release: 修复 Linux 安装包更新分流，并提升网页同步、数据恢复与弹窗交互稳定性。
+App note: 修复 Linux 更新分流，并提升网页同步与界面稳定性。
+App note en: Fixes Linux update routing and improves web sync and interface reliability.
+
+### Added
+
+- 暂无。
+
+### Changed
+
 - 移除 `framer-motion` 前端运行时依赖；现有导航、弹窗、Toast、进度条和历史页面改用原生元素及 Quiet Pro CSS token，减少 WebView 动效闪烁和 bundle 开销。
 - 弹窗改由共享组件管理初始焦点、Tab 循环、嵌套层级和关闭后的焦点恢复，避免键盘操作逃出当前弹窗。
 
 ### Fixed
 
+- 修复 Linux updater 对 AppImage 与 `.deb` 安装来源不区分的问题；更新清单现在为两种安装包提供独立 URL 与签名，并保留旧客户端所需的 AppImage 回退项。
+- 修复同一时刻连续出现多个 Toast 时可能生成重复 ID、导致消息覆盖或错误消失的问题。
 - 修复旧 Data 首屏快照缺少当前必需字段时可能触发页面异常的问题；无效快照会在进入页面前被拒绝并清理。
 - 修复浏览器网页同步端口暂时占用后本次运行无法自行恢复的问题；桥接现在使用有界指数退避，并在端口、Token 或启用状态变化时取消旧重试。
 
@@ -36,7 +64,7 @@ App note en: TBD.
 
 ### Internal
 
-- 暂无。
+- 新增可离线校验 refs、Release 附件和 SHA-256 清单的 GitHub 脱离备份工具，且不读取或导出仓库 Secrets。
 
 ## [1.8.3] - 2026-07-03
 
