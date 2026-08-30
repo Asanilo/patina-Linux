@@ -5,6 +5,7 @@ pub mod desktop_behavior;
 pub mod main_window;
 pub mod runtime;
 pub mod runtime_tasks;
+pub mod scheduled_backup;
 pub mod state;
 pub mod tray;
 pub mod web_activity;

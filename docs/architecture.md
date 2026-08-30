@@ -457,6 +457,8 @@ engine/tracking/
 - backup / restore 数据读写
 - 数据边界与仓储实现
 
+自动备份遵循 `app / engine / domain / data` 的同一 owner 链：`app/scheduled_backup.rs` 只持有运行锁、唤醒和事件，`engine/scheduled_backup.rs` 负责任务执行、恢复对账与安全保留策略，`domain/backup_schedule.rs` 负责计划和时间槽语义，`data/repositories/scheduled_backup.rs` 只负责 SQLite 状态转换，归档编解码继续由 `data/backup.rs` 持有。Tauri command 只映射 IPC 参数，不能承接调度流程。
+
 它必须持续拦住这些细节回流到：
 
 - `commands/*`

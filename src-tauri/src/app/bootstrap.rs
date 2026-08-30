@@ -60,6 +60,7 @@ fn register_managed_state_and_plugins(
         .manage(TrackingRuntimeSnapshotState::default())
         .manage(runtime_health)
         .manage(ToolsRuntimeState::default())
+        .manage(crate::app::scheduled_backup::ScheduledBackupRuntimeState::default())
         .manage(crate::platform::web_activity_bridge::WebActivityBridgeRuntimeState::default())
         .manage(crate::engine::remote_status_bridge::RemoteStatusBridgeRuntimeState::default())
         .manage(WebActivityRuntimeState::default())
@@ -147,6 +148,9 @@ fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Build
         commands::backup::cmd_upload_webdav_backup,
         commands::backup::cmd_list_webdav_backups,
         commands::backup::cmd_download_webdav_backup,
+        commands::backup::cmd_get_scheduled_backup_snapshot,
+        commands::backup::cmd_pick_scheduled_backup_directory,
+        commands::backup::cmd_save_scheduled_backup_config,
         commands::persistence::cmd_reopen_sqlite_pool,
         commands::diagnostics::cmd_get_local_api_diagnostics,
         commands::diagnostics::cmd_get_local_api_settings,

@@ -8,9 +8,10 @@ use crate::domain::backup::{
 use crate::platform::storage_paths;
 use crc32fast::Hasher;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use sqlx::{Pool, Sqlite};
 use std::collections::BTreeMap;
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Runtime};
@@ -31,6 +32,12 @@ const BACKUP_TOOL_TIMERS_ENTRY_NAME: &str = "data/tool_timers.json";
 const BACKUP_TOOL_TIMER_LAPS_ENTRY_NAME: &str = "data/tool_timer_laps.json";
 const BACKUP_TOOL_POMODORO_RUNS_ENTRY_NAME: &str = "data/tool_pomodoro_runs.json";
 const BACKUP_TOOL_DAILY_STATS_ENTRY_NAME: &str = "data/tool_daily_stats.json";
+
+#[derive(Debug)]
+pub enum CreateNewBackupError {
+    AlreadyExists,
+    Failed(String),
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 struct BackupArchiveManifest {
@@ -728,6 +735,54 @@ pub async fn export_backup(backup_path: Option<String>, app: AppHandle) -> Resul
         .map_err(|error| format!("failed to write backup file: {error}"))?;
 
     Ok(target_path.to_string_lossy().to_string())
+}
+
+pub async fn export_scheduled_backup_create_new(
+    app: &AppHandle,
+    target_path: &Path,
+) -> Result<(), CreateNewBackupError> {
+    let payload = load_backup_payload(app)
+        .await
+        .map_err(CreateNewBackupError::Failed)?;
+    let archive = encode_backup_archive(&payload).map_err(CreateNewBackupError::Failed)?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(target_path)
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                CreateNewBackupError::AlreadyExists
+            } else {
+                CreateNewBackupError::Failed(format!(
+                    "failed to create scheduled backup `{}`: {error}",
+                    target_path.display()
+                ))
+            }
+        })?;
+
+    if let Err(error) = file.write_all(&archive).and_then(|_| file.sync_all()) {
+        drop(file);
+        let _ = fs::remove_file(target_path);
+        return Err(CreateNewBackupError::Failed(format!(
+            "failed to publish scheduled backup `{}`: {error}",
+            target_path.display()
+        )));
+    }
+    Ok(())
+}
+
+pub fn validate_scheduled_snapshot(target_path: &Path) -> Result<(String, u64), String> {
+    read_backup_payload(target_path)?;
+    let bytes = fs::read(target_path).map_err(|error| {
+        format!(
+            "failed to read scheduled backup `{}` for validation: {error}",
+            target_path.display()
+        )
+    })?;
+    let size = u64::try_from(bytes.len())
+        .map_err(|_| "scheduled backup is too large to validate".to_string())?;
+    let hash = format!("{:x}", Sha256::digest(&bytes));
+    Ok((hash, size))
 }
 
 pub async fn restore_backup(

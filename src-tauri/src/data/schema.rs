@@ -8,6 +8,8 @@ pub const SOFTWARE_REMINDER_RULES_MIGRATION_VERSION: i64 = 3;
 pub const SOFTWARE_REMINDER_RULES_MIGRATION_DESCRIPTION: &str = "create_software_reminder_rules";
 pub const WEB_ACTIVITY_MIGRATION_VERSION: i64 = 4;
 pub const WEB_ACTIVITY_MIGRATION_DESCRIPTION: &str = "create_web_activity_segments";
+pub const SCHEDULED_BACKUP_MIGRATION_VERSION: i64 = 5;
+pub const SCHEDULED_BACKUP_MIGRATION_DESCRIPTION: &str = "create_scheduled_backup_tables";
 
 pub const CURRENT_BASELINE_SCHEMA_SQL: &str = "
     CREATE TABLE IF NOT EXISTS sessions (
@@ -197,6 +199,55 @@ pub const WEB_ACTIVITY_SCHEMA_SQL: &str = "
     WHERE end_time IS NULL;
 ";
 
+pub const SCHEDULED_BACKUP_SCHEMA_SQL: &str = "
+    CREATE TABLE IF NOT EXISTS scheduled_backup_config (
+        id INTEGER PRIMARY KEY CHECK(id = 1),
+        enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)),
+        cadence TEXT NOT NULL CHECK(cadence IN ('daily', 'weekly')),
+        weekday INTEGER CHECK(weekday BETWEEN 1 AND 7),
+        local_time_minutes INTEGER NOT NULL CHECK(local_time_minutes BETWEEN 0 AND 1439),
+        target_dir TEXT NOT NULL CHECK(TRIM(target_dir) <> ''),
+        retention_count INTEGER NOT NULL CHECK(retention_count = 3),
+        target_generation TEXT NOT NULL CHECK(TRIM(target_generation) <> ''),
+        schedule_anchor_at_ms INTEGER NOT NULL CHECK(schedule_anchor_at_ms >= 0),
+        updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0),
+        CHECK(
+            (cadence = 'daily' AND weekday IS NULL)
+            OR (cadence = 'weekly' AND weekday IS NOT NULL)
+        )
+    );
+
+    CREATE TABLE IF NOT EXISTS scheduled_backup_runs (
+        run_key TEXT PRIMARY KEY CHECK(TRIM(run_key) <> ''),
+        target_generation TEXT NOT NULL CHECK(TRIM(target_generation) <> ''),
+        logical_date TEXT NOT NULL CHECK(length(logical_date) = 10),
+        logical_time_minutes INTEGER NOT NULL CHECK(logical_time_minutes BETWEEN 0 AND 1439),
+        target_path TEXT NOT NULL CHECK(TRIM(target_path) <> ''),
+        status TEXT NOT NULL CHECK(status IN ('running', 'retry_wait', 'succeeded', 'failed')),
+        file_state TEXT NOT NULL CHECK(file_state IN ('absent', 'present', 'pruned', 'missing', 'conflict')),
+        attempt_count INTEGER NOT NULL CHECK(attempt_count BETWEEN 1 AND 3),
+        retry_at_ms INTEGER CHECK(retry_at_ms IS NULL OR retry_at_ms >= 0),
+        started_at_ms INTEGER NOT NULL CHECK(started_at_ms >= 0),
+        completed_at_ms INTEGER CHECK(completed_at_ms IS NULL OR completed_at_ms >= 0),
+        archive_sha256 TEXT,
+        size_bytes INTEGER CHECK(size_bytes IS NULL OR size_bytes >= 0),
+        error_code TEXT,
+        error_message TEXT,
+        cleanup_warning TEXT,
+        updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0),
+        UNIQUE(target_generation, logical_date, logical_time_minutes)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_scheduled_backup_runs_retention
+    ON scheduled_backup_runs(
+        target_generation, status, file_state,
+        logical_date DESC, logical_time_minutes DESC
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_scheduled_backup_runs_status_retry
+    ON scheduled_backup_runs(status, retry_at_ms, updated_at_ms);
+";
+
 pub fn tracker_migrations() -> Vec<Migration> {
     vec![
         Migration {
@@ -221,6 +272,12 @@ pub fn tracker_migrations() -> Vec<Migration> {
             version: WEB_ACTIVITY_MIGRATION_VERSION,
             description: WEB_ACTIVITY_MIGRATION_DESCRIPTION,
             sql: WEB_ACTIVITY_SCHEMA_SQL,
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: SCHEDULED_BACKUP_MIGRATION_VERSION,
+            description: SCHEDULED_BACKUP_MIGRATION_DESCRIPTION,
+            sql: SCHEDULED_BACKUP_SCHEMA_SQL,
             kind: MigrationKind::Up,
         },
     ]

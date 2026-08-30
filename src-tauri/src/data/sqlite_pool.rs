@@ -159,7 +159,7 @@ async fn prepare_current_schema_for_pool(pool: &Pool<Sqlite>) -> Result<(), Stri
         eprintln!("[sql] normalized sqlite migration history to the current baseline");
     }
 
-    if !has_current_baseline_schema(pool).await? {
+    if !has_current_schema(pool).await? {
         return Err("sqlite schema validation failed for prepared database".to_string());
     }
     Ok(())
@@ -174,7 +174,7 @@ async fn prepare_staged_schema_for_pool(pool: &Pool<Sqlite>) -> Result<(), Strin
     normalize_current_baseline_migration_history_for_pool(pool).await?;
     run_current_migrations(pool).await?;
     normalize_current_baseline_migration_history_for_pool(pool).await?;
-    if !has_current_baseline_schema(pool).await? {
+    if !has_current_schema(pool).await? {
         return Err("sqlite schema validation failed for staged migration database".to_string());
     }
     Ok(())
@@ -216,6 +216,8 @@ async fn table_has_columns(
         "tool_daily_stats" => "PRAGMA table_info(tool_daily_stats)",
         "tool_software_reminder_rules" => "PRAGMA table_info(tool_software_reminder_rules)",
         "web_activity_segments" => "PRAGMA table_info(web_activity_segments)",
+        "scheduled_backup_config" => "PRAGMA table_info(scheduled_backup_config)",
+        "scheduled_backup_runs" => "PRAGMA table_info(scheduled_backup_runs)",
         _ => {
             return Err(format!(
                 "unsupported schema inspection table `{table_name}`"
@@ -259,6 +261,7 @@ async fn table_has_index(
         "tool_daily_stats" => "PRAGMA index_list(tool_daily_stats)",
         "tool_software_reminder_rules" => "PRAGMA index_list(tool_software_reminder_rules)",
         "web_activity_segments" => "PRAGMA index_list(web_activity_segments)",
+        "scheduled_backup_runs" => "PRAGMA index_list(scheduled_backup_runs)",
         _ => return Err(format!("unsupported index inspection table `{table_name}`")),
     };
 
@@ -723,6 +726,78 @@ async fn has_web_activity_schema(pool: &Pool<Sqlite>) -> Result<bool, String> {
     Ok(segments_ready && time_index_ready && domain_time_index_ready && single_active_index_ready)
 }
 
+async fn has_scheduled_backup_schema(pool: &Pool<Sqlite>) -> Result<bool, String> {
+    if !table_exists(pool, "scheduled_backup_config").await?
+        || !table_exists(pool, "scheduled_backup_runs").await?
+    {
+        return Ok(false);
+    }
+
+    let config_ready = table_has_columns(
+        pool,
+        "scheduled_backup_config",
+        &[
+            "id",
+            "enabled",
+            "cadence",
+            "weekday",
+            "local_time_minutes",
+            "target_dir",
+            "retention_count",
+            "target_generation",
+            "schedule_anchor_at_ms",
+            "updated_at_ms",
+        ],
+    )
+    .await?;
+    let runs_ready = table_has_columns(
+        pool,
+        "scheduled_backup_runs",
+        &[
+            "run_key",
+            "target_generation",
+            "logical_date",
+            "logical_time_minutes",
+            "target_path",
+            "status",
+            "file_state",
+            "attempt_count",
+            "retry_at_ms",
+            "started_at_ms",
+            "completed_at_ms",
+            "archive_sha256",
+            "size_bytes",
+            "error_code",
+            "error_message",
+            "cleanup_warning",
+            "updated_at_ms",
+        ],
+    )
+    .await?;
+    let retention_index_ready = table_has_index(
+        pool,
+        "scheduled_backup_runs",
+        "idx_scheduled_backup_runs_retention",
+    )
+    .await?;
+    let retry_index_ready = table_has_index(
+        pool,
+        "scheduled_backup_runs",
+        "idx_scheduled_backup_runs_status_retry",
+    )
+    .await?;
+
+    Ok(config_ready && runs_ready && retention_index_ready && retry_index_ready)
+}
+
+async fn has_current_schema(pool: &Pool<Sqlite>) -> Result<bool, String> {
+    Ok(has_current_baseline_schema(pool).await?
+        && has_base_tools_schema(pool).await?
+        && has_software_reminder_rules_schema(pool).await?
+        && has_web_activity_schema(pool).await?
+        && has_scheduled_backup_schema(pool).await?)
+}
+
 async fn normalize_current_baseline_migration_history_for_pool(
     pool: &Pool<Sqlite>,
 ) -> Result<bool, String> {
@@ -741,6 +816,8 @@ async fn normalize_current_baseline_migration_history_for_pool(
         expected.truncate(2);
     } else if !has_web_activity_schema(pool).await? {
         expected.truncate(3);
+    } else if !has_scheduled_backup_schema(pool).await? {
+        expected.truncate(4);
     }
     if expected.is_empty() {
         return Ok(false);
@@ -954,6 +1031,18 @@ mod tests {
             pool.execute(schema::WEB_ACTIVITY_SCHEMA_SQL).await.unwrap();
 
             assert!(has_web_activity_schema(&pool).await.unwrap());
+        });
+    }
+
+    #[test]
+    fn scheduled_backup_schema_creates_complete_tables() {
+        tauri::async_runtime::block_on(async {
+            let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+            pool.execute(schema::SCHEDULED_BACKUP_SCHEMA_SQL)
+                .await
+                .unwrap();
+
+            assert!(has_scheduled_backup_schema(&pool).await.unwrap());
         });
     }
 

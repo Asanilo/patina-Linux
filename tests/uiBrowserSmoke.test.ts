@@ -135,9 +135,44 @@ function tauriStubFor(path: string) {
         };
       }
 
+      function scheduledBackupSnapshot() {
+        return {
+          config: {
+            enabled: false,
+            cadence: "weekly",
+            weekday: 5,
+            localTimeMinutes: 1260,
+            targetDir: "/home/smoke/.local/share/Patina/backups",
+            targetGeneration: "smoke-generation",
+            scheduleAnchorAtMs: Date.now(),
+            updatedAtMs: Date.now(),
+          },
+          nextExecutionAtMs: null,
+          recentSuccess: null,
+          recentFailure: null,
+          activeRun: null,
+        };
+      }
+
       export async function invoke(command, payload = {}) {
         if (command === "cmd_get_storage_snapshot") {
           return storageSnapshot();
+        }
+        if (command === "cmd_get_scheduled_backup_snapshot") {
+          return scheduledBackupSnapshot();
+        }
+        if (command === "cmd_save_scheduled_backup_config") {
+          return {
+            ...scheduledBackupSnapshot(),
+            config: {
+              ...scheduledBackupSnapshot().config,
+              ...payload.input,
+              updatedAtMs: Date.now(),
+            },
+          };
+        }
+        if (command === "cmd_pick_scheduled_backup_directory") {
+          return "/home/smoke/Backups";
         }
         if (command === "cmd_commit_app_settings") {
           const settings = loadStoredSettings();
@@ -1639,6 +1674,66 @@ try {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     `);
     await waitForExpression(client!, sessionId, "!document.querySelector('[role=\"dialog\"]')");
+  });
+
+  await runTest("settings scheduled backup dialog fits a compact viewport", async () => {
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const node = document.querySelector('[aria-label=' + ${jsonString(JSON.stringify("设置"))} + ']');
+          if (!node) return false;
+          node.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(client!, sessionId, `document.body.innerText.includes(${jsonString("设置计划")})`);
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const trigger = Array.from(document.querySelectorAll("button"))
+            .find((node) => node.textContent?.trim() === "设置计划");
+          if (!trigger) return false;
+          trigger.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(client!, sessionId, `document.body.innerText.includes(${jsonString("启用自动备份")})`);
+
+    await client!.command("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+    }, sessionId);
+    await delay(100);
+    assert.equal(
+      await evaluate(client!, sessionId, "document.documentElement.scrollWidth <= window.innerWidth + 1"),
+      true,
+      "Settings scheduled backup dialog overflowed at 390px",
+    );
+
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const cancel = Array.from(document.querySelectorAll("button"))
+            .find((node) => node.textContent?.trim() === "取消");
+          if (!cancel) return false;
+          cancel.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await client!.command("Emulation.setDeviceMetricsOverride", {
+      width: 1280,
+      height: 820,
+      deviceScaleFactor: 1,
+      mobile: false,
+    }, sessionId);
   });
 
   await runTest("settings local storage controls fit a compact viewport", async () => {

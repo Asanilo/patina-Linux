@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Database, FileArchive, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { UI_TEXT } from "../../../shared/copy/uiText.ts";
 import QuietDangerAction from "../../../shared/components/QuietDangerAction";
@@ -13,6 +13,8 @@ import type { RemoteBackupEntry, RemoteBackupState } from "../hooks/useRemoteBac
 import SettingsRemoteBackupPanel from "./SettingsRemoteBackupPanel";
 import SettingsStoragePanel from "./SettingsStoragePanel";
 import type { StorageSettingsState } from "../hooks/useStorageSettingsState.ts";
+
+const SettingsScheduledBackupPanel = lazy(() => import("./SettingsScheduledBackupPanel.tsx"));
 
 type CleanupOption = { value: CleanupRange; label: string };
 
@@ -191,6 +193,10 @@ export default function SettingsDataSafetyPanel({
                 </div>
               </QuietActionRow>
             </div>
+
+            <Suspense fallback={<div className="qp-action-row mt-3 h-[72px]" aria-hidden="true" />}>
+              <SettingsScheduledBackupPanel />
+            </Suspense>
 
             <SettingsRemoteBackupPanel
               remoteBackup={remoteBackup}

@@ -8,7 +8,11 @@ pub(crate) async fn restore_backup_and_refresh(
     backup_path: String,
     strategy: RestoreStrategy,
 ) -> Result<(), String> {
+    let _scheduled_backup_guard = crate::app::scheduled_backup::lock_for_restore(&app).await;
     backup::restore_backup(backup_path, app.clone(), strategy).await?;
+    if strategy == RestoreStrategy::Replace {
+        crate::app::scheduled_backup::reset_after_replace_restore_while_locked(&app).await?;
+    }
     desktop_behavior::sync_desktop_behavior_from_storage(app.clone(), false).await?;
     app.emit("app-settings-changed", serde_json::json!({}))
         .map_err(|error| format!("failed to emit settings refresh event: {error}"))?;
