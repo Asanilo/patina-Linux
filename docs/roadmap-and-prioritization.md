@@ -101,6 +101,7 @@
 - `Dashboard` 的可读性
 - `History` 的回看效率
 - `Data` 的长期活动理解效率
+- 应用与网站详情在 `Data / History / Dashboard` 之间保持同一聚合、日期和时间线语义
 - `Classification` 的管理清晰度
 - `Tools` 的轻量主动工具体验
 - `Settings` 的行为透明度

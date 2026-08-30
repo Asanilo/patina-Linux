@@ -60,6 +60,8 @@ import ToolsSidebarStatusEntry from "../features/tools/components/ToolsSidebarSt
 import ToolAlertDialog from "../features/tools/components/ToolAlertDialog.tsx";
 import type { ToolsOpenTarget } from "../features/tools/types.ts";
 import { resolvePlatformTrackingDiagnosticMessage } from "./services/platformTrackingDiagnosticsService.ts";
+import DestinationDetailDialogEntry from "../features/destination/components/DestinationDetailDialogEntry.tsx";
+import { useDestinationDetailLauncher } from "../features/destination/hooks/useDestinationDetailLauncher.ts";
 
 const DATA_FOREGROUND_PREWARM_DELAY_MS = 1_200;
 const BACKGROUND_CACHE_RELEASE_DELAY_MS = LONG_BACKGROUND_DELAY_MS;
@@ -121,6 +123,7 @@ function AppShellContent() {
     setMappingDirty,
   } = useAppShellNavigation({ confirm });
   const { toasts, pushToast } = useAppShellToasts();
+  const destinationDetailLauncher = useDestinationDetailLauncher();
   const [readModelRefreshState, setReadModelRefreshState] = useState(INITIAL_READ_MODEL_REFRESH_STATE);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [settingsThemeModePreview, setSettingsThemeModePreview] = useState<ThemeMode | null>(null);
@@ -414,6 +417,19 @@ function AppShellContent() {
         <QuietToastStack toasts={toasts} />
         <ToolAlertDialog />
         {dialogs}
+        {destinationDetailLauncher.request ? (
+          <DestinationDetailDialogEntry
+            target={destinationDetailLauncher.request.target}
+            initialDateKey={destinationDetailLauncher.request.initialDateKey}
+            runtime={{
+              refreshKey: refreshSignal,
+              mappingVersion,
+              mergeThresholdSecs: appSettings.timelineMergeGapSecs,
+              trackerHealth,
+            }}
+            onClose={destinationDetailLauncher.close}
+          />
+        ) : null}
         <AppSidebar
           currentView={currentView}
           onNavigate={handleSidebarNavigate}
@@ -465,6 +481,7 @@ function AppShellContent() {
                   onHourlyActivityChartModeChange={handleHourlyActivityChartModeChange}
                   refreshEnabled={isHistoryRefreshEnabled}
                   webActivityEnabled={appSettings.webActivityEnabled}
+                  onOpenDestinationDetail={destinationDetailLauncher.open}
                 />
               )}
               {currentView === "data" && (
@@ -477,6 +494,7 @@ function AppShellContent() {
                   mappingVersion={mappingVersion}
                   onOpenHistoryDate={openHistoryForDate}
                   uiLanguage={uiTextLanguage}
+                  onOpenDestinationDetail={destinationDetailLauncher.open}
                 />
               )}
               {currentView === "tools" && (

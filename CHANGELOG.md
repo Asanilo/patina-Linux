@@ -18,7 +18,7 @@ App note en: TBD.
 
 ### Added
 
-- 暂无。
+- History 的应用/网页分布与 Data 的应用趋势新增共享活动详情入口，可按本地日期查看记录时长、可缩放时间轴、连续活动以及窗口标题或网页 URL 明细。
 
 ### Changed
 
@@ -36,6 +36,8 @@ App note en: TBD.
 
 - 新增应用与网站活动详情的共享只读领域模型，统一本地日期边界、连续活动、标题/URL 明细和 stale tracker 截断，为后续 Data、History 与 daemon 客户端共用详情能力建立 owner。
 - 新增详情日期状态、偏好持久化和可缩放时间轴视口，并提取 History 与详情共用的时间焦点算法，为详情弹窗接入建立可测试的交互基础。
+- 详情界面通过 AppShell 的单一 launcher 懒加载，Data 与 History 只提交公开 request，不各自持有查询、状态或交互实现。
+- Bundle 门槛为按需加载的详情 chunk 设置独立 `8 KiB gzip` 上限，继续分别约束首屏、其他 feature 与总 JS 体积。
 
 ## [1.8.4] - 2026-08-30
 

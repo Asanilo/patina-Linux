@@ -54,6 +54,11 @@ import {
   buildWebTimelineItems,
   type WebTimelineItem,
 } from "../services/historyWebActivityViewModel.ts";
+import {
+  createDestinationDetailTarget,
+  type DestinationDetailOpenRequest,
+  type DestinationDetailTarget,
+} from "../../destination/types.ts";
 
 interface Props {
   icons: Record<string, string>;
@@ -73,6 +78,7 @@ interface Props {
   onHourlyActivityChartModeChange: (mode: HourlyActivityChartMode) => void;
   refreshEnabled?: boolean;
   webActivityEnabled?: boolean;
+  onOpenDestinationDetail?: (request: DestinationDetailOpenRequest) => void;
 }
 
 const TIMELINE_MIN_SESSION_MINUTES_RANGE = { min: 1, max: 10 } as const;
@@ -86,6 +92,7 @@ interface DayDistributionItem {
   iconSrc?: string;
   category?: AppCategory;
   kind?: "app" | "category" | "web";
+  detailTarget?: DestinationDetailTarget;
 }
 interface DaySummaryView {
   activeDurationLabel: string;
@@ -289,6 +296,7 @@ export default function History({
   onHourlyActivityChartModeChange,
   refreshEnabled = true,
   webActivityEnabled = false,
+  onOpenDestinationDetail,
 }: Props) {
   const requestedInitialDate = selectedDateRequest ? parseLocalDateKey(selectedDateRequest.dateKey) : null;
   const initialDate = requestedInitialDate ?? new Date();
@@ -759,6 +767,15 @@ export default function History({
         color: accentColor,
         iconSrc: icons[app.exeName],
         kind: "app",
+        detailTarget: createDestinationDetailTarget({
+          mode: "app",
+          key: app.exeName,
+          identityKeys: [app.exeName],
+          displayName: appName,
+          secondaryText: app.exeName,
+          iconUrl: icons[app.exeName] ?? null,
+          color: accentColor,
+        }),
       };
     }),
     [appSummary, iconThemeColors, icons],
@@ -818,6 +835,15 @@ export default function History({
           iconSrc: item.faviconUrl ?? undefined,
           category: item.category,
           kind: "web" as const,
+          detailTarget: createDestinationDetailTarget({
+            mode: "web",
+            key: item.key,
+            identityKeys: [item.key],
+            displayName: item.label,
+            secondaryText: item.domain,
+            iconUrl: item.faviconUrl,
+            color: item.color,
+          }),
         }));
     },
     [nowMs, rawDayWebSegments, selectedDayRange, webActivityEnabled, webDomainIconThemeColors, webDomainOverrides],
@@ -1322,46 +1348,66 @@ export default function History({
           <p className="text-[var(--qp-text-tertiary)] text-xs text-center mt-8">{UI_TEXT.history.noData}</p>
         ) : (
           <div className="space-y-4">
-            {dayDistributionItems.map((item) => (
-              <div key={item.key} className="space-y-1.5">
-                <div className="mb-1 flex items-center justify-between gap-3">
-                  <span className="flex min-w-0 items-center gap-1.5 text-xs font-medium leading-[1.2] text-[var(--qp-text-secondary)]">
-                    {item.iconSrc ? (
-                      <img src={item.iconSrc} className="h-3.5 w-3.5 shrink-0 object-contain" alt="" />
-                    ) : item.kind === "web" ? (
-                      <Globe2 size={14} className="shrink-0 text-[var(--qp-text-tertiary)]" aria-hidden="true" />
-                    ) : (
-                      <span
-                        className="h-2.5 w-2.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: item.color }}
-                        aria-hidden="true"
-                      />
+            {dayDistributionItems.map((item) => {
+              const detailTarget = item.detailTarget;
+              const distributionLabel = (
+                <>
+                  {item.iconSrc ? (
+                    <img src={item.iconSrc} className="h-3.5 w-3.5 shrink-0 object-contain" alt="" />
+                  ) : item.kind === "web" ? (
+                    <Globe2 size={14} className="shrink-0 text-[var(--qp-text-tertiary)]" aria-hidden="true" />
+                  ) : (
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: item.color }}
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span className="min-w-0 leading-[1.2]">
+                    <span className="block truncate text-xs font-medium leading-[1.2]">{item.label}</span>
+                    {item.subtitle && (
+                      <span className="mt-0.5 block truncate text-[10px] font-normal text-[var(--qp-text-tertiary)]">
+                        {item.subtitle}
+                      </span>
                     )}
-                    <span className="min-w-0 leading-[1.2]">
-                      <span className="block truncate text-xs font-medium leading-[1.2]">{item.label}</span>
-                      {item.subtitle && (
-                        <span className="mt-0.5 block truncate text-[10px] font-normal text-[var(--qp-text-tertiary)]">
-                          {item.subtitle}
-                        </span>
-                      )}
+                  </span>
+                </>
+              );
+              return (
+                <div key={item.key} className="space-y-1.5">
+                  <div className="mb-1 flex items-center justify-between gap-3">
+                    {detailTarget && onOpenDestinationDetail ? (
+                      <button
+                        type="button"
+                        className="history-distribution-detail-trigger"
+                        title={UI_TEXT.history.titleDetails}
+                        onClick={() => onOpenDestinationDetail({
+                          target: detailTarget,
+                          initialDateKey: formatHistoryDateCacheKey(selectedDate),
+                        })}
+                      >
+                        {distributionLabel}
+                      </button>
+                    ) : (
+                      <span className="history-distribution-detail-label">{distributionLabel}</span>
+                    )}
+                    <span className="shrink-0 text-xs font-medium leading-[1.2] text-[var(--qp-text-tertiary)] tabular-nums">
+                      <span>{formatDuration(item.duration)}</span>
+                      <span className="font-normal opacity-70"> · {formatDistributionPercentage(item.percentage)}</span>
                     </span>
-                  </span>
-                  <span className="shrink-0 text-xs font-medium leading-[1.2] text-[var(--qp-text-tertiary)] tabular-nums">
-                    <span>{formatDuration(item.duration)}</span>
-                    <span className="font-normal opacity-70"> · {formatDistributionPercentage(item.percentage)}</span>
-                  </span>
+                  </div>
+                  <div className="h-1.5 bg-[var(--qp-track-muted)] rounded-full overflow-hidden">
+                    <div
+                      className="history-distribution-progress h-full rounded-full"
+                      style={{
+                        backgroundColor: item.color,
+                        width: `${item.percentage}%`,
+                      }}
+                    />
+                  </div>
                 </div>
-                <div className="h-1.5 bg-[var(--qp-track-muted)] rounded-full overflow-hidden">
-                  <div
-                    className="history-distribution-progress h-full rounded-full"
-                    style={{
-                      backgroundColor: item.color,
-                      width: `${item.percentage}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

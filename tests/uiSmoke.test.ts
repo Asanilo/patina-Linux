@@ -352,6 +352,26 @@ await runTest("History separates timeline list dialog from zoom dialog", () => {
   assert.match(historyCss, /overscroll-behavior: contain/);
 });
 
+await runTest("destination detail stays owned by one lazy shared feature", () => {
+  const shell = readUtf8("src/app/AppShell.tsx");
+  const history = readUtf8("src/features/history/components/History.tsx");
+  const data = readUtf8("src/features/data/components/Data.tsx");
+  const entry = readUtf8("src/features/destination/components/DestinationDetailDialogEntry.tsx");
+  const dialog = readUtf8("src/features/destination/components/DestinationDetailDialog.tsx");
+  const destinationCss = readUtf8("src/styles/features/destination.css");
+
+  assert.match(shell, /useDestinationDetailLauncher/);
+  assert.match(shell, /DestinationDetailDialogEntry/);
+  assert.match(history, /onOpenDestinationDetail/);
+  assert.match(data, /onOpenDestinationDetail/);
+  assert.match(entry, /lazy\(\(\) => import\("\.\/DestinationDetailDialog\.tsx"\)\)/);
+  assert.match(dialog, /useDestinationDetail/);
+  assert.match(dialog, /buildDestinationDetailTimelineSegments/);
+  assert.match(dialog, /clipDestinationDetailActivitiesToViewport/);
+  assert.match(destinationCss, /var\(--qp-border-subtle\)/);
+  assert.doesNotMatch(destinationCss, /#[0-9a-f]{3,8}/i);
+});
+
 await runTest("operation-oriented pages keep explicit busy feedback", () => {
   const settings = readUtf8("src/features/settings/components/Settings.tsx");
   const mapping = readUtf8("src/features/classification/components/AppMapping.tsx");

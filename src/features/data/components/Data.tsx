@@ -1,5 +1,5 @@
 import { type CSSProperties, type MouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { BarChart3, CalendarDays, ChevronLeft, ChevronRight, Clock3, Search } from "lucide-react";
+import { BarChart3, CalendarDays, ChevronLeft, ChevronRight, Clock3, PanelRightOpen, Search } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import { UI_TEXT } from "../../../shared/copy/uiText.ts";
 import type { AppLanguage } from "../../../shared/settings/appSettings.ts";
@@ -29,6 +29,7 @@ import QuietChartTooltip from "../../../shared/components/QuietChartTooltip";
 import QuietPageHeader from "../../../shared/components/QuietPageHeader";
 import QuietSegmentedFilter from "../../../shared/components/QuietSegmentedFilter";
 import QuietTooltip from "../../../shared/components/QuietTooltip";
+import QuietIconAction from "../../../shared/components/QuietIconAction.tsx";
 import type { TrackerHealthSnapshot } from "../../../shared/types/tracking";
 import {
   formatChartHours,
@@ -39,6 +40,11 @@ import type { DataTrendSnapshot } from "../services/dataTrendSnapshot.ts";
 import type { DataTrendRangeSelection } from "../services/dataTrendRange.ts";
 import { useDataTrendSnapshot } from "../hooks/useDataTrendSnapshot.ts";
 import DataTrendRangeControl from "./DataTrendRangeControl.tsx";
+import { formatLocalDateKey } from "../../../shared/lib/localDate.ts";
+import {
+  createDestinationDetailTarget,
+  type DestinationDetailOpenRequest,
+} from "../../destination/types.ts";
 
 interface Props {
   icons: Record<string, string>;
@@ -47,6 +53,7 @@ interface Props {
   loadDataTrendSnapshot: (selection: DataTrendRangeSelection, nowMs?: number) => Promise<DataTrendSnapshot>;
   mappingVersion?: number;
   onOpenHistoryDate?: (dateKey: string) => void;
+  onOpenDestinationDetail?: (request: DestinationDetailOpenRequest) => void;
   uiLanguage: AppLanguage;
 }
 
@@ -225,6 +232,7 @@ export default function Data({
   loadDataTrendSnapshot,
   mappingVersion = 0,
   onOpenHistoryDate,
+  onOpenDestinationDetail,
   uiLanguage,
 }: Props) {
   const today = new Date();
@@ -861,6 +869,25 @@ export default function Data({
                 ""
               )}
             </div>
+            {selectedAppTrendApp && onOpenDestinationDetail ? (
+              <QuietIconAction
+                icon={<PanelRightOpen size={15} aria-hidden />}
+                title={UI_TEXT.history.titleDetails}
+                showTooltip={false}
+                onClick={() => onOpenDestinationDetail({
+                  target: createDestinationDetailTarget({
+                    mode: "app",
+                    key: selectedAppTrendApp.appKey,
+                    identityKeys: [selectedAppTrendApp.appKey, selectedAppTrendApp.exeName],
+                    displayName: selectedAppTrendApp.appName,
+                    secondaryText: selectedAppTrendApp.exeName,
+                    iconUrl: icons[selectedAppTrendApp.exeName] ?? null,
+                    color: "var(--qp-accent-default)",
+                  }),
+                  initialDateKey: formatLocalDateKey(new Date()),
+                })}
+              />
+            ) : null}
             <DataTrendRangeControl
               ariaLabel={UI_TEXT.accessibility.data.appTrendRange}
               selection={selectedAppTrendRange}

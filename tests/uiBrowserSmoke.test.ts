@@ -2037,6 +2037,75 @@ try {
     );
   });
 
+  await runTest("history opens application details without viewport overflow", async () => {
+    await waitForExpression(
+      client!,
+      sessionId,
+      `Boolean(document.querySelector(".history-app-distribution-card .history-distribution-detail-trigger"))`,
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const trigger = document.querySelector(".history-app-distribution-card .history-distribution-detail-trigger");
+          if (!(trigger instanceof HTMLElement)) return false;
+          trigger.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(
+      client!,
+      sessionId,
+      `Boolean(document.querySelector(".destination-detail-dialog .destination-detail-timeline-track"))`,
+    );
+    const desktopLayout = await evaluate(client!, sessionId, `
+      (() => {
+        const surface = document.querySelector(".destination-detail-dialog");
+        const track = document.querySelector(".destination-detail-timeline-track");
+        const records = document.querySelector(".destination-detail-activities");
+        return {
+          hasSurface: Boolean(surface),
+          hasTrack: Boolean(track),
+          hasRecords: Boolean(records),
+          overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+          surfaceWithinViewport: surface instanceof HTMLElement
+            ? surface.getBoundingClientRect().right <= window.innerWidth && surface.getBoundingClientRect().left >= 0
+            : false,
+        };
+      })()
+    `) as {
+      hasSurface: boolean;
+      hasTrack: boolean;
+      hasRecords: boolean;
+      overflowX: boolean;
+      surfaceWithinViewport: boolean;
+    };
+    assert.deepEqual(desktopLayout, {
+      hasSurface: true,
+      hasTrack: true,
+      hasRecords: true,
+      overflowX: false,
+      surfaceWithinViewport: true,
+    });
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const closeButton = document.querySelector(".destination-detail-dialog .qp-dialog-action");
+          if (!(closeButton instanceof HTMLElement)) return false;
+          closeButton.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(
+      client!,
+      sessionId,
+      `!document.querySelector(".destination-detail-dialog")`,
+    );
+  });
+
   await runTest("history timeline opens list dialog from timeline axis", async () => {
     await client!.command("Emulation.setDeviceMetricsOverride", {
       width: 2048,
