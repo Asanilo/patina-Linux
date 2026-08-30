@@ -38,7 +38,13 @@ const DEFAULT_VIEW_CHUNK_LOADERS: ViewChunkLoaders = {
   history: () => import("../../features/history/components/History"),
   settings: () => import("../../features/settings/components/Settings"),
   mapping: () => import("../../features/classification/components/AppMapping"),
-  data: () => import("../../features/data/components/Data"),
+  data: async () => {
+    const [dataModule] = await Promise.all([
+      import("../../features/data/components/Data"),
+      import("../../features/data/components/DataDestinationTrendPanel"),
+    ]);
+    return dataModule;
+  },
   tools: () => import("../../features/tools/components/Tools"),
   about: () => import("../../features/about/components/About"),
 };

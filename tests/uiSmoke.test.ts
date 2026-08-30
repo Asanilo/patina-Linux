@@ -306,14 +306,21 @@ await runTest("Data regular view avoids visible loading and skeleton branches", 
 
 await runTest("Data category trends reuse the destination panel without a second persistence path", () => {
   const data = readUtf8("src/features/data/components/Data.tsx");
+  const destinationPanel = readUtf8("src/features/data/components/DataDestinationTrendPanel.tsx");
   const categoryReadModel = readUtf8("src/features/data/services/dataCategoryTrendReadModel.ts");
   const dataCss = readUtf8("src/styles/features/data.css");
   const segmentedFilter = readUtf8("src/shared/components/QuietSegmentedFilter.tsx");
 
-  assert.match(data, /type DataDestinationMode = "app" \| "category" \| "web"/);
-  assert.match(data, /buildDataCategoryTrendViewModel/);
-  assert.match(data, /data-destination-mode/);
-  assert.match(data, /event\.ctrlKey \|\| event\.metaKey/);
+  assert.match(data, /lazy\(\(\) => import\("\.\/DataDestinationTrendPanel\.tsx"\)\)/);
+  assert.match(data, /onAppTrendViewModelChange=\{setCurrentAppTrendViewModel\}/);
+  assert.match(
+    readUtf8("src/app/services/viewChunkPreloadService.ts"),
+    /import\("\.\.\/\.\.\/features\/data\/components\/DataDestinationTrendPanel"\)/,
+  );
+  assert.match(destinationPanel, /type DataDestinationMode = "app" \| "category" \| "web"/);
+  assert.match(destinationPanel, /buildDataCategoryTrendViewModel/);
+  assert.match(destinationPanel, /data-destination-mode/);
+  assert.match(destinationPanel, /event\.ctrlKey \|\| event\.metaKey/);
   assert.match(categoryReadModel, /buildDataTrendSessionContext/);
   assert.doesNotMatch(categoryReadModel, /sessionReadRepository|Database|invoke\(/);
   assert.match(dataCss, /--data-category-color/);
@@ -322,12 +329,12 @@ await runTest("Data category trends reuse the destination panel without a second
 });
 
 await runTest("Data web trends keep page details outside the trend persistence boundary", () => {
-  const data = readUtf8("src/features/data/components/Data.tsx");
+  const destinationPanel = readUtf8("src/features/data/components/DataDestinationTrendPanel.tsx");
   const hook = readUtf8("src/features/data/hooks/useDataWebActivitySnapshot.ts");
   const snapshot = readUtf8("src/features/data/services/dataWebActivitySnapshot.ts");
   const trendRepository = readUtf8("src/platform/persistence/dataWebActivityTrendRepository.ts");
 
-  assert.match(data, /enabled: webEnabled && destinationMode === "web"/);
+  assert.match(destinationPanel, /enabled: webEnabled && destinationMode === "web"/);
   assert.match(hook, /import\("\.\.\/services\/dataWebActivitySnapshot\.ts"\)/);
   assert.match(snapshot, /dataWebActivityTrendRepository/);
   assert.match(trendRepository, /SELECT id,[\s\S]*normalized_domain,[\s\S]*favicon_url,[\s\S]*start_time,[\s\S]*end_time/);
