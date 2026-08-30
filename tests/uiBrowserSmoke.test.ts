@@ -1286,6 +1286,60 @@ try {
     );
   });
 
+  await runTest("Data switches between app and category trends without overflowing the panel", async () => {
+    await client!.command("Emulation.setDeviceMetricsOverride", {
+      width: 900,
+      height: 760,
+      deviceScaleFactor: 1,
+      mobile: false,
+    }, sessionId);
+    const switched = await evaluate(client!, sessionId, `
+      (() => {
+        const group = document.querySelector('[aria-label=' + ${jsonString(JSON.stringify("活动趋势"))} + ']');
+        const button = Array.from(group?.querySelectorAll("button") ?? [])
+          .find((node) => node.textContent?.trim() === "分类趋势");
+        if (!button) return false;
+        button.click();
+        return true;
+      })()
+    `);
+    assert.equal(switched, true);
+    await waitForExpression(
+      client!,
+      sessionId,
+      `document.querySelector('[aria-label=' + ${jsonString(JSON.stringify("活动趋势"))} + '] button[aria-pressed="true"]')?.textContent?.trim() === "分类趋势"`,
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const panel = document.querySelector(".data-app-panel");
+          if (!panel) return false;
+          return panel.scrollWidth <= panel.clientWidth + 1;
+        })()
+      `),
+      true,
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const group = document.querySelector('[aria-label=' + ${jsonString(JSON.stringify("活动趋势"))} + ']');
+          const button = Array.from(group?.querySelectorAll("button") ?? [])
+            .find((node) => node.textContent?.trim() === "应用趋势");
+          if (!button) return false;
+          button.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await client!.command("Emulation.setDeviceMetricsOverride", {
+      width: 1280,
+      height: 820,
+      deviceScaleFactor: 1,
+      mobile: false,
+    }, sessionId);
+  });
+
   await runTest("History navigation is immediate and avoids visible loading copy", async () => {
     const clicked = await evaluate(client!, sessionId, `
       (() => {

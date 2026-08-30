@@ -45,6 +45,11 @@ import {
   createDestinationDetailTarget,
   type DestinationDetailOpenRequest,
 } from "../../destination/types.ts";
+import {
+  buildDataCategoryTrendViewModel,
+  filterDataCategoryOptionsForQuery,
+  type DataCategoryTrendViewModel,
+} from "../services/dataCategoryTrendReadModel.ts";
 
 interface Props {
   icons: Record<string, string>;
@@ -103,6 +108,7 @@ const HEATMAP_WEEKDAY_COUNT = 7;
 type DataChartDimension = { width: number; height: number };
 type DataChartDimensionKey = "overviewTrend" | "appTrend";
 type HeatmapGranularity = "daily" | "weekly";
+type DataDestinationMode = "app" | "category";
 const dataChartDimensionCache: Partial<Record<DataChartDimensionKey, DataChartDimension>> = {};
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
@@ -239,8 +245,11 @@ export default function Data({
   const currentYear = today.getFullYear();
   const [selectedTrendRange, setSelectedTrendRange] = useState<DataTrendRangeSelection>({ kind: "rolling", days: 7 });
   const [selectedAppTrendRange, setSelectedAppTrendRange] = useState<DataTrendRangeSelection>({ kind: "rolling", days: 7 });
+  const [destinationMode, setDestinationMode] = useState<DataDestinationMode>("app");
   const [selectedAppKey, setSelectedAppKey] = useState<string | null>(null);
+  const [selectedCategoryKeys, setSelectedCategoryKeys] = useState<string[]>([]);
   const [appSearchQuery, setAppSearchQuery] = useState("");
+  const [categorySearchQuery, setCategorySearchQuery] = useState("");
   const initialCachedHeatmapSessions = getCachedDataHeatmapSessions("recent", Date.now());
   const [bootstrapSnapshot, setBootstrapSnapshot] = useState<DataBootstrapSnapshot | null>(
     () => getCachedDataBootstrapSnapshot(),
@@ -283,6 +292,10 @@ export default function Data({
   const lastAppTrendViewModelRef = useRef<{
     rangeCacheKey: string;
     viewModel: DataAppTrendViewModel;
+  } | null>(null);
+  const lastCategoryTrendViewModelRef = useRef<{
+    rangeCacheKey: string;
+    viewModel: DataCategoryTrendViewModel;
   } | null>(null);
   const lastHeatmapRowsRef = useRef<{
     selection: HeatmapSelection;
@@ -400,6 +413,25 @@ export default function Data({
       ? lastAppTrendViewModelRef.current.viewModel
       : null)
     ?? bootstrapAppTrendViewModel;
+  const categoryTrendViewModel = useMemo(() => {
+    if (!appTrend.snapshot) return null;
+    return buildDataCategoryTrendViewModel(
+      appTrend.snapshot.sessions,
+      appTrend.snapshot.range,
+      appTrend.nowMs,
+      selectedCategoryKeys,
+    );
+  }, [appTrend.nowMs, appTrend.snapshot, mappingVersion, selectedCategoryKeys]);
+  if (categoryTrendViewModel) {
+    lastCategoryTrendViewModelRef.current = {
+      rangeCacheKey: appTrend.resolvedRange.cacheKey,
+      viewModel: categoryTrendViewModel,
+    };
+  }
+  const visibleCategoryTrendViewModel = categoryTrendViewModel
+    ?? (lastCategoryTrendViewModelRef.current?.rangeCacheKey === appTrend.resolvedRange.cacheKey
+      ? lastCategoryTrendViewModelRef.current.viewModel
+      : null);
 
   useEffect(() => {
     if (selectedAppKey !== null) return;
@@ -410,10 +442,25 @@ export default function Data({
     }
   }, [appTrendViewModel?.selectedApp?.appKey, selectedAppKey]);
 
+  useEffect(() => {
+    if (selectedCategoryKeys.length > 0) return;
+    const defaultCategory = categoryTrendViewModel?.selectedCategories[0]?.category;
+    if (defaultCategory) {
+      setSelectedCategoryKeys([defaultCategory]);
+    }
+  }, [categoryTrendViewModel?.selectedCategories, selectedCategoryKeys.length]);
+
   const filteredAppOptions = useMemo(() => {
     if (!visibleAppTrendViewModel) return [];
     return filterDataAppOptionsForQuery(visibleAppTrendViewModel.appOptions, appSearchQuery);
   }, [appSearchQuery, visibleAppTrendViewModel]);
+  const filteredCategoryOptions = useMemo(() => {
+    if (!visibleCategoryTrendViewModel) return [];
+    return filterDataCategoryOptionsForQuery(
+      visibleCategoryTrendViewModel.categoryOptions,
+      categorySearchQuery,
+    );
+  }, [categorySearchQuery, visibleCategoryTrendViewModel]);
 
   const hasAppSearchQuery = appSearchQuery.trim().length > 0;
   const appTrendSelectedAppMatchesSearch = !hasAppSearchQuery
@@ -430,6 +477,36 @@ export default function Data({
     ? { domainMax: 3, ticks: [0, 1, 2, 3] }
     : (visibleAppTrendViewModel?.chartAxis ?? { domainMax: 3, ticks: [0, 1, 2, 3] });
   const appTrendPeakDay = appTrendSelectionHiddenBySearch ? null : visibleAppTrendViewModel?.peakDay;
+  const isCategoryDestination = destinationMode === "category";
+  const destinationReady = isCategoryDestination
+    ? Boolean(visibleCategoryTrendViewModel)
+    : Boolean(visibleAppTrendViewModel);
+  const destinationOptionsEmpty = isCategoryDestination
+    ? (visibleCategoryTrendViewModel?.categoryOptions.length ?? 0) === 0
+    : (visibleAppTrendViewModel?.appOptions.length ?? 0) === 0;
+  const destinationChartData = isCategoryDestination
+    ? visibleCategoryTrendViewModel?.chartRows ?? []
+    : appTrendChartData;
+  const destinationChartAxis = isCategoryDestination
+    ? visibleCategoryTrendViewModel?.chartAxis ?? { domainMax: 3, ticks: [0, 1, 2, 3] }
+    : appTrendChartAxis;
+  const destinationPeakDay = isCategoryDestination
+    ? visibleCategoryTrendViewModel?.peakDay
+    : appTrendPeakDay;
+  const destinationSummary = isCategoryDestination
+    ? visibleCategoryTrendViewModel?.summary
+    : {
+        totalDuration: selectedAppTrendApp?.totalDuration ?? 0,
+        averageDuration: selectedAppTrendApp?.averageDuration ?? 0,
+        activeDayCount: selectedAppTrendApp?.activeDayCount ?? 0,
+      };
+  const destinationGranularity = isCategoryDestination
+    ? visibleCategoryTrendViewModel?.granularity ?? "day"
+    : visibleAppTrendViewModel?.granularity ?? "day";
+  const selectedCategories = visibleCategoryTrendViewModel?.selectedCategories ?? [];
+  const hasDestinationSelection = isCategoryDestination
+    ? selectedCategories.length > 0
+    : Boolean(selectedAppTrendApp);
 
   useEffect(() => {
     if (!hasAppSearchQuery || !visibleAppTrendViewModel) return;
@@ -447,7 +524,7 @@ export default function Data({
 
   useLayoutEffect(() => {
     appListRef.current?.scrollTo({ top: 0 });
-  }, [hasAppSearchQuery]);
+  }, [categorySearchQuery, destinationMode, hasAppSearchQuery]);
 
   const handleAppSearchQueryChange = (nextQuery: string) => {
     const wasSearching = appSearchQuery.trim().length > 0;
@@ -471,6 +548,21 @@ export default function Data({
       }
     }
   };
+  const handleCategorySearchQueryChange = (nextQuery: string) => {
+    setCategorySearchQuery(nextQuery);
+    appListRef.current?.scrollTo({ top: 0 });
+  };
+  const handleCategorySelect = (category: string, multi: boolean) => {
+    setSelectedCategoryKeys((current) => {
+      if (!multi) return [category];
+      if (!current.includes(category)) return [...current, category];
+      return current.length > 1 ? current.filter((key) => key !== category) : current;
+    });
+  };
+  const destinationModeOptions = useMemo<Array<{ value: DataDestinationMode; label: string }>>(() => [
+    { value: "app", label: UI_TEXT.data.appTrend },
+    { value: "category", label: UI_TEXT.data.categoryTrend },
+  ], [uiLanguage]);
   const heatmapRows = useMemo(() => (
     buildActivityHeatmap(yearSessions, selectedHeatmapView, nowMs)
   ), [nowMs, selectedHeatmapView, yearSessions]);
@@ -532,8 +624,10 @@ export default function Data({
     ? UI_TEXT.data.recentYear
     : String(selectedHeatmapView);
   const canOpenTrendHistory = visibleTrendViewModel?.granularity === "day" && Boolean(onOpenHistoryDate);
-  const canOpenAppTrendHistory = visibleAppTrendViewModel?.granularity === "day"
-    && !appTrendSelectionHiddenBySearch
+  const canOpenAppTrendHistory = destinationGranularity === "day"
+    && (isCategoryDestination
+      ? selectedCategories.length > 0
+      : !appTrendSelectionHiddenBySearch)
     && Boolean(onOpenHistoryDate);
   const handleTrendMouseMove = (event: unknown) => {
     activeTrendDateRef.current = canOpenTrendHistory && visibleTrendViewModel
@@ -548,7 +642,7 @@ export default function Data({
   };
   const handleAppTrendMouseMove = (event: unknown) => {
     activeAppTrendDateRef.current = canOpenAppTrendHistory
-      ? resolveTrendDateFromChartEvent(event, appTrendChartData)
+      ? resolveTrendDateFromChartEvent(event, destinationChartData)
       : null;
   };
   const handleAppTrendDoubleClick = () => {
@@ -850,14 +944,37 @@ export default function Data({
 
       <div className="qp-panel p-5 md:p-6 data-app-panel">
         <div className="data-app-panel-header">
-          <div>
+          <div className="data-app-panel-heading">
             <h3 className="font-semibold text-[var(--qp-text-primary)] text-sm">
-              {UI_TEXT.data.appTrend}
+              {UI_TEXT.data.activityTrend}
             </h3>
+            <QuietSegmentedFilter
+              value={destinationMode}
+              options={destinationModeOptions}
+              onChange={setDestinationMode}
+              ariaLabel={UI_TEXT.data.activityTrend}
+              className="data-destination-mode"
+            />
           </div>
           <div className="data-app-header-actions">
-            <div className={`data-app-selected-status ${selectedAppTrendApp ? "" : "data-app-selected-status-empty"}`}>
-              {selectedAppTrendApp && icons[selectedAppTrendApp.exeName] ? (
+            <div
+              className={`data-app-selected-status ${isCategoryDestination ? "data-category-selected-status" : ""} ${
+                hasDestinationSelection ? "" : "data-app-selected-status-empty"
+              }`}
+              aria-label={isCategoryDestination
+                ? selectedCategories.map((category) => category.displayName).join(", ")
+                : selectedAppTrendApp?.appName}
+            >
+              {isCategoryDestination ? (
+                selectedCategories.map((category) => (
+                  <span
+                    key={category.category}
+                    className="data-category-selected-dot"
+                    style={{ "--data-category-color": category.color } as CSSProperties}
+                    aria-hidden
+                  />
+                ))
+              ) : selectedAppTrendApp && icons[selectedAppTrendApp.exeName] ? (
                 <img
                   src={icons[selectedAppTrendApp.exeName]}
                   alt=""
@@ -869,7 +986,7 @@ export default function Data({
                 ""
               )}
             </div>
-            {selectedAppTrendApp && onOpenDestinationDetail ? (
+            {!isCategoryDestination && selectedAppTrendApp && onOpenDestinationDetail ? (
               <QuietIconAction
                 icon={<PanelRightOpen size={15} aria-hidden />}
                 title={UI_TEXT.history.titleDetails}
@@ -889,18 +1006,20 @@ export default function Data({
               />
             ) : null}
             <DataTrendRangeControl
-              ariaLabel={UI_TEXT.accessibility.data.appTrendRange}
+              ariaLabel={isCategoryDestination
+                ? UI_TEXT.accessibility.data.categoryTrendRange
+                : UI_TEXT.accessibility.data.appTrendRange}
               selection={selectedAppTrendRange}
               onChange={setSelectedAppTrendRange}
             />
           </div>
         </div>
 
-        {!visibleAppTrendViewModel ? (
+        {!destinationReady ? (
           <div className="data-app-loading text-[var(--qp-text-tertiary)] text-xs" aria-hidden="true" />
-        ) : visibleAppTrendViewModel.appOptions.length === 0 ? (
+        ) : destinationOptionsEmpty ? (
           <div className="data-app-loading text-[var(--qp-text-tertiary)] text-xs">
-            {UI_TEXT.data.appTrendEmpty}
+            {isCategoryDestination ? UI_TEXT.data.categoryTrendEmpty : UI_TEXT.data.appTrendEmpty}
           </div>
         ) : (
           <div className="data-app-grid">
@@ -908,23 +1027,66 @@ export default function Data({
               <label className="data-app-search">
                 <Search size={14} aria-hidden />
                 <input
-                  value={appSearchQuery}
-                  onChange={(event) => handleAppSearchQueryChange(event.target.value)}
-                  placeholder={UI_TEXT.data.appSearchPlaceholder}
-                  aria-label={UI_TEXT.data.appSearchPlaceholder}
+                  value={isCategoryDestination ? categorySearchQuery : appSearchQuery}
+                  onChange={(event) => {
+                    if (isCategoryDestination) {
+                      handleCategorySearchQueryChange(event.target.value);
+                    } else {
+                      handleAppSearchQueryChange(event.target.value);
+                    }
+                  }}
+                  placeholder={isCategoryDestination
+                    ? UI_TEXT.data.categorySearchPlaceholder
+                    : UI_TEXT.data.appSearchPlaceholder}
+                  aria-label={isCategoryDestination
+                    ? UI_TEXT.data.categorySearchPlaceholder
+                    : UI_TEXT.data.appSearchPlaceholder}
                 />
               </label>
               <div
-                key={hasAppSearchQuery ? "searching" : "all"}
+                key={`${destinationMode}:${isCategoryDestination ? categorySearchQuery : hasAppSearchQuery ? "searching" : "all"}`}
                 ref={appListRef}
                 className="data-app-list data-app-trend-list"
-                aria-label={UI_TEXT.data.appTrendAppList}
+                aria-label={isCategoryDestination
+                  ? UI_TEXT.data.categoryTrendCategoryList
+                  : UI_TEXT.data.appTrendAppList}
               >
-                {filteredAppOptions.length === 0 ? (
+                {(isCategoryDestination ? filteredCategoryOptions : filteredAppOptions).length === 0 ? (
                   <div className="data-app-empty text-[var(--qp-text-tertiary)] text-xs">
-                    {UI_TEXT.data.appTrendNoMatch}
+                    {isCategoryDestination ? UI_TEXT.data.categoryTrendNoMatch : UI_TEXT.data.appTrendNoMatch}
                   </div>
-                ) : filteredAppOptions.map((app) => {
+                ) : isCategoryDestination ? filteredCategoryOptions.map((category) => {
+                  const isSelected = selectedCategoryKeys.includes(category.category);
+                  return (
+                    <button
+                      key={category.category}
+                      type="button"
+                      className={`data-app-option ${isSelected ? "data-app-option-selected" : ""}`}
+                      onClick={(event) => handleCategorySelect(
+                        category.category,
+                        event.ctrlKey || event.metaKey,
+                      )}
+                      aria-pressed={isSelected}
+                    >
+                      <span
+                        className="data-app-option-icon data-category-option-icon"
+                        style={{ "--data-category-color": category.color } as CSSProperties}
+                        aria-hidden
+                      >
+                        <span />
+                      </span>
+                      <span className="data-app-option-main">
+                        <span className="data-app-option-name">{category.displayName}</span>
+                        <span className="data-app-option-meta">
+                          {Math.round(category.percentage)}% · {UI_TEXT.data.categoryAppCount(category.appCount)}
+                        </span>
+                      </span>
+                      <span className="data-app-option-duration">
+                        {formatDuration(category.totalDuration)}
+                      </span>
+                    </button>
+                  );
+                }) : filteredAppOptions.map((app) => {
                   const isSelected = selectedAppTrendApp?.appKey === app.appKey;
                   return (
                     <button
@@ -958,19 +1120,19 @@ export default function Data({
               <div className="data-app-metric-strip">
                 <div className="data-app-metric">
                   <span>{UI_TEXT.data.appTrendTotal}</span>
-                  <strong>{formatDuration(selectedAppTrendApp?.totalDuration ?? 0)}</strong>
+                  <strong>{formatDuration(destinationSummary?.totalDuration ?? 0)}</strong>
                 </div>
                 <div className="data-app-metric">
-                  <span>{visibleAppTrendViewModel.granularity === "month" ? UI_TEXT.data.monthlyAverage : UI_TEXT.data.appTrendAverage}</span>
-                  <strong>{formatDuration(selectedAppTrendApp?.averageDuration ?? 0)}</strong>
+                  <span>{destinationGranularity === "month" ? UI_TEXT.data.monthlyAverage : UI_TEXT.data.appTrendAverage}</span>
+                  <strong>{formatDuration(destinationSummary?.averageDuration ?? 0)}</strong>
                 </div>
                 <div className="data-app-metric">
                   <span>{UI_TEXT.data.appTrendActiveDays}</span>
-                  <strong>{selectedAppTrendApp?.activeDayCount ?? 0}</strong>
+                  <strong>{destinationSummary?.activeDayCount ?? 0}</strong>
                 </div>
                 <div className="data-app-metric">
                   <span>{UI_TEXT.data.appTrendPeakDay}</span>
-                  <strong>{appTrendPeakDay ? formatDuration(appTrendPeakDay.duration) : "-"}</strong>
+                  <strong>{destinationPeakDay ? formatDuration(destinationPeakDay.duration) : "-"}</strong>
                 </div>
               </div>
               <div
@@ -987,7 +1149,7 @@ export default function Data({
                   initialDimension={appTrendChart.initialDimension}
                 >
                   <AreaChart
-                    data={appTrendChartData}
+                    data={destinationChartData}
                     margin={{ top: 10, right: 18, left: -20, bottom: 0 }}
                     onMouseMove={handleAppTrendMouseMove}
                     onMouseLeave={() => {
@@ -1007,26 +1169,43 @@ export default function Data({
                       tick={{ fontSize: 10, fill: "var(--qp-text-tertiary)" }}
                       axisLine={false}
                       tickLine={false}
-                      ticks={appTrendChartAxis.ticks}
-                      domain={[0, appTrendChartAxis.domainMax]}
+                      ticks={destinationChartAxis.ticks}
+                      domain={[0, destinationChartAxis.domainMax]}
                       tickFormatter={(value) => formatChartHours(Number(value))}
                     />
                     <QuietChartTooltip
-                      formatter={(value) => [
+                      formatter={(value, name) => [
                         formatDuration(Number(value) * 3600000),
-                        UI_TEXT.data.appTrendUsage,
+                        isCategoryDestination ? String(name) : UI_TEXT.data.appTrendUsage,
                       ]}
                     />
-                    <Area
-                      type="monotone"
-                      dataKey="hours"
-                      stroke="var(--qp-accent-default)"
-                      strokeWidth={2}
-                      fill="var(--qp-accent-default)"
-                      fillOpacity={0.1}
-                      dot={{ fill: "var(--qp-accent-default)", r: 2.5 }}
-                      isAnimationActive={false}
-                    />
+                    {isCategoryDestination ? (
+                      visibleCategoryTrendViewModel?.chartSeries.map((series) => (
+                        <Area
+                          key={series.key}
+                          type="monotone"
+                          dataKey={series.dataKey}
+                          name={series.displayName}
+                          stroke={series.color}
+                          strokeWidth={2}
+                          fill={series.color}
+                          fillOpacity={0.08}
+                          dot={{ fill: series.color, r: 2.5 }}
+                          isAnimationActive={false}
+                        />
+                      ))
+                    ) : (
+                      <Area
+                        type="monotone"
+                        dataKey="hours"
+                        stroke="var(--qp-accent-default)"
+                        strokeWidth={2}
+                        fill="var(--qp-accent-default)"
+                        fillOpacity={0.1}
+                        dot={{ fill: "var(--qp-accent-default)", r: 2.5 }}
+                        isAnimationActive={false}
+                      />
+                    )}
                   </AreaChart>
                 </ResponsiveContainer>
               </div>

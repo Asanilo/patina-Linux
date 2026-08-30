@@ -303,6 +303,23 @@ await runTest("Data regular view avoids visible loading and skeleton branches", 
   assert.match(data, /selectedHeatmapView === "recent"/);
 });
 
+await runTest("Data category trends reuse the destination panel without a second persistence path", () => {
+  const data = readUtf8("src/features/data/components/Data.tsx");
+  const categoryReadModel = readUtf8("src/features/data/services/dataCategoryTrendReadModel.ts");
+  const dataCss = readUtf8("src/styles/features/data.css");
+  const segmentedFilter = readUtf8("src/shared/components/QuietSegmentedFilter.tsx");
+
+  assert.match(data, /type DataDestinationMode = "app" \| "category"/);
+  assert.match(data, /buildDataCategoryTrendViewModel/);
+  assert.match(data, /data-destination-mode/);
+  assert.match(data, /event\.ctrlKey \|\| event\.metaKey/);
+  assert.match(categoryReadModel, /buildDataTrendSessionContext/);
+  assert.doesNotMatch(categoryReadModel, /sessionReadRepository|Database|invoke\(/);
+  assert.match(dataCss, /--data-category-color/);
+  assert.doesNotMatch(dataCss, /#[0-9a-f]{3,8}/i);
+  assert.match(segmentedFilter, /aria-label=\{ariaLabel\}/);
+});
+
 await runTest("History regular view avoids visible loading copy", () => {
   const history = readUtf8("src/features/history/components/History.tsx");
   const appCss = readUtf8("src/App.css");

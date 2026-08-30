@@ -12,6 +12,7 @@ const CHUNK_BUDGETS = [
   { label: "tauri", pattern: /^tauri-.*\.js$/, gzipKiB: 6 },
   { label: "settings-storage", pattern: /^settings-storage-.*\.js$/, gzipKiB: 8 },
   { label: "destination-detail", pattern: /^DestinationDetailDialog-.*\.js$/, gzipKiB: 8 },
+  { label: "data", pattern: /^Data-.*\.js$/, gzipKiB: 11 },
   { label: "index", pattern: /^index-.*\.js$/, gzipKiB: 72 },
 ] as const;
 

@@ -10,6 +10,7 @@ interface Props<T extends string> {
   onChange: (nextValue: T) => void;
   variant?: "compact" | "separate";
   className?: string;
+  ariaLabel?: string;
 }
 
 export default function QuietSegmentedFilter<T extends string>({
@@ -18,13 +19,18 @@ export default function QuietSegmentedFilter<T extends string>({
   onChange,
   variant = "compact",
   className,
+  ariaLabel,
 }: Props<T>) {
   const variantClassName = variant === "compact"
     ? "qp-segmented-filter-compact"
     : "qp-segmented-filter-separate";
 
   return (
-    <div className={`qp-segmented-filter ${variantClassName} ${className ?? ""}`.trim()}>
+    <div
+      className={`qp-segmented-filter ${variantClassName} ${className ?? ""}`.trim()}
+      role={ariaLabel ? "group" : undefined}
+      aria-label={ariaLabel}
+    >
       {options.map((option) => {
         const selected = option.value === value;
         return (
