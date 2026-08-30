@@ -462,6 +462,7 @@ function AppShellContent() {
                   trackingPaused={appSettings.trackingPaused}
                   hourlyActivityChartMode={appSettings.hourlyActivityChartMode}
                   onHourlyActivityChartModeChange={handleHourlyActivityChartModeChange}
+                  onOpenDestinationDetail={destinationDetailLauncher.open}
                 />
               )}
               {currentView === "history" && (

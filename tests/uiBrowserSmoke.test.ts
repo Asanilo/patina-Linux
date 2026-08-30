@@ -668,11 +668,56 @@ try {
     );
 
     for (const marker of DASHBOARD_MARKERS) {
-      assert.equal(
-        await evaluate(client!, sessionId, `document.body.innerText.includes(${jsonString(marker)})`),
-        true,
+      await waitForExpression(
+        client!,
+        sessionId,
+        `document.body.innerText.includes(${jsonString(marker)})`,
+        FIRST_RENDER_TIMEOUT_MS,
+        `dashboard marker ${marker}`,
       );
     }
+  });
+
+  await runTest("Dashboard opens shared application details", async () => {
+    await waitForExpression(
+      client!,
+      sessionId,
+      `Boolean(document.querySelector(".dashboard-top-app-detail"))`,
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const button = document.querySelector(".dashboard-top-app-detail");
+          if (!button) return false;
+          button.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(
+      client!,
+      sessionId,
+      `document.querySelector(".destination-detail-dialog")?.textContent?.includes("活动详情") === true`,
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const dialog = document.querySelector(".destination-detail-dialog");
+          const close = Array.from(dialog?.querySelectorAll("button") ?? [])
+            .find((node) => node.textContent?.trim() === "关闭");
+          if (!close) return false;
+          close.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(
+      client!,
+      sessionId,
+      `document.querySelector(".destination-detail-dialog") === null`,
+    );
   });
 
   await runTest("primary navigation switches views in a real browser", async () => {

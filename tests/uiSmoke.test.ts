@@ -387,6 +387,8 @@ await runTest("destination detail stays owned by one lazy shared feature", () =>
   const shell = readUtf8("src/app/AppShell.tsx");
   const history = readUtf8("src/features/history/components/History.tsx");
   const data = readUtf8("src/features/data/components/Data.tsx");
+  const dashboard = readUtf8("src/features/dashboard/components/Dashboard.tsx");
+  const dashboardTopApplications = readUtf8("src/features/dashboard/components/DashboardTopApplications.tsx");
   const entry = readUtf8("src/features/destination/components/DestinationDetailDialogEntry.tsx");
   const dialog = readUtf8("src/features/destination/components/DestinationDetailDialog.tsx");
   const destinationCss = readUtf8("src/styles/features/destination.css");
@@ -395,6 +397,9 @@ await runTest("destination detail stays owned by one lazy shared feature", () =>
   assert.match(shell, /DestinationDetailDialogEntry/);
   assert.match(history, /onOpenDestinationDetail/);
   assert.match(data, /onOpenDestinationDetail/);
+  assert.match(dashboard, /onOpenDestinationDetail/);
+  assert.match(dashboard, /lazy\(\(\) => import\("\.\/DashboardTopApplications\.tsx"\)\)/);
+  assert.match(dashboardTopApplications, /createDestinationDetailTarget/);
   assert.match(entry, /lazy\(\(\) => import\("\.\/DestinationDetailDialog\.tsx"\)\)/);
   assert.match(dialog, /useDestinationDetail/);
   assert.match(dialog, /buildDestinationDetailTimelineSegments/);
