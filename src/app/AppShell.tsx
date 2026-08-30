@@ -494,6 +494,7 @@ function AppShellContent() {
                   mappingVersion={mappingVersion}
                   onOpenHistoryDate={openHistoryForDate}
                   uiLanguage={uiTextLanguage}
+                  webEnabled={appSettings.webActivityEnabled}
                   onOpenDestinationDetail={destinationDetailLauncher.open}
                 />
               )}

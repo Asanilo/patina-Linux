@@ -15,6 +15,15 @@ export interface WebActivitySegment {
   duration: number | null;
 }
 
+export interface WebActivityTrendSegment {
+  id: number;
+  domain: string;
+  normalizedDomain: string;
+  faviconUrl: string | null;
+  startTime: number;
+  endTime: number | null;
+}
+
 export interface WebDomainOverride {
   category?: UserAssignableAppCategory;
   displayName?: string;

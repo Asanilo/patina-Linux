@@ -160,7 +160,7 @@ Rust 默认门槛包含 `npm run check:rust-boundaries`、`cargo check`、Rust �
 
 `test:ui-browser-smoke` 是真实浏览器/Vite 页面防线。它启动本地 Vite server，用 headless Edge/Chrome 打开主界面，在 stub Tauri API 下检查 Dashboard、主导航、Settings 主题弹窗、控制台 error 与基础横向溢出。
 
-`check:bundle` 是保守 bundle 预算防线。它在生产构建之后检查关键 JS chunk、Data 等命名 feature chunk 与总 gzip 体积，防止功能增长被“其他 chunk”汇总掩盖或静默放宽首屏预算。
+`check:bundle` 是保守 bundle 预算防线。它在生产构建之后检查关键 JS chunk、Data 等命名 feature chunk 与总 gzip 体积，防止功能增长被“其他 chunk”汇总掩盖或静默放宽首屏预算。Data 保持独立 `11 KiB gzip` 上限，微型 UI 共享 chunk 保持 `2 KiB gzip` 上限；仅在网页趋势模式加载的数据库快照仍计入 feature/other 与总预算。
 
 性能优化的额外规则：
 

@@ -50,6 +50,13 @@ import {
   filterDataCategoryOptionsForQuery,
   type DataCategoryTrendViewModel,
 } from "../services/dataCategoryTrendReadModel.ts";
+import {
+  buildDataWebActivityTrendViewModel,
+  filterDataWebDomainOptionsForQuery,
+  type DataWebActivityTrendViewModel,
+} from "../services/dataWebActivityReadModel.ts";
+import { useDataWebActivitySnapshot } from "../hooks/useDataWebActivitySnapshot.ts";
+import { getDataWebActivityCopy } from "../services/dataWebActivityCopy.ts";
 
 interface Props {
   icons: Record<string, string>;
@@ -60,6 +67,7 @@ interface Props {
   onOpenHistoryDate?: (dateKey: string) => void;
   onOpenDestinationDetail?: (request: DestinationDetailOpenRequest) => void;
   uiLanguage: AppLanguage;
+  webEnabled?: boolean;
 }
 
 function getAppInitial(appName: string) {
@@ -103,12 +111,22 @@ function filterDataAppOptionsForQuery(options: DataAppOption[], query: string) {
   ));
 }
 
+function updateDataDestinationSelection(
+  current: readonly string[],
+  key: string,
+  multi: boolean,
+) {
+  if (!multi) return [key];
+  if (!current.includes(key)) return [...current, key];
+  return current.length > 1 ? current.filter((item) => item !== key) : [...current];
+}
+
 const DATA_TREND_X_AXIS_MIN_TICK_GAP = 24;
 const HEATMAP_WEEKDAY_COUNT = 7;
 type DataChartDimension = { width: number; height: number };
 type DataChartDimensionKey = "overviewTrend" | "appTrend";
 type HeatmapGranularity = "daily" | "weekly";
-type DataDestinationMode = "app" | "category";
+type DataDestinationMode = "app" | "category" | "web";
 const dataChartDimensionCache: Partial<Record<DataChartDimensionKey, DataChartDimension>> = {};
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
@@ -240,7 +258,9 @@ export default function Data({
   onOpenHistoryDate,
   onOpenDestinationDetail,
   uiLanguage,
+  webEnabled = false,
 }: Props) {
+  const webActivityCopy = getDataWebActivityCopy(uiLanguage);
   const today = new Date();
   const currentYear = today.getFullYear();
   const [selectedTrendRange, setSelectedTrendRange] = useState<DataTrendRangeSelection>({ kind: "rolling", days: 7 });
@@ -248,8 +268,11 @@ export default function Data({
   const [destinationMode, setDestinationMode] = useState<DataDestinationMode>("app");
   const [selectedAppKey, setSelectedAppKey] = useState<string | null>(null);
   const [selectedCategoryKeys, setSelectedCategoryKeys] = useState<string[]>([]);
+  const [selectedWebDomainKeys, setSelectedWebDomainKeys] = useState<string[]>([]);
   const [appSearchQuery, setAppSearchQuery] = useState("");
   const [categorySearchQuery, setCategorySearchQuery] = useState("");
+  const [webSearchQuery, setWebSearchQuery] = useState("");
+  const [webRetryKey, setWebRetryKey] = useState(0);
   const initialCachedHeatmapSessions = getCachedDataHeatmapSessions("recent", Date.now());
   const [bootstrapSnapshot, setBootstrapSnapshot] = useState<DataBootstrapSnapshot | null>(
     () => getCachedDataBootstrapSnapshot(),
@@ -263,6 +286,12 @@ export default function Data({
     selection: selectedAppTrendRange,
     refreshKey,
     loadSnapshot: loadDataTrendSnapshot,
+  });
+  const webActivityTrend = useDataWebActivitySnapshot({
+    enabled: webEnabled && destinationMode === "web",
+    selection: selectedAppTrendRange,
+    refreshKey: refreshKey + webRetryKey,
+    cacheVersion: `mapping:${mappingVersion}`,
   });
   const [selectedHeatmapView, setSelectedHeatmapView] = useState<HeatmapSelection>("recent");
   const [heatmapGranularity, setHeatmapGranularity] = useState<HeatmapGranularity>("daily");
@@ -296,6 +325,10 @@ export default function Data({
   const lastCategoryTrendViewModelRef = useRef<{
     rangeCacheKey: string;
     viewModel: DataCategoryTrendViewModel;
+  } | null>(null);
+  const lastWebTrendViewModelRef = useRef<{
+    rangeCacheKey: string;
+    viewModel: DataWebActivityTrendViewModel;
   } | null>(null);
   const lastHeatmapRowsRef = useRef<{
     selection: HeatmapSelection;
@@ -432,6 +465,28 @@ export default function Data({
     ?? (lastCategoryTrendViewModelRef.current?.rangeCacheKey === appTrend.resolvedRange.cacheKey
       ? lastCategoryTrendViewModelRef.current.viewModel
       : null);
+  const webTrendViewModel = useMemo(() => {
+    if (!webActivityTrend.snapshot) return null;
+    return buildDataWebActivityTrendViewModel(
+      webActivityTrend.snapshot.segments,
+      webActivityTrend.snapshot.overrides,
+      webActivityTrend.snapshot.range,
+      webActivityTrend.nowMs,
+      selectedWebDomainKeys,
+    );
+  }, [mappingVersion, selectedWebDomainKeys, webActivityTrend.nowMs, webActivityTrend.snapshot]);
+  if (webTrendViewModel) {
+    lastWebTrendViewModelRef.current = {
+      rangeCacheKey: webActivityTrend.resolvedRange.cacheKey,
+      viewModel: webTrendViewModel,
+    };
+  }
+  const visibleWebTrendViewModel = webEnabled
+    ? webTrendViewModel
+      ?? (lastWebTrendViewModelRef.current?.rangeCacheKey === webActivityTrend.resolvedRange.cacheKey
+        ? lastWebTrendViewModelRef.current.viewModel
+        : null)
+    : null;
 
   useEffect(() => {
     if (selectedAppKey !== null) return;
@@ -450,6 +505,20 @@ export default function Data({
     }
   }, [categoryTrendViewModel?.selectedCategories, selectedCategoryKeys.length]);
 
+  useEffect(() => {
+    if (selectedWebDomainKeys.length > 0) return;
+    const defaultDomain = webTrendViewModel?.selectedDomains[0]?.normalizedDomain;
+    if (defaultDomain) {
+      setSelectedWebDomainKeys([defaultDomain]);
+    }
+  }, [selectedWebDomainKeys.length, webTrendViewModel?.selectedDomains]);
+
+  useEffect(() => {
+    if (!webEnabled && destinationMode === "web") {
+      setDestinationMode("app");
+    }
+  }, [destinationMode, webEnabled]);
+
   const filteredAppOptions = useMemo(() => {
     if (!visibleAppTrendViewModel) return [];
     return filterDataAppOptionsForQuery(visibleAppTrendViewModel.appOptions, appSearchQuery);
@@ -461,6 +530,13 @@ export default function Data({
       categorySearchQuery,
     );
   }, [categorySearchQuery, visibleCategoryTrendViewModel]);
+  const filteredWebDomainOptions = useMemo(() => {
+    if (!visibleWebTrendViewModel) return [];
+    return filterDataWebDomainOptionsForQuery(
+      visibleWebTrendViewModel.domainOptions,
+      webSearchQuery,
+    );
+  }, [visibleWebTrendViewModel, webSearchQuery]);
 
   const hasAppSearchQuery = appSearchQuery.trim().length > 0;
   const appTrendSelectedAppMatchesSearch = !hasAppSearchQuery
@@ -478,35 +554,73 @@ export default function Data({
     : (visibleAppTrendViewModel?.chartAxis ?? { domainMax: 3, ticks: [0, 1, 2, 3] });
   const appTrendPeakDay = appTrendSelectionHiddenBySearch ? null : visibleAppTrendViewModel?.peakDay;
   const isCategoryDestination = destinationMode === "category";
-  const destinationReady = isCategoryDestination
-    ? Boolean(visibleCategoryTrendViewModel)
-    : Boolean(visibleAppTrendViewModel);
-  const destinationOptionsEmpty = isCategoryDestination
-    ? (visibleCategoryTrendViewModel?.categoryOptions.length ?? 0) === 0
-    : (visibleAppTrendViewModel?.appOptions.length ?? 0) === 0;
-  const destinationChartData = isCategoryDestination
-    ? visibleCategoryTrendViewModel?.chartRows ?? []
-    : appTrendChartData;
-  const destinationChartAxis = isCategoryDestination
-    ? visibleCategoryTrendViewModel?.chartAxis ?? { domainMax: 3, ticks: [0, 1, 2, 3] }
-    : appTrendChartAxis;
-  const destinationPeakDay = isCategoryDestination
-    ? visibleCategoryTrendViewModel?.peakDay
-    : appTrendPeakDay;
-  const destinationSummary = isCategoryDestination
-    ? visibleCategoryTrendViewModel?.summary
-    : {
+  const isWebDestination = destinationMode === "web";
+  const selectedCategories = visibleCategoryTrendViewModel?.selectedCategories ?? [];
+  const selectedWebDomains = visibleWebTrendViewModel?.selectedDomains ?? [];
+  const selectedWebDomain = selectedWebDomains.length === 1 ? selectedWebDomains[0] : null;
+  const destinationReady = isWebDestination
+    ? Boolean(visibleWebTrendViewModel)
+    : isCategoryDestination
+      ? Boolean(visibleCategoryTrendViewModel)
+      : Boolean(visibleAppTrendViewModel);
+  const destinationOptionsEmpty = isWebDestination
+    ? (visibleWebTrendViewModel?.domainOptions.length ?? 0) === 0
+    : isCategoryDestination
+      ? (visibleCategoryTrendViewModel?.categoryOptions.length ?? 0) === 0
+      : (visibleAppTrendViewModel?.appOptions.length ?? 0) === 0;
+  const destinationChartData = isWebDestination
+    ? visibleWebTrendViewModel?.chartRows ?? []
+    : isCategoryDestination
+      ? visibleCategoryTrendViewModel?.chartRows ?? []
+      : appTrendChartData;
+  const destinationChartAxis = isWebDestination
+    ? visibleWebTrendViewModel?.chartAxis ?? { domainMax: 3, ticks: [0, 1, 2, 3] }
+    : isCategoryDestination
+      ? visibleCategoryTrendViewModel?.chartAxis ?? { domainMax: 3, ticks: [0, 1, 2, 3] }
+      : appTrendChartAxis;
+  const destinationChartSeries = isWebDestination
+    ? visibleWebTrendViewModel?.chartSeries ?? []
+    : isCategoryDestination ? visibleCategoryTrendViewModel?.chartSeries ?? [] : [];
+  const destinationPeakDay = isWebDestination
+    ? visibleWebTrendViewModel?.peakDay
+    : isCategoryDestination
+      ? visibleCategoryTrendViewModel?.peakDay
+      : appTrendPeakDay;
+  const destinationSummary = isWebDestination
+    ? visibleWebTrendViewModel?.summary
+    : isCategoryDestination
+      ? visibleCategoryTrendViewModel?.summary
+      : {
         totalDuration: selectedAppTrendApp?.totalDuration ?? 0,
         averageDuration: selectedAppTrendApp?.averageDuration ?? 0,
         activeDayCount: selectedAppTrendApp?.activeDayCount ?? 0,
       };
-  const destinationGranularity = isCategoryDestination
-    ? visibleCategoryTrendViewModel?.granularity ?? "day"
-    : visibleAppTrendViewModel?.granularity ?? "day";
-  const selectedCategories = visibleCategoryTrendViewModel?.selectedCategories ?? [];
-  const hasDestinationSelection = isCategoryDestination
-    ? selectedCategories.length > 0
-    : Boolean(selectedAppTrendApp);
+  const destinationGranularity = isWebDestination
+    ? visibleWebTrendViewModel?.granularity ?? "day"
+    : isCategoryDestination
+      ? visibleCategoryTrendViewModel?.granularity ?? "day"
+      : visibleAppTrendViewModel?.granularity ?? "day";
+  const hasDestinationSelection = isWebDestination
+    ? selectedWebDomains.length > 0
+    : isCategoryDestination
+      ? selectedCategories.length > 0
+      : Boolean(selectedAppTrendApp);
+  const destinationError = isWebDestination ? webActivityTrend.error : null;
+  const destinationSearchQuery = isWebDestination
+    ? webSearchQuery
+    : isCategoryDestination ? categorySearchQuery : appSearchQuery;
+  const destinationSearchPlaceholder = isWebDestination
+    ? webActivityCopy.searchPlaceholder
+    : isCategoryDestination ? UI_TEXT.data.categorySearchPlaceholder : UI_TEXT.data.appSearchPlaceholder;
+  const destinationListAriaLabel = isWebDestination
+    ? webActivityCopy.domainList
+    : isCategoryDestination ? UI_TEXT.data.categoryTrendCategoryList : UI_TEXT.data.appTrendAppList;
+  const destinationEmptyLabel = isWebDestination
+    ? webActivityCopy.empty
+    : isCategoryDestination ? UI_TEXT.data.categoryTrendEmpty : UI_TEXT.data.appTrendEmpty;
+  const destinationNoMatchLabel = isWebDestination
+    ? webActivityCopy.noMatch
+    : isCategoryDestination ? UI_TEXT.data.categoryTrendNoMatch : UI_TEXT.data.appTrendNoMatch;
 
   useEffect(() => {
     if (!hasAppSearchQuery || !visibleAppTrendViewModel) return;
@@ -524,7 +638,7 @@ export default function Data({
 
   useLayoutEffect(() => {
     appListRef.current?.scrollTo({ top: 0 });
-  }, [categorySearchQuery, destinationMode, hasAppSearchQuery]);
+  }, [categorySearchQuery, destinationMode, hasAppSearchQuery, webSearchQuery]);
 
   const handleAppSearchQueryChange = (nextQuery: string) => {
     const wasSearching = appSearchQuery.trim().length > 0;
@@ -553,16 +667,25 @@ export default function Data({
     appListRef.current?.scrollTo({ top: 0 });
   };
   const handleCategorySelect = (category: string, multi: boolean) => {
-    setSelectedCategoryKeys((current) => {
-      if (!multi) return [category];
-      if (!current.includes(category)) return [...current, category];
-      return current.length > 1 ? current.filter((key) => key !== category) : current;
-    });
+    setSelectedCategoryKeys((current) => updateDataDestinationSelection(current, category, multi));
   };
-  const destinationModeOptions = useMemo<Array<{ value: DataDestinationMode; label: string }>>(() => [
-    { value: "app", label: UI_TEXT.data.appTrend },
-    { value: "category", label: UI_TEXT.data.categoryTrend },
-  ], [uiLanguage]);
+  const handleWebSearchQueryChange = (nextQuery: string) => {
+    setWebSearchQuery(nextQuery);
+    appListRef.current?.scrollTo({ top: 0 });
+  };
+  const handleWebDomainSelect = (domain: string, multi: boolean) => {
+    setSelectedWebDomainKeys((current) => updateDataDestinationSelection(current, domain, multi));
+  };
+  const destinationModeOptions = useMemo<Array<{ value: DataDestinationMode; label: string }>>(() => {
+    const options: Array<{ value: DataDestinationMode; label: string }> = [
+      { value: "app", label: UI_TEXT.data.appTrend },
+      { value: "category", label: UI_TEXT.data.categoryTrend },
+    ];
+    if (webEnabled) {
+      options.push({ value: "web", label: webActivityCopy.trend });
+    }
+    return options;
+  }, [uiLanguage, webActivityCopy.trend, webEnabled]);
   const heatmapRows = useMemo(() => (
     buildActivityHeatmap(yearSessions, selectedHeatmapView, nowMs)
   ), [nowMs, selectedHeatmapView, yearSessions]);
@@ -625,9 +748,8 @@ export default function Data({
     : String(selectedHeatmapView);
   const canOpenTrendHistory = visibleTrendViewModel?.granularity === "day" && Boolean(onOpenHistoryDate);
   const canOpenAppTrendHistory = destinationGranularity === "day"
-    && (isCategoryDestination
-      ? selectedCategories.length > 0
-      : !appTrendSelectionHiddenBySearch)
+    && hasDestinationSelection
+    && (destinationMode !== "app" || !appTrendSelectionHiddenBySearch)
     && Boolean(onOpenHistoryDate);
   const handleTrendMouseMove = (event: unknown) => {
     activeTrendDateRef.current = canOpenTrendHistory && visibleTrendViewModel
@@ -958,14 +1080,31 @@ export default function Data({
           </div>
           <div className="data-app-header-actions">
             <div
-              className={`data-app-selected-status ${isCategoryDestination ? "data-category-selected-status" : ""} ${
+              className={`data-app-selected-status ${isCategoryDestination || isWebDestination ? "data-category-selected-status" : ""} ${
                 hasDestinationSelection ? "" : "data-app-selected-status-empty"
               }`}
-              aria-label={isCategoryDestination
-                ? selectedCategories.map((category) => category.displayName).join(", ")
-                : selectedAppTrendApp?.appName}
+              aria-label={isWebDestination
+                ? selectedWebDomains.map((domain) => domain.displayName).join(", ")
+                : isCategoryDestination
+                  ? selectedCategories.map((category) => category.displayName).join(", ")
+                  : selectedAppTrendApp?.appName}
             >
-              {isCategoryDestination ? (
+              {isWebDestination ? (
+                selectedWebDomains.map((domain) => (
+                  <span
+                    key={domain.normalizedDomain}
+                    className="data-web-selected-icon"
+                    style={{ "--data-category-color": domain.color } as CSSProperties}
+                    aria-hidden
+                  >
+                    {domain.faviconUrl ? (
+                      <img src={domain.faviconUrl} alt="" draggable={false} />
+                    ) : (
+                      getAppInitial(domain.displayName)
+                    )}
+                  </span>
+                ))
+              ) : isCategoryDestination ? (
                 selectedCategories.map((category) => (
                   <span
                     key={category.category}
@@ -986,40 +1125,73 @@ export default function Data({
                 ""
               )}
             </div>
-            {!isCategoryDestination && selectedAppTrendApp && onOpenDestinationDetail ? (
+            {((destinationMode === "app" && selectedAppTrendApp) || selectedWebDomain)
+              && onOpenDestinationDetail ? (
               <QuietIconAction
                 icon={<PanelRightOpen size={15} aria-hidden />}
                 title={UI_TEXT.history.titleDetails}
                 showTooltip={false}
-                onClick={() => onOpenDestinationDetail({
-                  target: createDestinationDetailTarget({
-                    mode: "app",
-                    key: selectedAppTrendApp.appKey,
-                    identityKeys: [selectedAppTrendApp.appKey, selectedAppTrendApp.exeName],
-                    displayName: selectedAppTrendApp.appName,
-                    secondaryText: selectedAppTrendApp.exeName,
-                    iconUrl: icons[selectedAppTrendApp.exeName] ?? null,
-                    color: "var(--qp-accent-default)",
-                  }),
-                  initialDateKey: formatLocalDateKey(new Date()),
-                })}
+                onClick={() => {
+                  if (selectedWebDomain) {
+                    onOpenDestinationDetail({
+                      target: createDestinationDetailTarget({
+                        mode: "web",
+                        key: selectedWebDomain.normalizedDomain,
+                        identityKeys: [selectedWebDomain.normalizedDomain],
+                        displayName: selectedWebDomain.displayName,
+                        secondaryText: selectedWebDomain.normalizedDomain,
+                        iconUrl: selectedWebDomain.faviconUrl,
+                        color: selectedWebDomain.color,
+                      }),
+                      initialDateKey: formatLocalDateKey(new Date()),
+                    });
+                    return;
+                  }
+                  if (selectedAppTrendApp) {
+                    onOpenDestinationDetail({
+                      target: createDestinationDetailTarget({
+                        mode: "app",
+                        key: selectedAppTrendApp.appKey,
+                        identityKeys: [selectedAppTrendApp.appKey, selectedAppTrendApp.exeName],
+                        displayName: selectedAppTrendApp.appName,
+                        secondaryText: selectedAppTrendApp.exeName,
+                        iconUrl: icons[selectedAppTrendApp.exeName] ?? null,
+                        color: "var(--qp-accent-default)",
+                      }),
+                      initialDateKey: formatLocalDateKey(new Date()),
+                    });
+                  }
+                }}
               />
             ) : null}
             <DataTrendRangeControl
-              ariaLabel={isCategoryDestination
-                ? UI_TEXT.accessibility.data.categoryTrendRange
-                : UI_TEXT.accessibility.data.appTrendRange}
+              ariaLabel={isWebDestination
+                ? webActivityCopy.range
+                : isCategoryDestination
+                  ? UI_TEXT.accessibility.data.categoryTrendRange
+                  : UI_TEXT.accessibility.data.appTrendRange}
               selection={selectedAppTrendRange}
               onChange={setSelectedAppTrendRange}
             />
           </div>
         </div>
 
-        {!destinationReady ? (
+        {destinationError && !destinationReady ? (
+          <div className="data-app-loading data-web-trend-error text-[var(--qp-text-tertiary)] text-xs" role="status">
+            <span>{webActivityCopy.unavailable}</span>
+            <button
+              type="button"
+              className="qp-inline-action qp-inline-action-accent"
+              onClick={() => setWebRetryKey((current) => current + 1)}
+            >
+              {webActivityCopy.retry}
+            </button>
+          </div>
+        ) : !destinationReady ? (
           <div className="data-app-loading text-[var(--qp-text-tertiary)] text-xs" aria-hidden="true" />
         ) : destinationOptionsEmpty ? (
           <div className="data-app-loading text-[var(--qp-text-tertiary)] text-xs">
-            {isCategoryDestination ? UI_TEXT.data.categoryTrendEmpty : UI_TEXT.data.appTrendEmpty}
+            {destinationEmptyLabel}
           </div>
         ) : (
           <div className="data-app-grid">
@@ -1027,35 +1199,68 @@ export default function Data({
               <label className="data-app-search">
                 <Search size={14} aria-hidden />
                 <input
-                  value={isCategoryDestination ? categorySearchQuery : appSearchQuery}
+                  value={destinationSearchQuery}
                   onChange={(event) => {
-                    if (isCategoryDestination) {
+                    if (isWebDestination) {
+                      handleWebSearchQueryChange(event.target.value);
+                    } else if (isCategoryDestination) {
                       handleCategorySearchQueryChange(event.target.value);
                     } else {
                       handleAppSearchQueryChange(event.target.value);
                     }
                   }}
-                  placeholder={isCategoryDestination
-                    ? UI_TEXT.data.categorySearchPlaceholder
-                    : UI_TEXT.data.appSearchPlaceholder}
-                  aria-label={isCategoryDestination
-                    ? UI_TEXT.data.categorySearchPlaceholder
-                    : UI_TEXT.data.appSearchPlaceholder}
+                  placeholder={destinationSearchPlaceholder}
+                  aria-label={destinationSearchPlaceholder}
                 />
               </label>
               <div
-                key={`${destinationMode}:${isCategoryDestination ? categorySearchQuery : hasAppSearchQuery ? "searching" : "all"}`}
+                key={`${destinationMode}:${destinationSearchQuery}`}
                 ref={appListRef}
                 className="data-app-list data-app-trend-list"
-                aria-label={isCategoryDestination
-                  ? UI_TEXT.data.categoryTrendCategoryList
-                  : UI_TEXT.data.appTrendAppList}
+                aria-label={destinationListAriaLabel}
               >
-                {(isCategoryDestination ? filteredCategoryOptions : filteredAppOptions).length === 0 ? (
+                {(isWebDestination
+                  ? filteredWebDomainOptions
+                  : isCategoryDestination ? filteredCategoryOptions : filteredAppOptions).length === 0 ? (
                   <div className="data-app-empty text-[var(--qp-text-tertiary)] text-xs">
-                    {isCategoryDestination ? UI_TEXT.data.categoryTrendNoMatch : UI_TEXT.data.appTrendNoMatch}
+                    {destinationNoMatchLabel}
                   </div>
-                ) : isCategoryDestination ? filteredCategoryOptions.map((category) => {
+                ) : isWebDestination ? filteredWebDomainOptions.map((domain) => {
+                  const isSelected = selectedWebDomainKeys.includes(domain.normalizedDomain);
+                  return (
+                    <button
+                      key={domain.normalizedDomain}
+                      type="button"
+                      className={`data-app-option ${isSelected ? "data-app-option-selected" : ""}`}
+                      onClick={(event) => handleWebDomainSelect(
+                        domain.normalizedDomain,
+                        event.ctrlKey || event.metaKey,
+                      )}
+                      aria-pressed={isSelected}
+                    >
+                      <span
+                        className="data-app-option-icon data-web-option-icon"
+                        style={{ "--data-category-color": domain.color } as CSSProperties}
+                        aria-hidden
+                      >
+                        {domain.faviconUrl ? (
+                          <img src={domain.faviconUrl} alt="" draggable={false} />
+                        ) : (
+                          getAppInitial(domain.displayName)
+                        )}
+                      </span>
+                      <span className="data-app-option-main">
+                        <span className="data-app-option-name">{domain.displayName}</span>
+                        <span className="data-app-option-meta">
+                          {Math.round(domain.percentage)}% · {domain.normalizedDomain}
+                        </span>
+                      </span>
+                      <span className="data-app-option-duration">
+                        {formatDuration(domain.totalDuration)}
+                      </span>
+                    </button>
+                  );
+                }) : isCategoryDestination ? filteredCategoryOptions.map((category) => {
                   const isSelected = selectedCategoryKeys.includes(category.category);
                   return (
                     <button
@@ -1176,11 +1381,11 @@ export default function Data({
                     <QuietChartTooltip
                       formatter={(value, name) => [
                         formatDuration(Number(value) * 3600000),
-                        isCategoryDestination ? String(name) : UI_TEXT.data.appTrendUsage,
+                        destinationMode === "app" ? UI_TEXT.data.appTrendUsage : String(name),
                       ]}
                     />
-                    {isCategoryDestination ? (
-                      visibleCategoryTrendViewModel?.chartSeries.map((series) => (
+                    {destinationMode !== "app" ? (
+                      destinationChartSeries.map((series) => (
                         <Area
                           key={series.key}
                           type="monotone"

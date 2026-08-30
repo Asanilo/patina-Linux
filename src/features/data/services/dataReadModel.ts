@@ -63,6 +63,23 @@ export interface DataAppTrendPoint {
   duration: number;
 }
 
+export interface DataDestinationTrendSeries {
+  key: string;
+  dataKey: string;
+  displayName: string;
+  color: string;
+}
+
+export interface DataDestinationTrendChartRow {
+  label: string;
+  date: string;
+  duration: number;
+  hours: number;
+  totalDuration: number;
+  totalHours: number;
+  [key: string]: string | number;
+}
+
 export interface DataAppDayRow {
   date: string;
   label: string;

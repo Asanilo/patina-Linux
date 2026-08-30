@@ -285,6 +285,7 @@ await runTest("app shell keeps History and Data snapshot loaders on their owning
   assert.match(historyBranch, /loadHistorySnapshot=\{loadHistoryRuntimeSnapshot\}/);
   assert.doesNotMatch(historyBranch, /loadDataTrendSnapshot=/);
   assert.match(dataBranch, /loadDataTrendSnapshot=\{loadDataTrendRuntimeSnapshot\}/);
+  assert.match(dataBranch, /webEnabled=\{appSettings\.webActivityEnabled\}/);
   assert.doesNotMatch(dataBranch, /loadHistorySnapshot=/);
 });
 
@@ -309,7 +310,7 @@ await runTest("Data category trends reuse the destination panel without a second
   const dataCss = readUtf8("src/styles/features/data.css");
   const segmentedFilter = readUtf8("src/shared/components/QuietSegmentedFilter.tsx");
 
-  assert.match(data, /type DataDestinationMode = "app" \| "category"/);
+  assert.match(data, /type DataDestinationMode = "app" \| "category" \| "web"/);
   assert.match(data, /buildDataCategoryTrendViewModel/);
   assert.match(data, /data-destination-mode/);
   assert.match(data, /event\.ctrlKey \|\| event\.metaKey/);
@@ -318,6 +319,19 @@ await runTest("Data category trends reuse the destination panel without a second
   assert.match(dataCss, /--data-category-color/);
   assert.doesNotMatch(dataCss, /#[0-9a-f]{3,8}/i);
   assert.match(segmentedFilter, /aria-label=\{ariaLabel\}/);
+});
+
+await runTest("Data web trends keep page details outside the trend persistence boundary", () => {
+  const data = readUtf8("src/features/data/components/Data.tsx");
+  const hook = readUtf8("src/features/data/hooks/useDataWebActivitySnapshot.ts");
+  const snapshot = readUtf8("src/features/data/services/dataWebActivitySnapshot.ts");
+  const trendRepository = readUtf8("src/platform/persistence/dataWebActivityTrendRepository.ts");
+
+  assert.match(data, /enabled: webEnabled && destinationMode === "web"/);
+  assert.match(hook, /import\("\.\.\/services\/dataWebActivitySnapshot\.ts"\)/);
+  assert.match(snapshot, /dataWebActivityTrendRepository/);
+  assert.match(trendRepository, /SELECT id,[\s\S]*normalized_domain,[\s\S]*favicon_url,[\s\S]*start_time,[\s\S]*end_time/);
+  assert.doesNotMatch(trendRepository, /\burl\b|\btitle\b/i);
 });
 
 await runTest("History regular view avoids visible loading copy", () => {

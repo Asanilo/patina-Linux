@@ -259,6 +259,29 @@ function tauriStubFor(path: string) {
         });
       }
 
+      function webActivityRows() {
+        const timing = smokeSessionTiming();
+        const split = timing.start + Math.floor(timing.duration * 0.6);
+        return [
+          {
+            id: 1201,
+            domain: "github.com",
+            normalized_domain: "github.com",
+            favicon_url: null,
+            start_time: timing.start,
+            end_time: split,
+          },
+          {
+            id: 1202,
+            domain: "docs.rs",
+            normalized_domain: "docs.rs",
+            favicon_url: null,
+            start_time: split,
+            end_time: timing.end,
+          },
+        ];
+      }
+
       export default class Database {
         static get() {
           return new Database();
@@ -281,6 +304,9 @@ function tauriStubFor(path: string) {
           }
           if (normalizedQuery.includes("from session_title_samples")) {
             return historyTitleSampleRows();
+          }
+          if (normalizedQuery.includes("from web_activity_segments")) {
+            return webActivityRows();
           }
           if (normalizedQuery.includes("from sessions")) {
             return historySessionRows();
@@ -1286,7 +1312,7 @@ try {
     );
   });
 
-  await runTest("Data switches between app and category trends without overflowing the panel", async () => {
+  await runTest("Data switches across app category and web trends without overflowing the panel", async () => {
     await client!.command("Emulation.setDeviceMetricsOverride", {
       width: 900,
       height: 760,
@@ -1315,6 +1341,33 @@ try {
           const panel = document.querySelector(".data-app-panel");
           if (!panel) return false;
           return panel.scrollWidth <= panel.clientWidth + 1;
+        })()
+      `),
+      true,
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const group = document.querySelector('[aria-label=' + ${jsonString(JSON.stringify("活动趋势"))} + ']');
+          const button = Array.from(group?.querySelectorAll("button") ?? [])
+            .find((node) => node.textContent?.trim() === "网页趋势");
+          if (!button) return false;
+          button.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(
+      client!,
+      sessionId,
+      `document.querySelector('[aria-label=' + ${jsonString(JSON.stringify("网站列表"))} + ']')?.textContent?.includes("github.com") === true`,
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const panel = document.querySelector(".data-app-panel");
+          return Boolean(panel) && panel.scrollWidth <= panel.clientWidth + 1;
         })()
       `),
       true,

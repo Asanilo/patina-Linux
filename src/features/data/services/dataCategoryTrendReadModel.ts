@@ -9,6 +9,8 @@ import {
   type CompiledDataSession,
   type DataAppDayRow,
   type DataAppTrendViewModel,
+  type DataDestinationTrendChartRow,
+  type DataDestinationTrendSeries,
   type DataTrendPoint,
 } from "./dataReadModel.ts";
 import type { ResolvedDataTrendRange } from "./dataTrendRange.ts";
@@ -24,31 +26,14 @@ export interface DataCategoryOption {
   activeDayCount: number;
 }
 
-export interface DataCategoryTrendSeries {
-  key: AppCategory;
-  dataKey: string;
-  displayName: string;
-  color: string;
-}
-
-export interface DataCategoryTrendChartRow {
-  label: string;
-  date: string;
-  duration: number;
-  hours: number;
-  totalDuration: number;
-  totalHours: number;
-  [key: string]: string | number;
-}
-
 export interface DataCategoryTrendViewModel {
   range: ResolvedDataTrendRange;
   rangeLabel: string;
   granularity: "day" | "month";
   categoryOptions: DataCategoryOption[];
   selectedCategories: DataCategoryOption[];
-  chartSeries: DataCategoryTrendSeries[];
-  chartRows: DataCategoryTrendChartRow[];
+  chartSeries: DataDestinationTrendSeries[];
+  chartRows: DataDestinationTrendChartRow[];
   summary: {
     totalDuration: number;
     averageDuration: number;
@@ -197,7 +182,7 @@ export function buildDataCategoryTrendViewModel(
   }));
   const chartRows = chartRanges.map((range) => {
     const date = toDateKey(range.startMs);
-    const row: DataCategoryTrendChartRow = {
+    const row: DataDestinationTrendChartRow = {
       label: context.range.granularity === "month"
         ? UI_TEXT.date.monthLabel(Number(date.slice(5, 7)))
         : date.slice(5),
