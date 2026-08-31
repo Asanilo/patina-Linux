@@ -1,4 +1,4 @@
-use crate::data::sqlite_pool;
+use crate::data::{repositories::activity_read_model, sqlite_pool};
 use crate::engine::api::types::{
     ApiError, ApiResponse, AppEntry, AppsResponse, ClassifyRequest, ExcludeRequest, RenameRequest,
     RouteResponse,
@@ -16,16 +16,12 @@ pub async fn get_apps(app: &tauri::AppHandle) -> RouteResponse {
         }
     };
 
-    // Get distinct exe_names from sessions
-    let rows = match sqlx::query("SELECT DISTINCT exe_name FROM sessions ORDER BY exe_name")
-        .fetch_all(&pool)
-        .await
-    {
-        Ok(r) => r,
-        Err(e) => {
+    let recorded_apps = match activity_read_model::load_recorded_apps(&pool).await {
+        Ok(apps) => apps,
+        Err(error) => {
             return RouteResponse {
                 status: 500,
-                body: serde_json::to_value(ApiError::internal(&e.to_string())).unwrap_or_default(),
+                body: serde_json::to_value(ApiError::internal(&error)).unwrap_or_default(),
             };
         }
     };
@@ -51,28 +47,30 @@ pub async fn get_apps(app: &tauri::AppHandle) -> RouteResponse {
         if let Some(exe) = key.strip_prefix("__app_override::") {
             if let Ok(override_data) = serde_json::from_str::<serde_json::Value>(&value) {
                 if let Some(name) = override_data.get("display_name").and_then(|v| v.as_str()) {
-                    display_names.insert(exe.to_string(), name.to_string());
+                    display_names.insert(normalize_app_key(exe), name.to_string());
                 }
             }
         } else if let Some(exe) = key.strip_prefix("__app_category::") {
-            categories.insert(exe.to_string(), value);
+            categories.insert(normalize_app_key(exe), value);
         } else if let Some(exe) = key.strip_prefix("__app_excluded::") {
             if value == "1" || value == "true" {
-                excluded_set.insert(exe.to_string());
+                excluded_set.insert(normalize_app_key(exe));
             }
         }
     }
 
-    let apps: Vec<AppEntry> = rows
-        .iter()
-        .map(|row| {
-            let exe_name: String = row.try_get("exe_name").unwrap_or_default();
+    let apps: Vec<AppEntry> = recorded_apps
+        .into_iter()
+        .map(|recorded| {
+            let exe_name = recorded.exe_name;
+            let app_key = normalize_app_key(&exe_name);
             let display_name = display_names
-                .get(&exe_name)
+                .get(&app_key)
                 .cloned()
+                .or_else(|| (!recorded.app_name.trim().is_empty()).then_some(recorded.app_name))
                 .unwrap_or_else(|| exe_name.clone());
-            let category = categories.get(&exe_name).cloned();
-            let excluded = excluded_set.contains(&exe_name);
+            let category = categories.get(&app_key).cloned();
+            let excluded = excluded_set.contains(&app_key);
 
             AppEntry {
                 exe_name,
@@ -90,6 +88,10 @@ pub async fn get_apps(app: &tauri::AppHandle) -> RouteResponse {
         })
         .unwrap_or_default(),
     }
+}
+
+fn normalize_app_key(exe_name: &str) -> String {
+    exe_name.trim().to_ascii_lowercase()
 }
 
 pub async fn handle_app_action(app: &tauri::AppHandle, path: &str, body: &[u8]) -> RouteResponse {

@@ -40,6 +40,9 @@ assert.match(mcpDocs, /"--experimental-strip-types"/);
 assert.match(mcpDocs, /\/absolute\/path\/to\/patina\/scripts\/patina-mcp\.ts/);
 assert.match(mcpDocs, /notifications\/initialized/);
 assert.match(mcpDocs, /tool execution errors/i);
+assert.match(apiDocs, /native > import_exact > import_bucket/);
+assert.match(apiDocs, /aggregate-only hour buckets/i);
+assert.match(mcpDocs, /native > import_exact > import_bucket/);
 
 console.log(`Validated ${implementedEndpoints.length} API sections and MCP transport documentation`);
 

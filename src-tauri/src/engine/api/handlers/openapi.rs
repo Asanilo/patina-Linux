@@ -56,7 +56,7 @@ fn paths() -> Value {
         },
         "/api/v1/sessions": {
             "get": get_operation_with_parameters(
-                "Closed session query by time range, app, and limit.",
+                "Closed native session query by time range, app, and limit. Imported hour buckets are aggregate-only and are never exposed as sessions.",
                 "SessionsResponse",
                 vec![
                     query_param("from", "integer", "Optional lower start timestamp in milliseconds."),
@@ -70,11 +70,11 @@ fn paths() -> Value {
             "get": get_operation("Current active tracking session, if present.", "ActiveSessionResponse")
         },
         "/api/v1/summary/today": {
-            "get": get_operation("Local-day activity summary.", "SummaryResponse")
+            "get": get_operation("Local-day activity summary across native and imported facts.", "SummaryResponse")
         },
         "/api/v1/summary/range": {
             "get": get_operation_with_parameters(
-                "Caller-provided millisecond range summary.",
+                "Caller-provided millisecond range summary across native and imported facts.",
                 "SummaryResponse",
                 vec![
                     required_query_param("from", "integer", "Required range start timestamp in milliseconds."),
@@ -83,11 +83,11 @@ fn paths() -> Value {
             )
         },
         "/api/v1/summary/week": {
-            "get": get_operation("Local-week activity summary.", "SummaryResponse")
+            "get": get_operation("Local-week activity summary across native and imported facts.", "SummaryResponse")
         },
         "/api/v1/trend": {
             "get": get_operation_with_parameters(
-                "Daily activity trend for week or month.",
+                "Daily activity trend across native and imported facts for week or month.",
                 "TrendResponse",
                 vec![
                     query_param("period", "string", "Optional period. Supported values: week, month."),
@@ -111,7 +111,7 @@ fn paths() -> Value {
             "get": get_operation("Aggregated local activity context for external AI analysis.", "ActivityContextResponse")
         },
         "/api/v1/apps": {
-            "get": get_operation("Known apps from recorded sessions.", "AppsResponse")
+            "get": get_operation("Known apps from native sessions and imported activity facts.", "AppsResponse")
         },
         "/api/v1/apps/{exe_name}/classify": {
             "post": post_operation(
@@ -823,6 +823,11 @@ mod tests {
                 .and_then(|value| value.as_str()),
             Some("http://127.0.0.1:{port}")
         );
+        assert!(response
+            .body
+            .pointer("/paths/~1api~1v1~1summary~1today/get/summary")
+            .and_then(|value| value.as_str())
+            .is_some_and(|description| description.contains("native and imported")));
         assert_eq!(
             response
                 .body

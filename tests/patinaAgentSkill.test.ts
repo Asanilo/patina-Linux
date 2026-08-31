@@ -41,6 +41,8 @@ assert.match(analysis, /local day/i);
 assert.match(analysis, /explicit user intent/i);
 assert.match(analysis, /URL/i);
 assert.match(analysis, /do not infer/i);
+assert.match(analysis, /native > import_exact > import_bucket/);
+assert.match(analysis, /hour bucket/i);
 
 assert.match(metadata, /display_name: "Analyze Patina Activity"/);
 assert.match(metadata, /\$analyzing-patina-activity/);

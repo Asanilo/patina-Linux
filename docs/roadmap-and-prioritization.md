@@ -107,7 +107,7 @@
 - `Data` 的长期活动理解效率
 - `Data` 当前已支持应用、分类与网页趋势；网页趋势按需读取域名级活动并遵循现有分类、排除和隐私边界，不复制上游持久化聚合链路
 - `Dashboard / History / Data / Classification` 的桌面 SQLite 读模型已能组合本机事实与外部导入事实；本机记录始终优先，小时汇总不伪造成 History 时间线
-- HTTP / MCP 统计暂不宣称包含外部导入事实；后续应先建立 Rust 共享活动读模型，再让 API 与桌面端复用同一优先级契约，不能在 API handler 中复制第三套统计规则
+- HTTP / MCP 的 Summary、Trend 与 Apps 已通过 Rust 共享活动读模型纳入外部导入事实，并与桌面端遵守同一优先级契约；`/sessions` 仍只暴露原生精确记录，小时汇总只用于聚合，不能在 API handler 中复制另一套统计规则
 - 后续 Data 工作优先统一跨页面的日期、详情与筛选语义并补回归验证，不为单一图表新建后台聚合 worker 或第二套事实表
 - 应用详情已由 `Dashboard / History / Data` 共用同一 owner，网站详情已由 `History / Data` 共用同一 owner；后续新增入口必须继续保持同一聚合、日期和时间线语义
 - `Classification` 的管理清晰度

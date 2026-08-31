@@ -52,7 +52,7 @@ Current caveats:
 | `/api/v1/trend` | `GET` | Partial | Daily activity trend for week/month |
 | `/api/v1/web-activity` | `GET` | Implemented | Browser activity segment query |
 | `/api/v1/ai/activity-context` | `GET` | Implemented | Aggregated diagnostics, active session, summaries, and recent web activity for external AI analysis |
-| `/api/v1/apps` | `GET` | Implemented | Known apps from recorded sessions |
+| `/api/v1/apps` | `GET` | Implemented | Known apps from native and imported facts |
 | `/api/v1/apps/{exe_name}/classify` | `POST` | Implemented | Save app category |
 | `/api/v1/apps/{exe_name}/rename` | `POST` | Implemented | Save app display name |
 | `/api/v1/apps/{exe_name}/exclude` | `POST` | Implemented | Save app exclusion flag |
@@ -243,6 +243,8 @@ Current behavior:
 
 - Returns closed sessions only.
 - Filters by `start_time`; it does not clip sessions to the requested range.
+- Returns native tracker sessions only. Imported exact records are not yet exposed through this endpoint.
+- Never exposes imported hour buckets because they have no exact timeline position.
 
 ### `GET /api/v1/sessions/active`
 
@@ -321,8 +323,10 @@ Schema:
 Current behavior:
 
 - Uses local day boundary.
-- Includes closed sessions and the current active session.
-- Clips every session to the local-day range before aggregation.
+- Combines native sessions, imported exact sessions, and imported hour buckets using `native > import_exact > import_bucket` precedence.
+- Includes the current native active session and clips exact facts to the local-day range.
+- Treats hour buckets as aggregate quantities; a partial-hour query receives only its proportional share and never fabricates a timeline segment.
+- Omits apps marked excluded; a local category override takes priority over an imported source category.
 
 ### `GET /api/v1/summary/range`
 
@@ -345,8 +349,10 @@ Same response shape as `GET /api/v1/summary/today`.
 Current behavior:
 
 - Uses caller-provided millisecond bounds.
-- Includes closed sessions and the current active session.
-- Selects sessions that overlap the requested range and clips them to both boundaries.
+- Uses the same cross-source precedence as today/week summaries.
+- Includes the current native active session and clips exact facts to both boundaries.
+- Pro-rates aggregate-only hour buckets for partial bucket windows before applying remaining-capacity limits.
+- Omits apps marked excluded.
 
 ### `GET /api/v1/summary/week`
 
@@ -364,8 +370,9 @@ Same response shape as `GET /api/v1/summary/today`; `date` is currently `"week"`
 Current behavior:
 
 - Uses local week boundary, Monday start.
-- Includes closed sessions and the current active session.
-- Clips every session to the local-week range before aggregation.
+- Uses the same cross-source precedence as today/range summaries.
+- Includes the current native active session and clips exact facts to the local-week range.
+- Omits apps marked excluded.
 
 ### `GET /api/v1/trend`
 
@@ -404,8 +411,10 @@ Schema:
 Current behavior:
 
 - Uses local date buckets.
-- Splits cross-day sessions at local midnight.
-- Counts active sessions until current time.
+- Combines native sessions, imported exact sessions, and imported hour buckets with the same precedence as summary endpoints.
+- Splits exact facts at local midnight and counts the active native session until current time.
+- Keeps imported hour buckets aggregate-only.
+- Omits apps marked excluded.
 - Returns one point per day with:
   - `date`
   - `active_ms`
@@ -561,7 +570,7 @@ curl -s "$PATINA_API_BASE/api/v1/apps" \
   -H "Authorization: Bearer $PATINA_API_TOKEN"
 ```
 
-Returns apps discovered from recorded sessions:
+Returns apps discovered from native sessions and imported activity facts:
 
 - `exe_name`
 - `display_name`
@@ -585,9 +594,7 @@ Schema:
 }
 ```
 
-Known gap:
-
-- Only apps with session history appear.
+Executable names are merged case-insensitively. A native identity is preferred when the same app also appears in imported data.
 
 ### `POST /api/v1/apps/{exe_name}/classify`
 
@@ -858,15 +865,15 @@ Current MCP tools:
 |---|---|---|---|
 | `get_diagnostics` | `GET /api/v1/diagnostics` | none | Check Linux/window/browser/API runtime health |
 | `get_current_activity` | `GET /api/v1/current` | none | Read current foreground activity snapshot |
-| `query_sessions` | `GET /api/v1/sessions` | `from`, `to`, `app`, `limit` | Query closed activity sessions |
+| `query_sessions` | `GET /api/v1/sessions` | `from`, `to`, `app`, `limit` | Query closed native sessions |
 | `get_active_session` | `GET /api/v1/sessions/active` | none | Read the currently active session with realtime duration |
-| `get_today_summary` | `GET /api/v1/summary/today` | none | Read local-day summary |
-| `get_week_summary` | `GET /api/v1/summary/week` | none | Read local-week summary |
-| `get_activity_trend` | `GET /api/v1/trend` | `period`, `granularity` | Read daily week/month trend |
+| `get_today_summary` | `GET /api/v1/summary/today` | none | Read cross-source local-day summary |
+| `get_week_summary` | `GET /api/v1/summary/week` | none | Read cross-source local-week summary |
+| `get_activity_trend` | `GET /api/v1/trend` | `period`, `granularity` | Read cross-source daily week/month trend |
 | `query_web_activity` | `GET /api/v1/web-activity` | `from`, `to`, `domain`, `limit` | Query browser extension activity segments |
 | `get_activity_context` | `GET /api/v1/ai/activity-context` | none | Fetch diagnostics, active session, summaries, and recent web activity for external AI analysis |
 | `get_tools_snapshot` | `GET /api/v1/tools/snapshot` | none | Fetch current Tools runtime snapshot |
-| `list_apps` | `GET /api/v1/apps` | none | List known apps from recorded sessions |
+| `list_apps` | `GET /api/v1/apps` | none | List apps from native and imported facts |
 | `classify_app` | `POST /api/v1/apps/{exe_name}/classify` | `exeName`, `category` | Save an app category |
 | `rename_app` | `POST /api/v1/apps/{exe_name}/rename` | `exeName`, `displayName` | Save an app display name |
 | `set_app_excluded` | `POST /api/v1/apps/{exe_name}/exclude` | `exeName`, `excluded` | Save an app exclusion flag |

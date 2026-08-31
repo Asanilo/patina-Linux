@@ -108,20 +108,22 @@ If the client does not inherit your shell environment, set either `PATINA_API_TO
 |---|---|---|---|
 | `get_diagnostics` | `GET /api/v1/diagnostics` | none | Check Linux/window/browser/API runtime health |
 | `get_current_activity` | `GET /api/v1/current` | none | Read current foreground activity snapshot |
-| `query_sessions` | `GET /api/v1/sessions` | `from`, `to`, `app`, `limit` | Query closed activity sessions |
+| `query_sessions` | `GET /api/v1/sessions` | `from`, `to`, `app`, `limit` | Query closed native sessions by start time |
 | `get_active_session` | `GET /api/v1/sessions/active` | none | Read current active session |
-| `get_today_summary` | `GET /api/v1/summary/today` | none | Read local-day summary |
-| `get_week_summary` | `GET /api/v1/summary/week` | none | Read local-week summary |
-| `get_activity_trend` | `GET /api/v1/trend` | `period`, `granularity` | Read daily week/month trend |
+| `get_today_summary` | `GET /api/v1/summary/today` | none | Read cross-source local-day summary |
+| `get_week_summary` | `GET /api/v1/summary/week` | none | Read cross-source local-week summary |
+| `get_activity_trend` | `GET /api/v1/trend` | `period`, `granularity` | Read cross-source daily week/month trend |
 | `query_web_activity` | `GET /api/v1/web-activity` | `from`, `to`, `domain`, `limit` | Query browser activity segments |
 | `get_activity_context` | `GET /api/v1/ai/activity-context` | none | Fetch an AI-oriented activity context bundle |
 | `get_tools_snapshot` | `GET /api/v1/tools/snapshot` | none | Fetch Tools runtime state |
-| `list_apps` | `GET /api/v1/apps` | none | List known apps |
+| `list_apps` | `GET /api/v1/apps` | none | List apps from native and imported facts |
 | `classify_app` | `POST /api/v1/apps/{exe_name}/classify` | required: `exeName`, `category` | Save app category |
 | `rename_app` | `POST /api/v1/apps/{exe_name}/rename` | required: `exeName`, `displayName` | Save app display name |
 | `set_app_excluded` | `POST /api/v1/apps/{exe_name}/exclude` | required: `exeName`, `excluded` | Save app exclusion flag |
 
 Argument timestamps are milliseconds since Unix epoch.
+
+Summary and trend tools apply `native > import_exact > import_bucket` precedence. Imported hour buckets remain aggregate-only and never appear in `query_sessions`; use summaries or trend for totals that include them.
 
 ### Errors
 

@@ -45,6 +45,8 @@ curl -fsS "$PATINA_API_BASE/api/v1/summary/range?from=START_MS&to=END_MS" \
   -H "Authorization: Bearer $PATINA_API_TOKEN"
 ```
 
+Summary and trend responses combine native sessions with imported exact and aggregate facts after precedence resolution. Raw `/sessions` remains a native-session query; imported hour buckets never have a precise intra-hour position.
+
 Browser segments:
 
 ```bash

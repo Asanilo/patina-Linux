@@ -63,17 +63,17 @@ export const PATINA_MCP_TOOLS: PatinaMcpTool[] = [
   },
   {
     name: "get_today_summary",
-    description: "Read today's local-time Patina activity summary.",
+    description: "Read today's local-time summary across native and imported Patina activity.",
     inputSchema: objectSchema({}),
   },
   {
     name: "get_week_summary",
-    description: "Read this week's local-time Patina activity summary.",
+    description: "Read this week's local-time summary across native and imported Patina activity.",
     inputSchema: objectSchema({}),
   },
   {
     name: "query_sessions",
-    description: "Query closed Patina sessions.",
+    description: "Query closed native Patina sessions; aggregate-only imported hour buckets are excluded.",
     inputSchema: objectSchema({
       from: { type: "number", description: "Optional lower start timestamp in milliseconds." },
       to: { type: "number", description: "Optional upper start timestamp in milliseconds." },
@@ -83,7 +83,7 @@ export const PATINA_MCP_TOOLS: PatinaMcpTool[] = [
   },
   {
     name: "get_activity_trend",
-    description: "Read daily activity trend data for week or month.",
+    description: "Read daily native and imported activity trend data for week or month.",
     inputSchema: objectSchema({
       period: { type: "string", description: "week or month." },
       granularity: { type: "string", description: "Currently day." },
@@ -111,7 +111,7 @@ export const PATINA_MCP_TOOLS: PatinaMcpTool[] = [
   },
   {
     name: "list_apps",
-    description: "List known apps from recorded Patina sessions.",
+    description: "List known apps from native sessions and imported activity facts.",
     inputSchema: objectSchema({}),
   },
   {
