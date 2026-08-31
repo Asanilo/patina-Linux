@@ -1,9 +1,9 @@
 use crate::data::repositories;
 use crate::data::sqlite_pool::wait_for_sqlite_pool;
 use crate::domain::backup::{
-    BackupIconCache, BackupMeta, BackupPayload, BackupPreview, BackupSession, BackupSetting,
-    BackupTitleSample, BackupWebActivitySegment, CURRENT_BACKUP_SCHEMA_VERSION,
-    CURRENT_BACKUP_VERSION,
+    BackupIconCache, BackupImportBatch, BackupImportExactSession, BackupImportTimeBucket,
+    BackupMeta, BackupPayload, BackupPreview, BackupSession, BackupSetting, BackupTitleSample,
+    BackupWebActivitySegment, CURRENT_BACKUP_SCHEMA_VERSION, CURRENT_BACKUP_VERSION,
 };
 use crate::platform::storage_paths;
 use crc32fast::Hasher;
@@ -32,6 +32,14 @@ const BACKUP_TOOL_TIMERS_ENTRY_NAME: &str = "data/tool_timers.json";
 const BACKUP_TOOL_TIMER_LAPS_ENTRY_NAME: &str = "data/tool_timer_laps.json";
 const BACKUP_TOOL_POMODORO_RUNS_ENTRY_NAME: &str = "data/tool_pomodoro_runs.json";
 const BACKUP_TOOL_DAILY_STATS_ENTRY_NAME: &str = "data/tool_daily_stats.json";
+const BACKUP_IMPORT_ACTIVITY_ENTRY_NAME: &str = "data/import_activity.json";
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct BackupImportActivity {
+    batches: Vec<BackupImportBatch>,
+    exact_sessions: Vec<BackupImportExactSession>,
+    time_buckets: Vec<BackupImportTimeBucket>,
+}
 
 #[derive(Debug)]
 pub enum CreateNewBackupError {
@@ -69,6 +77,8 @@ struct BackupArchiveFiles {
     tool_pomodoro_runs: String,
     #[serde(default)]
     tool_daily_stats: String,
+    #[serde(default)]
+    import_activity: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -90,6 +100,12 @@ struct BackupArchiveCounts {
     tool_pomodoro_runs: usize,
     #[serde(default)]
     tool_daily_stats: usize,
+    #[serde(default)]
+    import_batches: usize,
+    #[serde(default)]
+    import_exact_sessions: usize,
+    #[serde(default)]
+    import_time_buckets: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -157,6 +173,8 @@ async fn load_backup_payload<R: Runtime>(app: &AppHandle<R>) -> Result<BackupPay
     let tool_timer_laps = repositories::tools::fetch_all_timer_laps_for_backup(&pool).await?;
     let tool_pomodoro_runs = repositories::tools::fetch_all_pomodoro_runs_for_backup(&pool).await?;
     let tool_daily_stats = repositories::tools::fetch_all_daily_stats_for_backup(&pool).await?;
+    let (import_batches, import_exact_sessions, import_time_buckets) =
+        repositories::activity_import::fetch_all_for_backup(&pool).await?;
 
     Ok(BackupPayload {
         version: CURRENT_BACKUP_VERSION,
@@ -175,6 +193,9 @@ async fn load_backup_payload<R: Runtime>(app: &AppHandle<R>) -> Result<BackupPay
         tool_timer_laps,
         tool_pomodoro_runs,
         tool_daily_stats,
+        import_batches,
+        import_exact_sessions,
+        import_time_buckets,
     })
 }
 
@@ -254,6 +275,7 @@ fn build_backup_manifest(payload: &BackupPayload) -> BackupArchiveManifest {
             tool_timer_laps: BACKUP_TOOL_TIMER_LAPS_ENTRY_NAME.to_string(),
             tool_pomodoro_runs: BACKUP_TOOL_POMODORO_RUNS_ENTRY_NAME.to_string(),
             tool_daily_stats: BACKUP_TOOL_DAILY_STATS_ENTRY_NAME.to_string(),
+            import_activity: BACKUP_IMPORT_ACTIVITY_ENTRY_NAME.to_string(),
         },
         counts: BackupArchiveCounts {
             sessions: payload.sessions.len(),
@@ -266,6 +288,9 @@ fn build_backup_manifest(payload: &BackupPayload) -> BackupArchiveManifest {
             tool_timer_laps: payload.tool_timer_laps.len(),
             tool_pomodoro_runs: payload.tool_pomodoro_runs.len(),
             tool_daily_stats: payload.tool_daily_stats.len(),
+            import_batches: payload.import_batches.len(),
+            import_exact_sessions: payload.import_exact_sessions.len(),
+            import_time_buckets: payload.import_time_buckets.len(),
         },
     }
 }
@@ -316,6 +341,14 @@ fn encode_backup_archive(payload: &BackupPayload) -> Result<Vec<u8>, String> {
     let tool_timer_laps = serialize_pretty(&payload.tool_timer_laps, "tool timer laps")?;
     let tool_pomodoro_runs = serialize_pretty(&payload.tool_pomodoro_runs, "tool pomodoro runs")?;
     let tool_daily_stats = serialize_pretty(&payload.tool_daily_stats, "tool daily stats")?;
+    let import_activity = serialize_pretty(
+        &BackupImportActivity {
+            batches: payload.import_batches.clone(),
+            exact_sessions: payload.import_exact_sessions.clone(),
+            time_buckets: payload.import_time_buckets.clone(),
+        },
+        "imported activity",
+    )?;
     let manifest_json = serialize_pretty(&manifest, "manifest")?;
 
     let mut checksum_files = BTreeMap::new();
@@ -356,6 +389,10 @@ fn encode_backup_archive(payload: &BackupPayload) -> Result<Vec<u8>, String> {
     checksum_files.insert(
         BACKUP_TOOL_DAILY_STATS_ENTRY_NAME.to_string(),
         checksum(&tool_daily_stats),
+    );
+    checksum_files.insert(
+        BACKUP_IMPORT_ACTIVITY_ENTRY_NAME.to_string(),
+        checksum(&import_activity),
     );
     let checksums = BackupArchiveChecksums {
         algorithm: "crc32".to_string(),
@@ -419,6 +456,12 @@ fn encode_backup_archive(payload: &BackupPayload) -> Result<Vec<u8>, String> {
         &mut archive,
         BACKUP_TOOL_DAILY_STATS_ENTRY_NAME,
         &tool_daily_stats,
+        options,
+    )?;
+    zip_write_file(
+        &mut archive,
+        BACKUP_IMPORT_ACTIVITY_ENTRY_NAME,
+        &import_activity,
         options,
     )?;
     zip_write_file(
@@ -604,6 +647,13 @@ fn decode_structured_backup_archive(
         BACKUP_WEB_ACTIVITY_SEGMENTS_ENTRY_NAME,
         backup_path,
     )?;
+    let import_activity_json = read_optional_declared_zip_entry(
+        archive,
+        &manifest.files.import_activity,
+        &checksums,
+        BACKUP_IMPORT_ACTIVITY_ENTRY_NAME,
+        backup_path,
+    )?;
     let mut checksum_entries = vec![
         (BACKUP_MANIFEST_ENTRY_NAME, manifest_json.as_str()),
         (BACKUP_SESSIONS_ENTRY_NAME, sessions_json.as_str()),
@@ -636,6 +686,9 @@ fn decode_structured_backup_archive(
     }
     if let Some(tool_daily_stats_json) = tool_daily_stats_json.as_deref() {
         checksum_entries.push((BACKUP_TOOL_DAILY_STATS_ENTRY_NAME, tool_daily_stats_json));
+    }
+    if let Some(import_activity_json) = import_activity_json.as_deref() {
+        checksum_entries.push((BACKUP_IMPORT_ACTIVITY_ENTRY_NAME, import_activity_json));
     }
     verify_backup_checksums(&checksums, &checksum_entries, backup_path)?;
 
@@ -673,6 +726,10 @@ fn decode_structured_backup_archive(
         .map(|json| parse_json(&json, backup_path, "tool daily stats"))
         .transpose()?
         .unwrap_or_default();
+    let import_activity = import_activity_json
+        .map(|json| parse_json::<BackupImportActivity>(&json, backup_path, "imported activity"))
+        .transpose()?
+        .unwrap_or_default();
 
     Ok(BackupPayload {
         version: manifest.backup_version,
@@ -691,6 +748,9 @@ fn decode_structured_backup_archive(
         tool_timer_laps,
         tool_pomodoro_runs,
         tool_daily_stats,
+        import_batches: import_activity.batches,
+        import_exact_sessions: import_activity.exact_sessions,
+        import_time_buckets: import_activity.time_buckets,
     })
 }
 
@@ -823,6 +883,7 @@ async fn restore_backup_payload(
             repositories::icon_cache::clear_for_restore(&mut tx).await?;
             repositories::web_activity::clear_for_restore(&mut tx).await?;
             repositories::tools::clear_for_restore(&mut tx).await?;
+            repositories::activity_import::clear_for_restore(&mut tx).await?;
 
             repositories::sessions::insert_for_restore(&mut tx, &payload.sessions).await?;
             let session_id_map =
@@ -845,6 +906,13 @@ async fn restore_backup_payload(
                 &payload.tool_timer_laps,
                 &payload.tool_pomodoro_runs,
                 &payload.tool_daily_stats,
+            )
+            .await?;
+            repositories::activity_import::insert_for_restore(
+                &mut tx,
+                &payload.import_batches,
+                &payload.import_exact_sessions,
+                &payload.import_time_buckets,
             )
             .await?;
         }
@@ -874,6 +942,13 @@ async fn restore_backup_payload(
                 &payload.tool_timer_laps,
                 &payload.tool_pomodoro_runs,
                 &payload.tool_daily_stats,
+            )
+            .await?;
+            repositories::activity_import::insert_missing_for_restore(
+                &mut tx,
+                &payload.import_batches,
+                &payload.import_exact_sessions,
+                &payload.import_time_buckets,
             )
             .await?;
         }
@@ -952,6 +1027,9 @@ mod tests {
             tool_timer_laps: Vec::new(),
             tool_pomodoro_runs: Vec::new(),
             tool_daily_stats: Vec::new(),
+            import_batches: Vec::new(),
+            import_exact_sessions: Vec::new(),
+            import_time_buckets: Vec::new(),
         };
 
         let archive = encode_backup_archive(&payload).unwrap();
@@ -970,6 +1048,7 @@ mod tests {
         assert!(zip.by_name(BACKUP_SETTINGS_ENTRY_NAME).is_ok());
         assert!(zip.by_name(BACKUP_ICON_CACHE_ENTRY_NAME).is_ok());
         assert!(zip.by_name(BACKUP_WEB_ACTIVITY_SEGMENTS_ENTRY_NAME).is_ok());
+        assert!(zip.by_name(BACKUP_IMPORT_ACTIVITY_ENTRY_NAME).is_ok());
         assert!(zip.by_name(BACKUP_CHECKSUMS_ENTRY_NAME).is_ok());
     }
 
@@ -1014,6 +1093,37 @@ mod tests {
             tool_timer_laps: Vec::new(),
             tool_pomodoro_runs: Vec::new(),
             tool_daily_stats: Vec::new(),
+            import_batches: vec![BackupImportBatch {
+                id: "import-test".to_string(),
+                imported_at: 40,
+                source_name: "activity.csv".to_string(),
+                source_kind: "patina-csv".to_string(),
+                source_fingerprint: "a".repeat(64),
+                exact_session_count: 1,
+                hour_bucket_count: 1,
+            }],
+            import_exact_sessions: vec![BackupImportExactSession {
+                id: 1,
+                batch_id: "import-test".to_string(),
+                fingerprint: "b".repeat(64),
+                app_name: "Editor".to_string(),
+                exe_name: "org.example.Editor".to_string(),
+                window_title: "Document".to_string(),
+                start_time: 100,
+                end_time: 200,
+                duration: 100,
+                source_category: Some("Development".to_string()),
+            }],
+            import_time_buckets: vec![BackupImportTimeBucket {
+                id: 1,
+                batch_id: "import-test".to_string(),
+                fingerprint: "c".repeat(64),
+                app_name: "Editor".to_string(),
+                exe_name: "org.example.Editor".to_string(),
+                bucket_start_time: 3_600_000,
+                duration: 60_000,
+                source_category: Some("Development".to_string()),
+            }],
         };
 
         let archive = encode_backup_archive(&payload).unwrap();
@@ -1025,6 +1135,9 @@ mod tests {
         assert_eq!(decoded.title_samples.len(), 1);
         assert_eq!(decoded.settings.len(), 1);
         assert_eq!(decoded.icon_cache.len(), 1);
+        assert_eq!(decoded.import_batches.len(), 1);
+        assert_eq!(decoded.import_exact_sessions.len(), 1);
+        assert_eq!(decoded.import_time_buckets.len(), 1);
     }
 
     #[test]
@@ -1046,6 +1159,7 @@ mod tests {
                 tool_timer_laps: String::new(),
                 tool_pomodoro_runs: String::new(),
                 tool_daily_stats: String::new(),
+                import_activity: String::new(),
             },
             counts: BackupArchiveCounts {
                 sessions: 0,
@@ -1058,6 +1172,9 @@ mod tests {
                 tool_timer_laps: 0,
                 tool_pomodoro_runs: 0,
                 tool_daily_stats: 0,
+                import_batches: 0,
+                import_exact_sessions: 0,
+                import_time_buckets: 0,
             },
         };
         let manifest_json = serialize_pretty(&manifest, "manifest").unwrap();
@@ -1132,6 +1249,7 @@ mod tests {
                 tool_timer_laps: String::new(),
                 tool_pomodoro_runs: String::new(),
                 tool_daily_stats: String::new(),
+                import_activity: String::new(),
             },
             counts: BackupArchiveCounts {
                 sessions: 0,
@@ -1144,6 +1262,9 @@ mod tests {
                 tool_timer_laps: 0,
                 tool_pomodoro_runs: 0,
                 tool_daily_stats: 0,
+                import_batches: 0,
+                import_exact_sessions: 0,
+                import_time_buckets: 0,
             },
         };
         let manifest_json = serialize_pretty(&manifest, "manifest").unwrap();
@@ -1219,6 +1340,7 @@ mod tests {
                 tool_timer_laps: String::new(),
                 tool_pomodoro_runs: String::new(),
                 tool_daily_stats: String::new(),
+                import_activity: String::new(),
             },
             counts: BackupArchiveCounts {
                 sessions: 0,
@@ -1231,6 +1353,9 @@ mod tests {
                 tool_timer_laps: 0,
                 tool_pomodoro_runs: 0,
                 tool_daily_stats: 0,
+                import_batches: 0,
+                import_exact_sessions: 0,
+                import_time_buckets: 0,
             },
         };
         let manifest_json = serialize_pretty(&manifest, "manifest").unwrap();
@@ -1327,6 +1452,9 @@ mod tests {
         pool.execute(db_schema::WEB_ACTIVITY_SCHEMA_SQL)
             .await
             .unwrap();
+        pool.execute(db_schema::ACTIVITY_IMPORT_SCHEMA_SQL)
+            .await
+            .unwrap();
         pool
     }
 
@@ -1399,6 +1527,9 @@ mod tests {
                 tool_timer_laps: Vec::new(),
                 tool_pomodoro_runs: Vec::new(),
                 tool_daily_stats: Vec::new(),
+                import_batches: Vec::new(),
+                import_exact_sessions: Vec::new(),
+                import_time_buckets: Vec::new(),
             };
 
             let result =
@@ -1433,6 +1564,85 @@ mod tests {
                 "original setting should be preserved"
             );
             assert_eq!(icon_count, 1, "original icon cache should be preserved");
+        });
+    }
+
+    #[test]
+    fn replace_restore_restores_imported_activity() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            let payload = BackupPayload {
+                version: CURRENT_BACKUP_VERSION,
+                meta: BackupMeta {
+                    exported_at_ms: 1,
+                    schema_version: CURRENT_BACKUP_SCHEMA_VERSION,
+                    app_version: "test".to_string(),
+                },
+                sessions: Vec::new(),
+                title_samples: Vec::new(),
+                settings: Vec::new(),
+                icon_cache: Vec::new(),
+                web_activity_segments: Vec::new(),
+                tool_reminders: Vec::new(),
+                tool_timers: Vec::new(),
+                tool_timer_laps: Vec::new(),
+                tool_pomodoro_runs: Vec::new(),
+                tool_daily_stats: Vec::new(),
+                import_batches: vec![BackupImportBatch {
+                    id: "import-restore".to_string(),
+                    imported_at: 1_000,
+                    source_name: "activity.csv".to_string(),
+                    source_kind: "patina-csv".to_string(),
+                    source_fingerprint: "a".repeat(64),
+                    exact_session_count: 1,
+                    hour_bucket_count: 1,
+                }],
+                import_exact_sessions: vec![BackupImportExactSession {
+                    id: 7,
+                    batch_id: "import-restore".to_string(),
+                    fingerprint: "b".repeat(64),
+                    app_name: "Editor".to_string(),
+                    exe_name: "org.example.Editor".to_string(),
+                    window_title: "Document".to_string(),
+                    start_time: 2_000,
+                    end_time: 3_000,
+                    duration: 1_000,
+                    source_category: None,
+                }],
+                import_time_buckets: vec![BackupImportTimeBucket {
+                    id: 9,
+                    batch_id: "import-restore".to_string(),
+                    fingerprint: "c".repeat(64),
+                    app_name: "Editor".to_string(),
+                    exe_name: "org.example.Editor".to_string(),
+                    bucket_start_time: 3_600_000,
+                    duration: 60_000,
+                    source_category: None,
+                }],
+            };
+
+            restore_backup_payload(&pool, &payload, RestoreStrategy::Replace)
+                .await
+                .unwrap();
+
+            let batch_counts: (i64, i64) = sqlx::query_as(
+                "SELECT exact_session_count, hour_bucket_count
+                 FROM import_batches WHERE id = 'import-restore'",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            let exact_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM import_exact_sessions")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            let bucket_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM import_time_buckets")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(batch_counts, (1, 1));
+            assert_eq!(exact_count, 1);
+            assert_eq!(bucket_count, 1);
         });
     }
 
@@ -1481,6 +1691,9 @@ mod tests {
                 tool_timer_laps: Vec::new(),
                 tool_pomodoro_runs: Vec::new(),
                 tool_daily_stats: Vec::new(),
+                import_batches: Vec::new(),
+                import_exact_sessions: Vec::new(),
+                import_time_buckets: Vec::new(),
             };
 
             restore_backup_payload(&pool, &payload, RestoreStrategy::Replace)
@@ -1551,6 +1764,9 @@ mod tests {
                 tool_timer_laps: Vec::new(),
                 tool_pomodoro_runs: Vec::new(),
                 tool_daily_stats: Vec::new(),
+                import_batches: Vec::new(),
+                import_exact_sessions: Vec::new(),
+                import_time_buckets: Vec::new(),
             };
 
             restore_backup_payload(&pool, &payload, RestoreStrategy::Replace)
@@ -1658,6 +1874,9 @@ mod tests {
                 tool_timer_laps: Vec::new(),
                 tool_pomodoro_runs: Vec::new(),
                 tool_daily_stats: Vec::new(),
+                import_batches: Vec::new(),
+                import_exact_sessions: Vec::new(),
+                import_time_buckets: Vec::new(),
             };
 
             restore_backup_payload(&pool, &payload, RestoreStrategy::Merge)
@@ -1761,6 +1980,9 @@ mod tests {
                 tool_timer_laps: Vec::new(),
                 tool_pomodoro_runs: Vec::new(),
                 tool_daily_stats: Vec::new(),
+                import_batches: Vec::new(),
+                import_exact_sessions: Vec::new(),
+                import_time_buckets: Vec::new(),
             };
 
             restore_backup_payload(&pool, &payload, RestoreStrategy::Merge)

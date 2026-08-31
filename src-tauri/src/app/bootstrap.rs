@@ -78,6 +78,11 @@ fn register_managed_state_and_plugins(
 
 fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     builder.invoke_handler(tauri::generate_handler![
+        commands::activity_import::cmd_pick_activity_import_file,
+        commands::activity_import::cmd_preview_activity_import,
+        commands::activity_import::cmd_commit_activity_import,
+        commands::activity_import::cmd_list_activity_import_batches,
+        commands::activity_import::cmd_delete_activity_import_batch,
         commands::apps::get_icon,
         commands::tracking::get_current_active_window,
         commands::tracking::get_current_tracking_snapshot,

@@ -10,6 +10,8 @@ pub const WEB_ACTIVITY_MIGRATION_VERSION: i64 = 4;
 pub const WEB_ACTIVITY_MIGRATION_DESCRIPTION: &str = "create_web_activity_segments";
 pub const SCHEDULED_BACKUP_MIGRATION_VERSION: i64 = 5;
 pub const SCHEDULED_BACKUP_MIGRATION_DESCRIPTION: &str = "create_scheduled_backup_tables";
+pub const ACTIVITY_IMPORT_MIGRATION_VERSION: i64 = 6;
+pub const ACTIVITY_IMPORT_MIGRATION_DESCRIPTION: &str = "create_activity_import_tables";
 
 pub const CURRENT_BASELINE_SCHEMA_SQL: &str = "
     CREATE TABLE IF NOT EXISTS sessions (
@@ -248,6 +250,69 @@ pub const SCHEDULED_BACKUP_SCHEMA_SQL: &str = "
     ON scheduled_backup_runs(status, retry_at_ms, updated_at_ms);
 ";
 
+pub const ACTIVITY_IMPORT_SCHEMA_SQL: &str = "
+    CREATE TABLE IF NOT EXISTS import_batches (
+        id TEXT PRIMARY KEY CHECK(TRIM(id) <> ''),
+        imported_at INTEGER NOT NULL CHECK(imported_at >= 0),
+        source_name TEXT NOT NULL CHECK(TRIM(source_name) <> ''),
+        source_kind TEXT NOT NULL CHECK(source_kind = 'patina-csv'),
+        source_fingerprint TEXT NOT NULL CHECK(length(source_fingerprint) = 64),
+        exact_session_count INTEGER NOT NULL DEFAULT 0 CHECK(exact_session_count >= 0),
+        hour_bucket_count INTEGER NOT NULL DEFAULT 0 CHECK(hour_bucket_count >= 0)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_import_batches_imported_at
+    ON import_batches(imported_at, id);
+
+    CREATE TABLE IF NOT EXISTS import_exact_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        batch_id TEXT NOT NULL,
+        fingerprint TEXT NOT NULL UNIQUE CHECK(length(fingerprint) = 64),
+        app_name TEXT NOT NULL CHECK(TRIM(app_name) <> ''),
+        exe_name TEXT NOT NULL CHECK(TRIM(exe_name) <> ''),
+        window_title TEXT NOT NULL DEFAULT '',
+        start_time INTEGER NOT NULL,
+        end_time INTEGER NOT NULL,
+        duration INTEGER NOT NULL CHECK(
+            duration > 0
+            AND end_time > start_time
+            AND ABS((end_time - start_time) - duration) <= 1000
+        ),
+        source_category TEXT,
+        FOREIGN KEY(batch_id) REFERENCES import_batches(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_import_exact_sessions_time
+    ON import_exact_sessions(start_time, end_time);
+
+    CREATE INDEX IF NOT EXISTS idx_import_exact_sessions_exe_time
+    ON import_exact_sessions(exe_name COLLATE NOCASE, start_time, end_time);
+
+    CREATE INDEX IF NOT EXISTS idx_import_exact_sessions_batch
+    ON import_exact_sessions(batch_id, id);
+
+    CREATE TABLE IF NOT EXISTS import_time_buckets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        batch_id TEXT NOT NULL,
+        fingerprint TEXT NOT NULL UNIQUE CHECK(length(fingerprint) = 64),
+        app_name TEXT NOT NULL CHECK(TRIM(app_name) <> ''),
+        exe_name TEXT NOT NULL CHECK(TRIM(exe_name) <> ''),
+        bucket_start_time INTEGER NOT NULL,
+        duration INTEGER NOT NULL CHECK(duration > 0 AND duration <= 3600000),
+        source_category TEXT,
+        FOREIGN KEY(batch_id) REFERENCES import_batches(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_import_time_buckets_time
+    ON import_time_buckets(bucket_start_time, duration);
+
+    CREATE INDEX IF NOT EXISTS idx_import_time_buckets_exe_time
+    ON import_time_buckets(exe_name COLLATE NOCASE, bucket_start_time);
+
+    CREATE INDEX IF NOT EXISTS idx_import_time_buckets_batch
+    ON import_time_buckets(batch_id, id);
+";
+
 pub fn tracker_migrations() -> Vec<Migration> {
     vec![
         Migration {
@@ -278,6 +343,12 @@ pub fn tracker_migrations() -> Vec<Migration> {
             version: SCHEDULED_BACKUP_MIGRATION_VERSION,
             description: SCHEDULED_BACKUP_MIGRATION_DESCRIPTION,
             sql: SCHEDULED_BACKUP_SCHEMA_SQL,
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: ACTIVITY_IMPORT_MIGRATION_VERSION,
+            description: ACTIVITY_IMPORT_MIGRATION_DESCRIPTION,
+            sql: ACTIVITY_IMPORT_SCHEMA_SQL,
             kind: MigrationKind::Up,
         },
     ]

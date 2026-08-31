@@ -24,6 +24,15 @@ import {
   applyLocalApiPort,
   rotateLocalApiToken,
 } from "../../../platform/runtime/localApiDiagnosticsGateway.ts";
+import {
+  commitActivityImport,
+  deleteActivityImportBatch,
+  listActivityImportBatches,
+  pickActivityImportFile,
+  previewActivityImport,
+  type ActivityImportBatch,
+  type ActivityImportPreview,
+} from "../../../platform/persistence/activityImportRuntimeGateway.ts";
 import { getUiLocale, UI_TEXT } from "../../../shared/copy/uiText.ts";
 import type { CleanupRange } from "../types.ts";
 import {
@@ -33,6 +42,14 @@ import {
 
 export type { BackupPreview, BackupRestoreStrategy } from "../../../platform/backup/backupRuntimeGateway.ts";
 export type { LocalApiSettingsSnapshot } from "../../../platform/runtime/localApiDiagnosticsGateway.ts";
+export {
+  commitActivityImport,
+  deleteActivityImportBatch,
+  listActivityImportBatches,
+  pickActivityImportFile,
+  previewActivityImport,
+};
+export type { ActivityImportBatch, ActivityImportPreview };
 
 export interface BackupRestorePreparation {
   path: string;
@@ -71,13 +88,21 @@ const KOFI_SUPPORT_URL = "https://ko-fi.com/ceceliaee";
 
 export function buildBackupPreviewSummary(preview: BackupPreview): string {
   const exportedAt = new Date(preview.exportedAtMs).toLocaleString(getUiLocale());
-  return [
+  const summary = [
     `${UI_TEXT.backup.versionLabel(preview.version)}（${UI_TEXT.backup.schemaLabel(preview.schemaVersion)}）`,
     UI_TEXT.backup.exportedAt(exportedAt),
     UI_TEXT.backup.appVersion(preview.appVersion),
     UI_TEXT.backup.restoreSafety(preview.restoreMessage),
     UI_TEXT.backup.itemCounts(preview.sessionCount, preview.settingCount, preview.iconCacheCount),
-  ].join("\n");
+  ];
+  if (preview.importBatchCount > 0) {
+    summary.push(UI_TEXT.backup.importedItemCounts(
+      preview.importBatchCount,
+      preview.importExactSessionCount,
+      preview.importTimeBucketCount,
+    ));
+  }
+  return summary.join("\n");
 }
 
 const exportBackupDeps: ExportBackupDeps = {

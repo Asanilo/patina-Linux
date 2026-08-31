@@ -15,6 +15,7 @@ import SettingsStoragePanel from "./SettingsStoragePanel";
 import type { StorageSettingsState } from "../hooks/useStorageSettingsState.ts";
 
 const SettingsScheduledBackupPanel = lazy(() => import("./SettingsScheduledBackupPanel.tsx"));
+const SettingsActivityImportPanel = lazy(() => import("./SettingsActivityImportPanel.tsx"));
 
 type CleanupOption = { value: CleanupRange; label: string };
 
@@ -203,6 +204,10 @@ export default function SettingsDataSafetyPanel({
               onRestoreEntrySelected={handleRemoteRestoreEntrySelected}
             />
           </QuietSubpanel>
+
+          <Suspense fallback={<div className="qp-action-row h-[92px]" aria-hidden="true" />}>
+            <SettingsActivityImportPanel />
+          </Suspense>
 
           <QuietSubpanel tone="danger" className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="min-w-0">

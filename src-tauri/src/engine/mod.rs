@@ -1,3 +1,4 @@
+pub mod activity_import;
 pub mod api;
 pub mod remote_status_bridge;
 pub mod scheduled_backup;

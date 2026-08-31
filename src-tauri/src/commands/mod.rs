@@ -1,3 +1,4 @@
+pub mod activity_import;
 pub mod apps;
 pub mod backup;
 pub mod diagnostics;

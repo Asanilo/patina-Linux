@@ -218,6 +218,9 @@ async fn table_has_columns(
         "web_activity_segments" => "PRAGMA table_info(web_activity_segments)",
         "scheduled_backup_config" => "PRAGMA table_info(scheduled_backup_config)",
         "scheduled_backup_runs" => "PRAGMA table_info(scheduled_backup_runs)",
+        "import_batches" => "PRAGMA table_info(import_batches)",
+        "import_exact_sessions" => "PRAGMA table_info(import_exact_sessions)",
+        "import_time_buckets" => "PRAGMA table_info(import_time_buckets)",
         _ => {
             return Err(format!(
                 "unsupported schema inspection table `{table_name}`"
@@ -262,6 +265,9 @@ async fn table_has_index(
         "tool_software_reminder_rules" => "PRAGMA index_list(tool_software_reminder_rules)",
         "web_activity_segments" => "PRAGMA index_list(web_activity_segments)",
         "scheduled_backup_runs" => "PRAGMA index_list(scheduled_backup_runs)",
+        "import_batches" => "PRAGMA index_list(import_batches)",
+        "import_exact_sessions" => "PRAGMA index_list(import_exact_sessions)",
+        "import_time_buckets" => "PRAGMA index_list(import_time_buckets)",
         _ => return Err(format!("unsupported index inspection table `{table_name}`")),
     };
 
@@ -790,12 +796,100 @@ async fn has_scheduled_backup_schema(pool: &Pool<Sqlite>) -> Result<bool, String
     Ok(config_ready && runs_ready && retention_index_ready && retry_index_ready)
 }
 
+async fn has_activity_import_schema(pool: &Pool<Sqlite>) -> Result<bool, String> {
+    if !table_exists(pool, "import_batches").await?
+        || !table_exists(pool, "import_exact_sessions").await?
+        || !table_exists(pool, "import_time_buckets").await?
+    {
+        return Ok(false);
+    }
+
+    let batches_ready = table_has_columns(
+        pool,
+        "import_batches",
+        &[
+            "id",
+            "imported_at",
+            "source_name",
+            "source_kind",
+            "source_fingerprint",
+            "exact_session_count",
+            "hour_bucket_count",
+        ],
+    )
+    .await?;
+    let exact_ready = table_has_columns(
+        pool,
+        "import_exact_sessions",
+        &[
+            "id",
+            "batch_id",
+            "fingerprint",
+            "app_name",
+            "exe_name",
+            "window_title",
+            "start_time",
+            "end_time",
+            "duration",
+            "source_category",
+        ],
+    )
+    .await?;
+    let buckets_ready = table_has_columns(
+        pool,
+        "import_time_buckets",
+        &[
+            "id",
+            "batch_id",
+            "fingerprint",
+            "app_name",
+            "exe_name",
+            "bucket_start_time",
+            "duration",
+            "source_category",
+        ],
+    )
+    .await?;
+
+    Ok(batches_ready
+        && exact_ready
+        && buckets_ready
+        && table_has_index(pool, "import_batches", "idx_import_batches_imported_at").await?
+        && table_has_index(
+            pool,
+            "import_exact_sessions",
+            "idx_import_exact_sessions_time",
+        )
+        .await?
+        && table_has_index(
+            pool,
+            "import_exact_sessions",
+            "idx_import_exact_sessions_exe_time",
+        )
+        .await?
+        && table_has_index(
+            pool,
+            "import_exact_sessions",
+            "idx_import_exact_sessions_batch",
+        )
+        .await?
+        && table_has_index(pool, "import_time_buckets", "idx_import_time_buckets_time").await?
+        && table_has_index(
+            pool,
+            "import_time_buckets",
+            "idx_import_time_buckets_exe_time",
+        )
+        .await?
+        && table_has_index(pool, "import_time_buckets", "idx_import_time_buckets_batch").await?)
+}
+
 async fn has_current_schema(pool: &Pool<Sqlite>) -> Result<bool, String> {
     Ok(has_current_baseline_schema(pool).await?
         && has_base_tools_schema(pool).await?
         && has_software_reminder_rules_schema(pool).await?
         && has_web_activity_schema(pool).await?
-        && has_scheduled_backup_schema(pool).await?)
+        && has_scheduled_backup_schema(pool).await?
+        && has_activity_import_schema(pool).await?)
 }
 
 async fn normalize_current_baseline_migration_history_for_pool(
@@ -818,6 +912,8 @@ async fn normalize_current_baseline_migration_history_for_pool(
         expected.truncate(3);
     } else if !has_scheduled_backup_schema(pool).await? {
         expected.truncate(4);
+    } else if !has_activity_import_schema(pool).await? {
+        expected.truncate(5);
     }
     if expected.is_empty() {
         return Ok(false);
@@ -937,6 +1033,9 @@ pub(crate) async fn validate_migrated_database_copy(
             "tool_pomodoro_runs",
             "tool_daily_stats",
             "tool_software_reminder_rules",
+            "import_batches",
+            "import_exact_sessions",
+            "import_time_buckets",
         ] {
             let source_count = table_row_count_if_present(&source, table).await?;
             let staged_count = table_row_count_if_present(&staged, table).await?;
@@ -1043,6 +1142,64 @@ mod tests {
                 .unwrap();
 
             assert!(has_scheduled_backup_schema(&pool).await.unwrap());
+        });
+    }
+
+    #[test]
+    fn activity_import_schema_creates_complete_tables() {
+        tauri::async_runtime::block_on(async {
+            let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+            pool.execute(schema::ACTIVITY_IMPORT_SCHEMA_SQL)
+                .await
+                .unwrap();
+
+            assert!(has_activity_import_schema(&pool).await.unwrap());
+        });
+    }
+
+    #[test]
+    fn current_schema_history_does_not_mark_missing_activity_import_schema_as_applied() {
+        tauri::async_runtime::block_on(async {
+            let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+            pool.execute(schema::CURRENT_BASELINE_SCHEMA_SQL)
+                .await
+                .unwrap();
+            pool.execute(schema::TOOLS_TABLES_SCHEMA_SQL).await.unwrap();
+            pool.execute(schema::SOFTWARE_REMINDER_RULES_SCHEMA_SQL)
+                .await
+                .unwrap();
+            pool.execute(schema::WEB_ACTIVITY_SCHEMA_SQL).await.unwrap();
+            pool.execute(schema::SCHEDULED_BACKUP_SCHEMA_SQL)
+                .await
+                .unwrap();
+            create_sqlx_migrations_table(&pool).await;
+            pool.execute(
+                "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time)
+                 VALUES (1, 'old_v1', 1, x'01', 0),
+                        (2, 'old_v2', 1, x'02', 0),
+                        (3, 'old_v3', 1, x'03', 0),
+                        (4, 'old_v4', 1, x'04', 0),
+                        (5, 'old_v5', 1, x'05', 0),
+                        (6, 'old_v6_without_tables', 1, x'06', 0)",
+            )
+            .await
+            .unwrap();
+
+            let normalized = normalize_current_baseline_migration_history_for_pool(&pool)
+                .await
+                .unwrap();
+
+            assert!(normalized);
+            assert!(!has_activity_import_schema(&pool).await.unwrap());
+            let versions: Vec<i64> =
+                sqlx::query_scalar("SELECT version FROM _sqlx_migrations ORDER BY version")
+                    .fetch_all(&pool)
+                    .await
+                    .unwrap();
+            assert_eq!(versions, vec![1, 2, 3, 4, 5]);
+
+            run_current_migrations(&pool).await.unwrap();
+            assert!(has_activity_import_schema(&pool).await.unwrap());
         });
     }
 

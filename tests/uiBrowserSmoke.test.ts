@@ -174,6 +174,9 @@ function tauriStubFor(path: string) {
         if (command === "cmd_pick_scheduled_backup_directory") {
           return "/home/smoke/Backups";
         }
+        if (command === "cmd_list_activity_import_batches") {
+          return [];
+        }
         if (command === "cmd_commit_app_settings") {
           const settings = loadStoredSettings();
           for (const mutation of payload.mutations ?? []) {
@@ -344,7 +347,20 @@ function tauriStubFor(path: string) {
             return webActivityRows();
           }
           if (normalizedQuery.includes("from sessions")) {
-            return historySessionRows();
+            const rows = historySessionRows();
+            if (normalizedQuery.includes("effective_end_time")) {
+              return rows.map((row) => ({
+                ...row,
+                record_id: row.id,
+                origin: "native",
+                effective_end_time: row.end_time,
+                capacity_end_time: row.end_time,
+              }));
+            }
+            if (normalizedQuery.includes("'native' as origin")) {
+              return rows.map((row) => ({ ...row, origin: "native" }));
+            }
+            return rows;
           }
           return [];
         }
@@ -1771,6 +1787,76 @@ try {
       "Settings local storage controls overflowed at 390px",
     );
 
+    await client!.command("Emulation.setDeviceMetricsOverride", {
+      width: 1280,
+      height: 820,
+      deviceScaleFactor: 1,
+      mobile: false,
+    }, sessionId);
+  });
+
+  await runTest("settings activity import panel and batch dialog fit a compact viewport", async () => {
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const node = document.querySelector('[aria-label=' + ${jsonString(JSON.stringify("设置"))} + ']');
+          if (!node) return false;
+          node.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(client!, sessionId, `document.body.innerText.includes(${jsonString("活动导入")})`);
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const trigger = Array.from(document.querySelectorAll("button"))
+            .find((node) => node.textContent?.trim() === "管理批次");
+          if (!trigger) return false;
+          trigger.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(client!, sessionId, `document.body.innerText.includes(${jsonString("暂无导入批次")})`);
+    await waitForExpression(client!, sessionId, `
+      Array.from(document.querySelectorAll('[role="dialog"]'))
+        .some((dialog) => dialog.textContent?.includes("导入批次")
+          && dialog.querySelector(".qp-dialog-actions button:not([disabled])"))
+    `);
+
+    await client!.command("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+    }, sessionId);
+    await delay(100);
+    assert.equal(
+      await evaluate(client!, sessionId, "document.documentElement.scrollWidth <= window.innerWidth + 1"),
+      true,
+      "Settings activity import dialog overflowed at 390px",
+    );
+
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const dialog = Array.from(document.querySelectorAll('[role="dialog"]'))
+            .find((node) => node.textContent?.includes("导入批次"));
+          const close = dialog?.querySelector(".qp-dialog-actions button:not([disabled])");
+          if (!close) return false;
+          close.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(client!, sessionId, `
+      !Array.from(document.querySelectorAll('[role="dialog"]'))
+        .some((dialog) => dialog.textContent?.includes("导入批次"))
+    `);
     await client!.command("Emulation.setDeviceMetricsOverride", {
       width: 1280,
       height: 820,

@@ -1,4 +1,4 @@
-import { executeWrite, getDB } from "./sqlite.ts";
+import { executeWrite, executeWriteBatch, getDB } from "./sqlite.ts";
 
 export interface SettingRow {
   key: string;
@@ -33,17 +33,24 @@ export async function loadAllSettingRows(): Promise<SettingRow[]> {
 }
 
 export async function deleteSessionsBefore(cutoffTime: number): Promise<void> {
-  await executeWrite(
-    "DELETE FROM session_title_samples WHERE session_id IN (SELECT id FROM sessions WHERE start_time < ?)",
-    [cutoffTime],
-  );
-  await executeWrite("DELETE FROM sessions WHERE start_time < ?", [cutoffTime]);
-  await executeWrite("DELETE FROM web_activity_segments WHERE start_time < ?", [cutoffTime]);
+  await executeWriteBatch([
+    {
+      query: "DELETE FROM session_title_samples WHERE session_id IN (SELECT id FROM sessions WHERE start_time < ?)",
+      values: [cutoffTime],
+    },
+    { query: "DELETE FROM sessions WHERE start_time < ?", values: [cutoffTime] },
+    { query: "DELETE FROM web_activity_segments WHERE start_time < ?", values: [cutoffTime] },
+    { query: "DELETE FROM import_exact_sessions WHERE start_time < ?", values: [cutoffTime] },
+    { query: "DELETE FROM import_time_buckets WHERE bucket_start_time < ?", values: [cutoffTime] },
+    { query: "UPDATE import_batches SET exact_session_count = (SELECT COUNT(*) FROM import_exact_sessions WHERE batch_id = import_batches.id), hour_bucket_count = (SELECT COUNT(*) FROM import_time_buckets WHERE batch_id = import_batches.id)" },
+    { query: "DELETE FROM import_batches WHERE exact_session_count = 0 AND hour_bucket_count = 0" },
+  ]);
 }
 
 export async function clearAllSessionWindowTitles(): Promise<void> {
-  await executeWrite("DELETE FROM session_title_samples");
-  await executeWrite(
-    "UPDATE sessions SET window_title = '' WHERE COALESCE(window_title, '') <> ''",
-  );
+  await executeWriteBatch([
+    { query: "DELETE FROM session_title_samples" },
+    { query: "UPDATE sessions SET window_title = '' WHERE COALESCE(window_title, '') <> ''" },
+    { query: "UPDATE import_exact_sessions SET window_title = '' WHERE window_title <> ''" },
+  ]);
 }

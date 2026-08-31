@@ -1,3 +1,4 @@
+pub mod activity_import;
 pub mod autostart;
 pub mod backup;
 pub mod bootstrap;

@@ -737,6 +737,9 @@ const ZH_CN_UI_TEXT = {
     itemCounts: (sessionCount: number, settingCount: number, iconCacheCount: number) => (
       `会话数：${sessionCount}，设置项：${settingCount}，图标缓存：${iconCacheCount}`
     ),
+    importedItemCounts: (batchCount: number, exactCount: number, bucketCount: number) => (
+      `外部导入：${batchCount} 个批次，${exactCount} 条精确会话，${bucketCount} 个小时桶`
+    ),
   },
   categories: {
     ai: "AI",
@@ -1527,6 +1530,9 @@ const EN_US_UI_TEXT: UiText = {
     restoreSafety: (message: string) => `Restore status: ${message}`,
     itemCounts: (sessionCount: number, settingCount: number, iconCacheCount: number) => (
       `Sessions: ${sessionCount}, settings: ${settingCount}, cached icons: ${iconCacheCount}`
+    ),
+    importedItemCounts: (batchCount: number, exactCount: number, bucketCount: number) => (
+      `External imports: ${batchCount} batches, ${exactCount} exact sessions, ${bucketCount} hour buckets`
     ),
   },
   categories: {
