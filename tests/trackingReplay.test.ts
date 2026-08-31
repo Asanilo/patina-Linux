@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { buildDashboardReadModel } from "../src/features/dashboard/services/dashboardReadModel.ts";
+import {
+  buildDashboardReadModel,
+} from "../src/features/dashboard/services/dashboardReadModel.ts";
 import { buildHistoryReadModel } from "../src/features/history/services/historyReadModel.ts";
 import { buildTopApplications } from "../src/features/dashboard/services/dashboardFormatting.ts";
 import {
@@ -21,6 +23,23 @@ const harness = createTestHarness();
 const runTest = harness.run;
 
 const trackerHealth = resolveTrackerHealth(400_000, 400_000, 8_000);
+
+runTest("dashboard caps live aggregate records at a stale tracker heartbeat", () => {
+  const nowMs = new Date(2026, 7, 31, 10, 0, 30).getTime();
+  const startTime = nowMs - 20_000;
+  const heartbeatMs = nowMs - 12_000;
+  const staleTrackerHealth = resolveTrackerHealth(heartbeatMs, nowMs, 8_000);
+  const dashboard = buildDashboardReadModel([{
+    appName: "Cursor",
+    exeName: "cursor.exe",
+    startTime,
+    endTime: nowMs,
+    isLive: true,
+  }], staleTrackerHealth, nowMs);
+
+  assert.equal(dashboard.totalTrackedTime, heartbeatMs - startTime);
+  assert.equal(dashboard.diagnostics.suspiciousDuration, heartbeatMs - startTime);
+});
 
 runTest("history replay filters pickerhost and keeps alias aggregation stable", () => {
   const daySessions = [

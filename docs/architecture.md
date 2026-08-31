@@ -460,7 +460,7 @@ engine/tracking/
 
 自动备份遵循 `app / engine / domain / data` 的同一 owner 链：`app/scheduled_backup.rs` 只持有运行锁、唤醒和事件，`engine/scheduled_backup.rs` 负责任务执行、恢复对账与安全保留策略，`domain/backup_schedule.rs` 负责计划和时间槽语义，`data/repositories/scheduled_backup.rs` 只负责 SQLite 状态转换，归档编解码继续由 `data/backup.rs` 持有。Tauri command 只映射 IPC 参数，不能承接调度流程。
 
-活动导入同样遵循 owner-first：`engine/activity_import.rs` 负责格式解析与记录校验，`domain/activity_import.rs` 负责稳定名词、限制和指纹契约，`data/repositories/activity_import.rs` 负责独立事实表与事务，`app/activity_import.rs` 负责文件预览、提交复核和刷新事件，`commands/activity_import.rs` 只映射 IPC。前端设置页通过 feature-owned service 访问 platform gateway；跨来源统计优先级留在明确的只读模型边界，不能散落到组件。Rust 侧由 `domain/activity_read_model.rs` 持有优先级与小时桶容量规则，`data/repositories/activity_read_model.rs` 组装三类事实，HTTP / MCP handler 只消费其贡献结果；桌面端现有 TypeScript 读边界必须通过等价契约测试保持同一语义，不能让各 API handler 独立重写规则。
+活动导入同样遵循 owner-first：`engine/activity_import.rs` 负责格式解析与记录校验，`domain/activity_import.rs` 负责稳定名词、限制和指纹契约，`data/repositories/activity_import.rs` 负责独立事实表与事务，`app/activity_import.rs` 负责文件预览、提交复核和刷新事件，`commands/activity_import.rs` 只映射 IPC。前端设置页通过 feature-owned service 访问 platform gateway；跨来源统计优先级留在明确的只读模型边界，不能散落到组件。Rust 侧由 `domain/activity_read_model.rs` 持有优先级与小时桶容量规则，`data/repositories/activity_read_model.rs` 组装三类事实，HTTP / MCP handler 只消费其贡献结果；桌面端 TypeScript 读边界使用同一范围语义，并与 Rust 共同消费 `tests/fixtures/activity-read-model-cases.json` 契约 fixture，不能让各 API handler 或页面独立重写规则。Dashboard、Data 与 Classification 消费聚合记录，History 只消费可定位的精确会话；聚合记录必须保留原生活动会话的 live 元数据，以继续应用 tracker heartbeat 截止和异常诊断。
 
 它必须持续拦住这些细节回流到：
 

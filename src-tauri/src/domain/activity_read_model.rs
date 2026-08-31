@@ -286,6 +286,34 @@ fn overlap_duration(start_ms: i64, end_ms: i64, from_ms: i64, to_ms: i64) -> i64
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::Deserialize;
+    use std::collections::HashMap;
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct FixtureCase {
+        name: String,
+        scope: FixtureScope,
+        records: Vec<FixtureRecord>,
+        expected_duration_by_key: HashMap<String, i64>,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct FixtureScope {
+        start_time: i64,
+        end_time: i64,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct FixtureRecord {
+        key: String,
+        origin: String,
+        start_time: i64,
+        end_time: i64,
+        capacity_end_time: Option<i64>,
+    }
 
     fn range(
         origin: ActivityOrigin,
@@ -372,5 +400,42 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].value, "first");
         assert_eq!(result[0].duration_ms, 100);
+    }
+
+    #[test]
+    fn shared_fixture_matches_cross_runtime_activity_contract() {
+        let fixtures: Vec<FixtureCase> = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/activity-read-model-cases.json"
+        ))
+        .unwrap();
+
+        for fixture in fixtures {
+            let records = fixture
+                .records
+                .into_iter()
+                .map(|record| OwnedActivityRange {
+                    origin: match record.origin.as_str() {
+                        "native" => ActivityOrigin::Native,
+                        "import_exact" => ActivityOrigin::ImportExact,
+                        "import_bucket" => ActivityOrigin::ImportBucket,
+                        value => panic!("unsupported fixture origin: {value}"),
+                    },
+                    start_ms: record.start_time,
+                    end_ms: record.end_time,
+                    capacity_end_ms: record.capacity_end_time,
+                    value: record.key,
+                })
+                .collect::<Vec<_>>();
+            let contributions = summarize_activity_range(
+                &records,
+                fixture.scope.start_time,
+                fixture.scope.end_time,
+            );
+            let mut actual = HashMap::<String, i64>::new();
+            for contribution in contributions {
+                *actual.entry(contribution.value).or_insert(0) += contribution.duration_ms;
+            }
+            assert_eq!(actual, fixture.expected_duration_by_key, "{}", fixture.name);
+        }
     }
 }

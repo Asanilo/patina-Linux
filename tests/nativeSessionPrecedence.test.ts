@@ -1,5 +1,17 @@
 import assert from "node:assert/strict";
-import { resolveNativeSessionPrecedence } from "../src/platform/persistence/nativeSessionPrecedence.ts";
+import { readFile } from "node:fs/promises";
+import {
+  resolveNativeSessionPrecedence,
+  type ActivityResolutionScope,
+  type OwnedTimeRange,
+} from "../src/platform/persistence/nativeSessionPrecedence.ts";
+
+interface ActivityReadModelFixture {
+  name: string;
+  scope: ActivityResolutionScope;
+  records: OwnedTimeRange[];
+  expectedDurationByKey: Record<string, number>;
+}
 
 function duration(records: ReturnType<typeof resolveNativeSessionPrecedence>): number {
   return records.reduce((total, record) => total + record.endTime - record.startTime, 0);
@@ -39,6 +51,25 @@ function duration(records: ReturnType<typeof resolveNativeSessionPrecedence>): n
   assert.deepEqual(
     resolved.map(({ key, startTime, endTime }) => ({ key, startTime, endTime })),
     [{ key: "legacy-native", startTime: 10, endTime: 10 }],
+  );
+}
+
+const fixtureCases = JSON.parse(
+  await readFile("tests/fixtures/activity-read-model-cases.json", "utf8"),
+) as ActivityReadModelFixture[];
+for (const fixture of fixtureCases) {
+  const resolved = resolveNativeSessionPrecedence(fixture.records, fixture.scope);
+  const durationByKey = new Map<string, number>();
+  for (const record of resolved) {
+    durationByKey.set(
+      record.key,
+      (durationByKey.get(record.key) ?? 0) + record.endTime - record.startTime,
+    );
+  }
+  assert.deepEqual(
+    Object.fromEntries([...durationByKey.entries()].sort()),
+    Object.fromEntries(Object.entries(fixture.expectedDurationByKey).sort()),
+    fixture.name,
   );
 }
 

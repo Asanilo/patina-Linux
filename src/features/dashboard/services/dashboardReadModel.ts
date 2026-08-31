@@ -2,8 +2,8 @@ import type { AppStat } from "../../../shared/types/app.ts";
 import type { HistorySession } from "../../../shared/types/sessions.ts";
 import type { TrackerHealthSnapshot } from "../../../shared/types/tracking.ts";
 import {
-  getHistoryByDate,
   getIconMap,
+  getSessionSummariesInRange,
 } from "../../../platform/persistence/sessionReadRepository.ts";
 import {
   buildCategoryDistribution,
@@ -34,8 +34,16 @@ import {
 export interface DashboardSnapshot {
   fetchedAtMs: number;
   icons: Record<string, string>;
-  sessions: HistorySession[];
-  yesterdaySessions?: HistorySession[];
+  sessions: DashboardActivityRecord[];
+  yesterdaySessions?: DashboardActivityRecord[];
+}
+
+export interface DashboardActivityRecord {
+  appName: string;
+  exeName: string;
+  startTime: number;
+  endTime: number | null;
+  isLive?: boolean;
 }
 
 export interface IconSnapshot {
@@ -56,21 +64,47 @@ export interface DashboardReadModel {
   diagnostics: ReadModelDiagnostics;
 }
 
-export async function loadDashboardSnapshot(date: Date = new Date()): Promise<DashboardSnapshot> {
+export async function loadDashboardSnapshot(
+  date: Date = new Date(),
+): Promise<DashboardSnapshot> {
+  const fetchedAtMs = Date.now();
+  const dayRange = getDayRange(date, fetchedAtMs);
   const yesterday = new Date(date);
   yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayRange = getDayRange(yesterday, fetchedAtMs);
   const [sessions, yesterdaySessions, icons] = await Promise.all([
-    getHistoryByDate(date),
-    getHistoryByDate(yesterday),
+    getSessionSummariesInRange(dayRange.startMs, dayRange.endMs),
+    getSessionSummariesInRange(yesterdayRange.startMs, yesterdayRange.endMs),
     getIconMap(),
   ]);
 
   return {
-    fetchedAtMs: Date.now(),
+    fetchedAtMs,
     icons,
     sessions,
     yesterdaySessions,
   };
+}
+
+function toDashboardHistorySessions(
+  records: DashboardActivityRecord[],
+): HistorySession[] {
+  return records.map((record, index) => {
+    const endTime = Math.max(record.startTime, record.endTime ?? record.startTime);
+    const isLive = record.isLive ?? record.endTime === null;
+
+    return {
+      id: -(index + 1),
+      appName: record.appName,
+      exeName: record.exeName,
+      windowTitle: "",
+      startTime: record.startTime,
+      endTime: isLive ? null : endTime,
+      duration: endTime - record.startTime,
+      continuityGroupStartTime: record.startTime,
+      titleSampleDetails: [],
+    };
+  });
 }
 
 export async function loadIconSnapshot(): Promise<IconSnapshot> {
@@ -83,18 +117,26 @@ export async function loadIconSnapshot(): Promise<IconSnapshot> {
 }
 
 export function buildDashboardReadModel(
-  sessions: HistorySession[],
+  sessions: DashboardActivityRecord[],
   trackerHealth: TrackerHealthSnapshot,
   nowMs: number,
-  yesterdaySessions: HistorySession[] = [],
+  yesterdaySessions: DashboardActivityRecord[] = [],
 ): DashboardReadModel {
   const dayRange = getDayRange(new Date(nowMs), nowMs);
   const yesterday = new Date(nowMs);
   yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayRange = getDayRange(yesterday);
-  const liveSessions = materializeLiveSessions(sessions, trackerHealth, nowMs);
+  const yesterdayRange = getDayRange(yesterday, nowMs);
+  const liveSessions = materializeLiveSessions(
+    toDashboardHistorySessions(sessions),
+    trackerHealth,
+    nowMs,
+  );
   const compiledSessions = compileForRange(liveSessions, dayRange, 0);
-  const compiledYesterdaySessions = compileForRange(yesterdaySessions, yesterdayRange, 0);
+  const compiledYesterdaySessions = compileForRange(
+    toDashboardHistorySessions(yesterdaySessions),
+    yesterdayRange,
+    0,
+  );
   const stats = buildNormalizedAppStats(compiledSessions);
   const yesterdayStats = buildNormalizedAppStats(compiledYesterdaySessions);
   const totalTrackedTime = getTotalTrackedTime(stats);

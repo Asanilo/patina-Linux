@@ -9,6 +9,11 @@ export interface OwnedTimeRange<T = unknown> {
   value?: T;
 }
 
+export interface ActivityResolutionScope {
+  startTime: number;
+  endTime: number;
+}
+
 interface IndexedRange<T> {
   index: number;
   record: OwnedTimeRange<T>;
@@ -33,7 +38,13 @@ const ORIGIN_ORDER: Record<TimeRecordOrigin, number> = {
 
 export function resolveNativeSessionPrecedence<T>(
   records: OwnedTimeRange<T>[],
+  scope?: ActivityResolutionScope,
 ): OwnedTimeRange<T>[] {
+  if (scope && (
+    !Number.isFinite(scope.startTime)
+    || !Number.isFinite(scope.endTime)
+    || scope.endTime <= scope.startTime
+  )) return [];
   const indexed = records
     .map((record, index) => ({ index, record }))
     .filter(({ record }) => (
@@ -49,7 +60,7 @@ export function resolveNativeSessionPrecedence<T>(
     .sort(compareIndexedRanges);
   const buckets = indexed.filter(({ record }) => record.origin === "import_bucket");
   const resolvedExact = resolveExactRangesBySweep(native, exact);
-  const resolved: IndexedRange<T>[] = [
+  const exactResolved: IndexedRange<T>[] = [
     ...native.map(cloneIndexedRange),
     ...resolvedExact,
   ];
@@ -57,6 +68,9 @@ export function resolveNativeSessionPrecedence<T>(
     ...native.map(({ record }) => record),
     ...resolvedExact.map(({ record }) => record),
   ]);
+  const resolved = exactResolved
+    .map((candidate) => clipIndexedRange(candidate, scope))
+    .filter((candidate): candidate is IndexedRange<T> => candidate !== null);
 
   const bucketsByWindow = new Map<string, IndexedRange<T>[]>();
   for (const candidate of buckets) {
@@ -72,15 +86,20 @@ export function resolveNativeSessionPrecedence<T>(
     group.sort((left, right) => left.index - right.index);
     const windowStart = group[0].record.startTime;
     const windowEnd = group[0].record.capacityEndTime ?? group[0].record.endTime;
-    const occupiedDuration = intersectedDuration(occupied, windowStart, windowEnd);
-    let availableDuration = Math.max(0, windowEnd - windowStart - occupiedDuration);
-    let remainingRequested = group.reduce(
-      (total, { record }) => total + (record.endTime - record.startTime),
-      0,
-    );
+    const scopedStart = Math.max(windowStart, scope?.startTime ?? windowStart);
+    const scopedEnd = Math.min(windowEnd, scope?.endTime ?? windowEnd);
+    if (scopedEnd <= scopedStart) continue;
+    const windowDuration = windowEnd - windowStart;
+    const scopedDuration = scopedEnd - scopedStart;
+    const occupiedDuration = intersectedDuration(occupied, scopedStart, scopedEnd);
+    let availableDuration = Math.max(0, scopedDuration - occupiedDuration);
+    const requestedByCandidate = group.map(({ record }) => (
+      Math.floor(((record.endTime - record.startTime) * scopedDuration) / windowDuration)
+    ));
+    let remainingRequested = requestedByCandidate.reduce((total, requested) => total + requested, 0);
 
-    for (const candidate of group) {
-      const requested = candidate.record.endTime - candidate.record.startTime;
+    for (const [candidateIndex, candidate] of group.entries()) {
+      const requested = requestedByCandidate[candidateIndex];
       const allocated = remainingRequested <= availableDuration
         ? requested
         : remainingRequested > 0
@@ -91,7 +110,9 @@ export function resolveNativeSessionPrecedence<T>(
           index: candidate.index,
           record: {
             ...candidate.record,
-            endTime: candidate.record.startTime + allocated,
+            startTime: scopedStart,
+            endTime: scopedStart + allocated,
+            capacityEndTime: scopedEnd,
           },
         });
       }
@@ -101,6 +122,22 @@ export function resolveNativeSessionPrecedence<T>(
   }
 
   return resolved.sort(compareIndexedRanges).map(({ record }) => record);
+}
+
+function clipIndexedRange<T>(
+  candidate: IndexedRange<T>,
+  scope?: ActivityResolutionScope,
+): IndexedRange<T> | null {
+  if (!scope) return cloneIndexedRange(candidate);
+  const startTime = Math.max(candidate.record.startTime, scope.startTime);
+  const endTime = Math.min(candidate.record.endTime, scope.endTime);
+  if (endTime < startTime || (candidate.record.origin !== "native" && endTime === startTime)) {
+    return null;
+  }
+  return {
+    index: candidate.index,
+    record: { ...candidate.record, startTime, endTime },
+  };
 }
 
 function cloneIndexedRange<T>(candidate: IndexedRange<T>): IndexedRange<T> {

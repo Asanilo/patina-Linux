@@ -105,14 +105,17 @@ export async function loadObservedSessionStats(
      WHERE bucket_start_time < ? AND bucket_start_time + 3600000 > ?`,
     [nowMs, nowMs, nowMs, nowMs, sinceMs, nowMs, sinceMs, nowMs, sinceMs],
   );
-  const resolved = resolveNativeSessionPrecedence(rows.map((row) => ({
-    key: `${row.origin}:${row.id}`,
-    origin: row.origin,
-    startTime: Math.max(sinceMs, row.start_time),
-    endTime: Math.min(nowMs, row.end_time),
-    capacityEndTime: Math.min(nowMs, row.capacity_end_time),
-    value: row,
-  })));
+  const resolved = resolveNativeSessionPrecedence(
+    rows.map((row) => ({
+      key: `${row.origin}:${row.id}`,
+      origin: row.origin,
+      startTime: row.start_time,
+      endTime: row.end_time,
+      capacityEndTime: row.capacity_end_time,
+      value: row,
+    })),
+    { startTime: sinceMs, endTime: nowMs },
+  );
   const byExe = new Map<string, ObservedSessionStatRow>();
   for (const range of resolved) {
     const row = range.value!;

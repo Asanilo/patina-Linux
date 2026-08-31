@@ -164,6 +164,8 @@ Rust 默认门槛包含 `npm run check:rust-boundaries`、`cargo check`、Rust �
 
 `check:bundle` 是保守 bundle 预算防线。它在生产构建之后检查关键 JS chunk、Data 等命名 feature chunk 与总 gzip 体积，防止功能增长被“其他 chunk”汇总掩盖或静默放宽首屏预算。Data 保持独立 `11 KiB gzip` 上限，按需加载的目标趋势面板保持独立 `7 KiB gzip` 上限，设置运行时 adapter、活动导入设置面板与跨来源优先级算法各保持独立 `3 KiB gzip` 上限，微型 UI 共享 chunk 保持 `2 KiB gzip` 上限；仅在网页趋势模式加载的数据库快照仍计入 feature/other 与总预算。命名 chunk 只是让归属和预算可见，不能替代总 gzip 上限。
 
+跨来源活动优先级同时存在于桌面 TypeScript 读边界与 Rust API 读边界时，必须共同运行 `tests/fixtures/activity-read-model-cases.json`。fixture 至少覆盖本机遮蔽外部精确事实、多个小时桶共享容量、部分桶范围折算和重叠外部精确事实的稳定胜者；修改任一实现时不能只更新单侧期望。
+
 性能优化的额外规则：
 
 - 必须说明场景
