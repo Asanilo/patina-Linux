@@ -41,6 +41,12 @@ pub(crate) fn apply_tray_visibility<R: Runtime>(
 }
 
 pub(crate) async fn toggle_tracking_paused<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        return client
+            .toggle_tracking_paused()
+            .await
+            .map_err(|error| error.to_string());
+    }
     let pool = wait_for_sqlite_pool(&app).await?;
     let reason = toggle_tracking_paused_in_pool(&pool)
         .await

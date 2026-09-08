@@ -1,9 +1,49 @@
+use std::sync::RwLock;
+
 use serde::Serialize;
+use tauri::{AppHandle, Manager, Runtime};
 
 // Stage 2H.3b.2 builds this adapter before Stage 2H.3b.3 wires the explicit
 // desktop client mode. Keep the preview implementation compiled and tested.
 #[allow(dead_code)]
 pub mod runtime;
+
+#[derive(Debug, Default)]
+pub struct PatinadClientState {
+    client: RwLock<Option<crate::platform::daemon_client::PatinadClient>>,
+}
+
+impl PatinadClientState {
+    pub fn install(&self, client: crate::platform::daemon_client::PatinadClient) {
+        match self.client.write() {
+            Ok(mut current) => *current = Some(client),
+            Err(poisoned) => *poisoned.into_inner() = Some(client),
+        }
+    }
+
+    pub fn require(&self) -> Result<crate::platform::daemon_client::PatinadClient, String> {
+        let client = match self.client.read() {
+            Ok(current) => current.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        };
+        client.ok_or_else(|| "patinad client is not configured for this profile".to_string())
+    }
+}
+
+pub fn command_client<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<Option<crate::platform::daemon_client::PatinadClient>, String> {
+    if app
+        .state::<crate::app::runtime::DesktopRuntimeMode>()
+        .owns_embedded_runtime()
+    {
+        return Ok(None);
+    }
+    app.try_state::<PatinadClientState>()
+        .ok_or_else(|| "patinad client state is unavailable".to_string())?
+        .require()
+        .map(Some)
+}
 
 #[derive(Clone, Debug, Serialize)]
 pub struct DaemonClientDiagnosticsSnapshot {
@@ -22,6 +62,12 @@ pub async fn diagnose(port: u16, token: String) -> DaemonClientDiagnosticsSnapsh
         Ok(client) => client,
         Err(error) => return failure_snapshot(format!("http://127.0.0.1:{port}"), error),
     };
+    diagnose_client(client).await
+}
+
+pub async fn diagnose_client(
+    client: crate::platform::daemon_client::PatinadClient,
+) -> DaemonClientDiagnosticsSnapshot {
     let base_url = client.base_url().to_string();
 
     match client.negotiate_tracking_owner().await {
@@ -121,6 +167,57 @@ mod tests {
             .unwrap_err();
         assert_eq!(wrong_host.code(), "wrong-runtime-host");
         desktop.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn client_routes_tracker_and_classification_writes_through_daemon_transport() {
+        let runtime = TestApiRuntime::start_tracking().await;
+        let client = PatinadClient::new(runtime.port, TEST_TOKEN).unwrap();
+
+        client.set_afk_threshold(600).await.unwrap();
+        assert_eq!(
+            client.tracker_settings().await.unwrap().idle_timeout_secs,
+            600
+        );
+
+        let key = "__category_label_override::focus";
+        client
+            .commit_classification_settings(vec![
+                crate::engine::api::types::ClassificationMutationRequest {
+                    key: key.to_string(),
+                    value: Some("Focus".to_string()),
+                },
+            ])
+            .await
+            .unwrap();
+        let rejected = client.set_afk_threshold(10).await.unwrap_err();
+        assert!(matches!(
+            rejected,
+            PatinadClientError::Http { status: 400, .. }
+        ));
+
+        let tools = client
+            .start_timer(crate::engine::api::types::StartTimerRequest {
+                mode: crate::domain::tools::TimerMode::Stopwatch,
+                duration_ms: None,
+                label: Some("Transport test".to_string()),
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            tools
+                .current_timer
+                .as_ref()
+                .and_then(|timer| timer.label.as_deref()),
+            Some("Transport test")
+        );
+        assert!(client
+            .tools_snapshot()
+            .await
+            .unwrap()
+            .current_timer
+            .is_some());
+        runtime.shutdown().await;
     }
 
     #[tokio::test]
@@ -257,6 +354,7 @@ mod tests {
     struct TestRuntimeState {
         tracking:
             std::sync::Arc<crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState>,
+        tools_ready: bool,
     }
 
     impl crate::engine::api::context::ApiRuntimeStateProvider for TestRuntimeState {
@@ -275,8 +373,16 @@ mod tests {
         }
 
         fn tools_runtime_ready(&self) -> bool {
-            false
+            self.tools_ready
         }
+    }
+
+    struct TestToolsSink;
+
+    impl crate::engine::tools::ToolsRuntimeSink for TestToolsSink {
+        fn snapshot_changed(&self, _snapshot: &crate::domain::tools::ToolsRuntimeSnapshot) {}
+
+        fn alert(&self, _alert: &crate::domain::tools::ToolAlert) {}
     }
 
     struct TestApiRuntime {
@@ -333,15 +439,22 @@ mod tests {
             let context = if tracking {
                 let event_sink: std::sync::Arc<dyn crate::engine::runtime_event::RuntimeEventSink> =
                     event_hub.clone();
-                crate::engine::api::context::ApiRuntimeContext::with_state_and_events(
+                let context = crate::engine::api::context::ApiRuntimeContext::with_state_and_events(
                     crate::engine::runtime_context::RuntimeContext::system(pool.clone()),
                     env!("CARGO_PKG_VERSION"),
                     std::env::consts::OS,
                     std::sync::Arc::new(TestRuntimeState {
                         tracking: tracking_state.clone().unwrap(),
+                        tools_ready: true,
                     }),
                     Some(event_sink),
-                )
+                );
+                let tools_owner =
+                    std::sync::Arc::new(crate::engine::tools::ToolsRuntimeOwner::new(
+                        crate::engine::runtime_context::RuntimeContext::system(pool.clone()),
+                        std::sync::Arc::new(TestToolsSink),
+                    ));
+                context.with_tools_owner(tools_owner)
             } else {
                 crate::engine::api::context::ApiRuntimeContext::new(
                     crate::engine::runtime_context::RuntimeContext::system(pool.clone()),

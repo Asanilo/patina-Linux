@@ -139,6 +139,7 @@ impl PatinadDesktopRuntimeHandle {
         let output = Arc::new(TauriPatinadRuntimeOutput {
             app,
             runtime_health,
+            client: client.clone(),
         });
         let adapter = PatinadRuntimeAdapter::new(client, output);
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -173,6 +174,7 @@ impl PatinadDesktopRuntimeHandle {
 struct TauriPatinadRuntimeOutput<R: Runtime> {
     app: AppHandle<R>,
     runtime_health: Arc<RuntimeHealthState>,
+    client: PatinadClient,
 }
 
 impl<R: Runtime> PatinadRuntimeOutput for TauriPatinadRuntimeOutput<R> {
@@ -238,6 +240,39 @@ impl<R: Runtime> PatinadRuntimeOutput for TauriPatinadRuntimeOutput<R> {
     }
 
     fn tracking_data_changed(&self, event: &RuntimeEventEnvelope) {
+        match &event.event {
+            RuntimeEvent::ToolsRuntimeChanged { .. } => {
+                let app = self.app.clone();
+                let client = self.client.clone();
+                tauri::async_runtime::spawn(async move {
+                    match client.tools_snapshot().await {
+                        Ok(snapshot) => {
+                            if let Some(state) =
+                                app.try_state::<crate::engine::tools::ToolsRuntimeState>()
+                            {
+                                state.replace(snapshot.clone());
+                            }
+                            if let Err(error) = app
+                                .emit(crate::engine::tools::TOOLS_RUNTIME_CHANGED_EVENT, snapshot)
+                            {
+                                eprintln!(
+                                    "[patinad-client] failed to emit Tools snapshot: {error}"
+                                );
+                            }
+                        }
+                        Err(error) => {
+                            eprintln!("[patinad-client] failed to refresh Tools snapshot: {error}");
+                        }
+                    }
+                });
+                return;
+            }
+            RuntimeEvent::ToolAlert { alert } => {
+                crate::engine::tools::deliver_alert_to_desktop(&self.app, alert);
+                return;
+            }
+            RuntimeEvent::TrackingDataChanged { .. } => {}
+        }
         let sink = crate::engine::tracking::runtime::TauriRuntimeEventSink::new(self.app.clone());
         if let Err(error) = sink.emit(event.event.clone()) {
             eprintln!("[patinad-client] failed to forward runtime event: {error}");

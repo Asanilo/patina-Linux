@@ -143,6 +143,9 @@ pub async fn cmd_get_daemon_service_diagnostics(
 pub async fn cmd_get_daemon_client_diagnostics(
     app: tauri::AppHandle,
 ) -> Result<crate::app::daemon_client::DaemonClientDiagnosticsSnapshot, String> {
+    if let Ok(Some(client)) = crate::app::daemon_client::command_client(&app) {
+        return Ok(crate::app::daemon_client::diagnose_client(client).await);
+    }
     let port = app
         .state::<crate::engine::api::server::ApiServerState>()
         .confirmed_port()

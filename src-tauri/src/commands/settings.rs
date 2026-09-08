@@ -80,7 +80,16 @@ pub fn cmd_set_background_optimization(
 }
 
 #[tauri::command]
-pub fn cmd_set_audio_participation_enabled(enabled: bool) -> Result<(), String> {
+pub async fn cmd_set_audio_participation_enabled(
+    enabled: bool,
+    app: AppHandle,
+) -> Result<(), String> {
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        return client
+            .set_audio_participation_enabled(enabled)
+            .await
+            .map_err(|error| error.to_string());
+    }
     #[cfg(target_os = "linux")]
     crate::platform::linux::audio::set_signal_source_enabled(enabled);
     #[cfg(target_os = "windows")]
@@ -152,6 +161,21 @@ pub async fn cmd_commit_classification_settings(
     mutations: Vec<ClassificationSettingMutationDto>,
     app: AppHandle,
 ) -> Result<(), String> {
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        let mutations = mutations
+            .into_iter()
+            .map(
+                |mutation| crate::engine::api::types::ClassificationMutationRequest {
+                    key: mutation.key,
+                    value: mutation.value,
+                },
+            )
+            .collect();
+        return client
+            .commit_classification_settings(mutations)
+            .await
+            .map_err(|error| error.to_string());
+    }
     let mutations = mutations
         .into_iter()
         .map(ClassificationSettingMutation::from)

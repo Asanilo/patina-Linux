@@ -5,12 +5,15 @@ use reqwest::{
     redirect::Policy,
     StatusCode,
 };
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, Serialize};
 use std::fmt;
 use std::time::Duration;
 
 use crate::engine::api::types::{
-    ActiveSessionResponse, ApiError, ApiResponse, CapabilitiesResponse, CurrentWindowResponse,
+    ActiveSessionResponse, AfkThresholdRequest, ApiError, ApiResponse, AudioParticipationRequest,
+    CapabilitiesResponse, ClassificationMutationRequest, ClassificationMutationsRequest,
+    CreateReminderRequest, CreateSoftwareReminderRuleRequest, CurrentWindowResponse,
+    StartPomodoroRequest, StartTimerRequest, TrackerSettingsResponse, TrackingPausedRequest,
 };
 use crate::engine::runtime_event::RuntimeEventEnvelope;
 
@@ -221,6 +224,133 @@ impl PatinadClient {
             .await
     }
 
+    pub async fn tracker_settings(&self) -> Result<TrackerSettingsResponse, PatinadClientError> {
+        self.get_json("/api/v1/settings/tracker", "tracker settings")
+            .await
+    }
+
+    pub async fn set_afk_threshold(&self, seconds: u64) -> Result<(), PatinadClientError> {
+        self.post_ack(
+            "/api/v1/settings/tracker/afk-threshold",
+            &AfkThresholdRequest { seconds },
+            "AFK threshold update",
+        )
+        .await
+    }
+
+    pub async fn set_tracking_paused(&self, paused: bool) -> Result<(), PatinadClientError> {
+        self.post_ack(
+            "/api/v1/settings/tracker/pause",
+            &TrackingPausedRequest { paused },
+            "tracking pause update",
+        )
+        .await
+    }
+
+    pub async fn toggle_tracking_paused(&self) -> Result<(), PatinadClientError> {
+        let settings = self.tracker_settings().await?;
+        self.set_tracking_paused(!settings.tracking_paused).await
+    }
+
+    pub async fn set_audio_participation_enabled(
+        &self,
+        enabled: bool,
+    ) -> Result<(), PatinadClientError> {
+        let _: serde_json::Value = self
+            .post_json(
+                "/api/v1/settings/runtime/audio-participation",
+                &AudioParticipationRequest { enabled },
+                "audio participation update",
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn commit_classification_settings(
+        &self,
+        mutations: Vec<ClassificationMutationRequest>,
+    ) -> Result<(), PatinadClientError> {
+        self.post_ack(
+            "/api/v1/settings/classification",
+            &ClassificationMutationsRequest { mutations },
+            "classification settings update",
+        )
+        .await
+    }
+
+    pub async fn tools_snapshot(
+        &self,
+    ) -> Result<crate::domain::tools::ToolsRuntimeSnapshot, PatinadClientError> {
+        self.get_json("/api/v1/tools/snapshot", "Tools snapshot")
+            .await
+    }
+
+    pub async fn create_reminder(
+        &self,
+        request: CreateReminderRequest,
+    ) -> Result<crate::domain::tools::ToolsRuntimeSnapshot, PatinadClientError> {
+        self.post_json("/api/v1/tools/reminders", &request, "reminder creation")
+            .await
+    }
+
+    pub async fn cancel_reminder(
+        &self,
+        reminder_id: i64,
+    ) -> Result<crate::domain::tools::ToolsRuntimeSnapshot, PatinadClientError> {
+        self.post_empty_json(
+            &format!("/api/v1/tools/reminders/{reminder_id}/cancel"),
+            "reminder cancellation",
+        )
+        .await
+    }
+
+    pub async fn create_software_reminder_rule(
+        &self,
+        request: CreateSoftwareReminderRuleRequest,
+    ) -> Result<crate::domain::tools::ToolsRuntimeSnapshot, PatinadClientError> {
+        self.post_json(
+            "/api/v1/tools/software-reminder-rules",
+            &request,
+            "software reminder rule creation",
+        )
+        .await
+    }
+
+    pub async fn disable_software_reminder_rule(
+        &self,
+        rule_id: i64,
+    ) -> Result<crate::domain::tools::ToolsRuntimeSnapshot, PatinadClientError> {
+        self.post_empty_json(
+            &format!("/api/v1/tools/software-reminder-rules/{rule_id}/disable"),
+            "software reminder rule disable",
+        )
+        .await
+    }
+
+    pub async fn start_timer(
+        &self,
+        request: StartTimerRequest,
+    ) -> Result<crate::domain::tools::ToolsRuntimeSnapshot, PatinadClientError> {
+        self.post_json("/api/v1/tools/timer/start", &request, "timer start")
+            .await
+    }
+
+    pub async fn tools_action(
+        &self,
+        path: &str,
+        response_name: &str,
+    ) -> Result<crate::domain::tools::ToolsRuntimeSnapshot, PatinadClientError> {
+        self.post_empty_json(path, response_name).await
+    }
+
+    pub async fn start_pomodoro(
+        &self,
+        request: StartPomodoroRequest,
+    ) -> Result<crate::domain::tools::ToolsRuntimeSnapshot, PatinadClientError> {
+        self.post_json("/api/v1/tools/pomodoro/start", &request, "Pomodoro start")
+            .await
+    }
+
     #[allow(dead_code)]
     pub async fn open_event_stream(
         &self,
@@ -290,6 +420,72 @@ impl PatinadClient {
             .client
             .get(format!("{}{path}", self.base_url))
             .bearer_auth(&self.token)
+            .timeout(REQUEST_TIMEOUT)
+            .send()
+            .await
+            .map_err(map_transport_error)?;
+        let status = response.status();
+        let body = read_limited_body(response).await?;
+
+        if status == StatusCode::UNAUTHORIZED {
+            return Err(PatinadClientError::Unauthorized);
+        }
+        if !status.is_success() {
+            return Err(map_http_error(status, &body));
+        }
+
+        serde_json::from_slice::<ApiResponse<T>>(&body)
+            .map(|response| response.data)
+            .map_err(|error| {
+                PatinadClientError::InvalidResponse(format!(
+                    "failed to decode patinad {response_name}: {error}"
+                ))
+            })
+    }
+
+    async fn post_ack<B: Serialize + ?Sized>(
+        &self,
+        path: &str,
+        body: &B,
+        response_name: &str,
+    ) -> Result<(), PatinadClientError> {
+        let _: serde_json::Value = self.post_json(path, body, response_name).await?;
+        Ok(())
+    }
+
+    async fn post_empty_json<T>(
+        &self,
+        path: &str,
+        response_name: &str,
+    ) -> Result<T, PatinadClientError>
+    where
+        T: DeserializeOwned,
+    {
+        self.post_json(path, &serde_json::json!({}), response_name)
+            .await
+    }
+
+    async fn post_json<T, B>(
+        &self,
+        path: &str,
+        body: &B,
+        response_name: &str,
+    ) -> Result<T, PatinadClientError>
+    where
+        T: DeserializeOwned,
+        B: Serialize + ?Sized,
+    {
+        let request_body = serde_json::to_vec(body).map_err(|error| {
+            PatinadClientError::InvalidConfiguration(format!(
+                "failed to encode patinad {response_name} request: {error}"
+            ))
+        })?;
+        let response = self
+            .client
+            .post(format!("{}{path}", self.base_url))
+            .bearer_auth(&self.token)
+            .header(CONTENT_TYPE, "application/json")
+            .body(request_body)
             .timeout(REQUEST_TIMEOUT)
             .send()
             .await

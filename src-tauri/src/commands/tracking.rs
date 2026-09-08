@@ -77,6 +77,16 @@ pub fn cmd_get_tracker_health_snapshot(
 }
 
 #[tauri::command]
-pub fn cmd_set_afk_threshold(threshold_secs: u64) {
+pub async fn cmd_set_afk_threshold(
+    threshold_secs: u64,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        return client
+            .set_afk_threshold(threshold_secs)
+            .await
+            .map_err(|error| error.to_string());
+    }
     crate::engine::tracking::runtime_settings::set_idle_threshold(threshold_secs);
+    Ok(())
 }

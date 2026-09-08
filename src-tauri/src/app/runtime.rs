@@ -178,6 +178,8 @@ fn setup_daemon_client_runtime(
                 return Ok(());
             }
         };
+    app.state::<crate::app::daemon_client::PatinadClientState>()
+        .install(client.clone());
     let handle = crate::app::daemon_client::runtime::PatinadDesktopRuntimeHandle::start(
         app.handle().clone(),
         client,

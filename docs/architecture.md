@@ -236,6 +236,8 @@ Stage 2F.2 已使用 Axum + Tower 替换通用 API/SSE 与浏览器 bridge 的�
 
 Tauri desktop 的 daemon transport 由 Rust host 持有 Bearer Token，前端 JavaScript 不直接读取 owner-only credential。客户端只连接固定 loopback 地址，不跟随重定向，并限制连接时间、总请求时间与响应大小；使用任何运行状态前必须先确认 `runtime_host=daemon`、协议兼容范围、tracking ownership 和 event stream capability。端口可连接或 HTTP 200 本身不构成成功协商。只读 runtime adapter 必须先建立 SSE 再读取当前快照，首次使用有界 replay，之后携带最后确认 sequence 重连；收到 replay gap 或 receiver lag 时清除旧 cursor 并通过 JSON API 完整重读，不能靠局部事件猜测丢失状态。
 
+Desktop command 的 owner 分流统一依赖受管的 typed daemon client state。显式 daemon client 模式下，已经迁移的 tracker、runtime setting、classification 与 Tools command 不得回落到本地 engine 或直接 SQLite；client 不可用时返回明确错误。Tools SSE 只表达失效通知，Desktop 收到后必须从 daemon 重读完整 snapshot，再复用现有前端事件契约，不能把失效通知冒充完整读模型。embedded 模式在迁移窗口内继续走原路径。尚未迁移的写侧必须保留在 2H.3c 清单中，不能因为只读切换完成就默认视为 daemon-owned。
+
 浏览器 UI 不是公开 Web 部署面。daemon 默认只监听 loopback，并校验 loopback Host 与严格 Origin；浏览器 UI 使用 same-origin、HttpOnly、SameSite session，不获得长期 API Token。owner-only Bearer Token 只供 MCP、CLI 和 Agent 使用；浏览器扩展继续使用独立 bridge credential。浏览器写侧开放前，必须增加 CSRF 防护和操作确认，并验证跨站请求、DNS rebinding 与日志泄漏边界。
 
 Tauri 是当前桌面客户端实现，不是长期协议 owner。未来可以在不改变 daemon、数据库、浏览器 UI、TUI 和 MCP 契约的前提下评估 GPUI 或其他 Linux 桌面 UI 框架；框架替换必须作为独立项目，以实测内存、启动速度、桌面集成完整性和维护成本决定。

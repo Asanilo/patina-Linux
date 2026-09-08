@@ -186,17 +186,17 @@ pub struct AppsResponse {
     pub apps: Vec<AppEntry>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ClassifyRequest {
     pub category: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct RenameRequest {
     pub display_name: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ExcludeRequest {
     pub excluded: bool,
 }
@@ -207,17 +207,17 @@ pub struct TitleRecordingRequest {
     pub enabled: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct AfkThresholdRequest {
     pub seconds: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TrackingPausedRequest {
     pub paused: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct AudioParticipationRequest {
     pub enabled: bool,
 }
@@ -232,13 +232,13 @@ pub struct ConfirmedActionRequest {
     pub confirmed: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct CreateReminderRequest {
     pub label: String,
     pub scheduled_at: i64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct CreateSoftwareReminderRuleRequest {
     pub app_name: String,
     pub exe_name: Option<String>,
@@ -246,14 +246,14 @@ pub struct CreateSoftwareReminderRuleRequest {
     pub message: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct StartTimerRequest {
     pub mode: crate::domain::tools::TimerMode,
     pub duration_ms: Option<i64>,
     pub label: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct StartPomodoroRequest {
     pub focus_ms: i64,
     pub short_break_ms: i64,
@@ -261,13 +261,13 @@ pub struct StartPomodoroRequest {
     pub long_break_every: i64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ClassificationMutationRequest {
     pub key: String,
     pub value: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ClassificationMutationsRequest {
     pub mutations: Vec<ClassificationMutationRequest>,
 }
@@ -331,7 +331,7 @@ pub struct CategorySummaryEntry {
     pub total_ms: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TrackerSettingsResponse {
     pub idle_timeout_secs: u64,
     pub timeline_merge_gap_secs: u64,

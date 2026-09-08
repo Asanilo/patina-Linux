@@ -1635,9 +1635,7 @@ mod tests {
         assert_eq!(
             response
                 .body
-                .pointer(
-                    "/components/schemas/TrackingRuntimeSnapshot/properties/status/$ref"
-                )
+                .pointer("/components/schemas/TrackingRuntimeSnapshot/properties/status/$ref")
                 .and_then(|value| value.as_str()),
             Some("#/components/schemas/TrackingStatusSnapshot")
         );

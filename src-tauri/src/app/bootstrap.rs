@@ -68,6 +68,7 @@ fn register_managed_state_and_plugins(
         .manage(TrackingRuntimeSnapshotState::default())
         .manage(runtime_health)
         .manage(runtime_mode)
+        .manage(crate::app::daemon_client::PatinadClientState::default())
         .manage(crate::app::daemon_client::runtime::PatinadRuntimeState::default())
         .manage(crate::engine::api::auth::ApiCredentialStore::new())
         .manage(crate::engine::api::server::ApiServerState::new())

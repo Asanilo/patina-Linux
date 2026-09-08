@@ -24,7 +24,7 @@ pub struct ToolsRuntimeState {
 }
 
 impl ToolsRuntimeState {
-    fn replace(&self, snapshot: ToolsRuntimeSnapshot) {
+    pub(crate) fn replace(&self, snapshot: ToolsRuntimeSnapshot) {
         match self.inner.lock() {
             Ok(mut guard) => *guard = snapshot,
             Err(poisoned) => *poisoned.into_inner() = snapshot,
@@ -36,7 +36,7 @@ impl ToolsRuntimeState {
         self.ready.load(Ordering::Acquire)
     }
 
-    fn push_alert(&self, alert: ToolAlert) {
+    pub(crate) fn push_alert(&self, alert: ToolAlert) {
         match self.alerts.lock() {
             Ok(mut guard) => push_unique_alert(&mut guard, alert),
             Err(poisoned) => push_unique_alert(&mut poisoned.into_inner(), alert),
@@ -79,17 +79,21 @@ impl<R: Runtime + 'static> ToolsRuntimeSink for TauriToolsRuntimeSink<R> {
     }
 
     fn alert(&self, alert: &ToolAlert) {
-        if let Some(state) = self.app.try_state::<ToolsRuntimeState>() {
-            state.push_alert(alert.clone());
-        }
-        crate::app::main_window::show_main_window(&self.app);
-        if let Err(error) = self.app.emit(TOOLS_ALERT_EVENT, alert) {
-            eprintln!(
-                "[tools] failed to emit tool alert, falling back to system notification: {error}"
-            );
-            if let Err(error) = notification::send(&self.app, &alert.title, &alert.body) {
-                eprintln!("[tools] failed to send fallback notification: {error}");
-            }
+        deliver_alert_to_desktop(&self.app, alert);
+    }
+}
+
+pub(crate) fn deliver_alert_to_desktop<R: Runtime>(app: &AppHandle<R>, alert: &ToolAlert) {
+    if let Some(state) = app.try_state::<ToolsRuntimeState>() {
+        state.push_alert(alert.clone());
+    }
+    crate::app::main_window::show_main_window(app);
+    if let Err(error) = app.emit(TOOLS_ALERT_EVENT, alert) {
+        eprintln!(
+            "[tools] failed to emit tool alert, falling back to system notification: {error}"
+        );
+        if let Err(error) = notification::send(app, &alert.title, &alert.body) {
+            eprintln!("[tools] failed to send fallback notification: {error}");
         }
     }
 }

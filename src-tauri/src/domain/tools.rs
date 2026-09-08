@@ -148,7 +148,7 @@ pub enum ToolAlertKind {
     SoftwareReminder,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ToolRuntimeSettings {
     pub default_countdown_minutes: i64,
     pub pomodoro_focus_minutes: i64,
@@ -169,7 +169,7 @@ impl Default for ToolRuntimeSettings {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ToolReminder {
     pub id: i64,
     pub label: String,
@@ -180,7 +180,7 @@ pub struct ToolReminder {
     pub cancelled_at: Option<i64>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ToolSoftwareReminderRule {
     pub id: i64,
     pub app_name: String,
@@ -193,7 +193,7 @@ pub struct ToolSoftwareReminderRule {
     pub last_fired_date_key: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ToolTimer {
     pub id: i64,
     pub mode: TimerMode,
@@ -236,7 +236,7 @@ impl ToolTimer {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ToolTimerLap {
     pub id: i64,
     pub timer_id: i64,
@@ -246,7 +246,7 @@ pub struct ToolTimerLap {
     pub duration_ms: i64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ToolPomodoroRun {
     pub id: i64,
     pub phase: PomodoroPhase,
@@ -315,7 +315,7 @@ impl ToolPomodoroRun {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ToolsRuntimeSnapshot {
     pub settings: ToolRuntimeSettings,
     pub reminders: Vec<ToolReminder>,
