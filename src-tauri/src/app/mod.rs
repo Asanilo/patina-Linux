@@ -10,7 +10,6 @@ pub mod desktop_behavior;
 pub mod main_window;
 pub mod runtime;
 pub mod runtime_lease;
-#[allow(dead_code)] // Wired into Desktop startup by Stage 2H.3d.3b/3c.
 pub mod runtime_owner_cutover;
 pub mod runtime_tasks;
 pub mod scheduled_backup;

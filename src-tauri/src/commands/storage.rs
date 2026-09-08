@@ -4,7 +4,7 @@ use crate::domain::storage::{
     StorageSnapshot, StorageTargetKind,
 };
 use std::path::PathBuf;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
 
 #[tauri::command]
@@ -89,5 +89,7 @@ pub fn cmd_open_storage_directory(
 
 #[tauri::command]
 pub fn cmd_restart_for_storage_maintenance(app: AppHandle) {
+    app.state::<crate::app::state::AppExitState>()
+        .request_exit();
     app.restart();
 }

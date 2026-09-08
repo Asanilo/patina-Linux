@@ -1,5 +1,12 @@
 use serde::Serialize;
 
+#[cfg(target_os = "linux")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EmbeddedCutoverPreparation {
+    ContinueEmbedded,
+    RestartAsDaemonClient { request_id: String },
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct DaemonServiceDiagnosticsSnapshot {
     pub service_name: String,
@@ -20,6 +27,7 @@ pub async fn inspect(
     background_tracking_at_login: bool,
     desktop_launch_at_login: bool,
     desktop_autostart_valid: bool,
+    desktop_owns_embedded_runtime: bool,
 ) -> DaemonServiceDiagnosticsSnapshot {
     #[cfg(target_os = "linux")]
     {
@@ -29,6 +37,7 @@ pub async fn inspect(
             background_tracking_at_login,
             desktop_launch_at_login,
             desktop_autostart_valid,
+            desktop_owns_embedded_runtime,
         )
     }
 
@@ -68,6 +77,266 @@ pub async fn stop_conflicting_service_before_embedded_startup(
 }
 
 #[cfg(target_os = "linux")]
+pub async fn prepare_runtime_owner_cutover(
+    profile: crate::platform::app_paths::AppProfile,
+    control_root: &std::path::Path,
+    settings: crate::domain::settings::DesktopBehaviorSettings,
+) -> Result<EmbeddedCutoverPreparation, String> {
+    use crate::platform::linux::systemd_user_service::{
+        control_patinad_service, inspect_patinad_service, PatinadServiceControlAction,
+    };
+
+    if profile != crate::platform::app_paths::AppProfile::Production {
+        return Ok(EmbeddedCutoverPreparation::ContinueEmbedded);
+    }
+    let service = inspect_patinad_service().await;
+    if !service.manager_available || !service.unit_installed || service.error.is_some() {
+        return Ok(EmbeddedCutoverPreparation::ContinueEmbedded);
+    }
+    if service.active {
+        return Err("patinad.service is still active before owner cutover preparation".to_string());
+    }
+
+    let reservation = crate::app::runtime_owner_cutover::prepare(
+        control_root,
+        profile,
+        settings.background_tracking_at_login,
+        settings.launch_at_login,
+        crate::app::runtime::now_ms(),
+    )?;
+    if reservation.status != crate::app::runtime_owner_cutover::RuntimeOwnerCutoverStatus::Prepared
+    {
+        return Err(format!(
+            "runtime owner cutover `{}` is not in prepared state",
+            reservation.request_id
+        ));
+    }
+
+    let prepare_result = async {
+        crate::app::autostart::apply_linux_autostart(settings.launch_at_login)?;
+        let action = if settings.background_tracking_at_login {
+            PatinadServiceControlAction::Enable
+        } else {
+            PatinadServiceControlAction::Disable
+        };
+        let service = control_patinad_service(action).await?;
+        if service.active {
+            return Err("patinad.service started before the embedded owner exited".to_string());
+        }
+        Ok::<(), String>(())
+    }
+    .await;
+    if let Err(error) = prepare_result {
+        return Err(record_cutover_failure(
+            control_root,
+            profile,
+            &reservation.request_id,
+            "prepare-failed",
+            &error,
+        ));
+    }
+
+    Ok(EmbeddedCutoverPreparation::RestartAsDaemonClient {
+        request_id: reservation.request_id,
+    })
+}
+
+#[cfg(target_os = "linux")]
+pub async fn activate_runtime_owner_cutover(
+    profile: crate::platform::app_paths::AppProfile,
+    control_root: &std::path::Path,
+) -> Result<(), String> {
+    use crate::app::runtime_owner_cutover::{
+        RuntimeOwnerCutoverStatus, RuntimeOwnerStartupDecision,
+    };
+    use crate::platform::linux::systemd_user_service::{
+        control_patinad_service, PatinadServiceControlAction,
+    };
+
+    let decision = crate::app::runtime_owner_cutover::decide_desktop_startup(control_root, profile);
+    let (reservation, should_attempt_service_start) = match decision {
+        RuntimeOwnerStartupDecision::Embedded => {
+            return Err(
+                "managed daemon client has no runtime owner cutover reservation".to_string(),
+            )
+        }
+        RuntimeOwnerStartupDecision::Blocked { reason } => return Err(reason),
+        RuntimeOwnerStartupDecision::DaemonClient {
+            reservation,
+            should_attempt_service_start,
+        } => (reservation, should_attempt_service_start),
+    };
+    if !should_attempt_service_start {
+        return Err(reservation
+            .failure_message
+            .unwrap_or_else(|| "runtime owner cutover requires explicit repair".to_string()));
+    }
+    if reservation.status == RuntimeOwnerCutoverStatus::Completed {
+        crate::app::runtime_lease::wait_for_runtime_lease_release(
+            control_root,
+            std::time::Duration::from_secs(5),
+        )
+        .await?;
+        control_patinad_service(PatinadServiceControlAction::Start).await?;
+        return Ok(());
+    }
+
+    let activating = crate::app::runtime_owner_cutover::mark_activating(
+        control_root,
+        profile,
+        &reservation.request_id,
+        crate::app::runtime::now_ms(),
+    )?;
+    let activation_result = async {
+        crate::app::autostart::apply_linux_autostart(activating.desktop_launch_at_login)?;
+        control_patinad_service(if activating.background_tracking_at_login {
+            PatinadServiceControlAction::Enable
+        } else {
+            PatinadServiceControlAction::Disable
+        })
+        .await?;
+        crate::app::runtime_lease::wait_for_runtime_lease_release(
+            control_root,
+            std::time::Duration::from_secs(5),
+        )
+        .await?;
+        control_patinad_service(PatinadServiceControlAction::Start).await?;
+        Ok::<(), String>(())
+    }
+    .await;
+    activation_result.map_err(|error| {
+        record_cutover_failure(
+            control_root,
+            profile,
+            &activating.request_id,
+            "activation-failed",
+            &error,
+        )
+    })
+}
+
+#[cfg(target_os = "linux")]
+pub async fn confirm_runtime_owner_cutover(
+    profile: crate::platform::app_paths::AppProfile,
+    control_root: std::path::PathBuf,
+    client_state: crate::app::daemon_client::PatinadClientState,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
+) {
+    use crate::app::runtime_owner_cutover::{
+        RuntimeOwnerCutoverStatus, RuntimeOwnerStartupDecision,
+    };
+    use std::time::{Duration, Instant};
+
+    let decision =
+        crate::app::runtime_owner_cutover::decide_desktop_startup(&control_root, profile);
+    let reservation = match decision {
+        RuntimeOwnerStartupDecision::DaemonClient { reservation, .. }
+            if reservation.status == RuntimeOwnerCutoverStatus::Activating =>
+        {
+            reservation
+        }
+        _ => return,
+    };
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let failure_message = loop {
+        if *shutdown.borrow() {
+            return;
+        }
+        let attempt_error = match client_state.require() {
+            Ok(client) => match client.negotiate_tracking_owner().await {
+                Ok(negotiation) if negotiation.tracking_ready => {
+                    match crate::app::runtime_owner_cutover::mark_completed(
+                        &control_root,
+                        profile,
+                        &reservation.request_id,
+                        crate::app::runtime::now_ms(),
+                    ) {
+                        Ok(_) => println!(
+                            "[patinad] runtime owner cutover {} completed",
+                            reservation.request_id
+                        ),
+                        Err(error) => eprintln!(
+                            "[patinad] failed to confirm runtime owner cutover {}: {error}",
+                            reservation.request_id
+                        ),
+                    }
+                    return;
+                }
+                Ok(_) => "patinad owns tracking but is not ready".to_string(),
+                Err(error) => {
+                    if permanent_negotiation_failure(&error) {
+                        break error.to_string();
+                    }
+                    error.to_string()
+                }
+            },
+            Err(error) => error,
+        };
+        if Instant::now() >= deadline {
+            break attempt_error;
+        }
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_millis(250)) => {}
+            changed = shutdown.changed() => {
+                if changed.is_err() || *shutdown.borrow() {
+                    return;
+                }
+            }
+        }
+    };
+    let error = record_cutover_failure(
+        &control_root,
+        profile,
+        &reservation.request_id,
+        "daemon-not-ready",
+        &failure_message,
+    );
+    eprintln!(
+        "[patinad] runtime owner cutover {} failed: {error}",
+        reservation.request_id
+    );
+}
+
+#[cfg(target_os = "linux")]
+fn permanent_negotiation_failure(
+    error: &crate::platform::daemon_client::PatinadClientError,
+) -> bool {
+    matches!(
+        error,
+        crate::platform::daemon_client::PatinadClientError::InvalidConfiguration(_)
+            | crate::platform::daemon_client::PatinadClientError::Unauthorized
+            | crate::platform::daemon_client::PatinadClientError::InvalidResponse(_)
+            | crate::platform::daemon_client::PatinadClientError::WrongRuntimeHost(_)
+            | crate::platform::daemon_client::PatinadClientError::IncompatibleProtocol { .. }
+            | crate::platform::daemon_client::PatinadClientError::TrackingNotOwned
+            | crate::platform::daemon_client::PatinadClientError::EventStreamUnavailable
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn record_cutover_failure(
+    control_root: &std::path::Path,
+    profile: crate::platform::app_paths::AppProfile,
+    request_id: &str,
+    code: &str,
+    message: &str,
+) -> String {
+    match crate::app::runtime_owner_cutover::mark_failed(
+        control_root,
+        profile,
+        request_id,
+        code,
+        message,
+        crate::app::runtime::now_ms(),
+    ) {
+        Ok(_) => message.to_string(),
+        Err(marker_error) => {
+            format!("{message}; failed to persist cutover failure: {marker_error}")
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn should_stop_conflicting_service(
     profile: crate::platform::app_paths::AppProfile,
     service: &crate::platform::linux::systemd_user_service::SystemdUserServiceSnapshot,
@@ -81,6 +350,7 @@ fn build_diagnostics(
     background_tracking_at_login: bool,
     desktop_launch_at_login: bool,
     desktop_autostart_valid: bool,
+    desktop_owns_embedded_runtime: bool,
 ) -> DaemonServiceDiagnosticsSnapshot {
     let (migration_state, migration_reason) = if !service.manager_available {
         (
@@ -92,10 +362,20 @@ fn build_diagnostics(
             "not-installed",
             "patinad.service is not installed; install the daemon-backed DEB before migration",
         )
-    } else if service.enabled || service.active {
+    } else if desktop_owns_embedded_runtime && (service.enabled || service.active) {
         (
             "owner-conflict",
             "patinad.service is enabled or active while Patina Desktop still owns tracking",
+        )
+    } else if !desktop_owns_embedded_runtime && service.active {
+        (
+            "managed",
+            "patinad.service is the active tracking owner for Patina Desktop",
+        )
+    } else if !desktop_owns_embedded_runtime {
+        (
+            "managed-blocked",
+            "Patina Desktop is a daemon client but patinad.service is not active",
         )
     } else if background_tracking_at_login && (!desktop_launch_at_login || desktop_autostart_valid)
     {
@@ -138,13 +418,16 @@ fn build_diagnostics(
 
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
-    use super::{build_diagnostics, should_stop_conflicting_service};
+    use super::{
+        build_diagnostics, permanent_negotiation_failure, should_stop_conflicting_service,
+    };
     use crate::platform::app_paths::AppProfile;
     use crate::platform::linux::systemd_user_service::SystemdUserServiceSnapshot;
 
     #[test]
     fn disabled_installed_service_is_ready_for_a_future_autostart_migration() {
-        let snapshot = build_diagnostics(service_snapshot("disabled", false), true, true, true);
+        let snapshot =
+            build_diagnostics(service_snapshot("disabled", false), true, true, true, true);
 
         assert_eq!(snapshot.migration_state, "ready");
         assert!(!snapshot.control_available);
@@ -152,7 +435,13 @@ mod tests {
 
     #[test]
     fn background_login_does_not_require_desktop_autostart_when_desktop_login_is_disabled() {
-        let snapshot = build_diagnostics(service_snapshot("disabled", false), true, false, false);
+        let snapshot = build_diagnostics(
+            service_snapshot("disabled", false),
+            true,
+            false,
+            false,
+            true,
+        );
 
         assert_eq!(snapshot.migration_state, "ready");
         assert_eq!(
@@ -163,10 +452,32 @@ mod tests {
 
     #[test]
     fn enabled_service_is_a_conflict_before_desktop_owner_cutover() {
-        let snapshot = build_diagnostics(service_snapshot("enabled", true), true, true, true);
+        let snapshot = build_diagnostics(service_snapshot("enabled", true), true, true, true, true);
 
         assert_eq!(snapshot.migration_state, "owner-conflict");
         assert!(!snapshot.control_available);
+    }
+
+    #[test]
+    fn active_service_is_healthy_after_desktop_becomes_a_managed_client() {
+        let mut service = service_snapshot("enabled", true);
+        service.active = true;
+        service.active_state = Some("active".to_string());
+        service.sub_state = Some("running".to_string());
+
+        let snapshot = build_diagnostics(service, true, true, true, false);
+
+        assert_eq!(snapshot.migration_state, "managed");
+        assert!(snapshot.active);
+    }
+
+    #[test]
+    fn inactive_service_is_blocked_after_desktop_becomes_a_managed_client() {
+        let snapshot =
+            build_diagnostics(service_snapshot("disabled", false), true, true, true, false);
+
+        assert_eq!(snapshot.migration_state, "managed-blocked");
+        assert!(!snapshot.active);
     }
 
     #[test]
@@ -190,6 +501,31 @@ mod tests {
             AppProfile::Production,
             &service
         ));
+    }
+
+    #[test]
+    fn only_permanent_negotiation_errors_abort_cutover_immediately() {
+        use crate::platform::daemon_client::PatinadClientError;
+
+        assert!(permanent_negotiation_failure(
+            &PatinadClientError::IncompatibleProtocol {
+                client: 2,
+                server: 3,
+                min_supported_client: 3,
+                max_supported_client: 3,
+            }
+        ));
+        assert!(permanent_negotiation_failure(
+            &PatinadClientError::WrongRuntimeHost("desktop".to_string())
+        ));
+        assert!(!permanent_negotiation_failure(
+            &PatinadClientError::Unreachable("starting".to_string())
+        ));
+        assert!(!permanent_negotiation_failure(&PatinadClientError::Http {
+            status: 503,
+            code: Some("starting".to_string()),
+            message: "not ready".to_string(),
+        }));
     }
 
     fn service_snapshot(unit_file_state: &str, enabled: bool) -> SystemdUserServiceSnapshot {

@@ -174,14 +174,15 @@ pub fn mark_failed(
     failure_message: &str,
     now_ms: u64,
 ) -> Result<RuntimeOwnerCutoverSnapshot, String> {
-    validate_failure(failure_code, failure_message)?;
+    let failure_message = bounded_failure_message(failure_message);
+    validate_failure(failure_code, &failure_message)?;
     update_reservation(control_root, profile, request_id, |reservation| {
         match reservation.status {
             RuntimeOwnerCutoverStatus::Prepared | RuntimeOwnerCutoverStatus::Activating => {
                 reservation.status = RuntimeOwnerCutoverStatus::Failed;
                 reservation.updated_at_ms = reservation.updated_at_ms.max(now_ms);
                 reservation.failure_code = Some(failure_code.to_string());
-                reservation.failure_message = Some(failure_message.to_string());
+                reservation.failure_message = Some(failure_message);
             }
             RuntimeOwnerCutoverStatus::Failed => {}
             RuntimeOwnerCutoverStatus::Completed => {
@@ -296,6 +297,18 @@ fn validate_failure(code: &str, message: &str) -> Result<(), String> {
         return Err("runtime owner cutover failure message is invalid".to_string());
     }
     Ok(())
+}
+
+fn bounded_failure_message(message: &str) -> String {
+    let message = message.trim();
+    if message.len() <= MAX_FAILURE_MESSAGE_BYTES {
+        return message.to_string();
+    }
+    let mut end = MAX_FAILURE_MESSAGE_BYTES;
+    while !message.is_char_boundary(end) {
+        end -= 1;
+    }
+    message[..end].to_string()
 }
 
 fn valid_request_id(request_id: &str) -> bool {
@@ -588,6 +601,28 @@ mod tests {
                 RuntimeOwnerStartupDecision::Blocked { .. }
             ));
         }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failure_messages_are_bounded_without_splitting_utf8() {
+        let root = root("bounded-failure");
+        let prepared = prepare(&root, AppProfile::Dev, true, true, 1_000).unwrap();
+        let message = "错".repeat(300);
+
+        let failed = mark_failed(
+            &root,
+            AppProfile::Dev,
+            &prepared.request_id,
+            "activation-failed",
+            &message,
+            2_000,
+        )
+        .unwrap();
+
+        let stored = failed.failure_message.unwrap();
+        assert!(stored.len() <= MAX_FAILURE_MESSAGE_BYTES);
+        assert!(message.starts_with(&stored));
         fs::remove_dir_all(root).unwrap();
     }
 

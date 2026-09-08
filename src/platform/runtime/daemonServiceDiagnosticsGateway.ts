@@ -6,6 +6,8 @@ export type DaemonServiceMigrationState =
   | "blocked"
   | "not-installed"
   | "owner-conflict"
+  | "managed"
+  | "managed-blocked"
   | "ready"
   | "not-requested"
   | "unsupported";
@@ -44,6 +46,8 @@ const MIGRATION_STATES = new Set<DaemonServiceMigrationState>([
   "blocked",
   "not-installed",
   "owner-conflict",
+  "managed",
+  "managed-blocked",
   "ready",
   "not-requested",
   "unsupported",

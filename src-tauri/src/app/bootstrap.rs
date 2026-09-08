@@ -231,7 +231,50 @@ fn register_runtime_hooks(
                     app.handle(),
                 ))
                 .map_err(std::io::Error::other)?;
+
+                #[cfg(target_os = "linux")]
+                {
+                    let pool = tauri::async_runtime::block_on(data::sqlite_pool::wait_for_sqlite_pool(
+                        app.handle(),
+                    ))
+                    .map_err(std::io::Error::other)?;
+                    let desktop_settings = tauri::async_runtime::block_on(
+                        data::repositories::app_settings::load_desktop_behavior_settings(&pool),
+                    )
+                    .map_err(std::io::Error::other)?;
+                    let preparation = tauri::async_runtime::block_on(
+                        crate::app::daemon_service::prepare_runtime_owner_cutover(
+                            profile,
+                            &control_root,
+                            desktop_settings,
+                        ),
+                    )
+                    .map_err(std::io::Error::other)?;
+                    if matches!(
+                        preparation,
+                        crate::app::daemon_service::EmbeddedCutoverPreparation::RestartAsDaemonClient { .. }
+                    ) {
+                        app.state::<AppExitState>().request_exit();
+                        app.handle().request_restart();
+                        return Ok(());
+                    }
+                }
             } else {
+                #[cfg(target_os = "linux")]
+                if runtime_mode.is_managed_daemon_client() {
+                    let profile = crate::platform::app_paths::app_profile(app.handle());
+                    let control_root =
+                        crate::platform::storage_paths::default_storage_paths(app.handle())?
+                            .control_root;
+                    if let Err(error) = tauri::async_runtime::block_on(
+                        crate::app::daemon_service::activate_runtime_owner_cutover(
+                            profile,
+                            &control_root,
+                        ),
+                    ) {
+                        eprintln!("[patinad] managed owner activation is paused: {error}");
+                    }
+                }
                 tauri::async_runtime::block_on(
                     data::sqlite_pool::initialize_existing_app_sqlite(app.handle()),
                 )
@@ -296,6 +339,27 @@ mod tests {
     }
 
     #[test]
+    fn embedded_cutover_preparation_happens_after_sqlite_and_before_runtime_start() {
+        let source = include_str!("bootstrap.rs");
+        let setup = source
+            .split(".setup(move |app|")
+            .nth(1)
+            .expect("runtime setup hook");
+        let sqlite = setup
+            .find("initialize_app_sqlite")
+            .expect("embedded sqlite initialization");
+        let cutover = setup
+            .find("prepare_runtime_owner_cutover")
+            .expect("owner cutover preparation");
+        let runtime = setup.find("runtime::setup").expect("runtime setup");
+
+        assert!(sqlite < cutover);
+        assert!(cutover < runtime);
+        assert!(setup.contains("request_exit"));
+        assert!(setup.contains("request_restart"));
+    }
+
+    #[test]
     fn daemon_client_startup_does_not_enter_the_embedded_owner_branch() {
         let source = include_str!("bootstrap.rs");
         let setup = source
@@ -308,8 +372,12 @@ mod tests {
         let existing_database = setup
             .find("initialize_existing_app_sqlite")
             .expect("daemon client database initialization");
+        let managed_activation = setup
+            .find("activate_runtime_owner_cutover")
+            .expect("managed daemon activation");
 
         assert!(owner_branch < existing_database);
+        assert!(managed_activation < existing_database);
         assert!(setup.contains("initialize_app_sqlite"));
     }
 }

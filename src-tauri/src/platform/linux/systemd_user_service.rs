@@ -9,9 +9,7 @@ type UnitFileChange = (String, String, String);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PatinadServiceControlAction {
-    #[allow(dead_code)] // Wired by Stage 2H.3d.2 after the login preferences are split.
     Enable,
-    #[allow(dead_code)] // Wired by Stage 2H.3d.2 after the login preferences are split.
     Disable,
     Start,
     Stop,

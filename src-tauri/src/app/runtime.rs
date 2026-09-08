@@ -22,6 +22,7 @@ pub enum DesktopRuntimeMode {
     #[default]
     Embedded,
     DaemonClientPreview,
+    DaemonClientManaged,
 }
 
 impl DesktopRuntimeMode {
@@ -39,14 +40,51 @@ impl DesktopRuntimeMode {
     pub const fn owns_embedded_runtime(self) -> bool {
         matches!(self, Self::Embedded)
     }
+
+    pub const fn is_managed_daemon_client(self) -> bool {
+        matches!(self, Self::DaemonClientManaged)
+    }
 }
 
 pub fn was_launched_by_autostart() -> bool {
     std::env::args().any(|arg| arg == AUTOSTART_ARG)
 }
 
-pub fn desktop_runtime_mode() -> DesktopRuntimeMode {
-    DesktopRuntimeMode::from_args(std::env::args())
+pub fn desktop_runtime_mode(profile: crate::platform::app_paths::AppProfile) -> DesktopRuntimeMode {
+    let explicit = DesktopRuntimeMode::from_args(std::env::args());
+    if explicit == DesktopRuntimeMode::DaemonClientPreview {
+        return explicit;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let roots = crate::platform::app_paths::environment_roots();
+        let control_root =
+            crate::platform::storage_paths::default_storage_paths_for_profile(&roots, profile)
+                .control_root;
+        let decision =
+            crate::app::runtime_owner_cutover::decide_desktop_startup(&control_root, profile);
+        select_desktop_runtime_mode(explicit, profile, !decision.owns_embedded_runtime())
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    explicit
+}
+
+fn select_desktop_runtime_mode(
+    explicit: DesktopRuntimeMode,
+    profile: crate::platform::app_paths::AppProfile,
+    cutover_requires_client: bool,
+) -> DesktopRuntimeMode {
+    if explicit == DesktopRuntimeMode::DaemonClientPreview {
+        explicit
+    } else if profile == crate::platform::app_paths::AppProfile::Production
+        && cutover_requires_client
+    {
+        DesktopRuntimeMode::DaemonClientManaged
+    } else {
+        explicit
+    }
 }
 
 #[cfg(any(test, all(not(debug_assertions), not(patina_local_build))))]
@@ -87,7 +125,7 @@ pub fn setup(
 ) -> tauri::Result<()> {
     match runtime_mode {
         DesktopRuntimeMode::Embedded => setup_embedded_runtime(app, runtime_health.clone())?,
-        DesktopRuntimeMode::DaemonClientPreview => {
+        DesktopRuntimeMode::DaemonClientPreview | DesktopRuntimeMode::DaemonClientManaged => {
             setup_daemon_client_runtime(app, runtime_health.clone())?
         }
     }
@@ -237,7 +275,11 @@ fn load_audio_participation_enabled(app: tauri::AppHandle) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_workspace_target_binary, DesktopRuntimeMode, DAEMON_CLIENT_PREVIEW_ARG};
+    use super::{
+        is_workspace_target_binary, select_desktop_runtime_mode, DesktopRuntimeMode,
+        DAEMON_CLIENT_PREVIEW_ARG,
+    };
+    use crate::platform::app_paths::AppProfile;
     use std::path::Path;
 
     #[test]
@@ -272,5 +314,31 @@ mod tests {
             DesktopRuntimeMode::DaemonClientPreview
         );
         assert!(!DesktopRuntimeMode::DaemonClientPreview.owns_embedded_runtime());
+        assert!(!DesktopRuntimeMode::DaemonClientManaged.owns_embedded_runtime());
+        assert!(DesktopRuntimeMode::DaemonClientManaged.is_managed_daemon_client());
+    }
+
+    #[test]
+    fn only_production_uses_a_durable_cutover_to_select_the_managed_client() {
+        assert_eq!(
+            select_desktop_runtime_mode(DesktopRuntimeMode::Embedded, AppProfile::Production, true,),
+            DesktopRuntimeMode::DaemonClientManaged
+        );
+        assert_eq!(
+            select_desktop_runtime_mode(DesktopRuntimeMode::Embedded, AppProfile::Local, true),
+            DesktopRuntimeMode::Embedded
+        );
+        assert_eq!(
+            select_desktop_runtime_mode(DesktopRuntimeMode::Embedded, AppProfile::Dev, true),
+            DesktopRuntimeMode::Embedded
+        );
+        assert_eq!(
+            select_desktop_runtime_mode(
+                DesktopRuntimeMode::DaemonClientPreview,
+                AppProfile::Production,
+                false,
+            ),
+            DesktopRuntimeMode::DaemonClientPreview
+        );
     }
 }

@@ -106,6 +106,12 @@ function resolveDaemonServiceDetail(
   if (daemonService.migrationState === "owner-conflict") {
     return "服务已启用或运行，但当前版本仍由 Patina Desktop 追踪。请先停用 patinad.service，避免两个追踪进程竞争。";
   }
+  if (daemonService.migrationState === "managed") {
+    return "后台追踪由 patinad.service 持续运行，关闭桌面窗口不会停止记录。";
+  }
+  if (daemonService.migrationState === "managed-blocked") {
+    return "桌面端已切换为后台服务客户端，但 patinad.service 未运行；追踪当前处于暂停状态，需要修复或重试后台服务。";
+  }
   if (daemonService.migrationState === "ready") {
     return "服务按计划保持禁用；现有桌面自启动满足后续安全迁移条件。";
   }
@@ -121,6 +127,8 @@ function resolveDaemonServiceTone(
   if (!daemonService) return "muted";
   if (daemonService.error || !daemonService.managerAvailable) return "danger";
   if (daemonService.migrationState === "owner-conflict") return "danger";
+  if (daemonService.migrationState === "managed") return "ok";
+  if (daemonService.migrationState === "managed-blocked") return "danger";
   if (!daemonService.unitInstalled) return "warning";
   if (daemonService.migrationState === "blocked") return "warning";
   return "ok";

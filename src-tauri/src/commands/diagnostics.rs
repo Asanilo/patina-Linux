@@ -169,6 +169,8 @@ pub async fn cmd_get_daemon_service_diagnostics(
         desktop_settings.background_tracking_at_login,
         desktop_settings.launch_at_login,
         autostart.valid(),
+        app.state::<crate::app::runtime::DesktopRuntimeMode>()
+            .owns_embedded_runtime(),
     )
     .await)
 }

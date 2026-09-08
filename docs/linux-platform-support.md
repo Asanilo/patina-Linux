@@ -30,7 +30,7 @@ GNOME Wayland 下，如果 `org.patina.WindowTracker` 没有 D-Bus owner，Patin
 | 应用图标 | freedesktop 图标与进程信息 | 找不到时使用稳定 fallback |
 | 浏览器网页活动 | Firefox / Zen 与 Chromium 扩展 | 未连接时仅保留窗口标题级数据 |
 | 桌面通知 | freedesktop 通知 | 失败时记录错误，不改变 tracking 数据 |
-| 自启动 | 当前默认仍为 XDG autostart desktop entry；DEB 已具备默认禁用的 `patinad.service` 打包输入；后台追踪与桌面客户端登录偏好已分键持久化，但尚未应用到服务 | Settings 继续显示并修复旧 desktop entry；后续 owner 切换会在用户会话中启用服务，交接完成前不开放可能启动第二 owner 的开关 |
+| 自启动 | 当前已发布稳定版仍使用 XDG autostart desktop entry；daemon 分支的 DEB 输入包含默认禁用的 `patinad.service`，并已接入后台/客户端登录偏好拆分和首次安全交接 | Settings 继续显示并修复旧 desktop entry；daemon-backed DEB 完成实机验收前不把该交接标为稳定支持，也不开放可能启动第二 owner 的普通设置写入 |
 | 本地 API | `127.0.0.1` + owner-only Bearer token | daemon 可原子换端口/轮换 Token；冲突时保留旧 listener，轮换后旧 API/SSE 凭据失效 |
 
 音频和媒体是持续参与判断的辅助信号，不是录音能力。Patina 不采集麦克风内容或系统音频内容。

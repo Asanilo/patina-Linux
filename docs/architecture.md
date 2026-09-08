@@ -213,6 +213,8 @@ domain ─────────┘          │
 
 owner 交接 reservation 位于 profile 的稳定 control root，不跟随可迁移数据目录。状态只允许 `prepared → activating → completed` 或 `prepared/activating → failed`；缺少 reservation 才允许旧 embedded owner。有效、失败、损坏、不可信或 profile 错配的 reservation 都不能触发隐式 embedded 回退，恢复必须经过显式 service 修复或后续回滚入口。reservation 只记录交接意图、偏好快照、时间和有界错误，不记录 API Token 或其他凭据。
 
+Tauri 受控重启可能短暂拉起新进程后旧进程才完全退出，因此 managed client 在启动 unit 前必须以只读锁探测等待旧 `RuntimeLease` 释放，不得用 Desktop 临时取得 lease 再转交。daemon 启动后，Desktop 只有在 capability 确认 daemon runtime host、协议兼容、tracking owner 和 `tracking.ready` 后才能提交 completed；暂时不可达在有界窗口内重试，永久协商错误或超时写入 failed。显式 preview、Dev 和 Local profile 不执行该持久交接。
+
 共享运行内核至少需要以下窄边界：
 
 - `RuntimeContext`：数据库、设置、clock 与运行状态

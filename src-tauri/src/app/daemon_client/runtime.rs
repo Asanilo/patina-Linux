@@ -127,7 +127,7 @@ pub struct PatinadRuntimeAdapter {
 
 pub struct PatinadDesktopRuntimeHandle {
     shutdown_tx: watch::Sender<bool>,
-    task: std::sync::Mutex<Option<JoinHandle<()>>>,
+    tasks: std::sync::Mutex<Vec<JoinHandle<()>>>,
 }
 
 impl PatinadDesktopRuntimeHandle {
@@ -137,36 +137,58 @@ impl PatinadDesktopRuntimeHandle {
         runtime_health: Arc<RuntimeHealthState>,
     ) -> Self {
         let output = Arc::new(TauriPatinadRuntimeOutput {
-            app,
+            app: app.clone(),
             runtime_health,
             client_state: client_state.clone(),
         });
-        let adapter = PatinadRuntimeAdapter::new_with_client_state(client_state, output);
+        let adapter = PatinadRuntimeAdapter::new_with_client_state(client_state.clone(), output);
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let task = tauri::async_runtime::spawn(async move {
             adapter.run(shutdown_rx).await;
         });
+        let mut tasks = vec![task];
+        #[cfg(target_os = "linux")]
+        if app
+            .state::<crate::app::runtime::DesktopRuntimeMode>()
+            .is_managed_daemon_client()
+        {
+            let profile = crate::platform::app_paths::app_profile(&app);
+            if let Ok(control_root) = crate::platform::storage_paths::default_storage_paths(&app)
+                .map(|paths| paths.control_root)
+            {
+                let cutover_client_state = client_state.clone();
+                let cutover_shutdown = shutdown_tx.subscribe();
+                tasks.push(tauri::async_runtime::spawn(async move {
+                    crate::app::daemon_service::confirm_runtime_owner_cutover(
+                        profile,
+                        control_root,
+                        cutover_client_state,
+                        cutover_shutdown,
+                    )
+                    .await;
+                }));
+            }
+        }
         Self {
             shutdown_tx,
-            task: std::sync::Mutex::new(Some(task)),
+            tasks: std::sync::Mutex::new(tasks),
         }
     }
 
     pub async fn shutdown(&self) {
         let _ = self.shutdown_tx.send(true);
-        let task = match self.task.lock() {
-            Ok(mut task) => task.take(),
-            Err(poisoned) => poisoned.into_inner().take(),
+        let tasks = match self.tasks.lock() {
+            Ok(mut tasks) => std::mem::take(&mut *tasks),
+            Err(poisoned) => std::mem::take(&mut *poisoned.into_inner()),
         };
-        let Some(mut task) = task else {
-            return;
-        };
-        if tokio::time::timeout(Duration::from_secs(2), &mut task)
-            .await
-            .is_err()
-        {
-            task.abort();
-            let _ = task.await;
+        for mut task in tasks {
+            if tokio::time::timeout(Duration::from_secs(2), &mut task)
+                .await
+                .is_err()
+            {
+                task.abort();
+                let _ = task.await;
+            }
         }
     }
 }

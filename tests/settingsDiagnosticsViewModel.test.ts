@@ -226,4 +226,62 @@ await runTest("settings diagnostics expose an early daemon activation as an owne
   assert.match(daemonService?.detail ?? "", /两个追踪进程/);
 });
 
+await runTest("settings diagnostics report a managed daemon as healthy", () => {
+  const items = buildSettingsDiagnosticsViewModel({
+    trackerHealth: HEALTHY_GNOME,
+    webActivityEnabled: false,
+    webActivityPort: 18080,
+    webActivityToken: "",
+    webActivityBridge: null,
+    daemonService: {
+      serviceName: "patinad.service",
+      managerAvailable: true,
+      unitInstalled: true,
+      unitFileState: "enabled",
+      enabled: true,
+      activeState: "active",
+      subState: "running",
+      active: true,
+      migrationState: "managed",
+      migrationReason: "patinad.service is the active tracking owner for Patina Desktop",
+      controlAvailable: false,
+      error: null,
+    },
+  });
+
+  const service = items.find((item) => item.id === "daemon-service");
+  assert.equal(service?.value, "运行中");
+  assert.equal(service?.tone, "ok");
+  assert.match(service?.detail ?? "", /关闭桌面窗口不会停止记录/);
+});
+
+await runTest("settings diagnostics report an inactive managed daemon as blocked", () => {
+  const items = buildSettingsDiagnosticsViewModel({
+    trackerHealth: HEALTHY_GNOME,
+    webActivityEnabled: false,
+    webActivityPort: 18080,
+    webActivityToken: "",
+    webActivityBridge: null,
+    daemonService: {
+      serviceName: "patinad.service",
+      managerAvailable: true,
+      unitInstalled: true,
+      unitFileState: "disabled",
+      enabled: false,
+      activeState: "inactive",
+      subState: "dead",
+      active: false,
+      migrationState: "managed-blocked",
+      migrationReason: "Patina Desktop is a daemon client but patinad.service is not active",
+      controlAvailable: false,
+      error: null,
+    },
+  });
+
+  const service = items.find((item) => item.id === "daemon-service");
+  assert.equal(service?.value, "已安装 / 未启用");
+  assert.equal(service?.tone, "danger");
+  assert.match(service?.detail ?? "", /追踪当前处于暂停状态/);
+});
+
 console.log(`Passed ${passed} settings diagnostics view model tests`);
