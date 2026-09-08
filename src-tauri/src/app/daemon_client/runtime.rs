@@ -572,6 +572,7 @@ mod tests {
         last_event_sequence: Option<u64>,
     ) -> PatinadRuntimeReadSnapshot {
         let runtime_snapshot = crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshot {
+            generation: 0,
             window: crate::platform::linux::foreground::WindowInfo {
                 hwnd: "0x100".to_string(),
                 root_owner_hwnd: "0x100".to_string(),

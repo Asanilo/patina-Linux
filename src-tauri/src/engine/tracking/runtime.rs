@@ -40,6 +40,7 @@ use loop_state::{
     load_tracking_loop_state, persist_tracker_runtime_timestamps, TrackerTimestampPersistState,
     TrackingSettingsCache,
 };
+#[cfg(test)]
 use power_lifecycle::apply_power_lifecycle_event;
 use support::log_tracker_error;
 pub use support::{emit_tracking_data_changed, TauriRuntimeEventSink};
@@ -76,6 +77,7 @@ pub async fn run<R: Runtime>(
 }
 
 pub trait TrackingRuntimeOutput: Send + Sync {
+    fn runtime_state(&self) -> TrackingRuntimeSnapshotState;
     fn replace_snapshot(&self, snapshot: TrackingRuntimeSnapshot);
     fn active_window_changed(&self, window: &tracker::WindowInfo) -> Result<(), String>;
 }
@@ -89,6 +91,13 @@ impl<R: Runtime> TauriTrackingRuntimeOutput<R> {
 }
 
 impl<R: Runtime> TrackingRuntimeOutput for TauriTrackingRuntimeOutput<R> {
+    fn runtime_state(&self) -> TrackingRuntimeSnapshotState {
+        self.0
+            .state::<TrackingRuntimeSnapshotState>()
+            .inner()
+            .clone()
+    }
+
     fn replace_snapshot(&self, snapshot: TrackingRuntimeSnapshot) {
         if let Some(state) = self.0.try_state::<TrackingRuntimeSnapshotState>() {
             state.replace(snapshot);
@@ -103,6 +112,10 @@ impl<R: Runtime> TrackingRuntimeOutput for TauriTrackingRuntimeOutput<R> {
 }
 
 impl TrackingRuntimeOutput for TrackingRuntimeSnapshotState {
+    fn runtime_state(&self) -> TrackingRuntimeSnapshotState {
+        self.clone()
+    }
+
     fn replace_snapshot(&self, snapshot: TrackingRuntimeSnapshot) {
         self.replace(snapshot);
     }
@@ -133,15 +146,45 @@ pub async fn run_with_context(
     let mut sustained_participation_state = SustainedParticipationRuntimeState::default();
     let mut timestamp_persist_state = TrackerTimestampPersistState::default();
     let mut settings_cache = TrackingSettingsCache::default();
+    let runtime_state = output.runtime_state();
 
     loop {
         if *shutdown.borrow() {
             return Ok(());
         }
+        let generation = runtime_state.lifecycle_generation();
         let poll_outcome = tokio::select! {
             outcome = poll_active_window_with_timeout() => outcome,
             _ = shutdown.changed() => return Ok(()),
         };
+        let transition_guard = runtime_state.lock_transition().await;
+        match power_lifecycle::flush_pending_power_stop(&data, &runtime_state).await {
+            Ok(Some((reason, boundary_ms))) => {
+                emit_tracking_event(event_sink.as_ref(), reason, boundary_ms);
+            }
+            Ok(None) => {}
+            Err(error) => {
+                log_tracker_error(format!(
+                    "failed to seal pending lifecycle boundary: {error}"
+                ));
+                drop(transition_guard);
+                if wait_for_next_iteration(&mut shutdown).await {
+                    return Ok(());
+                }
+                continue;
+            }
+        }
+        if !runtime_state.accepts_sample(generation) {
+            last_window = None;
+            last_tracking_status = None;
+            pending_continuity = None;
+            sustained_participation_state = SustainedParticipationRuntimeState::default();
+            drop(transition_guard);
+            if wait_for_next_iteration(&mut shutdown).await {
+                return Ok(());
+            }
+            continue;
+        }
         let window_info = poll_outcome.window.clone();
         let now_ms = context.now_ms();
         health_state.note_heartbeat(now_ms);
@@ -175,6 +218,7 @@ pub async fn run_with_context(
             &tracking_state.tracking_status,
             now_ms,
             &poll_outcome,
+            generation,
         );
         if tracking_state.tracking_paused {
             match seal_active_sessions_for_tracking_pause(&data, now_ms).await {
@@ -190,6 +234,7 @@ pub async fn run_with_context(
             pending_continuity = None;
             last_window = Some(tracked_window);
             last_tracking_status = Some(tracking_state.tracking_status);
+            drop(transition_guard);
             if wait_for_next_iteration(&mut shutdown).await {
                 return Ok(());
             }
@@ -199,6 +244,7 @@ pub async fn run_with_context(
         if !poll_outcome.is_successful_sample() {
             last_window = Some(tracked_window);
             last_tracking_status = Some(tracking_state.tracking_status);
+            drop(transition_guard);
             if wait_for_next_iteration(&mut shutdown).await {
                 return Ok(());
             }
@@ -248,6 +294,7 @@ pub async fn run_with_context(
 
             last_window = Some(tracked_window);
             last_tracking_status = Some(tracking_state.tracking_status);
+            drop(transition_guard);
             if wait_for_next_iteration(&mut shutdown).await {
                 return Ok(());
             }
@@ -281,6 +328,7 @@ pub async fn run_with_context(
 
             last_window = Some(tracked_window);
             last_tracking_status = Some(tracking_state.tracking_status);
+            drop(transition_guard);
             if wait_for_next_iteration(&mut shutdown).await {
                 return Ok(());
             }
@@ -334,6 +382,7 @@ pub async fn run_with_context(
         );
         last_window = Some(tracked_window);
         last_tracking_status = Some(tracking_state.tracking_status);
+        drop(transition_guard);
         if wait_for_next_iteration(&mut shutdown).await {
             return Ok(());
         }
@@ -353,8 +402,10 @@ fn update_runtime_snapshot_state(
     status: &TrackingStatusSnapshot,
     sampled_at_ms: i64,
     poll_outcome: &WindowPollOutcome,
+    generation: u64,
 ) {
     output.replace_snapshot(TrackingRuntimeSnapshot {
+        generation,
         window: window.clone(),
         status: status.clone(),
         sampled_at_ms,
@@ -387,25 +438,38 @@ pub async fn handle_power_lifecycle_event<R: Runtime>(
     state: &str,
     timestamp_ms: i64,
 ) -> Result<(), String> {
+    let runtime_state = app.state::<TrackingRuntimeSnapshotState>().inner().clone();
+    runtime_state.note_power_event(state, timestamp_ms);
     let pool = wait_for_sqlite_pool(&app).await?;
     let context = RuntimeContext::system(pool);
     let event_sink = TauriRuntimeEventSink::new(app);
-    handle_power_lifecycle_event_with_context(&context, &event_sink, state, timestamp_ms).await
+    flush_noted_power_lifecycle_event(&context, &event_sink, &runtime_state).await
 }
 
 pub async fn handle_power_lifecycle_event_with_context(
     context: &RuntimeContext,
     event_sink: &dyn RuntimeEventSink,
+    runtime_state: &TrackingRuntimeSnapshotState,
     state: &str,
     timestamp_ms: i64,
 ) -> Result<(), String> {
+    runtime_state.note_power_event(state, timestamp_ms);
+    flush_noted_power_lifecycle_event(context, event_sink, runtime_state).await
+}
+
+async fn flush_noted_power_lifecycle_event(
+    context: &RuntimeContext,
+    event_sink: &dyn RuntimeEventSink,
+    runtime_state: &TrackingRuntimeSnapshotState,
+) -> Result<(), String> {
     let data = TrackingRuntimeDataStore::new(context.pool().clone());
-    let reason = apply_power_lifecycle_event(&data, state, timestamp_ms)
+    let _transition_guard = runtime_state.lock_transition().await;
+    let reason = power_lifecycle::flush_pending_power_stop(&data, runtime_state)
         .await
         .map_err(|error| format!("power lifecycle transition failed: {error}"))?;
 
-    if let Some(reason) = reason {
-        emit_tracking_event(event_sink, reason, timestamp_ms);
+    if let Some((reason, boundary_ms)) = reason {
+        emit_tracking_event(event_sink, reason, boundary_ms);
     }
 
     Ok(())

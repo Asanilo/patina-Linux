@@ -114,7 +114,7 @@
 | watchdog 与新会话竞态 | 已移植 | watchdog 只封口不晚于其观测边界启动的 active session，不能用旧采样关闭新会话。 |
 | browser bridge 端口临时占用 | 已移植 | Axum listener 保留旧配置的原子换端口语义，并使用有界退避自动恢复。 |
 | Data 网页趋势重叠区间 | 已移植 | 按浏览器来源和规范域名求区间并集，不重复计算重叠心跳或重复数据，也不填补真实空白。 |
-| lock / suspend 与 in-flight probe | 待实施 | 当前可立即封口，但缺少贯穿 runtime snapshot 的 lifecycle generation；默认 owner 切换前补齐并做真实 GNOME 验收。 |
+| lock / suspend 与 in-flight probe | 已移植，待实机验收 | Desktop 与 daemon 共用 lifecycle generation、pending stop 和 transition gate；旧窗口探测不能在 lock/suspend 后恢复 active 状态，自动化已覆盖 lock/unlock 跨代封口，默认 owner 切换前仍需真实 GNOME 验收。 |
 | 网页活动与原生浏览器 session 绑定 | 待实施 | 当前依赖 tracking event 触发封口，尚未把网页段和原生 session 边界持久化为同一事务契约。 |
 | restore 的 active timing 边界 | 待实施 | 与 daemon maintenance restore 一并处理，避免在仍由 Desktop 执行的热恢复路径上增加第二套恢复协议。 |
 

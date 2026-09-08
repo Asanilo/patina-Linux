@@ -80,6 +80,7 @@ mod tests {
 
     fn snapshot() -> TrackingRuntimeSnapshot {
         TrackingRuntimeSnapshot {
+            generation: 0,
             window: WindowInfo {
                 hwnd: "0x100".into(),
                 root_owner_hwnd: "0x100".into(),

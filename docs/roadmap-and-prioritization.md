@@ -174,7 +174,7 @@ Windows runtime、installer、updater、ARM/UWP 等平台专属实现不移植�
 5. 完成首次启动迁移、systemd 服务控制、默认 owner 切换和双 owner 验收。
 6. 发布 daemon-backed DEB beta 并完成登录启动、关闭 UI 后持续记录、崩溃恢复、升级、卸载和数据保留验证。
 
-当前执行位置：第 1 步已完成单向合流；第 2 步已完成 owner 审计和 fail-closed 防护，但活动导入、定时备份、按应用删除、恢复与 remote backup 的 daemon 写侧尚待补齐；第 3 步已移植启动恢复、采样恢复、watchdog 竞态、browser bridge 重试和网页趋势区间去重，仍需处理 lifecycle generation、网页段与原生 session 的事务边界及恢复时序。详细状态以 [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md) 为准。
+当前执行位置：第 1 步已完成单向合流；第 2 步已完成 owner 审计和 fail-closed 防护，但活动导入、定时备份、按应用删除、恢复与 remote backup 的 daemon 写侧尚待补齐；第 3 步已移植启动恢复、采样恢复、watchdog 竞态、browser bridge 重试、网页趋势区间去重和 power lifecycle generation，仍需处理暂停策略竞态、网页段与原生 session 的事务边界及恢复时序。详细状态以 [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md) 为准。
 
 在第 6 步完成前，不再把新的上游大型功能只加入 Linux `main` 而不进入 patinad 架构线。
 

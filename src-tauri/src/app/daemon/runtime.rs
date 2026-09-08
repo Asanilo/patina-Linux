@@ -61,7 +61,11 @@ impl DaemonBackgroundTasks {
         #[cfg(target_os = "linux")]
         let media = DaemonMediaTask::start(media_source.clone());
         #[cfg(target_os = "linux")]
-        let power = DaemonPowerTask::start(context.clone(), event_sink.clone());
+        let power = DaemonPowerTask::start(
+            context.clone(),
+            event_sink.clone(),
+            snapshot.as_ref().clone(),
+        );
         let tracking = DaemonTrackingTasks::start(
             context,
             snapshot,

@@ -569,6 +569,7 @@ mod tests {
         sampled_at_ms: i64,
     ) -> crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshot {
         crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshot {
+            generation: 0,
             window: crate::platform::linux::foreground::WindowInfo {
                 hwnd: "0x100".to_string(),
                 root_owner_hwnd: "0x100".to_string(),

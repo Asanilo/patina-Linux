@@ -362,6 +362,7 @@ mod tests {
 
     fn browser_tracking_snapshot() -> TrackingRuntimeSnapshot {
         TrackingRuntimeSnapshot {
+            generation: 0,
             window: WindowInfo {
                 hwnd: "0x100".into(),
                 root_owner_hwnd: "0x100".into(),

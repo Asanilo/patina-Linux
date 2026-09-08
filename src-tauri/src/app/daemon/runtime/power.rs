@@ -12,9 +12,15 @@ impl DaemonPowerTask {
     pub(super) fn start(
         context: crate::engine::runtime_context::RuntimeContext,
         event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
+        runtime_state: crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState,
     ) -> Self {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
-        let handle = tokio::spawn(run_power_restart_loop(context, event_sink, shutdown_rx));
+        let handle = tokio::spawn(run_power_restart_loop(
+            context,
+            event_sink,
+            runtime_state,
+            shutdown_rx,
+        ));
         Self {
             shutdown_tx,
             handle,
@@ -37,12 +43,18 @@ impl DaemonPowerTask {
 async fn run_power_restart_loop(
     context: crate::engine::runtime_context::RuntimeContext,
     event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
+    runtime_state: crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState,
     mut shutdown: watch::Receiver<bool>,
 ) {
     let mut retry_secs = 2_u64;
     loop {
-        let result =
-            run_power_watch_attempt(context.clone(), event_sink.clone(), shutdown.clone()).await;
+        let result = run_power_watch_attempt(
+            context.clone(),
+            event_sink.clone(),
+            runtime_state.clone(),
+            shutdown.clone(),
+        )
+        .await;
         if *shutdown.borrow() {
             return;
         }
@@ -59,6 +71,7 @@ async fn run_power_restart_loop(
 async fn run_power_watch_attempt(
     context: crate::engine::runtime_context::RuntimeContext,
     event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
+    runtime_state: crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState,
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<(), String> {
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(16);
@@ -81,6 +94,7 @@ async fn run_power_watch_attempt(
                 if let Err(error) = crate::engine::tracking::runtime::handle_power_lifecycle_event_with_context(
                     &context,
                     event_sink.as_ref(),
+                    &runtime_state,
                     &event.state,
                     event.timestamp_ms as i64,
                 ).await {
