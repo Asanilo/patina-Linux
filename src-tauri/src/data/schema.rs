@@ -14,6 +14,8 @@ pub const ACTIVITY_IMPORT_MIGRATION_VERSION: i64 = 6;
 pub const ACTIVITY_IMPORT_MIGRATION_DESCRIPTION: &str = "create_activity_import_tables";
 pub const WEB_ACTIVITY_SESSION_MIGRATION_VERSION: i64 = 7;
 pub const WEB_ACTIVITY_SESSION_MIGRATION_DESCRIPTION: &str = "bind_web_activity_to_native_sessions";
+pub const BACKUP_RESTORE_RECEIPT_MIGRATION_VERSION: i64 = 8;
+pub const BACKUP_RESTORE_RECEIPT_MIGRATION_DESCRIPTION: &str = "create_backup_restore_receipts";
 
 pub const CURRENT_BASELINE_SCHEMA_SQL: &str = "
     CREATE TABLE IF NOT EXISTS sessions (
@@ -230,6 +232,15 @@ pub const WEB_ACTIVITY_SESSION_SCHEMA_SQL: &str = "
     END;
 ";
 
+pub const BACKUP_RESTORE_RECEIPT_SCHEMA_SQL: &str = "
+    CREATE TABLE IF NOT EXISTS backup_restore_receipts (
+        request_id TEXT PRIMARY KEY,
+        archive_sha256 TEXT NOT NULL,
+        strategy TEXT NOT NULL CHECK(strategy IN ('replace', 'merge')),
+        completed_at_ms INTEGER NOT NULL
+    );
+";
+
 pub const SCHEDULED_BACKUP_SCHEMA_SQL: &str = "
     CREATE TABLE IF NOT EXISTS scheduled_backup_config (
         id INTEGER PRIMARY KEY CHECK(id = 1),
@@ -384,6 +395,12 @@ pub fn tracker_migrations() -> Vec<Migration> {
             version: WEB_ACTIVITY_SESSION_MIGRATION_VERSION,
             description: WEB_ACTIVITY_SESSION_MIGRATION_DESCRIPTION,
             sql: WEB_ACTIVITY_SESSION_SCHEMA_SQL,
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: BACKUP_RESTORE_RECEIPT_MIGRATION_VERSION,
+            description: BACKUP_RESTORE_RECEIPT_MIGRATION_DESCRIPTION,
+            sql: BACKUP_RESTORE_RECEIPT_SCHEMA_SQL,
             kind: MigrationKind::Up,
         },
     ]

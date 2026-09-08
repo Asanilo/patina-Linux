@@ -250,10 +250,12 @@ daemon 默认接管前，恢复路径必须升级为“Desktop 受控暂存 + da
 1. Desktop 在本地选择并预览归档，把未变化的字节复制到当前 profile 的 owner-only 暂存目录；HTTP 只携带随机 ticket、策略、预览指纹和显式确认，不携带路径或归档正文。
 2. daemon 重新打开暂存文件，复核普通文件、权限、大小、SHA-256、ZIP 安全边界和 restore compatibility；验证成功后把归档固定为该请求的不可变输入，并原子持久化 restore reservation，再申请已有的 systemd controlled restart。
 3. 当前实例只执行有序封口和关闭；新实例获取 runtime lease、解析 storage 并打开 SQLite 后，在启动 API、tracking、browser、Tools 和其他后台任务之前消费 reservation。
-4. restore 在单个 SQLite 事务内提交。归档中的 active native session、title sample 和网页段必须封口到备份产生时的可信边界，不能从备份时间增长到恢复启动时间；成功后才原子记录 completed 并删除该请求自己的暂存文件。
+4. restore 在单个 SQLite 事务内提交。归档中的 active native session、title sample 和网页段必须封口到备份产生时的可信边界，不能从备份时间增长到恢复启动时间；本机 API、浏览器 bridge、remote status 与 WebDAV 目标等主机集成配置保留当前值且不从归档补入。成功后才原子记录 completed 并删除该请求自己的暂存文件。
 5. 验证或事务失败时保持原数据库可用，原子记录 failed 和可诊断错误，不自动重试、不启动第二个 owner，也不删除不属于该 ticket 的文件。用户明确重试或取消前，失败归档保持 owner-only。
 
-restore status 可以在重连后按 ticket 查询；长期 Bearer API 不暴露任意文件读取、任意路径恢复或无确认恢复，MCP 不提供该破坏性工具。手工 preview daemon 因无法证明 systemd restart handoff，必须拒绝创建 reservation。
+restore status 可以在重连后按 restore request ID 查询；长期 Bearer API 不暴露任意文件读取、任意路径恢复或无确认恢复，MCP 不提供该破坏性工具。手工 preview daemon 因无法证明 systemd restart handoff，必须拒绝创建 reservation。
+
+Stage 2H.3c.6 已实现该状态机。恢复 reservation 与暂存文件按 profile 隔离；恢复事务同时记录 request ID + archive SHA-256 receipt，用于处理“数据库已提交但 completed 状态尚未落盘”的崩溃窗口。Replace 恢复对定时备份计划的停用/换代也在同一事务完成。失败 reservation 不自动重试，暂存文件只允许按精确 ticket 显式取消删除。
 
 浏览器 UI 不是公开 Web 部署面。daemon 默认只监听 loopback，并校验 loopback Host 与严格 Origin；浏览器 UI 使用 same-origin、HttpOnly、SameSite session，不获得长期 API Token。owner-only Bearer Token 只供 MCP、CLI 和 Agent 使用；浏览器扩展继续使用独立 bridge credential。浏览器写侧开放前，必须增加 CSRF 防护和操作确认，并验证跨站请求、DNS rebinding 与日志泄漏边界。
 

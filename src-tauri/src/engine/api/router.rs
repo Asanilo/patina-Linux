@@ -58,6 +58,15 @@ pub(crate) async fn route_request(
         ("POST", "/api/v1/backups/schedule") => {
             handlers::scheduled_backup::save_config(context, body).await
         }
+        ("GET", "/api/v1/backups/restore") => {
+            handlers::backup_restore::get_status(context, query).await
+        }
+        ("POST", "/api/v1/backups/restore") => {
+            handlers::backup_restore::schedule(context, body).await
+        }
+        ("POST", "/api/v1/backups/restore/cancel") => {
+            handlers::backup_restore::cancel(context, body).await
+        }
         ("POST", path) if path.starts_with("/api/v1/apps/") => {
             handlers::apps::handle_app_action(context, path, body).await
         }

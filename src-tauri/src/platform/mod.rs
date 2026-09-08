@@ -1,5 +1,6 @@
 pub mod activity_import_staging;
 pub mod app_paths;
+pub mod backup_restore_staging;
 pub mod credentials;
 pub mod daemon_client;
 pub mod storage_anchor;

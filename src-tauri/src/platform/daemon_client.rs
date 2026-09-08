@@ -22,6 +22,8 @@ use crate::engine::runtime_event::RuntimeEventEnvelope;
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(750);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
 const IMPORT_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+const RESTORE_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+const RESTORE_COMPLETION_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_EVENT_DATA_BYTES: usize = 64 * 1024;
 
@@ -452,6 +454,71 @@ impl PatinadClient {
         .await
     }
 
+    pub async fn schedule_backup_restore(
+        &self,
+        request: &crate::engine::api::types::StagedBackupRestoreRequest,
+    ) -> Result<
+        crate::engine::api::backup_restore_owner::BackupRestoreScheduleResult,
+        PatinadClientError,
+    > {
+        self.post_json_with_timeout(
+            "/api/v1/backups/restore",
+            request,
+            "backup restore scheduling",
+            RESTORE_REQUEST_TIMEOUT,
+        )
+        .await
+    }
+
+    pub async fn backup_restore_status(
+        &self,
+        request_id: &str,
+    ) -> Result<
+        Option<crate::engine::api::backup_restore_owner::BackupRestoreSnapshot>,
+        PatinadClientError,
+    > {
+        if !valid_restore_request_id(request_id) {
+            return Err(PatinadClientError::InvalidConfiguration(
+                "backup restore request ID is invalid".to_string(),
+            ));
+        }
+        self.get_json(
+            &format!("/api/v1/backups/restore?request_id={request_id}"),
+            "backup restore status",
+        )
+        .await
+    }
+
+    pub async fn wait_for_backup_restore(
+        &self,
+        request_id: &str,
+    ) -> Result<crate::engine::api::backup_restore_owner::BackupRestoreSnapshot, PatinadClientError>
+    {
+        let deadline = tokio::time::Instant::now() + RESTORE_COMPLETION_TIMEOUT;
+        loop {
+            match self.backup_restore_status(request_id).await {
+                Ok(Some(snapshot)) if snapshot.status == "completed" => return Ok(snapshot),
+                Ok(Some(snapshot))
+                    if matches!(snapshot.status.as_str(), "failed" | "cancelled") =>
+                {
+                    return Err(PatinadClientError::InvalidResponse(
+                        snapshot.error.unwrap_or_else(|| {
+                            format!("backup restore ended with status {}", snapshot.status)
+                        }),
+                    ));
+                }
+                Ok(_) | Err(PatinadClientError::Unreachable(_)) => {}
+                Err(error) => return Err(error),
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Err(PatinadClientError::Unreachable(
+                    "timed out waiting for patinad to complete backup restore".to_string(),
+                ));
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+    }
+
     pub async fn tools_snapshot(
         &self,
     ) -> Result<crate::domain::tools::ToolsRuntimeSnapshot, PatinadClientError> {
@@ -699,6 +766,15 @@ impl PatinadClient {
     }
 }
 
+fn valid_restore_request_id(value: &str) -> bool {
+    value.strip_prefix("restore_").is_some_and(|suffix| {
+        suffix.len() == 32
+            && suffix
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    })
+}
+
 #[allow(dead_code)]
 fn parse_stream_event(event: Event) -> Result<PatinadStreamEvent, PatinadClientError> {
     if event.data.len() > MAX_EVENT_DATA_BYTES {
@@ -894,6 +970,17 @@ mod tests {
 
         assert!(!negotiated.tracking_ready);
         assert!(negotiated.event_stream_available);
+    }
+
+    #[test]
+    fn restore_request_ids_are_strictly_bounded_before_transport() {
+        assert!(valid_restore_request_id(
+            "restore_0123456789abcdef0123456789abcdef"
+        ));
+        assert!(!valid_restore_request_id("../restore_0123456789abcdef"));
+        assert!(!valid_restore_request_id(
+            "restore_0123456789ABCDEF0123456789ABCDEF"
+        ));
     }
 
     #[test]

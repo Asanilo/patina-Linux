@@ -283,15 +283,11 @@ pub async fn mark_file_state(
     )
 }
 
-pub async fn disable_and_reset(
-    pool: &Pool<Sqlite>,
+pub async fn disable_and_reset_in_transaction(
+    tx: &mut sqlx::Transaction<'_, Sqlite>,
     generation: &str,
     now_ms: i64,
 ) -> Result<(), String> {
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|error| format!("failed to start scheduled backup reset: {error}"))?;
     sqlx::query(
         "UPDATE scheduled_backup_config
          SET enabled = 0, target_generation = ?, schedule_anchor_at_ms = ?, updated_at_ms = ?
@@ -300,7 +296,7 @@ pub async fn disable_and_reset(
     .bind(generation)
     .bind(now_ms)
     .bind(now_ms)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await
     .map_err(|error| format!("failed to reset scheduled backup configuration: {error}"))?;
     sqlx::query(
@@ -312,9 +308,23 @@ pub async fn disable_and_reset(
     )
     .bind(now_ms)
     .bind(now_ms)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await
     .map_err(|error| format!("failed to stop scheduled backup runs during restore: {error}"))?;
+    Ok(())
+}
+
+#[cfg(test)]
+async fn disable_and_reset(
+    pool: &Pool<Sqlite>,
+    generation: &str,
+    now_ms: i64,
+) -> Result<(), String> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|error| format!("failed to start scheduled backup reset: {error}"))?;
+    disable_and_reset_in_transaction(&mut tx, generation, now_ms).await?;
     tx.commit()
         .await
         .map_err(|error| format!("failed to commit scheduled backup reset: {error}"))

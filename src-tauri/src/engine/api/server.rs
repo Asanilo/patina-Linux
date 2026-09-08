@@ -40,7 +40,7 @@ const BODY_LIMIT: usize = 64 * 1024;
 const API_REQUEST_CONCURRENCY_LIMIT: usize = 32;
 const SSE_CONNECTION_LIMIT: usize = 8;
 const API_HANDLER_TIMEOUT: Duration = Duration::from_secs(15);
-const ACTIVITY_IMPORT_HANDLER_TIMEOUT: Duration = Duration::from_secs(120);
+const STAGED_FILE_HANDLER_TIMEOUT: Duration = Duration::from_secs(120);
 const SERVER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 const LAST_EVENT_ID: &str = "last-event-id";
 
@@ -397,8 +397,12 @@ async fn api_handler(State(state): State<ApiTransportState>, request: Request) -
         body: body.to_vec(),
     };
     let request_label = format!("{} {}", request.method, request.path);
-    let handler_timeout = if request.path == "/api/v1/imports/canonical/commit" {
-        ACTIVITY_IMPORT_HANDLER_TIMEOUT
+    let handler_timeout = if request.method == "POST"
+        && matches!(
+            request.path.as_str(),
+            "/api/v1/imports/canonical/commit" | "/api/v1/backups/restore"
+        ) {
+        STAGED_FILE_HANDLER_TIMEOUT
     } else {
         API_HANDLER_TIMEOUT
     };

@@ -77,15 +77,9 @@ pub(crate) async fn lock_for_restore(app: &AppHandle) -> OwnedMutexGuard<()> {
     state.run_lock.clone().lock_owned().await
 }
 
-pub(crate) async fn reset_after_replace_restore_while_locked(
-    app: &AppHandle,
-) -> Result<(), String> {
-    let pool = crate::data::sqlite_pool::wait_for_sqlite_pool(app).await?;
-    crate::engine::scheduled_backup::reset_after_replace_restore(&pool).await?;
-    let state = app.state::<ScheduledBackupRuntimeState>();
-    state.wake();
+pub(crate) fn notify_after_replace_restore(app: &AppHandle) {
+    app.state::<ScheduledBackupRuntimeState>().wake();
     emit_changed(app);
-    Ok(())
 }
 
 async fn dependencies(

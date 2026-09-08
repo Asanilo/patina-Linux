@@ -156,6 +156,8 @@ The HTTP API advertises `activity-import` for the Desktop/daemon handoff. MCP in
 
 The HTTP API advertises `scheduled-backup` for the trusted Desktop client. MCP intentionally does not expose schedule writes: `targetDir` grants repeated local filesystem writes, configuration replacement requires explicit UI confirmation, and an agent must not turn a one-time backup request into a persistent schedule. Read-only schedule inspection may be added later as a narrow tool if an agent workflow demonstrates a concrete need.
 
+The HTTP API advertises `backup-restore` only for a systemd-managed tracking daemon. MCP intentionally exposes no restore status, scheduling, or cancellation tool: restore replaces or merges the primary activity database across a daemon restart, requires a Desktop-created owner-only staging ticket, and treats explicit desktop confirmation as part of the safety boundary. The API exists for the trusted Desktop typed client, not as a generic agent file or maintenance capability.
+
 Local API changes require the `local-api-configuration` write scope and explicit user intent. After a successful port change, the wrapper updates its in-process base URL. After Token rotation, the running wrapper rereads the owner-only path returned by the daemon; clients that supplied a fixed `PATINA_API_TOKEN` should still update their external configuration before restarting. Neither response contains the Token value.
 
 Service lifecycle tools are available only when capabilities advertise `service-lifecycle`:

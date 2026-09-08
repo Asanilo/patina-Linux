@@ -77,7 +77,10 @@ fn build_capabilities(
             operations: surface
                 .write_operations()
                 .iter()
-                .filter(|operation| **operation != "service-lifecycle" || daemon_service_managed)
+                .filter(|operation| {
+                    !matches!(**operation, "service-lifecycle" | "backup-restore")
+                        || daemon_service_managed
+                })
                 .map(|operation| (*operation).to_string())
                 .collect(),
         },
@@ -160,6 +163,10 @@ mod tests {
             .write_api
             .operations
             .contains(&"service-lifecycle".to_string()));
+        assert!(!starting
+            .write_api
+            .operations
+            .contains(&"backup-restore".to_string()));
 
         let ready =
             build_capabilities("1.8.3", ApiSurface::DaemonTracking, true, false, true, true);
@@ -172,5 +179,9 @@ mod tests {
             .write_api
             .operations
             .contains(&"service-lifecycle".to_string()));
+        assert!(ready
+            .write_api
+            .operations
+            .contains(&"backup-restore".to_string()));
     }
 }

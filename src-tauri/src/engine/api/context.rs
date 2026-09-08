@@ -56,6 +56,8 @@ pub struct ApiRuntimeContext {
         Option<Arc<dyn crate::engine::api::activity_import_owner::ActivityImportOwner>>,
     scheduled_backup_owner:
         Option<Arc<dyn crate::engine::api::scheduled_backup_owner::ScheduledBackupOwner>>,
+    backup_restore_owner:
+        Option<Arc<dyn crate::engine::api::backup_restore_owner::BackupRestoreOwner>>,
     tools_owner: Option<Arc<crate::engine::tools::ToolsRuntimeOwner>>,
 }
 
@@ -96,6 +98,7 @@ impl ApiRuntimeContext {
             runtime_control: None,
             activity_import_owner: None,
             scheduled_backup_owner: None,
+            backup_restore_owner: None,
             tools_owner: None,
         }
     }
@@ -129,6 +132,14 @@ impl ApiRuntimeContext {
         owner: Arc<dyn crate::engine::api::scheduled_backup_owner::ScheduledBackupOwner>,
     ) -> Self {
         self.scheduled_backup_owner = Some(owner);
+        self
+    }
+
+    pub fn with_backup_restore_owner(
+        mut self,
+        owner: Arc<dyn crate::engine::api::backup_restore_owner::BackupRestoreOwner>,
+    ) -> Self {
+        self.backup_restore_owner = Some(owner);
         self
     }
 
@@ -200,6 +211,12 @@ impl ApiRuntimeContext {
         &self,
     ) -> Option<&Arc<dyn crate::engine::api::scheduled_backup_owner::ScheduledBackupOwner>> {
         self.scheduled_backup_owner.as_ref()
+    }
+
+    pub fn backup_restore_owner(
+        &self,
+    ) -> Option<&Arc<dyn crate::engine::api::backup_restore_owner::BackupRestoreOwner>> {
+        self.backup_restore_owner.as_ref()
     }
 
     pub fn tools_owner(&self) -> Option<&Arc<crate::engine::tools::ToolsRuntimeOwner>> {

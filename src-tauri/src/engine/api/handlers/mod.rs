@@ -2,6 +2,7 @@ pub mod activity_import;
 pub mod ai;
 pub mod app_settings;
 pub mod apps;
+pub mod backup_restore;
 pub mod capabilities;
 pub mod classification;
 pub mod data_maintenance;

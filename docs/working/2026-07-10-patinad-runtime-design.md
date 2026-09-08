@@ -1,6 +1,6 @@
 # `patinad` 后台运行时设计
 
-> 状态：Stage 0 至 Stage 2H.2、Stage 2H.3a systemd 诊断、Stage 2H.3b.1/2 typed daemon client 与只读 runtime adapter、Stage 2H.3b.3 显式 desktop client 模式，以及 Stage 2H.3c.1 至 2H.3c.5 Desktop 写侧转发、活动导入、定时备份和按应用删除均已完成并验证；Linux `main` 功能已经单向合入本分支，当前继续收口受控恢复和 remote backup，Stage 2H.3 默认 owner 切换仍未完成。
+> 状态：Stage 0 至 Stage 2H.2、Stage 2H.3a systemd 诊断、Stage 2H.3b.1/2 typed daemon client 与只读 runtime adapter、Stage 2H.3b.3 显式 desktop client 模式，以及 Stage 2H.3c.1 至 2H.3c.6 Desktop 写侧转发、活动导入、定时备份、按应用删除和受控恢复均已完成并验证；Linux `main` 功能已经单向合入本分支，下一写侧是 remote backup，Stage 2H.3 默认 owner 切换仍未完成。
 > 生命周期：本设计是当前 `patinad` 实施依据；后台接管稳定完成后移入 `docs/archive/`。
 
 ## 1. 目标
@@ -84,6 +84,7 @@
 - daemon 连接断开时清除 live snapshot，不把旧窗口继续显示为当前状态；daemon 本身不随 desktop 退出
 - Token 不存在或 daemon 暂不可达时 preview desktop 仍可打开，并在 client runtime state 中保留明确错误
 - 真实 GNOME 会话验收确认 desktop 与 daemon 可使用同一 production profile 共存，runtime lease 始终属于 daemon，desktop 退出后 daemon API 和 tracking snapshot 继续更新
+- daemon client 恢复路径已改为 owner-only 归档暂存、持久预约、systemd 受控重启和启动维护恢复；新实例在后台任务启动前提交恢复事务，Desktop 跨重启按 request ID 查询终态
 
 ### 3.1 当前收敛批次
 
@@ -116,8 +117,8 @@
 | Data 网页趋势重叠区间 | 已移植 | 按浏览器来源和规范域名求区间并集，不重复计算重叠心跳或重复数据，也不填补真实空白。 |
 | lock / suspend 与 in-flight probe | 已移植，待实机验收 | Desktop 与 daemon 共用 lifecycle generation、pending stop 和 transition gate；旧窗口探测不能在 lock/suspend 后恢复 active 状态，自动化已覆盖 lock/unlock 跨代封口，默认 owner 切换前仍需真实 GNOME 验收。 |
 | 暂停与 in-flight probe | 已移植 | `tracking_paused=true` 与 active session 封口在同一 SQLite 事务提交，托盘、Desktop 设置与 daemon API 通过 transition gate 更新 lifecycle generation，旧采样不能在暂停后续写。 |
-| 网页活动与原生浏览器 session 绑定 | 运行时已移植，backup/restore 映射正在实施 | 网页写入必须匹配当前活动的同名浏览器 session，并持久化 relation；原生 session 结束时 SQLite trigger 在同一事务内截断网页段。备份格式需向后兼容保存 relation，Replace/Merge 恢复都必须使用恢复后的 session ID 重建关系。 |
-| restore 的 active timing 边界 | 待实施 | 与 daemon maintenance restore 一并处理，避免在仍由 Desktop 执行的热恢复路径上增加第二套恢复协议。 |
+| 网页活动与原生浏览器 session 绑定 | 已移植 | 网页写入必须匹配当前活动的同名浏览器 session，并持久化 relation；原生 session 结束时 SQLite trigger 在同一事务内截断网页段。备份格式向后兼容保存 relation，Replace/Merge 都使用恢复后的 session ID 重建关系。 |
+| restore 的 active timing 边界 | 已移植 | daemon maintenance restore 把 active session、title sample 和网页段封口到备份导出时及各自最后可信观测的上限，不把停机时间补入活动。 |
 
 ### 3.3 合入功能的写侧边界
 
@@ -126,20 +127,30 @@
 - 活动导入提交、批次列表和批次删除已由 daemon owner 接管：Desktop 只把预览后未变化的 CSV 写入 profile 控制目录中的 `0700` 暂存目录和 `0600` 随机票据文件，API 只传票据、文件名与预览指纹；daemon 一次性消费文件并重新检查 128 MiB 上限、SHA-256 和 CSV 内容。API 不接受任意本机路径或大文件正文，该入口不作为 MCP 通用文件读取工具。
 - 定时备份已由 daemon owner 接管：调度循环只随 tracking owner 启动，配置和运行状态通过 `/api/v1/backups/schedule` 读写，变更通过 SSE 通知 Desktop 重读；embedded owner 仅保留为兼容路径，同一 profile 不得同时运行两套调度器。
 - 按应用删除已由 daemon data owner 接管：请求必须显式确认并限定 1 至 512 个 executable，可选时间范围必须同时提供完整半开区间；原生和导入事实、批次计数在同一事务更新，Desktop 只接收删除计数和刷新事件。
-- 备份恢复在 `--daemon-client-preview` 下暂时明确拒绝，不允许回退为 Desktop 直接写库。
+- 备份恢复已由 daemon owner 接管：Desktop 只预览和创建 owner-only 随机暂存票据，daemon 验证后预约 systemd restart，新实例在启动后台任务前执行单事务恢复；daemon client 模式不回退为 Desktop 直接写库。
 - remote backup 设置仍是待迁移写侧；不得在默认 daemon owner 切换前继续保留 Desktop SQLite mutation。
-- 下一写侧批次按“受控恢复 -> remote backup”推进。文件和目录选择保留为 Desktop 能力，数据库提交、调度状态与恢复事务属于 daemon。
+- 下一写侧批次只推进 remote backup。文件和目录选择、系统凭据交互保留为 Desktop 能力，数据库状态与后台任务属于 daemon。
 
-### 3.4 Stage 2H.3c.6 受控恢复实施顺序
+### 3.4 Stage 2H.3c.6 受控恢复完成状态
 
-受控恢复拆为四个可独立验证的小批次，避免一次同时修改备份格式、文件边界、daemon 启动顺序和 Desktop 交互：
+受控恢复已按四个可独立验证的小批次完成，避免一次同时修改备份格式、文件边界、daemon 启动顺序和 Desktop 交互：
 
 1. **备份关系完整性**：在现有 `web_activity_segments` 备份条目中加入向后兼容的 `native_session_id`，Replace/Merge 使用恢复后的 session ID 映射重建 `web_activity_native_sessions`，并覆盖旧备份无该字段的兼容测试。
 2. **owner-only 暂存与预约**：复用活动导入的随机 ticket 思路，但使用独立恢复目录和持久 reservation。Desktop 只暂存已预览且指纹一致的归档；daemon API 只接受 ticket、SHA-256、大小、Replace/Merge、`confirmed: true`，并在请求 systemd restart 前再次验证归档。
-3. **启动维护恢复**：新 daemon 在 SQLite migrations 之后、API credential/settings 加载和所有后台 task 之前执行 reservation。恢复事务先把归档中的 active timing 封口到备份产生时的可信上限，再恢复 sessions、title samples、网页关系、settings、Tools 和导入数据；成功/失败都持久化可查询终态，失败不覆盖为成功也不循环重启。
-4. **Desktop typed client 与重连状态**：恢复命令在 daemon client 模式下创建预约并进入重连等待，按 ticket 查询 completed/failed；embedded 模式暂时保留现有兼容实现。文件选择和预览仍留在 Desktop，不把任意路径、归档正文或 restore 能力暴露给 browser UI、MCP、CLI/Agent。
+3. **启动维护恢复**：新 daemon 在 SQLite migrations 之后、API credential/settings 加载和所有后台 task 之前执行 reservation。恢复事务先把归档中的 active timing 封口到备份产生时的可信上限，再恢复 sessions、title samples、网页关系、普通 settings、Tools 和导入数据；local API、browser bridge、remote status 与 WebDAV 目标等主机集成设置保留当前值且不从归档补入。成功/失败都持久化可查询终态，失败不覆盖为成功也不循环重启。
+4. **Desktop typed client 与重连状态**：恢复命令在 daemon client 模式下创建预约并进入重连等待，按 restore request ID 查询 completed/failed；embedded 模式暂时保留现有兼容实现。文件选择和预览仍留在 Desktop，不把任意路径、归档正文或 restore 能力暴露给 browser UI、MCP、CLI/Agent。
 
 安全与删除约束：暂存根目录必须是当前 profile control root 下的真实 `0700` 目录，文件必须是新建 `0600` 普通文件；拒绝 symlink、hard-link 替换、超限文件、内容/指纹变化和跨 profile ticket。成功后只删除 reservation 精确绑定的暂存文件；失败文件保持 owner-only 供显式重试或取消，不做模糊路径清理。任何阶段失败都必须保持原 SQLite 数据可继续启动。
+
+恢复事务同时写入以 request ID 和 archive SHA-256 约束的 durable receipt。若进程在数据库提交后、reservation 标记完成前退出，新实例只补记 completed 和清理精确暂存文件，不重复执行 Replace/Merge。失败 reservation 不自动重试；显式取消仅允许 failed 状态，并保留失败原因供诊断。
+
+### 3.5 下一批次：remote backup owner
+
+1. 先枚举现有 WebDAV secret、测试连接、上传、下载、列表和 remote-status 写路径，区分 Desktop 凭据/文件能力与 daemon 数据/任务 owner。
+2. daemon client 模式下禁止直接打开 SQLite 或启动第二个 remote-status/background upload owner；尚未迁移的命令先 fail closed。
+3. 为必要的非密钥配置和状态增加 typed API。密码只通过现有系统凭据边界交付，不写入普通设置、HTTP 响应、日志、OpenAPI 示例或 MCP 输出。
+4. 下载恢复复用 2H.3c.6 的受控暂存与启动恢复状态机，不建立第二套热恢复协议；上传复用安全 snapshot backup，不在 Desktop 重新查询各表。
+5. 覆盖凭据缺失、网络失败、内容校验失败、重启中断、取消和关闭顺序后，再进入首次启动迁移与默认 daemon owner 切换。
 
 ## 4. 目标结构
 

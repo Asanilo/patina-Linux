@@ -7,6 +7,7 @@ pub const SQLITE_DB_FILE_NAME: &str = "patina.db";
 pub const BACKUP_DIR_NAME: &str = "backups";
 pub const REMOTE_BACKUP_TEMP_DIR_NAME: &str = "remote-backup-temp";
 pub const ACTIVITY_IMPORT_STAGING_DIR_NAME: &str = "activity-import-staging";
+pub const BACKUP_RESTORE_STAGING_DIR_NAME: &str = "backup-restore-staging";
 pub const API_TOKEN_FILE_NAME: &str = "api_token";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -18,6 +19,7 @@ pub struct StoragePaths {
     pub backup_dir: PathBuf,
     pub remote_backup_temp_dir: PathBuf,
     pub activity_import_staging_dir: PathBuf,
+    pub backup_restore_staging_dir: PathBuf,
     pub api_token_path: PathBuf,
     pub webview_root: PathBuf,
     pub is_custom_data_root: bool,
@@ -35,12 +37,14 @@ impl StoragePaths {
         is_custom_webview_root: bool,
     ) -> Self {
         let activity_import_staging_dir = control_root.join(ACTIVITY_IMPORT_STAGING_DIR_NAME);
+        let backup_restore_staging_dir = control_root.join(BACKUP_RESTORE_STAGING_DIR_NAME);
         Self {
             control_root,
             db_path: data_root.join(SQLITE_DB_FILE_NAME),
             backup_dir: data_root.join(BACKUP_DIR_NAME),
             remote_backup_temp_dir: data_root.join(REMOTE_BACKUP_TEMP_DIR_NAME),
             activity_import_staging_dir,
+            backup_restore_staging_dir,
             api_token_path: stable_product_data_root.join(API_TOKEN_FILE_NAME),
             stable_product_data_root,
             data_root,

@@ -58,7 +58,7 @@ pub struct LocalApiTokenRotationResult {
     pub reauthentication_required: bool,
 }
 
-#[derive(Clone, Debug, serde::Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 pub struct DaemonServiceRestartSnapshot {
     pub request_id: String,
     pub status: String,
@@ -68,7 +68,7 @@ pub struct DaemonServiceRestartSnapshot {
     pub completed_instance_id: Option<String>,
 }
 
-#[derive(Clone, Debug, serde::Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 pub struct DaemonServiceRuntimeSnapshot {
     pub service_name: String,
     pub managed_by_systemd: bool,
@@ -76,7 +76,7 @@ pub struct DaemonServiceRuntimeSnapshot {
     pub restart: Option<DaemonServiceRestartSnapshot>,
 }
 
-#[derive(Clone, Debug, serde::Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 pub struct DaemonServiceRestartResult {
     pub service: DaemonServiceRuntimeSnapshot,
     pub reconnect_required: bool,

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 pub const CURRENT_BACKUP_VERSION: u32 = 1;
 pub const CURRENT_BACKUP_SCHEMA_VERSION: u32 = 10;
+pub const MAX_BACKUP_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BackupMeta {
@@ -64,6 +65,14 @@ pub struct BackupWebActivitySegment {
     pub updated_at: i64,
     #[serde(default)]
     pub native_session_id: Option<i64>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RestoreStrategy {
+    #[default]
+    Replace,
+    Merge,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -1,5 +1,6 @@
 pub(crate) mod activity_import;
 mod api_runtime;
+pub(crate) mod backup_restore;
 mod options;
 mod runtime;
 pub(crate) mod scheduled_backup;
@@ -67,16 +68,31 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
         runtime_lease.owner.profile, runtime_lease.owner.role
     );
     let storage_paths = storage::resolve(&roots, options.profile)?;
+    let sqlite_runtime = runtime.block_on(prepare_sqlite_runtime_at_path(
+        storage_paths.db_path.clone(),
+        storage_paths.database_creation_allowed,
+    ))?;
+    if service_lifecycle::managed_by_systemd_environment() {
+        match runtime.block_on(backup_restore::run_startup_restore(
+            &storage_paths.control_root,
+            &storage_paths.backup_restore_staging_dir,
+            &sqlite_runtime.pool,
+            crate::app::runtime::now_ms().min(i64::MAX as u64) as i64,
+        )) {
+            Ok(Some(snapshot)) => println!(
+                "[patinad] backup restore {} is {}",
+                snapshot.request_id, snapshot.status
+            ),
+            Ok(None) => {}
+            Err(error) => eprintln!("[patinad] backup restore maintenance skipped: {error}"),
+        }
+    }
     let service_lifecycle = Arc::new(
         service_lifecycle::DaemonServiceLifecycleOwner::from_environment(
             &storage_paths.control_root,
             crate::app::runtime::now_ms().min(i64::MAX as u64) as i64,
         )?,
     );
-    let sqlite_runtime = runtime.block_on(prepare_sqlite_runtime_at_path(
-        storage_paths.db_path.clone(),
-        storage_paths.database_creation_allowed,
-    ))?;
     let stored_local_api = runtime
         .block_on(
             crate::data::repositories::app_settings::load_local_api_settings(&sqlite_runtime.pool),
@@ -186,6 +202,13 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
             event_sink.clone(),
         ))
     });
+    let backup_restore_owner = options.track.then(|| {
+        Arc::new(backup_restore::DaemonBackupRestoreOwner::new(
+            storage_paths.control_root.clone(),
+            storage_paths.backup_restore_staging_dir.clone(),
+            service_lifecycle.clone(),
+        )) as Arc<dyn crate::engine::api::backup_restore_owner::BackupRestoreOwner>
+    });
     let confirmed_port = if let Some(api_listener) = api_listener.as_ref() {
         let mut context = api_runtime::build_context(
             runtime_context.clone(),
@@ -201,6 +224,9 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
         }
         if let Some(scheduled_backup_owner) = scheduled_backup_owner.as_ref() {
             context = context.with_scheduled_backup_owner(scheduled_backup_owner.clone());
+        }
+        if let Some(backup_restore_owner) = backup_restore_owner {
+            context = context.with_backup_restore_owner(backup_restore_owner);
         }
         runtime.block_on(api_listener.start(requested_port, context))?
     } else {

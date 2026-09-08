@@ -1,10 +1,11 @@
 use crate::app;
-use crate::data::backup::{self, RestoreStrategy};
+use crate::data::backup;
 use crate::data::remote_backup::{
     self, RemoteBackupDownloadResult, RemoteBackupEntry, RemoteBackupUploadResult,
     WebDavBackupConfigDto, WebDavTestResult,
 };
 use crate::domain::backup::BackupPreview;
+use crate::domain::backup::RestoreStrategy;
 use crate::domain::backup_schedule::{ScheduledBackupConfigInput, ScheduledBackupSnapshot};
 use tauri::AppHandle;
 
@@ -32,11 +33,35 @@ pub async fn cmd_restore_backup(
     restore_strategy: Option<RestoreStrategy>,
     app: AppHandle,
 ) -> Result<(), String> {
-    if crate::app::daemon_client::command_client(&app)?.is_some() {
-        return Err("backup restore requires the pending daemon maintenance flow".to_string());
+    let strategy = restore_strategy.unwrap_or_default();
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        let staged = app::backup::stage_backup_for_daemon(&app, &backup_path, strategy).await?;
+        let scheduled = match client.schedule_backup_restore(&staged.request).await {
+            Ok(scheduled) => scheduled,
+            Err(error) => {
+                // Keep the owner-only file when delivery is ambiguous; the daemon may have
+                // persisted the reservation immediately before the connection closed.
+                if matches!(
+                    error,
+                    crate::platform::daemon_client::PatinadClientError::InvalidConfiguration(_)
+                        | crate::platform::daemon_client::PatinadClientError::Unauthorized
+                        | crate::platform::daemon_client::PatinadClientError::Http {
+                            status: 400..=499,
+                            ..
+                        }
+                ) {
+                    let _ = staged.discard();
+                }
+                return Err(error.to_string());
+            }
+        };
+        client
+            .wait_for_backup_restore(&scheduled.restore.request_id)
+            .await
+            .map_err(|error| error.to_string())?;
+        return Ok(());
     }
-    app::backup::restore_backup_and_refresh(app, backup_path, restore_strategy.unwrap_or_default())
-        .await
+    app::backup::restore_backup_and_refresh(app, backup_path, strategy).await
 }
 
 #[tauri::command]

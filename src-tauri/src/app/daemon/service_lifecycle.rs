@@ -46,7 +46,7 @@ pub struct DaemonServiceLifecycleOwner {
 
 impl DaemonServiceLifecycleOwner {
     pub fn from_environment(control_root: &Path, now_ms: i64) -> Result<Self, String> {
-        Self::new(control_root, is_managed_by_systemd(), now_ms)
+        Self::new(control_root, managed_by_systemd_environment(), now_ms)
     }
 
     pub(crate) fn new(
@@ -164,7 +164,7 @@ impl DaemonServiceLifecycleOwner {
     }
 }
 
-fn is_managed_by_systemd() -> bool {
+pub(super) fn managed_by_systemd_environment() -> bool {
     std::env::var(SERVICE_ENV_NAME).is_ok_and(|value| value.trim() == SERVICE_NAME)
         && std::env::var("INVOCATION_ID").is_ok_and(|value| !value.trim().is_empty())
 }

@@ -92,10 +92,6 @@ pub async fn tick(pool: &Pool<Sqlite>, default_backup_dir: &Path) -> Result<bool
     Ok(true)
 }
 
-pub async fn reset_after_replace_restore(pool: &Pool<Sqlite>) -> Result<(), String> {
-    repository::disable_and_reset(pool, &new_generation()?, now_ms()).await
-}
-
 async fn load_or_create_config(
     pool: &Pool<Sqlite>,
     default_backup_dir: &Path,

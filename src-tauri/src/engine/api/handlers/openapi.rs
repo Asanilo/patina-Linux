@@ -315,6 +315,36 @@ fn paths(surface: ApiSurface) -> Value {
         }),
     );
     object.insert(
+        "/api/v1/backups/restore".to_string(),
+        json!({
+            "get": get_operation_with_parameters(
+                "Read the latest or a specific daemon-owned backup restore reservation.",
+                "BackupRestoreStatusResponse",
+                vec![query_param(
+                    "request_id",
+                    "string",
+                    "Optional restore request id returned by the scheduling response.",
+                )],
+            ),
+            "post": accepted_post_operation(
+                "Validate a staged backup, persist a restore reservation, and restart the managed daemon.",
+                "StagedBackupRestoreRequest",
+                "BackupRestoreScheduleResponse",
+            )
+        }),
+    );
+    object.insert(
+        "/api/v1/backups/restore/cancel".to_string(),
+        json!({
+            "post": post_operation(
+                "Explicitly cancel a failed restore reservation and remove only its staged archive.",
+                vec![],
+                "CancelBackupRestoreRequest",
+                "BackupRestoreSnapshotResponse",
+            )
+        }),
+    );
+    object.insert(
         "/api/v1/settings/app".to_string(),
         json!({
             "post": post_operation(
@@ -470,6 +500,7 @@ fn schemas() -> Value {
                     "activity-import",
                     "app-mapping",
                     "app-settings",
+                    "backup-restore",
                     "classification",
                     "data-maintenance",
                     "local-api-configuration",
@@ -1081,6 +1112,81 @@ fn schemas() -> Value {
     schemas.insert(
         "DaemonServiceRestartResponse".to_string(),
         envelope(object_schema(vec![
+            ("service", schema_ref("DaemonService")),
+            ("reconnect_required", bool_schema()),
+        ])),
+    );
+    schemas.insert(
+        "RestoreStrategy".to_string(),
+        enum_schema(vec!["replace", "merge"]),
+    );
+    schemas.insert(
+        "StagedBackupRestoreRequest".to_string(),
+        object_schema(vec![
+            (
+                "ticket",
+                json!({ "type": "string", "pattern": "^[0-9a-f]{32}$" }),
+            ),
+            (
+                "expected_sha256",
+                json!({ "type": "string", "pattern": "^[0-9a-f]{64}$" }),
+            ),
+            (
+                "expected_size_bytes",
+                bounded_integer_schema(0, 536_870_912),
+            ),
+            ("strategy", schema_ref("RestoreStrategy")),
+            ("confirmed", bool_schema()),
+        ]),
+    );
+    schemas.insert(
+        "CancelBackupRestoreRequest".to_string(),
+        object_schema(vec![
+            (
+                "request_id",
+                json!({ "type": "string", "pattern": "^restore_[0-9a-f]{32}$" }),
+            ),
+            ("confirmed", bool_schema()),
+        ]),
+    );
+    schemas.insert(
+        "BackupRestoreSnapshot".to_string(),
+        object_schema(vec![
+            ("request_id", string_schema()),
+            (
+                "status",
+                enum_schema(vec![
+                    "prepared",
+                    "pending_restart",
+                    "running",
+                    "completed",
+                    "failed",
+                    "cancelled",
+                ]),
+            ),
+            ("strategy", schema_ref("RestoreStrategy")),
+            ("archive_sha256", string_schema()),
+            ("size_bytes", bounded_integer_schema(0, 536_870_912)),
+            ("requested_at_ms", integer_schema()),
+            ("started_at_ms", nullable_integer_schema()),
+            ("completed_at_ms", nullable_integer_schema()),
+            ("restart_request_id", nullable_string_schema()),
+            ("error", nullable_string_schema()),
+            ("cleanup_warning", nullable_string_schema()),
+        ]),
+    );
+    schemas.insert(
+        "BackupRestoreSnapshotResponse".to_string(),
+        envelope(schema_ref("BackupRestoreSnapshot")),
+    );
+    schemas.insert(
+        "BackupRestoreStatusResponse".to_string(),
+        envelope(nullable_ref_schema("BackupRestoreSnapshot")),
+    );
+    schemas.insert(
+        "BackupRestoreScheduleResponse".to_string(),
+        envelope(object_schema(vec![
+            ("restore", schema_ref("BackupRestoreSnapshot")),
             ("service", schema_ref("DaemonService")),
             ("reconnect_required", bool_schema()),
         ])),

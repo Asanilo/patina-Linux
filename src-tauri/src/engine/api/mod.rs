@@ -1,5 +1,6 @@
 pub mod activity_import_owner;
 pub mod auth;
+pub mod backup_restore_owner;
 pub mod configuration;
 pub mod context;
 pub mod handlers;

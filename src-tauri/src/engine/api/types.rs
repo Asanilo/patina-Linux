@@ -310,6 +310,21 @@ pub struct ScheduledBackupConfigRequest {
     pub confirmed: bool,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct StagedBackupRestoreRequest {
+    pub ticket: String,
+    pub expected_sha256: String,
+    pub expected_size_bytes: u64,
+    pub strategy: crate::domain::backup::RestoreStrategy,
+    pub confirmed: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CancelBackupRestoreRequest {
+    pub request_id: String,
+    pub confirmed: bool,
+}
+
 #[derive(Debug, Serialize)]
 pub struct SummaryResponse {
     pub date: String,

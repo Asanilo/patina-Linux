@@ -3,15 +3,16 @@ use crate::data::sqlite_pool::wait_for_sqlite_pool;
 use crate::domain::backup::{
     BackupIconCache, BackupImportBatch, BackupImportExactSession, BackupImportTimeBucket,
     BackupMeta, BackupPayload, BackupPreview, BackupSession, BackupSetting, BackupTitleSample,
-    BackupWebActivitySegment, CURRENT_BACKUP_SCHEMA_VERSION, CURRENT_BACKUP_VERSION,
+    BackupWebActivitySegment, RestoreStrategy, CURRENT_BACKUP_SCHEMA_VERSION,
+    CURRENT_BACKUP_VERSION, MAX_BACKUP_ARCHIVE_BYTES,
 };
 use crate::platform::storage_paths;
 use crc32fast::Hasher;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::{Pool, Sqlite};
-use std::collections::{BTreeMap, HashSet};
-use std::fs::{self, OpenOptions};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fs::{self, File, OpenOptions};
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Runtime};
@@ -33,7 +34,6 @@ const BACKUP_TOOL_TIMER_LAPS_ENTRY_NAME: &str = "data/tool_timer_laps.json";
 const BACKUP_TOOL_POMODORO_RUNS_ENTRY_NAME: &str = "data/tool_pomodoro_runs.json";
 const BACKUP_TOOL_DAILY_STATS_ENTRY_NAME: &str = "data/tool_daily_stats.json";
 const BACKUP_IMPORT_ACTIVITY_ENTRY_NAME: &str = "data/import_activity.json";
-const MAX_BACKUP_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_BACKUP_ARCHIVE_ENTRIES: usize = 64;
 const MAX_BACKUP_ENTRY_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_BACKUP_UNCOMPRESSED_BYTES: u64 = 1024 * 1024 * 1024;
@@ -263,14 +263,6 @@ pub fn pick_backup_file(initial_path: Option<String>) -> Option<String> {
     dialog
         .pick_file()
         .map(|path| path.to_string_lossy().to_string())
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum RestoreStrategy {
-    #[default]
-    Replace,
-    Merge,
 }
 
 fn build_backup_manifest(payload: &BackupPayload) -> BackupArchiveManifest {
@@ -952,20 +944,23 @@ pub async fn export_scheduled_backup_create_new(
         .await
         .map_err(CreateNewBackupError::Failed)?;
     let archive = encode_backup_archive(&payload).map_err(CreateNewBackupError::Failed)?;
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(target_path)
-        .map_err(|error| {
-            if error.kind() == std::io::ErrorKind::AlreadyExists {
-                CreateNewBackupError::AlreadyExists
-            } else {
-                CreateNewBackupError::Failed(format!(
-                    "failed to create scheduled backup `{}`: {error}",
-                    target_path.display()
-                ))
-            }
-        })?;
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(target_path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AlreadyExists {
+            CreateNewBackupError::AlreadyExists
+        } else {
+            CreateNewBackupError::Failed(format!(
+                "failed to create scheduled backup `{}`: {error}",
+                target_path.display()
+            ))
+        }
+    })?;
 
     if let Err(error) = file.write_all(&archive).and_then(|_| file.sync_all()) {
         drop(file);
@@ -974,6 +969,18 @@ pub async fn export_scheduled_backup_create_new(
             "failed to publish scheduled backup `{}`: {error}",
             target_path.display()
         )));
+    }
+    drop(file);
+    #[cfg(unix)]
+    if let Some(parent) = target_path.parent() {
+        File::open(parent)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|error| {
+                CreateNewBackupError::Failed(format!(
+                    "failed to sync scheduled backup directory `{}`: {error}",
+                    parent.display()
+                ))
+            })?;
     }
     Ok(())
 }
@@ -1002,21 +1009,109 @@ pub async fn restore_backup(
         return Err("backup path cannot be empty".to_string());
     }
 
-    let payload = read_backup_payload(&backup_path)?;
+    let pool = wait_for_sqlite_pool(&app).await?;
+    restore_backup_from_path(&pool, &backup_path, strategy, now_ms_i64()).await
+}
+
+pub(crate) fn inspect_restore_archive(
+    backup_path: &Path,
+) -> Result<(BackupPreview, String, u64), String> {
+    let payload = read_backup_payload(backup_path)?;
     let restore_safety = payload.restore_safety();
     if !restore_safety.supported {
         return Err(restore_safety.message);
     }
-
-    let pool = wait_for_sqlite_pool(&app).await?;
-    restore_backup_payload(&pool, &payload, strategy).await?;
-    Ok(())
+    let mut file = File::open(backup_path).map_err(|error| {
+        format!(
+            "failed to read backup archive `{}`: {error}",
+            backup_path.display()
+        )
+    })?;
+    let mut hasher = Sha256::new();
+    let mut size_bytes = 0_u64;
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let count = file
+            .read(&mut buffer)
+            .map_err(|error| format!("failed to fingerprint backup archive: {error}"))?;
+        if count == 0 {
+            break;
+        }
+        size_bytes = size_bytes
+            .checked_add(count as u64)
+            .ok_or_else(|| "backup archive is too large to inspect".to_string())?;
+        if size_bytes > MAX_BACKUP_ARCHIVE_BYTES {
+            return Err("backup archive exceeds the archive size limit".to_string());
+        }
+        hasher.update(&buffer[..count]);
+    }
+    Ok((
+        payload.preview(),
+        format!("{:x}", hasher.finalize()),
+        size_bytes,
+    ))
 }
 
+pub(crate) async fn restore_backup_from_path(
+    pool: &Pool<Sqlite>,
+    backup_path: &Path,
+    strategy: RestoreStrategy,
+    restore_started_at_ms: i64,
+) -> Result<(), String> {
+    let payload = read_backup_payload(backup_path)?;
+    let restore_safety = payload.restore_safety();
+    if !restore_safety.supported {
+        return Err(restore_safety.message);
+    }
+    let payload = normalize_active_restore_boundaries(payload, restore_started_at_ms);
+    restore_backup_payload_with_receipt(pool, &payload, strategy, None).await
+}
+
+pub(crate) async fn restore_backup_from_path_with_receipt(
+    pool: &Pool<Sqlite>,
+    backup_path: &Path,
+    strategy: RestoreStrategy,
+    restore_started_at_ms: i64,
+    request_id: &str,
+    archive_sha256: &str,
+) -> Result<(), String> {
+    let payload = read_backup_payload(backup_path)?;
+    let restore_safety = payload.restore_safety();
+    if !restore_safety.supported {
+        return Err(restore_safety.message);
+    }
+    let payload = normalize_active_restore_boundaries(payload, restore_started_at_ms);
+    restore_backup_payload_with_receipt(
+        pool,
+        &payload,
+        strategy,
+        Some(RestoreReceipt {
+            request_id,
+            archive_sha256,
+        }),
+    )
+    .await
+}
+
+#[cfg(test)]
 async fn restore_backup_payload(
     pool: &Pool<Sqlite>,
     payload: &BackupPayload,
     strategy: RestoreStrategy,
+) -> Result<(), String> {
+    restore_backup_payload_with_receipt(pool, payload, strategy, None).await
+}
+
+struct RestoreReceipt<'a> {
+    request_id: &'a str,
+    archive_sha256: &'a str,
+}
+
+async fn restore_backup_payload_with_receipt(
+    pool: &Pool<Sqlite>,
+    payload: &BackupPayload,
+    strategy: RestoreStrategy,
+    receipt: Option<RestoreReceipt<'_>>,
 ) -> Result<(), String> {
     let mut tx = pool
         .begin()
@@ -1026,7 +1121,6 @@ async fn restore_backup_payload(
         RestoreStrategy::Replace => {
             repositories::session_title_samples::clear_for_restore(&mut tx).await?;
             repositories::sessions::clear_for_restore(&mut tx).await?;
-            repositories::settings::clear_for_restore(&mut tx).await?;
             repositories::icon_cache::clear_for_restore(&mut tx).await?;
             repositories::web_activity::clear_for_restore(&mut tx).await?;
             repositories::tools::clear_for_restore(&mut tx).await?;
@@ -1042,7 +1136,11 @@ async fn restore_backup_payload(
                 &session_id_map,
             )
             .await?;
-            repositories::settings::insert_for_restore(&mut tx, &payload.settings).await?;
+            repositories::settings::replace_for_restore_preserving_host_integrations(
+                &mut tx,
+                &payload.settings,
+            )
+            .await?;
             repositories::icon_cache::insert_for_restore(&mut tx, &payload.icon_cache).await?;
             repositories::web_activity::insert_for_restore(&mut tx, &payload.web_activity_segments)
                 .await?;
@@ -1072,6 +1170,13 @@ async fn restore_backup_payload(
                 &payload.import_batches,
                 &payload.import_exact_sessions,
                 &payload.import_time_buckets,
+            )
+            .await?;
+            let generation = restore_generation()?;
+            repositories::scheduled_backup::disable_and_reset_in_transaction(
+                &mut tx,
+                &generation,
+                now_ms_i64(),
             )
             .await?;
         }
@@ -1125,10 +1230,87 @@ async fn restore_backup_payload(
         }
     }
 
+    if let Some(receipt) = receipt {
+        repositories::backup_restore::record_receipt(
+            &mut tx,
+            receipt.request_id,
+            receipt.archive_sha256,
+            strategy,
+            now_ms_i64(),
+        )
+        .await?;
+    }
+
     tx.commit()
         .await
         .map_err(|error| format!("failed to commit restore transaction: {error}"))?;
     Ok(())
+}
+
+fn restore_generation() -> Result<String, String> {
+    let mut bytes = [0_u8; 16];
+    getrandom::fill(&mut bytes)
+        .map_err(|error| format!("failed to generate restore schedule generation: {error}"))?;
+    Ok(format!(
+        "restore-{}",
+        bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    ))
+}
+
+fn normalize_active_restore_boundaries(
+    mut payload: BackupPayload,
+    restore_started_at_ms: i64,
+) -> BackupPayload {
+    let exported_at_ms = i64::try_from(payload.meta.exported_at_ms).unwrap_or(i64::MAX);
+    let restore_boundary = exported_at_ms.min(restore_started_at_ms);
+    let mut restored_session_ends = HashMap::new();
+
+    for session in &mut payload.sessions {
+        if session.end_time.is_none() {
+            let end_time = restore_boundary.max(session.start_time);
+            session.end_time = Some(end_time);
+            session.duration = Some(end_time.saturating_sub(session.start_time));
+        }
+        if let Some(end_time) = session.end_time {
+            restored_session_ends.insert(session.id, end_time.max(session.start_time));
+        }
+    }
+
+    for sample in &mut payload.title_samples {
+        if sample.end_time.is_none() {
+            let session_end = restored_session_ends
+                .get(&sample.session_id)
+                .copied()
+                .unwrap_or(restore_boundary);
+            sample.end_time = Some(session_end.min(restore_boundary).max(sample.start_time));
+        }
+    }
+
+    for segment in &mut payload.web_activity_segments {
+        if segment.end_time.is_none() {
+            let native_end = segment
+                .native_session_id
+                .and_then(|session_id| restored_session_ends.get(&session_id).copied())
+                .unwrap_or(restore_boundary);
+            let end_time = segment
+                .updated_at
+                .min(native_end)
+                .min(restore_boundary)
+                .max(segment.start_time);
+            segment.end_time = Some(end_time);
+            segment.duration = Some(end_time.saturating_sub(segment.start_time));
+            segment.updated_at = end_time;
+        }
+    }
+
+    payload
+}
+
+fn now_ms_i64() -> i64 {
+    now_ms().min(i64::MAX as u64) as i64
 }
 
 pub async fn preview_backup(backup_path: String) -> Result<BackupPreview, String> {
@@ -1182,6 +1364,34 @@ mod tests {
             );
         }
         fs::remove_file(path).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scheduled_backup_archive_is_published_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        tauri::async_runtime::block_on(async {
+            let root = std::env::temp_dir().join(format!(
+                "patina-scheduled-backup-permissions-{}-{}",
+                std::process::id(),
+                crate::app::runtime::now_ms()
+            ));
+            fs::create_dir_all(&root).unwrap();
+            let target = root.join("scheduled.zip");
+            let pool = setup_test_db().await;
+
+            export_scheduled_backup_create_new(&pool, &target)
+                .await
+                .unwrap();
+
+            assert_eq!(
+                fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+            pool.close().await;
+            fs::remove_dir_all(root).unwrap();
+        });
     }
 
     #[cfg(unix)]
@@ -1670,6 +1880,12 @@ mod tests {
         pool.execute(db_schema::WEB_ACTIVITY_SESSION_SCHEMA_SQL)
             .await
             .unwrap();
+        pool.execute(db_schema::SCHEDULED_BACKUP_SCHEMA_SQL)
+            .await
+            .unwrap();
+        pool.execute(db_schema::BACKUP_RESTORE_RECEIPT_SCHEMA_SQL)
+            .await
+            .unwrap();
         pool.execute(db_schema::ACTIVITY_IMPORT_SCHEMA_SQL)
             .await
             .unwrap();
@@ -1724,6 +1940,160 @@ mod tests {
             import_exact_sessions: Vec::new(),
             import_time_buckets: Vec::new(),
         }
+    }
+
+    #[test]
+    fn restore_seals_active_session_title_and_web_boundaries() {
+        let mut payload = payload_with_bound_web_activity();
+        payload.sessions[0].end_time = None;
+        payload.sessions[0].duration = None;
+        payload.title_samples.push(BackupTitleSample {
+            id: 30,
+            session_id: 10,
+            title: "Active title".to_string(),
+            start_time: 2_000,
+            end_time: None,
+        });
+        payload.web_activity_segments[0].start_time = 3_000;
+        payload.web_activity_segments[0].end_time = None;
+        payload.web_activity_segments[0].duration = None;
+        payload.web_activity_segments[0].updated_at = 4_500;
+
+        let normalized = normalize_active_restore_boundaries(payload, 7_000);
+
+        assert_eq!(normalized.sessions[0].end_time, Some(5_000));
+        assert_eq!(normalized.sessions[0].duration, Some(4_000));
+        assert_eq!(normalized.title_samples[0].end_time, Some(5_000));
+        assert_eq!(normalized.web_activity_segments[0].end_time, Some(4_500));
+        assert_eq!(normalized.web_activity_segments[0].duration, Some(1_500));
+        assert_eq!(normalized.web_activity_segments[0].updated_at, 4_500);
+    }
+
+    #[test]
+    fn replace_restore_preserves_current_host_integration_settings() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            let mut tx = pool.begin().await.unwrap();
+            repositories::settings::insert_for_restore(
+                &mut tx,
+                &[
+                    BackupSetting {
+                        key: "local_api_port".to_string(),
+                        value: "15555".to_string(),
+                    },
+                    BackupSetting {
+                        key: "web_activity_token".to_string(),
+                        value: "current-browser-token".to_string(),
+                    },
+                    BackupSetting {
+                        key: "remote_status_bridge_enabled".to_string(),
+                        value: "0".to_string(),
+                    },
+                    BackupSetting {
+                        key: "webdav_backup_url".to_string(),
+                        value: "https://current.example/dav".to_string(),
+                    },
+                ],
+            )
+            .await
+            .unwrap();
+            tx.commit().await.unwrap();
+
+            let mut payload = payload_with_bound_web_activity();
+            payload.settings = vec![
+                BackupSetting {
+                    key: "local_api_port".to_string(),
+                    value: "16666".to_string(),
+                },
+                BackupSetting {
+                    key: "local_api_token".to_string(),
+                    value: "archived-api-token".to_string(),
+                },
+                BackupSetting {
+                    key: "web_activity_token".to_string(),
+                    value: "archived-browser-token".to_string(),
+                },
+                BackupSetting {
+                    key: "remote_status_bridge_enabled".to_string(),
+                    value: "1".to_string(),
+                },
+                BackupSetting {
+                    key: "webdav_backup_url".to_string(),
+                    value: "https://archived.example/dav".to_string(),
+                },
+                BackupSetting {
+                    key: "language".to_string(),
+                    value: "en-US".to_string(),
+                },
+            ];
+
+            restore_backup_payload(&pool, &payload, RestoreStrategy::Replace)
+                .await
+                .unwrap();
+
+            let settings = repositories::settings::fetch_all_for_backup(&pool)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|setting| (setting.key, setting.value))
+                .collect::<HashMap<_, _>>();
+            assert_eq!(
+                settings.get("local_api_port").map(String::as_str),
+                Some("15555")
+            );
+            assert!(!settings.contains_key("local_api_token"));
+            assert_eq!(
+                settings.get("web_activity_token").map(String::as_str),
+                Some("current-browser-token")
+            );
+            assert_eq!(
+                settings
+                    .get("remote_status_bridge_enabled")
+                    .map(String::as_str),
+                Some("0")
+            );
+            assert_eq!(
+                settings.get("webdav_backup_url").map(String::as_str),
+                Some("https://current.example/dav")
+            );
+            assert_eq!(settings.get("language").map(String::as_str), Some("en-US"));
+        });
+    }
+
+    #[test]
+    fn merge_restore_does_not_import_missing_host_integration_settings() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            let mut payload = payload_with_bound_web_activity();
+            payload.settings = vec![
+                BackupSetting {
+                    key: "local_api_port".to_string(),
+                    value: "16666".to_string(),
+                },
+                BackupSetting {
+                    key: "remote_status_bridge_url".to_string(),
+                    value: "wss://archived.example/status".to_string(),
+                },
+                BackupSetting {
+                    key: "theme_mode".to_string(),
+                    value: "dark".to_string(),
+                },
+            ];
+
+            restore_backup_payload(&pool, &payload, RestoreStrategy::Merge)
+                .await
+                .unwrap();
+
+            let settings = repositories::settings::fetch_all_for_backup(&pool)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|setting| (setting.key, setting.value))
+                .collect::<HashMap<_, _>>();
+            assert!(!settings.contains_key("local_api_port"));
+            assert!(!settings.contains_key("remote_status_bridge_url"));
+            assert_eq!(settings.get("theme_mode").map(String::as_str), Some("dark"));
+        });
     }
 
     #[test]

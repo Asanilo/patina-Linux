@@ -252,6 +252,7 @@ async fn table_has_columns(
         "tool_software_reminder_rules" => "PRAGMA table_info(tool_software_reminder_rules)",
         "web_activity_segments" => "PRAGMA table_info(web_activity_segments)",
         "web_activity_native_sessions" => "PRAGMA table_info(web_activity_native_sessions)",
+        "backup_restore_receipts" => "PRAGMA table_info(backup_restore_receipts)",
         "scheduled_backup_config" => "PRAGMA table_info(scheduled_backup_config)",
         "scheduled_backup_runs" => "PRAGMA table_info(scheduled_backup_runs)",
         "import_batches" => "PRAGMA table_info(import_batches)",
@@ -798,6 +799,21 @@ async fn has_web_activity_session_schema(pool: &Pool<Sqlite>) -> Result<bool, St
     Ok(columns_ready && index_ready && trigger_ready)
 }
 
+async fn has_backup_restore_receipt_schema(pool: &Pool<Sqlite>) -> Result<bool, String> {
+    Ok(table_exists(pool, "backup_restore_receipts").await?
+        && table_has_columns(
+            pool,
+            "backup_restore_receipts",
+            &[
+                "request_id",
+                "archive_sha256",
+                "strategy",
+                "completed_at_ms",
+            ],
+        )
+        .await?)
+}
+
 async fn has_scheduled_backup_schema(pool: &Pool<Sqlite>) -> Result<bool, String> {
     if !table_exists(pool, "scheduled_backup_config").await?
         || !table_exists(pool, "scheduled_backup_runs").await?
@@ -956,7 +972,8 @@ async fn has_current_schema(pool: &Pool<Sqlite>) -> Result<bool, String> {
         && has_web_activity_schema(pool).await?
         && has_scheduled_backup_schema(pool).await?
         && has_activity_import_schema(pool).await?
-        && has_web_activity_session_schema(pool).await?)
+        && has_web_activity_session_schema(pool).await?
+        && has_backup_restore_receipt_schema(pool).await?)
 }
 
 async fn normalize_current_baseline_migration_history_for_pool(
@@ -983,6 +1000,8 @@ async fn normalize_current_baseline_migration_history_for_pool(
         expected.truncate(5);
     } else if !has_web_activity_session_schema(pool).await? {
         expected.truncate(6);
+    } else if !has_backup_restore_receipt_schema(pool).await? {
+        expected.truncate(7);
     }
     if expected.is_empty() {
         return Ok(false);
@@ -1097,6 +1116,7 @@ pub(crate) async fn validate_migrated_database_copy(
             "icon_cache",
             "web_activity_segments",
             "web_activity_native_sessions",
+            "backup_restore_receipts",
             "tool_reminders",
             "tool_timers",
             "tool_timer_laps",
@@ -1246,6 +1266,18 @@ mod tests {
                 .unwrap();
 
             assert!(has_web_activity_session_schema(&pool).await.unwrap());
+        });
+    }
+
+    #[test]
+    fn backup_restore_receipt_schema_creates_completion_table() {
+        tauri::async_runtime::block_on(async {
+            let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+            pool.execute(schema::BACKUP_RESTORE_RECEIPT_SCHEMA_SQL)
+                .await
+                .unwrap();
+
+            assert!(has_backup_restore_receipt_schema(&pool).await.unwrap());
         });
     }
 
