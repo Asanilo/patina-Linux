@@ -222,7 +222,7 @@ pub struct AudioParticipationRequest {
     pub enabled: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct LocalApiPortRequest {
     pub port: u16,
 }
@@ -270,6 +270,17 @@ pub struct ClassificationMutationRequest {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ClassificationMutationsRequest {
     pub mutations: Vec<ClassificationMutationRequest>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct AppSettingMutationRequest {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct AppSettingsMutationsRequest {
+    pub mutations: Vec<AppSettingMutationRequest>,
 }
 
 #[derive(Debug, Serialize)]
@@ -338,13 +349,13 @@ pub struct TrackerSettingsResponse {
     pub tracking_paused: bool,
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct RuntimeSettingsResponse {
     pub audio_participation_enabled: bool,
     pub browser_activity: BrowserActivitySettingsResponse,
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct BrowserActivitySettingsResponse {
     pub enabled: bool,
     pub port: u16,
@@ -352,14 +363,14 @@ pub struct BrowserActivitySettingsResponse {
     pub url_privacy: crate::domain::settings::WebActivityUrlPrivacyMode,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct DiagnosticsResponse {
     pub window_tracking: WindowTrackingDiagnostics,
     pub tracker_runtime: Option<TrackerRuntimeDiagnostics>,
     pub web_activity_bridge: Option<WebActivityBridgeSnapshot>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TrackerRuntimeDiagnostics {
     pub probe_status: TrackingRuntimeProbeStatus,
     pub degraded_reason: Option<String>,

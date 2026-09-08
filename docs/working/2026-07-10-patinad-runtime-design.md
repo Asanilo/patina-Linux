@@ -1,6 +1,6 @@
 # `patinad` 后台运行时设计
 
-> 状态：Stage 0 至 Stage 2H.2、Stage 2H.3a systemd 诊断、Stage 2H.3b.1/2 typed daemon client 与只读 runtime adapter、Stage 2H.3b.3 显式 desktop client 模式，以及 Stage 2H.3c.1 首批写侧 command 转发均已完成并验证；Stage 2H.3c 默认 owner 切换仍未完成。
+> 状态：Stage 0 至 Stage 2H.2、Stage 2H.3a systemd 诊断、Stage 2H.3b.1/2 typed daemon client 与只读 runtime adapter、Stage 2H.3b.3 显式 desktop client 模式，以及 Stage 2H.3c.1/2 Desktop 写侧转发与连接重配置均已完成并验证；Stage 2H.3c 默认 owner 切换仍未完成。
 > 生命周期：本设计是当前 `patinad` 实施依据；后台接管稳定完成后移入 `docs/archive/`。
 
 ## 1. 目标
@@ -198,7 +198,8 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 - 已完成：daemon owner 拆分，聚合 runtime 只保留装配和有序关闭
 - 已完成：显式 `--daemon-client-preview` 通过 typed daemon client 和 event stream 获取 tracking 状态，且不启动第二套 tracker
 - 已完成首批写侧转发：AFK threshold、tracking pause、audio participation、classification 与 Tools 通过 daemon API 执行
-- 待实施：普通 app settings、browser/local API 配置和其他仍直接访问 SQLite 的 Desktop 写侧迁移
+- 已完成：browser runtime、local API 配置和白名单内普通 app settings 由 Desktop Rust host 转发给 daemon；端口或 Token 变化会主动重建 client 与 event stream
+- 待实施：cleanup、backup/restore、remote backup 等其他仍直接访问 SQLite 的 Desktop 写侧迁移或明确 client-owned 边界
 
 验收：关闭 UI 后继续记录；重开 UI 恢复当前状态；AFK、锁屏、睡眠、恢复和异常封口正确；统计不倒退、不重复。
 
@@ -232,7 +233,8 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 - 已完成 Stage 2H.3b.2：`/current`、active session 与标准 SSE parser 已接入只读 runtime adapter，具有 subscribe-before-read、cursor replay、resync 全量重读、有限重连和显式 shutdown
 - 已完成 Stage 2H.3b.3：显式 preview 模式不运行 embedded tracker/API/browser/Tools，并复用现有 tracking commands 和前端事件；自动化与真实 GNOME 会话已验证唯一 daemon lease、完整状态读取，以及 desktop 退出后 daemon 持续追踪
 - 已完成 Stage 2H.3c.1：受管 daemon client state 承接 AFK threshold、tracking pause、audio participation、classification 和全部 Tools command；Tools SSE 失效通知会重读完整 snapshot，embedded 模式保持原行为
-- 待实施 Stage 2H.3c.2：普通 app settings、browser/local API 配置与剩余直接 SQLite 写侧切换；local API 换端口和 Token 轮换必须同时更新客户端连接状态
+- 已完成 Stage 2H.3c.2 核心设置迁移：browser/local API 配置与普通 app settings 通过 daemon API 写入；运行中换端口或轮换 Token 会通过共享 revision 主动重建 Desktop client、SSE、Tools 刷新和诊断请求。Desktop 会在发起首个资源写入前校验完整设置 patch；多个专用 runtime endpoint 之间不承诺跨资源事务，后续若开放非 UI 调用方，需升级为 daemon 侧统一批量命令或提供明确补偿语义
+- 待实施 Stage 2H.3c.2 收尾：cleanup、backup/restore、remote backup 等剩余 SQLite 写侧迁移或明确 client-owned 边界
 - 待实施 Stage 2H.3c.3：首次启动迁移、服务启停设置、默认 owner 切换和双 owner 验收
 - Tauri 改为 daemon desktop client，并保留 tray、通知、文件选择和 updater
 - 默认切换后 desktop 不启动或自动回退 embedded tracker；daemon 不可用时明确暂停、诊断和重启

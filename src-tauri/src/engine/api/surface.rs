@@ -276,6 +276,10 @@ const DAEMON_TRACKING_ENDPOINTS: &[ApiEndpoint] = &[
     },
     ApiEndpoint {
         method: "POST",
+        path: "/api/v1/settings/app",
+    },
+    ApiEndpoint {
+        method: "POST",
         path: "/api/v1/settings/runtime/audio-participation",
     },
     ApiEndpoint {
@@ -367,6 +371,7 @@ const DAEMON_TRACKING_ENDPOINTS: &[ApiEndpoint] = &[
 const DESKTOP_WRITE_OPERATIONS: &[&str] = &["app-mapping", "classification", "tracker-settings"];
 const DAEMON_TRACKING_WRITE_OPERATIONS: &[&str] = &[
     "app-mapping",
+    "app-settings",
     "classification",
     "local-api-configuration",
     "runtime-settings",
@@ -541,6 +546,7 @@ mod tests {
             surface.write_operations(),
             [
                 "app-mapping",
+                "app-settings",
                 "classification",
                 "local-api-configuration",
                 "runtime-settings",

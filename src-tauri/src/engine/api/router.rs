@@ -63,6 +63,9 @@ pub(crate) async fn route_request(
         ("POST", "/api/v1/settings/classification") => {
             handlers::classification::commit_classification_settings(context, body).await
         }
+        ("POST", "/api/v1/settings/app") => {
+            handlers::app_settings::commit_app_settings(context, body).await
+        }
         ("POST", "/api/v1/settings/runtime/audio-participation") => {
             handlers::runtime_settings::set_audio_participation(context, body).await
         }
@@ -692,6 +695,52 @@ mod tests {
             Some("{\"category\":\"research\",\"enabled\":true}".to_string())
         );
         assert_eq!(sink.events().len(), 3);
+
+        let app_settings = route(
+            &context,
+            surface,
+            "POST",
+            "/api/v1/settings/app",
+            serde_json::json!({
+                "mutations": [{"key": "theme_mode", "value": "dark"}]
+            }),
+        )
+        .await;
+        assert_eq!(app_settings.status, 200);
+        assert_eq!(
+            crate::data::repositories::tracker_settings::load_setting_value(&pool, "theme_mode")
+                .await
+                .unwrap(),
+            Some("dark".to_string())
+        );
+        assert_eq!(
+            route(
+                &context,
+                surface,
+                "POST",
+                "/api/v1/settings/app",
+                serde_json::json!({
+                    "mutations": [{"key": "not_allowed", "value": "1"}]
+                }),
+            )
+            .await
+            .status,
+            400
+        );
+        assert_eq!(
+            route(
+                &context,
+                surface,
+                "POST",
+                "/api/v1/settings/app",
+                serde_json::json!({
+                    "mutations": [{"key": "local_api_port", "value": "14841"}]
+                }),
+            )
+            .await
+            .status,
+            400
+        );
 
         let read_only_runtime_write = route(
             &context,

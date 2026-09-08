@@ -238,6 +238,8 @@ Tauri desktop 的 daemon transport 由 Rust host 持有 Bearer Token，前端 Ja
 
 Desktop command 的 owner 分流统一依赖受管的 typed daemon client state。显式 daemon client 模式下，已经迁移的 tracker、runtime setting、classification 与 Tools command 不得回落到本地 engine 或直接 SQLite；client 不可用时返回明确错误。Tools SSE 只表达失效通知，Desktop 收到后必须从 daemon 重读完整 snapshot，再复用现有前端事件契约，不能把失效通知冒充完整读模型。embedded 模式在迁移窗口内继续走原路径。尚未迁移的写侧必须保留在 2H.3c 清单中，不能因为只读切换完成就默认视为 daemon-owned。
 
+Local API 端口和 Token 属于 typed client 自身的连接配置。daemon 成功切换 listener 或凭据后，Desktop Rust host 必须从 owner-only 文件重载 Token、原子替换共享 client，并通过 revision 通知主动重建 SSE；不能等待旧连接偶然超时。daemon HTTP 响应不得返回新 Token；当前 Desktop 仅通过既有的特权 Tauri command 把轮换结果交给设置页显示和复制。普通 app settings 通过白名单批量 endpoint 由 daemon 事务写入；会重建运行资源的字段在该 endpoint 明确拒绝，继续使用各自专用接口。
+
 浏览器 UI 不是公开 Web 部署面。daemon 默认只监听 loopback，并校验 loopback Host 与严格 Origin；浏览器 UI 使用 same-origin、HttpOnly、SameSite session，不获得长期 API Token。owner-only Bearer Token 只供 MCP、CLI 和 Agent 使用；浏览器扩展继续使用独立 bridge credential。浏览器写侧开放前，必须增加 CSRF 防护和操作确认，并验证跨站请求、DNS rebinding 与日志泄漏边界。
 
 Tauri 是当前桌面客户端实现，不是长期协议 owner。未来可以在不改变 daemon、数据库、浏览器 UI、TUI 和 MCP 契约的前提下评估 GPUI 或其他 Linux 桌面 UI 框架；框架替换必须作为独立项目，以实测内存、启动速度、桌面集成完整性和维护成本决定。

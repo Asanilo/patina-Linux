@@ -85,6 +85,7 @@ pub async fn commit_app_setting_mutations(
     if mutations.is_empty() {
         return Ok(());
     }
+    validate_app_setting_mutations(mutations)?;
 
     let mut tx = pool
         .begin()
@@ -92,7 +93,6 @@ pub async fn commit_app_setting_mutations(
         .map_err(|error| format!("failed to start app settings transaction: {error}"))?;
 
     for mutation in mutations {
-        validate_app_setting_mutation(mutation)?;
         sqlx::query(
             "INSERT INTO settings (key, value) VALUES (?, ?)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -108,6 +108,13 @@ pub async fn commit_app_setting_mutations(
         .await
         .map_err(|error| format!("failed to commit app settings transaction: {error}"))?;
 
+    Ok(())
+}
+
+pub fn validate_app_setting_mutations(mutations: &[AppSettingMutation]) -> Result<(), String> {
+    for mutation in mutations {
+        validate_app_setting_mutation(mutation)?;
+    }
     Ok(())
 }
 

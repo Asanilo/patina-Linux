@@ -67,16 +67,34 @@ pub fn cmd_get_resource_diagnostics(app: tauri::AppHandle) -> ResourceDiagnostic
 }
 
 #[tauri::command]
-pub fn cmd_get_local_api_diagnostics(
-    api_server_state: State<crate::engine::api::server::ApiServerState>,
-    api_credentials: State<crate::engine::api::auth::ApiCredentialStore>,
-) -> LocalApiDiagnosticsSnapshot {
+pub async fn cmd_get_local_api_diagnostics(
+    app: tauri::AppHandle,
+    api_server_state: State<'_, crate::engine::api::server::ApiServerState>,
+    api_credentials: State<'_, crate::engine::api::auth::ApiCredentialStore>,
+) -> Result<LocalApiDiagnosticsSnapshot, String> {
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        let configuration = client
+            .local_api_configuration()
+            .await
+            .map_err(|error| error.to_string())?;
+        return Ok(build_local_api_diagnostics(
+            configuration.port,
+            PathBuf::from(configuration.token_path),
+            configuration.token_present,
+            true,
+        ));
+    }
     let confirmed_port = api_server_state.confirmed_port();
     let port = confirmed_port.unwrap_or(crate::engine::api::server::DEFAULT_PORT);
     let (token_path, token_present) = local_api_credential_diagnostics(&api_credentials);
     let listening = confirmed_port.map(is_local_api_listening).unwrap_or(false);
 
-    build_local_api_diagnostics(port, token_path, token_present, listening)
+    Ok(build_local_api_diagnostics(
+        port,
+        token_path,
+        token_present,
+        listening,
+    ))
 }
 
 fn local_api_credential_diagnostics(
@@ -94,6 +112,18 @@ pub async fn cmd_get_local_api_settings(
     app: tauri::AppHandle,
     api_credentials: State<'_, crate::engine::api::auth::ApiCredentialStore>,
 ) -> Result<LocalApiSettingsSnapshot, String> {
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        let configuration = client
+            .local_api_configuration()
+            .await
+            .map_err(|error| error.to_string())?;
+        return Ok(LocalApiSettingsSnapshot {
+            port: configuration.port,
+            token: api_credentials.token()?,
+            token_path: configuration.token_path,
+            base_url: configuration.base_url,
+        });
+    }
     let pool = crate::data::sqlite_pool::wait_for_sqlite_pool(&app).await?;
     let stored = crate::data::repositories::app_settings::load_local_api_settings(&pool)
         .await

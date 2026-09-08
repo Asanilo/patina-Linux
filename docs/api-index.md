@@ -34,7 +34,7 @@ Current caveats:
 - `/api/v1/openapi.json` exposes the machine-readable OpenAPI 3.1 schema with paths, query/path parameters, request bodies, response envelopes, auth, error envelopes, and field-level component schemas.
 - The OpenAPI server URL uses a configurable `{port}` variable whose default is `14840`.
 - This document remains the human-maintained reference for behavior notes and implementation caveats.
-- The desktop runtime exposes the shared JSON endpoints below. Default `patinad` mode exposes authenticated reads plus SSE and rejects all `POST` endpoints. Explicit `--track` mode is the current runtime owner and additionally exposes the bounded app-mapping, classification, tracker-settings, runtime-settings, and Tools writes listed by `/api/v1/capabilities`.
+- The desktop runtime exposes the shared JSON endpoints below. Default `patinad` mode exposes authenticated reads plus SSE and rejects all `POST` endpoints. Explicit `--track` mode is the current runtime owner and additionally exposes the bounded app-mapping, app-settings, classification, tracker-settings, runtime-settings, and Tools writes listed by `/api/v1/capabilities`.
 - Default daemon mode remains historical/read-only: `GET /api/v1/current` returns `503` and live tracker/browser diagnostics are `null`.
 - Stage 2H.2 preview mode is explicit: run `patinad --profile dev --serve-api --track --port 0`. It owns tracking, Tools, and the local API listener for that profile, serves a live `/current`, observes Linux lock/suspend/resume/shutdown, runs audio/MPRIS participation sources, and owns the browser activity bridge configured for that profile. Never run desktop and daemon tracking against the same profile.
 - Stage 2F capability migration, Stage 2F.1 browser crash/heartbeat semantics, and Stage 2F.2 loopback transport migration are complete. API, SSE, and the independent browser extension bridge use Axum with 32/8/8 fail-fast concurrency budgets, bounded handlers, strict Host/origin policies, and task-coupled listener readiness. The extension protocol remains `POST /web-activity` with its separate Token; its CORS response only echoes Firefox/Zen or Chromium extension origins and never returns `Access-Control-Allow-Origin: *`.
@@ -71,6 +71,7 @@ Current caveats:
 | `/api/v1/settings/tracker/afk-threshold` | `POST` | Implemented | Update idle timeout threshold |
 | `/api/v1/settings/tracker/pause` | `POST` | Implemented | Set tracking pause state |
 | `/api/v1/settings/classification` | `POST` | Implemented | Commit a validated classification mutation batch |
+| `/api/v1/settings/app` | `POST` | Tracking daemon | Commit a validated non-resource app settings batch |
 | `/api/v1/settings/runtime` | `GET` | Implemented | Sanitized audio and browser activity runtime settings |
 | `/api/v1/settings/runtime/audio-participation` | `POST` | Tracking daemon | Apply and persist the Linux audio participation switch |
 | `/api/v1/settings/runtime/browser-activity` | `POST` | Tracking daemon | Atomically replace browser listener, Token, and URL privacy settings |
@@ -114,7 +115,7 @@ Current scope:
 - Auth model: bearer token through `components.securitySchemes.bearerAuth`
 - Paths: the exact endpoints enabled for the current desktop or daemon API surface
 - Parameters: query params for sessions, summary range, trend, web activity; path params for app management
-- Request bodies: classify, rename, exclude, AFK threshold, tracking pause, classification batch, audio participation, complete browser runtime configuration, confirmed service restart, reminders, timers, software reminders, and pomodoro writes
+- Request bodies: classify, rename, exclude, AFK threshold, tracking pause, classification/app-settings batches, audio participation, complete browser runtime configuration, confirmed service restart, reminders, timers, software reminders, and pomodoro writes
 - Responses: success envelopes and standard `400` / `401` / `403` / `404` / `409` / `413` / `500` / `503` error envelopes
 - Components: field-level schemas for health, capabilities, all runtime event variants, diagnostics, current window, sessions, active session, summaries, trend, web activity, apps, tracker/runtime settings, AI activity context, Tools snapshots, alerts, and Tools write requests
 
@@ -928,6 +929,29 @@ curl -s -X POST "$PATINA_API_BASE/api/v1/settings/classification" \
 ```
 
 `value: null` deletes the key. Invalid keys or malformed override JSON reject the whole batch before any write; valid batches commit in one transaction.
+
+### `POST /api/v1/settings/app`
+
+This tracking-daemon endpoint exists primarily for trusted Patina clients. It accepts at most 256 mutations and commits the validated batch in one SQLite transaction.
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/settings/app" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"mutations":[{"key":"theme_mode","value":"dark"}]}'
+```
+
+Schema:
+
+```json
+{
+  "mutations": [
+    { "key": "theme_mode", "value": "dark" }
+  ]
+}
+```
+
+Only non-resource preferences such as appearance, language, timeline display, desktop behavior, startup preferences, and remote-status configuration are accepted. Tracker pause/AFK, audio, browser bridge, and local API settings are rejected here and must use their dedicated endpoints so live resources and persistence cannot diverge.
 
 ### `GET /api/v1/settings/runtime`
 

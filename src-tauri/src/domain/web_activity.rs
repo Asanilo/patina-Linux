@@ -38,7 +38,7 @@ pub struct SanitizedWebActivityInput {
     pub favicon_url: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WebActivityBridgeSnapshot {
     pub enabled: bool,

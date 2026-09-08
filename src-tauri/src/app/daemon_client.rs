@@ -1,4 +1,4 @@
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager, Runtime};
@@ -8,17 +8,33 @@ use tauri::{AppHandle, Manager, Runtime};
 #[allow(dead_code)]
 pub mod runtime;
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct PatinadClientState {
-    client: RwLock<Option<crate::platform::daemon_client::PatinadClient>>,
+    client: Arc<RwLock<Option<crate::platform::daemon_client::PatinadClient>>>,
+    revision_tx: tokio::sync::watch::Sender<u64>,
+}
+
+impl Default for PatinadClientState {
+    fn default() -> Self {
+        let (revision_tx, _) = tokio::sync::watch::channel(0);
+        Self {
+            client: Arc::new(RwLock::new(None)),
+            revision_tx,
+        }
+    }
 }
 
 impl PatinadClientState {
     pub fn install(&self, client: crate::platform::daemon_client::PatinadClient) {
-        match self.client.write() {
-            Ok(mut current) => *current = Some(client),
-            Err(poisoned) => *poisoned.into_inner() = Some(client),
+        {
+            match self.client.write() {
+                Ok(mut current) => *current = Some(client),
+                Err(poisoned) => *poisoned.into_inner() = Some(client),
+            }
         }
+        self.revision_tx.send_modify(|revision| {
+            *revision = revision.saturating_add(1);
+        });
     }
 
     pub fn require(&self) -> Result<crate::platform::daemon_client::PatinadClient, String> {
@@ -27,6 +43,17 @@ impl PatinadClientState {
             Err(poisoned) => poisoned.into_inner().clone(),
         };
         client.ok_or_else(|| "patinad client is not configured for this profile".to_string())
+    }
+
+    pub fn replace_configuration(&self, port: u16, token: String) -> Result<(), String> {
+        let client = crate::platform::daemon_client::PatinadClient::new(port, token)
+            .map_err(|error| error.to_string())?;
+        self.install(client);
+        Ok(())
+    }
+
+    pub(crate) fn subscribe(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.revision_tx.subscribe()
     }
 }
 
@@ -43,6 +70,151 @@ pub fn command_client<R: Runtime>(
         .ok_or_else(|| "patinad client state is unavailable".to_string())?
         .require()
         .map(Some)
+}
+
+pub async fn route_owned_app_settings<R: Runtime>(
+    app: &AppHandle<R>,
+    client: &crate::platform::daemon_client::PatinadClient,
+    mutations: Vec<crate::data::repositories::app_settings::AppSettingMutation>,
+) -> Result<Vec<crate::data::repositories::app_settings::AppSettingMutation>, String> {
+    crate::data::repositories::app_settings::validate_app_setting_mutations(&mutations)?;
+    if mutations
+        .iter()
+        .any(|mutation| matches!(mutation.key.as_str(), "local_api_port" | "local_api_token"))
+    {
+        return Err("local API settings require the dedicated configuration commands".to_string());
+    }
+
+    let has_browser_settings = mutations
+        .iter()
+        .any(|mutation| is_browser_runtime_setting(&mutation.key));
+    let mut browser_configuration = if has_browser_settings {
+        let pool = crate::data::sqlite_pool::wait_for_sqlite_pool(app).await?;
+        let current =
+            crate::data::repositories::app_settings::load_runtime_activity_settings(&pool)
+                .await
+                .map_err(|error| format!("failed to load browser activity settings: {error}"))?;
+        Some(
+            crate::engine::api::runtime_control::BrowserActivityRuntimeConfiguration {
+                enabled: current.web_activity_bridge.enabled,
+                port: current.web_activity_bridge.port,
+                token: current.web_activity_bridge.token,
+                url_privacy: current.web_activity_url_privacy,
+            },
+        )
+    } else {
+        None
+    };
+    let mut afk_threshold = None;
+    let mut tracking_paused = None;
+    let mut audio_participation_enabled = None;
+    let mut remaining = Vec::new();
+
+    for mutation in mutations {
+        match mutation.key.as_str() {
+            "idle_timeout_secs" => {
+                let seconds = mutation
+                    .value
+                    .parse::<u64>()
+                    .map_err(|_| "idle timeout setting must be an integer".to_string())?;
+                if !(60..=86_400).contains(&seconds) {
+                    return Err("idle timeout setting must be between 60 and 86400".to_string());
+                }
+                afk_threshold = Some(seconds);
+            }
+            "tracking_paused" => {
+                tracking_paused = Some(crate::domain::settings::parse_boolean_setting(
+                    &mutation.value,
+                    false,
+                ));
+            }
+            "audio_participation_enabled" => {
+                audio_participation_enabled = Some(crate::domain::settings::parse_boolean_setting(
+                    &mutation.value,
+                    true,
+                ));
+            }
+            "web_activity_enabled" => {
+                require_browser_configuration(&mut browser_configuration)?.enabled =
+                    crate::domain::settings::parse_boolean_setting(&mutation.value, false);
+            }
+            "web_activity_port" => {
+                require_browser_configuration(&mut browser_configuration)?.port =
+                    crate::domain::settings::parse_web_activity_port(&mutation.value)
+                        .ok_or_else(|| "browser activity port is invalid".to_string())?;
+            }
+            "web_activity_token" => {
+                require_browser_configuration(&mut browser_configuration)?.token = mutation.value;
+            }
+            "web_activity_url_privacy" => {
+                require_browser_configuration(&mut browser_configuration)?.url_privacy =
+                    crate::domain::settings::parse_web_activity_url_privacy(Some(&mutation.value));
+            }
+            _ => remaining.push(mutation),
+        }
+    }
+
+    if let Some(configuration) = browser_configuration.as_mut() {
+        configuration.token = configuration.token.trim().to_string();
+        crate::engine::api::runtime_control::validate_browser_activity_configuration(configuration)
+            .map_err(runtime_control_error_message)?;
+    }
+
+    if let Some(seconds) = afk_threshold {
+        client
+            .set_afk_threshold(seconds)
+            .await
+            .map_err(|error| error.to_string())?;
+    }
+    if let Some(paused) = tracking_paused {
+        client
+            .set_tracking_paused(paused)
+            .await
+            .map_err(|error| error.to_string())?;
+    }
+    if let Some(enabled) = audio_participation_enabled {
+        client
+            .set_audio_participation_enabled(enabled)
+            .await
+            .map_err(|error| error.to_string())?;
+    }
+    if let Some(configuration) = browser_configuration {
+        client
+            .configure_browser_activity(configuration)
+            .await
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(remaining)
+}
+
+fn require_browser_configuration(
+    configuration: &mut Option<
+        crate::engine::api::runtime_control::BrowserActivityRuntimeConfiguration,
+    >,
+) -> Result<&mut crate::engine::api::runtime_control::BrowserActivityRuntimeConfiguration, String> {
+    configuration
+        .as_mut()
+        .ok_or_else(|| "browser activity configuration is unavailable".to_string())
+}
+
+fn runtime_control_error_message(
+    error: crate::engine::api::runtime_control::RuntimeControlError,
+) -> String {
+    match error {
+        crate::engine::api::runtime_control::RuntimeControlError::InvalidInput(message)
+        | crate::engine::api::runtime_control::RuntimeControlError::Conflict(message)
+        | crate::engine::api::runtime_control::RuntimeControlError::Internal(message) => message,
+    }
+}
+
+fn is_browser_runtime_setting(key: &str) -> bool {
+    matches!(
+        key,
+        "web_activity_enabled"
+            | "web_activity_port"
+            | "web_activity_token"
+            | "web_activity_url_privacy"
+    )
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -190,6 +362,23 @@ mod tests {
             ])
             .await
             .unwrap();
+        client
+            .commit_app_settings(vec![crate::engine::api::types::AppSettingMutationRequest {
+                key: "theme_mode".to_string(),
+                value: "dark".to_string(),
+            }])
+            .await
+            .unwrap();
+        assert!(matches!(
+            client
+                .commit_app_settings(vec![crate::engine::api::types::AppSettingMutationRequest {
+                    key: "not_allowed".to_string(),
+                    value: "1".to_string(),
+                },])
+                .await
+                .unwrap_err(),
+            PatinadClientError::Http { status: 400, .. }
+        ));
         let rejected = client.set_afk_threshold(10).await.unwrap_err();
         assert!(matches!(
             rejected,
@@ -276,6 +465,40 @@ mod tests {
             super::runtime::PatinadRuntimeConnectionStatus::Stopped
         );
         runtime.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn runtime_adapter_reconnects_with_replaced_client_configuration() {
+        let first_runtime = TestApiRuntime::start_tracking().await;
+        let second_runtime = TestApiRuntime::start_tracking().await;
+        second_runtime.replace_tracking_snapshot(tracking_snapshot("obsidian", 2_000));
+        second_runtime
+            .replace_active_session("Obsidian", "obsidian", 1_900)
+            .await;
+
+        let client_state = super::PatinadClientState::default();
+        client_state.install(PatinadClient::new(first_runtime.port, TEST_TOKEN).unwrap());
+        let output = std::sync::Arc::new(super::runtime::PatinadRuntimeState::default());
+        let adapter = super::runtime::PatinadRuntimeAdapter::new_with_client_state(
+            client_state.clone(),
+            output.clone(),
+        );
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let task = tokio::spawn(async move { adapter.run(shutdown_rx).await });
+
+        wait_for_runtime(&output, "ghostty").await;
+        client_state
+            .replace_configuration(second_runtime.port, TEST_TOKEN.to_string())
+            .unwrap();
+        first_runtime.shutdown().await;
+        wait_for_runtime(&output, "obsidian").await;
+
+        shutdown_tx.send(true).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(1), task)
+            .await
+            .expect("runtime adapter should stop after reconnect")
+            .unwrap();
+        second_runtime.shutdown().await;
     }
 
     #[tokio::test]

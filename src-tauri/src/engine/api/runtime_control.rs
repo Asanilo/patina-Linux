@@ -2,6 +2,8 @@ use crate::domain::settings::WebActivityUrlPrivacyMode;
 use std::future::Future;
 use std::pin::Pin;
 
+const MAX_WEB_ACTIVITY_TOKEN_LEN: usize = 512;
+
 pub type RuntimeControlFuture<'a, T> =
     Pin<Box<dyn Future<Output = Result<T, RuntimeControlError>> + Send + 'a>>;
 
@@ -13,7 +15,29 @@ pub struct BrowserActivityRuntimeConfiguration {
     pub url_privacy: WebActivityUrlPrivacyMode,
 }
 
-#[derive(Clone, Debug, serde::Serialize, PartialEq, Eq)]
+pub fn validate_browser_activity_configuration(
+    configuration: &BrowserActivityRuntimeConfiguration,
+) -> Result<(), RuntimeControlError> {
+    if crate::domain::settings::parse_web_activity_port(&configuration.port.to_string()).is_none() {
+        return Err(RuntimeControlError::InvalidInput(
+            "browser activity port must be between 1024 and 65535".to_string(),
+        ));
+    }
+    let token = configuration.token.trim();
+    if token.len() > MAX_WEB_ACTIVITY_TOKEN_LEN || token.chars().any(char::is_control) {
+        return Err(RuntimeControlError::InvalidInput(
+            "browser activity token is invalid".to_string(),
+        ));
+    }
+    if configuration.enabled && token.is_empty() {
+        return Err(RuntimeControlError::InvalidInput(
+            "browser activity token is required when synchronization is enabled".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 pub struct LocalApiRuntimeSnapshot {
     pub port: u16,
     pub base_url: String,
@@ -21,14 +45,14 @@ pub struct LocalApiRuntimeSnapshot {
     pub token_present: bool,
 }
 
-#[derive(Clone, Debug, serde::Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 pub struct LocalApiPortApplyResult {
     pub configuration: LocalApiRuntimeSnapshot,
     pub previous_port: u16,
     pub reconnect_required: bool,
 }
 
-#[derive(Clone, Debug, serde::Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 pub struct LocalApiTokenRotationResult {
     pub configuration: LocalApiRuntimeSnapshot,
     pub reauthentication_required: bool,

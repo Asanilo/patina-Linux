@@ -269,6 +269,17 @@ fn paths(surface: ApiSurface) -> Value {
     });
     let object = paths.as_object_mut().expect("OpenAPI paths object");
     object.insert(
+        "/api/v1/settings/app".to_string(),
+        json!({
+            "post": post_operation(
+                "Commit a validated batch of non-resource app settings.",
+                vec![],
+                "AppSettingsMutationsRequest",
+                "OkResponse",
+            )
+        }),
+    );
+    object.insert(
         "/api/v1/settings/local-api".to_string(),
         json!({
             "get": get_operation(
@@ -1186,6 +1197,20 @@ fn schemas() -> Value {
         object_schema(vec![(
             "mutations",
             bounded_array_schema(schema_ref("ClassificationMutationRequest"), 256),
+        )]),
+    );
+    schemas.insert(
+        "AppSettingMutationRequest".to_string(),
+        object_schema(vec![
+            ("key", bounded_string_schema(1, 256)),
+            ("value", bounded_string_schema(0, 4096)),
+        ]),
+    );
+    schemas.insert(
+        "AppSettingsMutationsRequest".to_string(),
+        object_schema(vec![(
+            "mutations",
+            bounded_array_schema(schema_ref("AppSettingMutationRequest"), 256),
         )]),
     );
 

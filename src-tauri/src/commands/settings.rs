@@ -5,7 +5,7 @@ use crate::data::classification_service::commit_classification_setting_mutations
 use crate::data::repositories::app_settings::AppSettingMutation;
 use crate::data::repositories::classification_settings::ClassificationSettingMutation;
 use serde_json::json;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[derive(Clone, Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -104,6 +104,22 @@ pub async fn cmd_apply_local_api_port(
     api_server_state: State<'_, crate::engine::api::server::ApiServerState>,
     api_credentials: State<'_, crate::engine::api::auth::ApiCredentialStore>,
 ) -> Result<crate::commands::diagnostics::LocalApiSettingsSnapshot, String> {
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        let result = client
+            .apply_local_api_port(port)
+            .await
+            .map_err(|error| error.to_string())?;
+        let token = api_credentials.token()?;
+        app.state::<crate::app::daemon_client::PatinadClientState>()
+            .replace_configuration(result.configuration.port, token.clone())?;
+        return local_api_settings_snapshot(
+            &api_credentials,
+            crate::domain::settings::LocalApiSettings {
+                port: result.configuration.port,
+                token,
+            },
+        );
+    }
     let settings = crate::engine::api::configuration::apply_port(
         &app,
         &api_server_state,
@@ -119,6 +135,23 @@ pub async fn cmd_rotate_local_api_token(
     app: AppHandle,
     api_credentials: State<'_, crate::engine::api::auth::ApiCredentialStore>,
 ) -> Result<crate::commands::diagnostics::LocalApiSettingsSnapshot, String> {
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        let result = client
+            .rotate_local_api_token()
+            .await
+            .map_err(|error| error.to_string())?;
+        let token_path = api_credentials.token_path()?;
+        let token = api_credentials.load_existing_at(&token_path)?;
+        app.state::<crate::app::daemon_client::PatinadClientState>()
+            .replace_configuration(result.configuration.port, token.clone())?;
+        return local_api_settings_snapshot(
+            &api_credentials,
+            crate::domain::settings::LocalApiSettings {
+                port: result.configuration.port,
+                token,
+            },
+        );
+    }
     let pool = crate::data::sqlite_pool::wait_for_sqlite_pool(&app).await?;
     let stored = crate::data::repositories::app_settings::load_local_api_settings(&pool)
         .await
@@ -145,12 +178,37 @@ pub async fn cmd_commit_app_settings(
     mutations: Vec<AppSettingMutationDto>,
     app: AppHandle,
 ) -> Result<(), String> {
-    let mutations = mutations
+    let mut mutations = mutations
         .into_iter()
         .map(AppSettingMutation::from)
         .collect::<Vec<_>>();
 
-    commit_app_setting_mutations_with_recovery(&app, &mutations).await?;
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        mutations =
+            crate::app::daemon_client::route_owned_app_settings(&app, &client, mutations).await?;
+        if !mutations.is_empty() {
+            let daemon_mutations = mutations
+                .into_iter()
+                .map(
+                    |mutation| crate::engine::api::types::AppSettingMutationRequest {
+                        key: mutation.key,
+                        value: mutation.value,
+                    },
+                )
+                .collect();
+            client
+                .commit_app_settings(daemon_mutations)
+                .await
+                .map_err(|error| error.to_string())?;
+        }
+        app.emit("app-settings-changed", json!({}))
+            .map_err(|error| format!("failed to emit settings refresh event: {error}"))?;
+        return Ok(());
+    }
+
+    if !mutations.is_empty() {
+        commit_app_setting_mutations_with_recovery(&app, &mutations).await?;
+    }
     app.emit("app-settings-changed", json!({}))
         .map_err(|error| format!("failed to emit settings refresh event: {error}"))?;
     Ok(())

@@ -1,11 +1,11 @@
 use serde::Serialize;
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, serde::Deserialize, Serialize, PartialEq, Eq)]
 pub struct PlatformTrackingDiagnostics {
     pub window_tracking: WindowTrackingDiagnostics,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, serde::Deserialize, Serialize, PartialEq, Eq)]
 pub struct WindowTrackingDiagnostics {
     pub status: String,
     pub reason: Option<String>,

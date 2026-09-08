@@ -147,6 +147,8 @@ Argument timestamps are milliseconds since Unix epoch.
 
 All Tools write tools require the tracking-owner daemon and the `tools` write scope. They return the complete Tools snapshot. Use them only after explicit user intent; creating reminders and starting timers are state-changing even though they are local-only.
 
+The HTTP API advertises an `app-settings` write scope for Patina Desktop's validated batch persistence. The MCP wrapper intentionally does not expose a generic key/value settings tool: agents should use the narrower tracker, runtime, app-mapping, and local API tools above. Add a dedicated typed MCP tool when a new setting needs agent control instead of forwarding arbitrary setting keys.
+
 Local API changes require the `local-api-configuration` write scope and explicit user intent. After a successful port change, the wrapper updates its in-process base URL. After Token rotation, the running wrapper rereads the owner-only path returned by the daemon; clients that supplied a fixed `PATINA_API_TOKEN` should still update their external configuration before restarting. Neither response contains the Token value.
 
 Service lifecycle tools are available only when capabilities advertise `service-lifecycle`:

@@ -1,4 +1,5 @@
 pub mod ai;
+pub mod app_settings;
 pub mod apps;
 pub mod capabilities;
 pub mod classification;

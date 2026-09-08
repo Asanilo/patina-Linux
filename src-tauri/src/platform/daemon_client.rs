@@ -10,9 +10,10 @@ use std::fmt;
 use std::time::Duration;
 
 use crate::engine::api::types::{
-    ActiveSessionResponse, AfkThresholdRequest, ApiError, ApiResponse, AudioParticipationRequest,
-    CapabilitiesResponse, ClassificationMutationRequest, ClassificationMutationsRequest,
-    CreateReminderRequest, CreateSoftwareReminderRuleRequest, CurrentWindowResponse,
+    ActiveSessionResponse, AfkThresholdRequest, ApiError, ApiResponse, AppSettingMutationRequest,
+    AppSettingsMutationsRequest, AudioParticipationRequest, CapabilitiesResponse,
+    ClassificationMutationRequest, ClassificationMutationsRequest, CreateReminderRequest,
+    CreateSoftwareReminderRuleRequest, CurrentWindowResponse, DiagnosticsResponse,
     StartPomodoroRequest, StartTimerRequest, TrackerSettingsResponse, TrackingPausedRequest,
 };
 use crate::engine::runtime_event::RuntimeEventEnvelope;
@@ -229,6 +230,18 @@ impl PatinadClient {
             .await
     }
 
+    pub async fn diagnostics(&self) -> Result<DiagnosticsResponse, PatinadClientError> {
+        self.get_json("/api/v1/diagnostics", "diagnostics").await
+    }
+
+    pub async fn local_api_configuration(
+        &self,
+    ) -> Result<crate::engine::api::runtime_control::LocalApiRuntimeSnapshot, PatinadClientError>
+    {
+        self.get_json("/api/v1/settings/local-api", "local API configuration")
+            .await
+    }
+
     pub async fn set_afk_threshold(&self, seconds: u64) -> Result<(), PatinadClientError> {
         self.post_ack(
             "/api/v1/settings/tracker/afk-threshold",
@@ -266,6 +279,43 @@ impl PatinadClient {
         Ok(())
     }
 
+    pub async fn configure_browser_activity(
+        &self,
+        configuration: crate::engine::api::runtime_control::BrowserActivityRuntimeConfiguration,
+    ) -> Result<crate::engine::api::types::BrowserActivitySettingsResponse, PatinadClientError>
+    {
+        self.post_json(
+            "/api/v1/settings/runtime/browser-activity",
+            &configuration,
+            "browser activity configuration",
+        )
+        .await
+    }
+
+    pub async fn apply_local_api_port(
+        &self,
+        port: u16,
+    ) -> Result<crate::engine::api::runtime_control::LocalApiPortApplyResult, PatinadClientError>
+    {
+        self.post_json(
+            "/api/v1/settings/local-api/port",
+            &crate::engine::api::types::LocalApiPortRequest { port },
+            "local API port update",
+        )
+        .await
+    }
+
+    pub async fn rotate_local_api_token(
+        &self,
+    ) -> Result<crate::engine::api::runtime_control::LocalApiTokenRotationResult, PatinadClientError>
+    {
+        self.post_empty_json(
+            "/api/v1/settings/local-api/token/rotate",
+            "local API token rotation",
+        )
+        .await
+    }
+
     pub async fn commit_classification_settings(
         &self,
         mutations: Vec<ClassificationMutationRequest>,
@@ -274,6 +324,18 @@ impl PatinadClient {
             "/api/v1/settings/classification",
             &ClassificationMutationsRequest { mutations },
             "classification settings update",
+        )
+        .await
+    }
+
+    pub async fn commit_app_settings(
+        &self,
+        mutations: Vec<AppSettingMutationRequest>,
+    ) -> Result<(), PatinadClientError> {
+        self.post_ack(
+            "/api/v1/settings/app",
+            &AppSettingsMutationsRequest { mutations },
+            "app settings update",
         )
         .await
     }

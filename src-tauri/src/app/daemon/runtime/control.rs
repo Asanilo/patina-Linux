@@ -1,12 +1,12 @@
 use super::web_activity::DaemonWebActivityControl;
 use crate::engine::api::runtime_control::{
-    ApiRuntimeControl, BrowserActivityRuntimeConfiguration, DaemonServiceRestartResult,
-    DaemonServiceRuntimeSnapshot, LocalApiPortApplyResult, LocalApiRuntimeSnapshot,
-    LocalApiTokenRotationResult, RuntimeControlError, RuntimeControlFuture,
+    validate_browser_activity_configuration, ApiRuntimeControl,
+    BrowserActivityRuntimeConfiguration, DaemonServiceRestartResult, DaemonServiceRuntimeSnapshot,
+    LocalApiPortApplyResult, LocalApiRuntimeSnapshot, LocalApiTokenRotationResult,
+    RuntimeControlError, RuntimeControlFuture,
 };
 use std::sync::Arc;
 
-const MAX_WEB_ACTIVITY_TOKEN_LEN: usize = 512;
 const STORAGE_ERROR_PREFIX: &str = "storage:";
 
 pub(crate) struct DaemonApiRuntimeControl {
@@ -123,7 +123,7 @@ impl ApiRuntimeControl for DaemonApiRuntimeControl {
     ) -> RuntimeControlFuture<'_, BrowserActivityRuntimeConfiguration> {
         Box::pin(async move {
             configuration.token = configuration.token.trim().to_string();
-            validate_browser_configuration(&configuration)?;
+            validate_browser_activity_configuration(&configuration)?;
             let bridge_settings = crate::domain::settings::WebActivityBridgeSettings {
                 enabled: configuration.enabled,
                 port: configuration.port,
@@ -226,28 +226,6 @@ impl ApiRuntimeControl for DaemonApiRuntimeControl {
             })
         })
     }
-}
-
-fn validate_browser_configuration(
-    configuration: &BrowserActivityRuntimeConfiguration,
-) -> Result<(), RuntimeControlError> {
-    if crate::domain::settings::parse_web_activity_port(&configuration.port.to_string()).is_none() {
-        return Err(RuntimeControlError::InvalidInput(
-            "browser activity port must be between 1024 and 65535".to_string(),
-        ));
-    }
-    let token = configuration.token.trim();
-    if token.len() > MAX_WEB_ACTIVITY_TOKEN_LEN || token.chars().any(char::is_control) {
-        return Err(RuntimeControlError::InvalidInput(
-            "browser activity token is invalid".to_string(),
-        ));
-    }
-    if configuration.enabled && token.is_empty() {
-        return Err(RuntimeControlError::InvalidInput(
-            "browser activity token is required when synchronization is enabled".to_string(),
-        ));
-    }
-    Ok(())
 }
 
 fn map_browser_apply_error(error: String) -> RuntimeControlError {
@@ -359,7 +337,7 @@ mod tests {
             url_privacy: crate::domain::settings::WebActivityUrlPrivacyMode::Full,
         };
         assert!(matches!(
-            validate_browser_configuration(&missing),
+            validate_browser_activity_configuration(&missing),
             Err(RuntimeControlError::InvalidInput(_))
         ));
 
@@ -368,7 +346,7 @@ mod tests {
             ..missing
         };
         assert!(matches!(
-            validate_browser_configuration(&control_character),
+            validate_browser_activity_configuration(&control_character),
             Err(RuntimeControlError::InvalidInput(_))
         ));
     }
@@ -389,6 +367,56 @@ mod tests {
                 .unwrap()
         );
         assert_eq!(sink.events().len(), 1);
+
+        web_control.shutdown().await;
+        api_listener.shutdown().await;
+        pool.close().await;
+        let _ = std::fs::remove_file(token_path);
+    }
+
+    #[tokio::test]
+    async fn typed_client_applies_runtime_settings_through_the_daemon_api() {
+        let (
+            pool,
+            control,
+            web_control,
+            _sink,
+            audio_source,
+            api_listener,
+            credentials,
+            _,
+            token_path,
+        ) = test_control().await;
+        let context = crate::engine::api::context::ApiRuntimeContext::new(
+            crate::engine::runtime_context::RuntimeContext::system(pool.clone()),
+        )
+        .with_runtime_control(control);
+        let api_port = api_listener.start(0, context).await.unwrap();
+        let client = crate::platform::daemon_client::PatinadClient::new(
+            api_port,
+            credentials.token().unwrap(),
+        )
+        .unwrap();
+        let bridge_port = available_port();
+
+        let applied = client
+            .configure_browser_activity(BrowserActivityRuntimeConfiguration {
+                enabled: true,
+                port: bridge_port,
+                token: "browser-token".to_string(),
+                url_privacy: crate::domain::settings::WebActivityUrlPrivacyMode::DomainOnly,
+            })
+            .await
+            .unwrap();
+        assert!(applied.enabled);
+        assert_eq!(applied.port, bridge_port);
+        assert_eq!(
+            applied.url_privacy,
+            crate::domain::settings::WebActivityUrlPrivacyMode::DomainOnly
+        );
+
+        client.set_audio_participation_enabled(false).await.unwrap();
+        assert!(!audio_source.is_enabled());
 
         web_control.shutdown().await;
         api_listener.shutdown().await;
@@ -453,14 +481,16 @@ mod tests {
         ) = test_control().await;
         let context = crate::engine::api::context::ApiRuntimeContext::new(
             crate::engine::runtime_context::RuntimeContext::system(pool.clone()),
-        );
+        )
+        .with_runtime_control(control.clone());
         let old_port = api_listener.start(0, context.clone()).await.unwrap();
         let new_port = available_port();
+        let old_token = credentials.token().unwrap();
+        let old_client =
+            crate::platform::daemon_client::PatinadClient::new(old_port, old_token.clone())
+                .unwrap();
 
-        let applied = control
-            .apply_local_api_port(context, new_port)
-            .await
-            .unwrap();
+        let applied = old_client.apply_local_api_port(new_port).await.unwrap();
         assert_eq!(applied.previous_port, old_port);
         assert_eq!(applied.configuration.port, new_port);
         assert!(applied.reconnect_required);
@@ -472,11 +502,25 @@ mod tests {
             new_port
         );
 
-        let old_token = credentials.token().unwrap();
-        let rotated = control.rotate_local_api_token().await.unwrap();
+        let new_client =
+            crate::platform::daemon_client::PatinadClient::new(new_port, old_token.clone())
+                .unwrap();
+        let rotated = new_client.rotate_local_api_token().await.unwrap();
         assert!(rotated.reauthentication_required);
-        assert_ne!(credentials.token().unwrap(), old_token);
+        let new_token = credentials.token().unwrap();
+        assert_ne!(new_token, old_token);
         assert!(!credentials.validate(Some(&format!("Bearer {old_token}"))));
+        assert!(matches!(
+            new_client.local_api_configuration().await.unwrap_err(),
+            crate::platform::daemon_client::PatinadClientError::Unauthorized
+        ));
+        let reauthenticated =
+            crate::platform::daemon_client::PatinadClient::new(new_port, new_token)
+                .unwrap()
+                .local_api_configuration()
+                .await
+                .unwrap();
+        assert_eq!(reauthenticated.port, new_port);
 
         web_control.shutdown().await;
         api_listener.shutdown().await;

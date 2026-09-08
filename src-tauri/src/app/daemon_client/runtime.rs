@@ -121,7 +121,7 @@ impl PatinadRuntimeOutput for PatinadRuntimeState {
 }
 
 pub struct PatinadRuntimeAdapter {
-    client: PatinadClient,
+    client_state: crate::app::daemon_client::PatinadClientState,
     output: Arc<dyn PatinadRuntimeOutput>,
 }
 
@@ -133,15 +133,15 @@ pub struct PatinadDesktopRuntimeHandle {
 impl PatinadDesktopRuntimeHandle {
     pub fn start<R: Runtime + 'static>(
         app: AppHandle<R>,
-        client: PatinadClient,
+        client_state: crate::app::daemon_client::PatinadClientState,
         runtime_health: Arc<RuntimeHealthState>,
     ) -> Self {
         let output = Arc::new(TauriPatinadRuntimeOutput {
             app,
             runtime_health,
-            client: client.clone(),
+            client_state: client_state.clone(),
         });
-        let adapter = PatinadRuntimeAdapter::new(client, output);
+        let adapter = PatinadRuntimeAdapter::new_with_client_state(client_state, output);
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let task = tauri::async_runtime::spawn(async move {
             adapter.run(shutdown_rx).await;
@@ -174,7 +174,7 @@ impl PatinadDesktopRuntimeHandle {
 struct TauriPatinadRuntimeOutput<R: Runtime> {
     app: AppHandle<R>,
     runtime_health: Arc<RuntimeHealthState>,
-    client: PatinadClient,
+    client_state: crate::app::daemon_client::PatinadClientState,
 }
 
 impl<R: Runtime> PatinadRuntimeOutput for TauriPatinadRuntimeOutput<R> {
@@ -243,8 +243,15 @@ impl<R: Runtime> PatinadRuntimeOutput for TauriPatinadRuntimeOutput<R> {
         match &event.event {
             RuntimeEvent::ToolsRuntimeChanged { .. } => {
                 let app = self.app.clone();
-                let client = self.client.clone();
+                let client_state = self.client_state.clone();
                 tauri::async_runtime::spawn(async move {
+                    let client = match client_state.require() {
+                        Ok(client) => client,
+                        Err(error) => {
+                            eprintln!("[patinad-client] failed to refresh Tools snapshot: {error}");
+                            return;
+                        }
+                    };
                     match client.tools_snapshot().await {
                         Ok(snapshot) => {
                             if let Some(state) =
@@ -288,15 +295,28 @@ impl<R: Runtime> PatinadRuntimeOutput for TauriPatinadRuntimeOutput<R> {
 
 impl PatinadRuntimeAdapter {
     pub fn new(client: PatinadClient, output: Arc<dyn PatinadRuntimeOutput>) -> Self {
-        Self { client, output }
+        let client_state = crate::app::daemon_client::PatinadClientState::default();
+        client_state.install(client);
+        Self::new_with_client_state(client_state, output)
+    }
+
+    pub fn new_with_client_state(
+        client_state: crate::app::daemon_client::PatinadClientState,
+        output: Arc<dyn PatinadRuntimeOutput>,
+    ) -> Self {
+        Self {
+            client_state,
+            output,
+        }
     }
 
     pub async fn synchronize_once(
         &self,
         last_event_sequence: Option<u64>,
     ) -> Result<PatinadRuntimeReadSnapshot, PatinadClientError> {
-        self.client.negotiate_tracking_owner().await?;
-        self.read_snapshot(last_event_sequence).await
+        let client = self.client()?;
+        client.negotiate_tracking_owner().await?;
+        self.read_snapshot(&client, last_event_sequence).await
     }
 
     pub async fn run(&self, mut shutdown: watch::Receiver<bool>) {
@@ -325,6 +345,11 @@ impl PatinadRuntimeAdapter {
                     self.output
                         .connection_changed(PatinadRuntimeConnectionStatus::Stopped, None);
                     return;
+                }
+                Ok(ConnectionExit::Reconfigure) => {
+                    cursor = None;
+                    backoff.reset();
+                    continue;
                 }
                 Err(error) => {
                     self.output.connection_changed(
@@ -355,9 +380,11 @@ impl PatinadRuntimeAdapter {
         cursor: &mut Option<u64>,
         shutdown: &mut watch::Receiver<bool>,
     ) -> Result<ConnectionExit, PatinadClientError> {
-        self.client.negotiate_tracking_owner().await?;
-        let mut events = self.client.open_event_stream(*cursor).await?;
-        let mut snapshot = self.read_snapshot(*cursor).await?;
+        let mut client_revision = self.client_state.subscribe();
+        let client = self.client()?;
+        client.negotiate_tracking_owner().await?;
+        let mut events = client.open_event_stream(*cursor).await?;
+        let mut snapshot = self.read_snapshot(&client, *cursor).await?;
         self.output.snapshot_changed(snapshot.clone());
         self.output
             .connection_changed(PatinadRuntimeConnectionStatus::Ready, None);
@@ -370,6 +397,14 @@ impl PatinadRuntimeAdapter {
                         return Ok(ConnectionExit::Shutdown);
                     }
                     continue;
+                }
+                changed = client_revision.changed() => {
+                    if changed.is_err() {
+                        return Err(PatinadClientError::InvalidConfiguration(
+                            "patinad client configuration channel closed".to_string(),
+                        ));
+                    }
+                    return Ok(ConnectionExit::Reconfigure);
                 }
             };
             let Some(event) = event else {
@@ -391,13 +426,13 @@ impl PatinadRuntimeAdapter {
                     if changed_at_ms < snapshot.current_window.sampled_at_ms {
                         continue;
                     }
-                    snapshot = self.read_snapshot(*cursor).await?;
+                    snapshot = self.read_snapshot(&client, *cursor).await?;
                     self.output.snapshot_changed(snapshot.clone());
                     self.output.tracking_data_changed(&envelope);
                 }
                 PatinadStreamEvent::ResyncRequired { reason, missed } => {
                     *cursor = None;
-                    snapshot = self.read_snapshot(*cursor).await?;
+                    snapshot = self.read_snapshot(&client, *cursor).await?;
                     self.output.snapshot_changed(snapshot.clone());
                     self.output.resync_required(&reason, missed);
                 }
@@ -408,22 +443,24 @@ impl PatinadRuntimeAdapter {
 
     async fn read_snapshot(
         &self,
+        client: &PatinadClient,
         last_event_sequence: Option<u64>,
     ) -> Result<PatinadRuntimeReadSnapshot, PatinadClientError> {
-        let first = self.read_snapshot_once(last_event_sequence).await?;
+        let first = self.read_snapshot_once(client, last_event_sequence).await?;
         if first.coherent {
             return Ok(first);
         }
         tokio::time::sleep(INCOHERENT_SNAPSHOT_RETRY_DELAY).await;
-        self.read_snapshot_once(last_event_sequence).await
+        self.read_snapshot_once(client, last_event_sequence).await
     }
 
     async fn read_snapshot_once(
         &self,
+        client: &PatinadClient,
         last_event_sequence: Option<u64>,
     ) -> Result<PatinadRuntimeReadSnapshot, PatinadClientError> {
         let (current_window, active_session) =
-            tokio::try_join!(self.client.current_window(), self.client.active_session())?;
+            tokio::try_join!(client.current_window(), client.active_session())?;
         let coherent = active_session.as_ref().is_none_or(|active| {
             current_window.is_afk
                 || active
@@ -437,10 +474,19 @@ impl PatinadRuntimeAdapter {
             coherent,
         })
     }
+
+    fn client(&self) -> Result<PatinadClient, PatinadClientError> {
+        self.client_state.require().map_err(|_| {
+            PatinadClientError::InvalidConfiguration(
+                "patinad client is not configured for this profile".to_string(),
+            )
+        })
+    }
 }
 
 enum ConnectionExit {
     Shutdown,
+    Reconfigure,
 }
 
 struct RetryBackoff {
@@ -460,6 +506,10 @@ impl RetryBackoff {
         let delay = self.current;
         self.current = self.current.saturating_mul(2).min(MAX_RETRY_DELAY);
         delay
+    }
+
+    fn reset(&mut self) {
+        self.current = INITIAL_RETRY_DELAY;
     }
 }
 
