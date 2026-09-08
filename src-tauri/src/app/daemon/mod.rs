@@ -1,3 +1,4 @@
+pub(crate) mod activity_import;
 mod api_runtime;
 mod options;
 mod runtime;
@@ -171,8 +172,14 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
             as Arc<dyn crate::engine::api::runtime_control::ApiRuntimeControl>),
         _ => None,
     };
+    let activity_import_owner = options.track.then(|| {
+        Arc::new(activity_import::DaemonActivityImportOwner::new(
+            runtime_context.clone(),
+            storage_paths.activity_import_staging_dir.clone(),
+        )) as Arc<dyn crate::engine::api::activity_import_owner::ActivityImportOwner>
+    });
     let confirmed_port = if let Some(api_listener) = api_listener.as_ref() {
-        let context = api_runtime::build_context(
+        let mut context = api_runtime::build_context(
             runtime_context.clone(),
             tracking_snapshot.clone(),
             web_activity_state.clone(),
@@ -181,6 +188,9 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
             api_runtime_control,
             tools_owner.clone().map(Arc::new),
         );
+        if let Some(activity_import_owner) = activity_import_owner {
+            context = context.with_activity_import_owner(activity_import_owner);
+        }
         runtime.block_on(api_listener.start(requested_port, context))?
     } else {
         requested_port

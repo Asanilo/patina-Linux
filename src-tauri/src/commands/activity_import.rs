@@ -23,10 +23,16 @@ pub async fn cmd_commit_activity_import(
     expected_fingerprint: String,
     app: AppHandle,
 ) -> Result<ImportCommitReportDto, String> {
-    if crate::app::daemon_client::command_client(&app)?.is_some() {
-        return Err(
-            "activity import writes are not available in daemon client preview yet".to_string(),
-        );
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        let staged =
+            activity_import::stage_for_daemon(&app, file_path, expected_fingerprint).await?;
+        return match client.commit_staged_activity_import(&staged.request).await {
+            Ok(report) => Ok(report),
+            Err(error) => {
+                let _ = staged.discard();
+                Err(error.to_string())
+            }
+        };
     }
     activity_import::commit(app, file_path, expected_fingerprint).await
 }
@@ -35,6 +41,12 @@ pub async fn cmd_commit_activity_import(
 pub async fn cmd_list_activity_import_batches(
     app: AppHandle,
 ) -> Result<Vec<ImportBatchDto>, String> {
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        return client
+            .activity_import_batches()
+            .await
+            .map_err(|error| error.to_string());
+    }
     activity_import::list(&app).await
 }
 
@@ -43,10 +55,11 @@ pub async fn cmd_delete_activity_import_batch(
     batch_id: String,
     app: AppHandle,
 ) -> Result<ImportDeleteReportDto, String> {
-    if crate::app::daemon_client::command_client(&app)?.is_some() {
-        return Err(
-            "activity import deletion is not available in daemon client preview yet".to_string(),
-        );
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        return client
+            .delete_activity_import_batch(batch_id.trim())
+            .await
+            .map_err(|error| error.to_string());
     }
     activity_import::delete(app, batch_id).await
 }

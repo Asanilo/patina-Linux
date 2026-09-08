@@ -21,6 +21,7 @@ use crate::engine::runtime_event::RuntimeEventEnvelope;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(750);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
+const IMPORT_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_EVENT_DATA_BYTES: usize = 64 * 1024;
 
@@ -368,6 +369,47 @@ impl PatinadClient {
         .await
     }
 
+    pub async fn activity_import_batches(
+        &self,
+    ) -> Result<Vec<crate::domain::activity_import::ImportBatchDto>, PatinadClientError> {
+        self.get_json("/api/v1/imports", "activity import batches")
+            .await
+    }
+
+    pub async fn commit_staged_activity_import(
+        &self,
+        request: &crate::engine::api::types::StagedActivityImportCommitRequest,
+    ) -> Result<crate::domain::activity_import::ImportCommitReportDto, PatinadClientError> {
+        self.post_json_with_timeout(
+            "/api/v1/imports/canonical/commit",
+            request,
+            "activity import commit",
+            IMPORT_REQUEST_TIMEOUT,
+        )
+        .await
+    }
+
+    pub async fn delete_activity_import_batch(
+        &self,
+        batch_id: &str,
+    ) -> Result<crate::domain::activity_import::ImportDeleteReportDto, PatinadClientError> {
+        if batch_id.is_empty()
+            || !batch_id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        {
+            return Err(PatinadClientError::InvalidConfiguration(
+                "activity import batch ID is invalid".to_string(),
+            ));
+        }
+        self.post_json(
+            &format!("/api/v1/imports/{batch_id}/delete"),
+            &crate::engine::api::types::ConfirmedActionRequest { confirmed: true },
+            "activity import deletion",
+        )
+        .await
+    }
+
     pub async fn tools_snapshot(
         &self,
     ) -> Result<crate::domain::tools::ToolsRuntimeSnapshot, PatinadClientError> {
@@ -565,6 +607,21 @@ impl PatinadClient {
         T: DeserializeOwned,
         B: Serialize + ?Sized,
     {
+        self.post_json_with_timeout(path, body, response_name, REQUEST_TIMEOUT)
+            .await
+    }
+
+    async fn post_json_with_timeout<T, B>(
+        &self,
+        path: &str,
+        body: &B,
+        response_name: &str,
+        timeout: Duration,
+    ) -> Result<T, PatinadClientError>
+    where
+        T: DeserializeOwned,
+        B: Serialize + ?Sized,
+    {
         let request_body = serde_json::to_vec(body).map_err(|error| {
             PatinadClientError::InvalidConfiguration(format!(
                 "failed to encode patinad {response_name} request: {error}"
@@ -576,7 +633,7 @@ impl PatinadClient {
             .bearer_auth(&self.token)
             .header(CONTENT_TYPE, "application/json")
             .body(request_body)
-            .timeout(REQUEST_TIMEOUT)
+            .timeout(timeout)
             .send()
             .await
             .map_err(map_transport_error)?;

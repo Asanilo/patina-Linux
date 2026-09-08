@@ -123,9 +123,10 @@
 
 - 活动详情、应用/分类/网页趋势和导入数据聚合属于只读能力，可以继续复用 transport-neutral read model。
 - 历史清理、标题清理和按应用删除已由 Rust data owner 统一覆盖原生 session、导入事实和网页活动；daemon API 已覆盖通用清理与标题清理。
-- 活动导入提交/删除、定时备份配置、备份恢复和按应用删除在 `--daemon-client-preview` 下暂时明确拒绝，不允许回退为 Desktop 直接写库。
+- 活动导入提交、批次列表和批次删除已由 daemon owner 接管：Desktop 只把预览后未变化的 CSV 写入 profile 控制目录中的 `0700` 暂存目录和 `0600` 随机票据文件，API 只传票据、文件名与预览指纹；daemon 一次性消费文件并重新检查 128 MiB 上限、SHA-256 和 CSV 内容。API 不接受任意本机路径或大文件正文，该入口不作为 MCP 通用文件读取工具。
+- 定时备份配置、备份恢复和按应用删除在 `--daemon-client-preview` 下暂时明确拒绝，不允许回退为 Desktop 直接写库。
 - remote backup 设置仍是待迁移写侧；不得在默认 daemon owner 切换前继续保留 Desktop SQLite mutation。
-- 下一写侧批次按“导入 -> 定时备份 -> 按应用删除 -> 受控恢复 -> remote backup”推进。文件选择保留为 Desktop 能力，数据库提交和调度状态属于 daemon。
+- 下一写侧批次按“定时备份 -> 按应用删除 -> 受控恢复 -> remote backup”推进。文件选择保留为 Desktop 能力，数据库提交和调度状态属于 daemon。
 
 ## 4. 目标结构
 
@@ -243,7 +244,8 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 - 已完成：browser runtime、local API 配置和白名单内普通 app settings 由 Desktop Rust host 转发给 daemon；端口或 Token 变化会主动重建 client 与 event stream
 - 已完成：Settings session cleanup 与历史窗口标题清除由 Rust data owner 事务执行；daemon-client 模式通过要求 `confirmed: true` 的 typed daemon API 执行，前端不再直接发删除 SQL
 - 已完成：本地备份导出使用跨表 SQLite snapshot transaction 和 owner-only 原子文件发布；备份读取已限制 archive/entry/解压总量并拒绝符号链接与重复 ZIP entry
-- 待实施：活动导入、定时备份、按应用删除、backup/restore、remote backup 等剩余写侧迁移；preview 当前 fail closed，不把这些操作回退给 Desktop SQLite owner
+- 已完成：活动导入提交/列表/删除通过 owner-only 暂存票据和 typed client 迁移到 daemon，Desktop 不向 API 发送任意路径或大文件正文
+- 待实施：定时备份、按应用删除、backup/restore、remote backup 等剩余写侧迁移；preview 当前 fail closed，不把这些操作回退给 Desktop SQLite owner
 
 验收：关闭 UI 后继续记录；重开 UI 恢复当前状态；AFK、锁屏、睡眠、恢复和异常封口正确；统计不倒退、不重复。
 
@@ -278,7 +280,8 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 - 已完成 Stage 2H.3b.3：显式 preview 模式不运行 embedded tracker/API/browser/Tools，并复用现有 tracking commands 和前端事件；自动化与真实 GNOME 会话已验证唯一 daemon lease、完整状态读取，以及 desktop 退出后 daemon 持续追踪
 - 已完成 Stage 2H.3c.1：受管 daemon client state 承接 AFK threshold、tracking pause、audio participation、classification 和全部 Tools command；Tools SSE 失效通知会重读完整 snapshot，embedded 模式保持原行为
 - 已完成 Stage 2H.3c.2 核心设置迁移：browser/local API 配置与普通 app settings 通过 daemon API 写入；运行中换端口或轮换 Token 会通过共享 revision 主动重建 Desktop client、SSE、Tools 刷新和诊断请求。Desktop 会在发起首个资源写入前校验完整设置 patch；多个专用 runtime endpoint 之间不承诺跨资源事务，后续若开放非 UI 调用方，需升级为 daemon 侧统一批量命令或提供明确补偿语义
-- 待实施 Stage 2H.3c.2 收尾：按“导入 -> 定时备份 -> 按应用删除 -> 受控恢复 -> remote backup”迁移剩余写侧；preview 当前 fail closed
+- 已完成 Stage 2H.3c.3：活动导入的文件选择/暂存归 Desktop，文件复核、数据库提交和批次删除归 daemon；暂存票据一次性消费并受路径、权限、大小和指纹约束
+- 待实施 Stage 2H.3c 后续：按“定时备份 -> 按应用删除 -> 受控恢复 -> remote backup”迁移剩余写侧；preview 当前 fail closed
 - 待实施 Stage 2H.3c.3：首次启动迁移、服务启停设置、默认 owner 切换和双 owner 验收
 - Tauri 改为 daemon desktop client，并保留 tray、通知、文件选择和 updater
 - 默认切换后 desktop 不启动或自动回退 embedded tracker；daemon 不可用时明确暂停、诊断和重启

@@ -71,7 +71,7 @@ pub struct ImportPreviewDto {
     pub errors: Vec<ImportPreviewErrorDto>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportCommitReportDto {
     pub batch_id: Option<String>,
@@ -82,7 +82,7 @@ pub struct ImportCommitReportDto {
     pub hour_buckets: usize,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportBatchDto {
     pub id: String,
@@ -94,7 +94,7 @@ pub struct ImportBatchDto {
     pub total_records: i64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportDeleteReportDto {
     pub deleted_exact_sessions: i64,

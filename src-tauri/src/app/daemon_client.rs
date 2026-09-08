@@ -283,6 +283,7 @@ mod tests {
     use crate::engine::api::surface::ApiSurface;
     use crate::engine::runtime_event::{RuntimeEvent, RuntimeEventSink};
     use crate::platform::daemon_client::{PatinadClient, PatinadClientError, PatinadStreamEvent};
+    use sha2::Digest;
 
     const TEST_TOKEN: &str = "patina_api_daemon-client-test";
     static TEST_RUNTIME_SEQUENCE: std::sync::atomic::AtomicU64 =
@@ -422,6 +423,41 @@ mod tests {
             .unwrap()
             .current_timer
             .is_some());
+        runtime.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn client_commits_lists_and_deletes_a_staged_activity_import() {
+        const CSV: &[u8] = b"record_type,start_time,end_time,duration_ms,exe_name,app_name,title,category\nexact_session,2026-01-15T09:00:00+08:00,2026-01-15T09:30:00+08:00,1800000,org.example.Editor,Editor,Work,Development\n";
+
+        let runtime = TestApiRuntime::start_tracking().await;
+        let client = PatinadClient::new(runtime.port, TEST_TOKEN).unwrap();
+        let staging_root = runtime.root.join("activity-import-staging");
+        let ticket =
+            crate::platform::activity_import_staging::stage_bytes(&staging_root, CSV).unwrap();
+        let fingerprint = format!("{:x}", sha2::Sha256::digest(CSV));
+
+        let report = client
+            .commit_staged_activity_import(
+                &crate::engine::api::types::StagedActivityImportCommitRequest {
+                    ticket,
+                    source_name: "activity.csv".to_string(),
+                    expected_fingerprint: fingerprint,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(report.imported_records, 1);
+
+        let batches = client.activity_import_batches().await.unwrap();
+        assert_eq!(batches.len(), 1);
+        let deleted = client
+            .delete_activity_import_batch(&batches[0].id)
+            .await
+            .unwrap();
+        assert_eq!(deleted.deleted_exact_sessions, 1);
+        assert!(client.activity_import_batches().await.unwrap().is_empty());
+
         runtime.shutdown().await;
     }
 
@@ -694,7 +730,14 @@ mod tests {
                         crate::engine::runtime_context::RuntimeContext::system(pool.clone()),
                         std::sync::Arc::new(TestToolsSink),
                     ));
-                context.with_tools_owner(tools_owner)
+                let context = context.with_tools_owner(tools_owner);
+                let import_owner = std::sync::Arc::new(
+                    crate::app::daemon::activity_import::DaemonActivityImportOwner::new(
+                        crate::engine::runtime_context::RuntimeContext::system(pool.clone()),
+                        root.join("activity-import-staging"),
+                    ),
+                );
+                context.with_activity_import_owner(import_owner)
             } else {
                 crate::engine::api::context::ApiRuntimeContext::new(
                     crate::engine::runtime_context::RuntimeContext::system(pool.clone()),

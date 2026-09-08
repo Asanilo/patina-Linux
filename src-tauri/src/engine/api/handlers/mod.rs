@@ -1,3 +1,4 @@
+pub mod activity_import;
 pub mod ai;
 pub mod app_settings;
 pub mod apps;

@@ -40,6 +40,7 @@ const BODY_LIMIT: usize = 64 * 1024;
 const API_REQUEST_CONCURRENCY_LIMIT: usize = 32;
 const SSE_CONNECTION_LIMIT: usize = 8;
 const API_HANDLER_TIMEOUT: Duration = Duration::from_secs(15);
+const ACTIVITY_IMPORT_HANDLER_TIMEOUT: Duration = Duration::from_secs(120);
 const SERVER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 const LAST_EVENT_ID: &str = "last-event-id";
 
@@ -396,13 +397,18 @@ async fn api_handler(State(state): State<ApiTransportState>, request: Request) -
         body: body.to_vec(),
     };
     let request_label = format!("{} {}", request.method, request.path);
+    let handler_timeout = if request.path == "/api/v1/imports/canonical/commit" {
+        ACTIVITY_IMPORT_HANDLER_TIMEOUT
+    } else {
+        API_HANDLER_TIMEOUT
+    };
     let routed = AssertUnwindSafe(router::route_request(
         request,
         state.context.as_ref(),
         state.surface,
     ))
     .catch_unwind();
-    let response = match tokio::time::timeout(API_HANDLER_TIMEOUT, routed).await {
+    let response = match tokio::time::timeout(handler_timeout, routed).await {
         Ok(Ok(response)) => route_response(response),
         Ok(Err(_)) => {
             eprintln!("[api] handler panicked while serving {request_label}");

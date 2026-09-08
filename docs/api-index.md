@@ -34,7 +34,7 @@ Current caveats:
 - `/api/v1/openapi.json` exposes the machine-readable OpenAPI 3.1 schema with paths, query/path parameters, request bodies, response envelopes, auth, error envelopes, and field-level component schemas.
 - The OpenAPI server URL uses a configurable `{port}` variable whose default is `14840`.
 - This document remains the human-maintained reference for behavior notes and implementation caveats.
-- The desktop runtime exposes the shared JSON endpoints below. Default `patinad` mode exposes authenticated reads plus SSE and rejects all `POST` endpoints. Explicit `--track` mode is the current runtime owner and additionally exposes the bounded app-mapping, app-settings, classification, tracker-settings, runtime-settings, and Tools writes listed by `/api/v1/capabilities`.
+- The desktop runtime exposes the shared JSON endpoints below. Default `patinad` mode exposes authenticated reads plus SSE and rejects all `POST` endpoints. Explicit `--track` mode is the current runtime owner and additionally exposes the bounded activity-import, app-mapping, app-settings, classification, data-maintenance, local-API, runtime, service, Tools, and tracker writes listed by `/api/v1/capabilities`.
 - Default daemon mode remains historical/read-only: `GET /api/v1/current` returns `503` and live tracker/browser diagnostics are `null`.
 - Stage 2H.2 preview mode is explicit: run `patinad --profile dev --serve-api --track --port 0`. It owns tracking, Tools, and the local API listener for that profile, serves a live `/current`, observes Linux lock/suspend/resume/shutdown, runs audio/MPRIS participation sources, and owns the browser activity bridge configured for that profile. Never run desktop and daemon tracking against the same profile.
 - Stage 2F capability migration, Stage 2F.1 browser crash/heartbeat semantics, and Stage 2F.2 loopback transport migration are complete. API, SSE, and the independent browser extension bridge use Axum with 32/8/8 fail-fast concurrency budgets, bounded handlers, strict Host/origin policies, and task-coupled listener readiness. The extension protocol remains `POST /web-activity` with its separate Token; its CORS response only echoes Firefox/Zen or Chromium extension origins and never returns `Access-Control-Allow-Origin: *`.
@@ -67,6 +67,9 @@ Current caveats:
 | `/api/v1/apps/{exe_name}/classify` | `POST` | Implemented | Save app category |
 | `/api/v1/apps/{exe_name}/rename` | `POST` | Implemented | Save app display name |
 | `/api/v1/apps/{exe_name}/exclude` | `POST` | Implemented | Save app exclusion flag |
+| `/api/v1/imports` | `GET` | Implemented | List canonical activity import batches |
+| `/api/v1/imports/canonical/commit` | `POST` | Tracking daemon | Consume a Desktop-created owner-only staging ticket and commit the revalidated CSV |
+| `/api/v1/imports/{batch_id}/delete` | `POST` | Tracking daemon | Explicitly confirm deletion of one imported activity batch |
 | `/api/v1/settings/tracker` | `GET` | Implemented | Tracker settings snapshot |
 | `/api/v1/settings/tracker/afk-threshold` | `POST` | Implemented | Update idle timeout threshold |
 | `/api/v1/settings/tracker/pause` | `POST` | Implemented | Set tracking pause state |
@@ -186,7 +189,7 @@ Protocol 2 adds the complete `runtime_snapshot` contract to `/api/v1/current`. P
 
 Clients compare their supported protocol against `protocol.min_supported_client` and `protocol.max_supported_client` before using the daemon. `protocol_version` remains as the compatibility alias for `protocol.current`.
 
-With `--track`, the same response changes `tracking` to `{ "owned": true, "ready": false }` during startup and `{ "owned": true, "ready": true }` after the first runtime snapshot. `browser_activity_bridge.owned` is also `true`; its current `ready` value follows the configured listener task. `tools.owned` is `true` and becomes ready only after startup recovery and the first Tools snapshot. `write_api` includes the daemon-owned app mapping, classification, local API configuration, runtime settings, Tools, and tracker settings scopes. A process launched by `patinad.service` additionally reports `daemon_service` as owned/ready and includes `service-lifecycle`; a manually launched preview does not. Default daemon mode keeps all runtime capabilities unowned and the write API unavailable.
+With `--track`, the same response changes `tracking` to `{ "owned": true, "ready": false }` during startup and `{ "owned": true, "ready": true }` after the first runtime snapshot. `browser_activity_bridge.owned` is also `true`; its current `ready` value follows the configured listener task. `tools.owned` is `true` and becomes ready only after startup recovery and the first Tools snapshot. `write_api` includes every daemon-owned scope advertised by the current OpenAPI surface, including `activity-import`; clients must still satisfy endpoint-specific staging or confirmation rules. A process launched by `patinad.service` additionally reports `daemon_service` as owned/ready and includes `service-lifecycle`; a manually launched preview does not. Default daemon mode keeps all runtime capabilities unowned and the write API unavailable.
 
 ### `GET /api/v1/events`
 
@@ -847,6 +850,91 @@ Schema:
 ```json
 { "data": { "ok": true } }
 ```
+
+### `GET /api/v1/imports`
+
+Curl:
+
+```bash
+curl -s "$PATINA_API_BASE/api/v1/imports" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN"
+```
+
+Schema:
+
+```json
+{
+  "data": [
+    {
+      "id": "import-<sha256>",
+      "importedAt": 1788840000000,
+      "sourceName": "activity.csv",
+      "sourceKind": "patina-csv",
+      "exactSessions": 12,
+      "hourBuckets": 0,
+      "totalRecords": 12
+    }
+  ]
+}
+```
+
+### `POST /api/v1/imports/canonical/commit`
+
+This endpoint is the database-owner half of the Desktop import flow. It does not accept a filesystem path or CSV body. Patina Desktop first copies the file into the current profile's owner-only staging directory and receives a random one-time `ticket`; `patinad` then consumes that ticket, enforces the 128 MiB limit, recomputes SHA-256, reparses the CSV, and commits the facts transactionally.
+
+Illustrative request after Desktop has created the ticket:
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/imports/canonical/commit" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ticket":"0123456789abcdef0123456789abcdef",
+    "source_name":"activity.csv",
+    "expected_fingerprint":"<64 lowercase hex characters>"
+  }'
+```
+
+Schema:
+
+```json
+{
+  "data": {
+    "batchId": "import-<sha256>",
+    "importedRecords": 12,
+    "duplicateRecords": 2,
+    "errorRecords": 0,
+    "exactSessions": 12,
+    "hourBuckets": 0
+  }
+}
+```
+
+The ticket is not a general file-access capability and is not intended for MCP tools. A missing/consumed ticket returns `404`, a fingerprint mismatch returns `409`, and invalid CSV/input returns `400`.
+
+### `POST /api/v1/imports/{batch_id}/delete`
+
+Curl:
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/imports/import-<sha256>/delete" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"confirmed":true}'
+```
+
+Schema:
+
+```json
+{
+  "data": {
+    "deletedExactSessions": 12,
+    "deletedHourBuckets": 0
+  }
+}
+```
+
+Deletion is limited to one database-owned batch ID and requires `confirmed=true`.
 
 ### `GET /api/v1/settings/tracker`
 

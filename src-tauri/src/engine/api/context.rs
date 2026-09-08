@@ -52,6 +52,8 @@ pub struct ApiRuntimeContext {
     state: Arc<dyn ApiRuntimeStateProvider>,
     event_sink: Option<Arc<dyn crate::engine::runtime_event::RuntimeEventSink>>,
     runtime_control: Option<Arc<dyn crate::engine::api::runtime_control::ApiRuntimeControl>>,
+    activity_import_owner:
+        Option<Arc<dyn crate::engine::api::activity_import_owner::ActivityImportOwner>>,
     tools_owner: Option<Arc<crate::engine::tools::ToolsRuntimeOwner>>,
 }
 
@@ -90,6 +92,7 @@ impl ApiRuntimeContext {
             state,
             event_sink,
             runtime_control: None,
+            activity_import_owner: None,
             tools_owner: None,
         }
     }
@@ -107,6 +110,14 @@ impl ApiRuntimeContext {
         tools_owner: Arc<crate::engine::tools::ToolsRuntimeOwner>,
     ) -> Self {
         self.tools_owner = Some(tools_owner);
+        self
+    }
+
+    pub fn with_activity_import_owner(
+        mut self,
+        owner: Arc<dyn crate::engine::api::activity_import_owner::ActivityImportOwner>,
+    ) -> Self {
+        self.activity_import_owner = Some(owner);
         self
     }
 
@@ -166,6 +177,12 @@ impl ApiRuntimeContext {
         &self,
     ) -> Option<&Arc<dyn crate::engine::api::runtime_control::ApiRuntimeControl>> {
         self.runtime_control.as_ref()
+    }
+
+    pub fn activity_import_owner(
+        &self,
+    ) -> Option<&Arc<dyn crate::engine::api::activity_import_owner::ActivityImportOwner>> {
+        self.activity_import_owner.as_ref()
     }
 
     pub fn tools_owner(&self) -> Option<&Arc<crate::engine::tools::ToolsRuntimeOwner>> {

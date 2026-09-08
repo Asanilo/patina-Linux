@@ -45,6 +45,13 @@ pub(crate) async fn route_request(
         }
         ("GET", "/api/v1/ai/activity-context") => handlers::ai::get_activity_context(context).await,
         ("GET", "/api/v1/apps") => handlers::apps::get_apps(context).await,
+        ("GET", "/api/v1/imports") => handlers::activity_import::list_batches(context).await,
+        ("POST", "/api/v1/imports/canonical/commit") => {
+            handlers::activity_import::commit_staged(context, body).await
+        }
+        ("POST", path) if path.starts_with("/api/v1/imports/") => {
+            handlers::activity_import::delete_batch(context, path, body).await
+        }
         ("POST", path) if path.starts_with("/api/v1/apps/") => {
             handlers::apps::handle_app_action(context, path, body).await
         }

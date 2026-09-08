@@ -289,6 +289,13 @@ pub struct TrackingDataCleanupRequest {
     pub confirmed: bool,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct StagedActivityImportCommitRequest {
+    pub ticket: String,
+    pub source_name: String,
+    pub expected_fingerprint: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct SummaryResponse {
     pub date: String,

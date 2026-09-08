@@ -269,6 +269,37 @@ fn paths(surface: ApiSurface) -> Value {
     });
     let object = paths.as_object_mut().expect("OpenAPI paths object");
     object.insert(
+        "/api/v1/imports".to_string(),
+        json!({
+            "get": get_operation(
+                "Canonical activity import batches stored by Patina.",
+                "ActivityImportBatchesResponse",
+            )
+        }),
+    );
+    object.insert(
+        "/api/v1/imports/canonical/commit".to_string(),
+        json!({
+            "post": post_operation(
+                "Consume an owner-only staged canonical CSV after revalidating its preview fingerprint.",
+                vec![],
+                "StagedActivityImportCommitRequest",
+                "ActivityImportCommitResponse",
+            )
+        }),
+    );
+    object.insert(
+        "/api/v1/imports/{batch_id}/delete".to_string(),
+        json!({
+            "post": post_operation(
+                "Delete one imported activity batch and its imported facts.",
+                vec![path_param("batch_id", "Import batch ID.")],
+                "ConfirmedActionRequest",
+                "ActivityImportDeleteResponse",
+            )
+        }),
+    );
+    object.insert(
         "/api/v1/settings/app".to_string(),
         json!({
             "post": post_operation(
@@ -410,6 +441,7 @@ fn schemas() -> Value {
             (
                 "operations",
                 array_schema(enum_schema(vec![
+                    "activity-import",
                     "app-mapping",
                     "app-settings",
                     "classification",
@@ -811,6 +843,48 @@ fn schemas() -> Value {
         object_schema(vec![("apps", array_schema(schema_ref("AppEntry")))]),
     );
     schemas.insert("AppsResponse".to_string(), envelope(schema_ref("AppsData")));
+    schemas.insert(
+        "ActivityImportBatch".to_string(),
+        object_schema(vec![
+            ("id", string_schema()),
+            ("importedAt", integer_schema()),
+            ("sourceName", string_schema()),
+            ("sourceKind", string_schema()),
+            ("exactSessions", bounded_integer_schema(0, i64::MAX)),
+            ("hourBuckets", bounded_integer_schema(0, i64::MAX)),
+            ("totalRecords", bounded_integer_schema(0, i64::MAX)),
+        ]),
+    );
+    schemas.insert(
+        "ActivityImportBatchesResponse".to_string(),
+        envelope(array_schema(schema_ref("ActivityImportBatch"))),
+    );
+    schemas.insert(
+        "StagedActivityImportCommitRequest".to_string(),
+        object_schema(vec![
+            ("ticket", bounded_string_schema(32, 32)),
+            ("source_name", bounded_string_schema(1, 512)),
+            ("expected_fingerprint", bounded_string_schema(64, 64)),
+        ]),
+    );
+    schemas.insert(
+        "ActivityImportCommitResponse".to_string(),
+        envelope(object_schema(vec![
+            ("batchId", nullable_string_schema()),
+            ("importedRecords", bounded_integer_schema(0, i64::MAX)),
+            ("duplicateRecords", bounded_integer_schema(0, i64::MAX)),
+            ("errorRecords", bounded_integer_schema(0, i64::MAX)),
+            ("exactSessions", bounded_integer_schema(0, i64::MAX)),
+            ("hourBuckets", bounded_integer_schema(0, i64::MAX)),
+        ])),
+    );
+    schemas.insert(
+        "ActivityImportDeleteResponse".to_string(),
+        envelope(object_schema(vec![
+            ("deletedExactSessions", bounded_integer_schema(0, i64::MAX)),
+            ("deletedHourBuckets", bounded_integer_schema(0, i64::MAX)),
+        ])),
+    );
     schemas.insert(
         "TrackerSettingsData".to_string(),
         object_schema(vec![

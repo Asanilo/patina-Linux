@@ -10,6 +10,23 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Runtime};
 
+pub struct PreparedDaemonActivityImport {
+    pub request: crate::engine::api::types::StagedActivityImportCommitRequest,
+    staging_root: PathBuf,
+}
+
+impl PreparedDaemonActivityImport {
+    pub fn discard(&self) -> Result<(), String> {
+        crate::platform::activity_import_staging::discard(&self.staging_root, &self.request.ticket)
+    }
+}
+
+struct LoadedCanonicalCsv {
+    bytes: Vec<u8>,
+    fingerprint: String,
+    parsed: crate::domain::activity_import::ParsedCanonicalCsv,
+}
+
 pub fn pick_canonical_csv_file(initial_path: Option<String>) -> Option<String> {
     let mut dialog = rfd::FileDialog::new().add_filter("Patina CSV", &["csv"]);
     if let Some(directory) = resolve_dialog_directory(initial_path) {
@@ -25,20 +42,22 @@ pub async fn preview<R: Runtime>(
     file_path: String,
 ) -> Result<ImportPreviewDto, String> {
     let path = validate_path(&file_path)?;
-    let (fingerprint, parsed) = load_file(&path).await?;
+    let loaded = load_file(&path).await?;
     let pool = wait_for_sqlite_pool(app).await?;
     let mut known = activity_import::load_fingerprints(&pool).await?;
-    let duplicate_records = parsed
+    let duplicate_records = loaded
+        .parsed
         .records
         .iter()
         .filter(|record| !known.insert(crate::domain::activity_import::record_fingerprint(record)))
         .count();
-    let exact_sessions = parsed
+    let exact_sessions = loaded
+        .parsed
         .records
         .iter()
         .filter(|record| record.record_type == ImportRecordType::ExactSession)
         .count();
-    let hour_buckets = parsed.records.len() - exact_sessions;
+    let hour_buckets = loaded.parsed.records.len() - exact_sessions;
 
     Ok(ImportPreviewDto {
         file_path: path.to_string_lossy().to_string(),
@@ -47,13 +66,14 @@ pub async fn preview<R: Runtime>(
             .and_then(|value| value.to_str())
             .unwrap_or("Patina CSV")
             .to_string(),
-        file_fingerprint: fingerprint,
-        valid_records: parsed.records.len(),
+        file_fingerprint: loaded.fingerprint,
+        valid_records: loaded.parsed.records.len(),
         duplicate_records,
-        error_records: parsed.errors.len(),
+        error_records: loaded.parsed.errors.len(),
         exact_sessions,
         hour_buckets,
-        errors: parsed
+        errors: loaded
+            .parsed
             .errors
             .into_iter()
             .take(MAX_PREVIEW_ERRORS)
@@ -70,12 +90,10 @@ pub async fn commit<R: Runtime>(
     file_path: String,
     expected_fingerprint: String,
 ) -> Result<ImportCommitReportDto, String> {
-    if expected_fingerprint.len() != 64 {
-        return Err("preview fingerprint is required".to_string());
-    }
+    validate_preview_fingerprint(&expected_fingerprint)?;
     let path = validate_path(&file_path)?;
-    let (actual_fingerprint, parsed) = load_file(&path).await?;
-    if actual_fingerprint != expected_fingerprint {
+    let loaded = load_file(&path).await?;
+    if loaded.fingerprint != expected_fingerprint {
         return Err("canonical CSV changed after preview; preview it again".to_string());
     }
     let source_name = path
@@ -86,15 +104,47 @@ pub async fn commit<R: Runtime>(
     let report = activity_import::commit_records(
         &pool,
         source_name,
-        &actual_fingerprint,
-        &parsed.records,
-        parsed.errors.len(),
+        &loaded.fingerprint,
+        &loaded.parsed.records,
+        loaded.parsed.errors.len(),
     )
     .await?;
     if report.imported_records > 0 {
         emit_refresh(&app, "external-data-imported");
     }
     Ok(report)
+}
+
+pub async fn stage_for_daemon<R: Runtime>(
+    app: &AppHandle<R>,
+    file_path: String,
+    expected_fingerprint: String,
+) -> Result<PreparedDaemonActivityImport, String> {
+    validate_preview_fingerprint(&expected_fingerprint)?;
+    let path = validate_path(&file_path)?;
+    let loaded = load_file(&path).await?;
+    if loaded.fingerprint != expected_fingerprint {
+        return Err("canonical CSV changed after preview; preview it again".to_string());
+    }
+    let source_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "canonical CSV file name is not valid UTF-8".to_string())?
+        .to_string();
+    let storage_paths = crate::platform::storage_paths::resolve_storage_paths(app)?;
+    let ticket = crate::platform::activity_import_staging::stage_bytes(
+        &storage_paths.activity_import_staging_dir,
+        &loaded.bytes,
+    )?;
+
+    Ok(PreparedDaemonActivityImport {
+        request: crate::engine::api::types::StagedActivityImportCommitRequest {
+            ticket,
+            source_name,
+            expected_fingerprint,
+        },
+        staging_root: storage_paths.activity_import_staging_dir,
+    })
 }
 
 pub async fn list<R: Runtime>(app: &AppHandle<R>) -> Result<Vec<ImportBatchDto>, String> {
@@ -112,9 +162,7 @@ pub async fn delete<R: Runtime>(
     Ok(report)
 }
 
-async fn load_file(
-    path: &Path,
-) -> Result<(String, crate::domain::activity_import::ParsedCanonicalCsv), String> {
+async fn load_file(path: &Path) -> Result<LoadedCanonicalCsv, String> {
     let metadata = tokio::fs::metadata(path)
         .await
         .map_err(|error| format!("failed to inspect canonical CSV: {error}"))?;
@@ -137,7 +185,23 @@ async fn load_file(
         ));
     }
     let fingerprint = format!("{:x}", Sha256::digest(&bytes));
-    Ok((fingerprint, parse_canonical_csv(&bytes)?))
+    let parsed = parse_canonical_csv(&bytes)?;
+    Ok(LoadedCanonicalCsv {
+        bytes,
+        fingerprint,
+        parsed,
+    })
+}
+
+fn validate_preview_fingerprint(value: &str) -> Result<(), String> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err("preview fingerprint is required".to_string());
+    }
+    Ok(())
 }
 
 fn validate_path(file_path: &str) -> Result<PathBuf, String> {

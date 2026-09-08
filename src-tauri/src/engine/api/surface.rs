@@ -69,6 +69,10 @@ const DESKTOP_ENDPOINTS: &[ApiEndpoint] = &[
         path: "/api/v1/apps",
     },
     ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/imports",
+    },
+    ApiEndpoint {
         method: "POST",
         path: "/api/v1/apps/{exe_name}/classify",
     },
@@ -169,6 +173,10 @@ const DAEMON_READ_ONLY_ENDPOINTS: &[ApiEndpoint] = &[
     },
     ApiEndpoint {
         method: "GET",
+        path: "/api/v1/imports",
+    },
+    ApiEndpoint {
+        method: "GET",
         path: "/api/v1/settings/tracker",
     },
     ApiEndpoint {
@@ -241,6 +249,18 @@ const DAEMON_TRACKING_ENDPOINTS: &[ApiEndpoint] = &[
     ApiEndpoint {
         method: "GET",
         path: "/api/v1/apps",
+    },
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/imports",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/imports/canonical/commit",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/imports/{batch_id}/delete",
     },
     ApiEndpoint {
         method: "POST",
@@ -378,6 +398,7 @@ const DAEMON_TRACKING_ENDPOINTS: &[ApiEndpoint] = &[
 
 const DESKTOP_WRITE_OPERATIONS: &[&str] = &["app-mapping", "classification", "tracker-settings"];
 const DAEMON_TRACKING_WRITE_OPERATIONS: &[&str] = &[
+    "activity-import",
     "app-mapping",
     "app-settings",
     "classification",
@@ -469,7 +490,7 @@ mod tests {
 
     #[test]
     fn desktop_surface_keeps_shared_client_method_and_path_set() {
-        assert_eq!(ApiSurface::Desktop.endpoints().len(), 23);
+        assert_eq!(ApiSurface::Desktop.endpoints().len(), 24);
         assert!(ApiSurface::Desktop.allows("GET", "/api/v1/sessions"));
         assert!(ApiSurface::Desktop.allows("GET", "/api/v1/capabilities"));
         assert!(ApiSurface::Desktop.allows("GET", "/api/v1/settings/runtime"));
@@ -553,9 +574,12 @@ mod tests {
         assert!(surface.allows("POST", "/api/v1/settings/runtime/browser-activity"));
         assert!(surface.allows("POST", "/api/v1/data/cleanup"));
         assert!(surface.allows("POST", "/api/v1/data/window-titles/clear"));
+        assert!(surface.allows("POST", "/api/v1/imports/canonical/commit"));
+        assert!(surface.allows_request("POST", "/api/v1/imports/import-123/delete"));
         assert_eq!(
             surface.write_operations(),
             [
+                "activity-import",
                 "app-mapping",
                 "app-settings",
                 "classification",

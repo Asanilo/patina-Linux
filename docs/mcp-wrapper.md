@@ -152,6 +152,8 @@ The HTTP API advertises an `app-settings` write scope for Patina Desktop's valid
 
 The HTTP API also advertises `data-maintenance` for the Desktop cleanup flow. The MCP wrapper intentionally omits session deletion and bulk title redaction because these operations are destructive; possessing the API Token alone is not treated as user intent, and the HTTP request still requires `confirmed: true`.
 
+The HTTP API advertises `activity-import` for the Desktop/daemon handoff. MCP intentionally does not expose canonical file import or batch deletion: import commit requires a one-time owner-only staging ticket created by the Desktop file picker, while deletion is destructive and requires explicit UI confirmation. Agents may use the read-only import batch list when it becomes useful, but must not be given an arbitrary local-file-to-import bridge.
+
 Local API changes require the `local-api-configuration` write scope and explicit user intent. After a successful port change, the wrapper updates its in-process base URL. After Token rotation, the running wrapper rereads the owner-only path returned by the daemon; clients that supplied a fixed `PATINA_API_TOKEN` should still update their external configuration before restarting. Neither response contains the Token value.
 
 Service lifecycle tools are available only when capabilities advertise `service-lifecycle`:
