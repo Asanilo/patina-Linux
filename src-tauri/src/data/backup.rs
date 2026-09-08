@@ -1995,6 +1995,10 @@ mod tests {
                         key: "webdav_backup_url".to_string(),
                         value: "https://current.example/dav".to_string(),
                     },
+                    BackupSetting {
+                        key: "background_tracking_at_login".to_string(),
+                        value: "0".to_string(),
+                    },
                 ],
             )
             .await
@@ -2022,6 +2026,10 @@ mod tests {
                 BackupSetting {
                     key: "webdav_backup_url".to_string(),
                     value: "https://archived.example/dav".to_string(),
+                },
+                BackupSetting {
+                    key: "background_tracking_at_login".to_string(),
+                    value: "1".to_string(),
                 },
                 BackupSetting {
                     key: "language".to_string(),
@@ -2057,6 +2065,12 @@ mod tests {
             assert_eq!(
                 settings.get("webdav_backup_url").map(String::as_str),
                 Some("https://current.example/dav")
+            );
+            assert_eq!(
+                settings
+                    .get("background_tracking_at_login")
+                    .map(String::as_str),
+                Some("0")
             );
             assert_eq!(settings.get("language").map(String::as_str), Some("en-US"));
         });

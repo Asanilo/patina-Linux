@@ -1302,7 +1302,7 @@ Schema:
 }
 ```
 
-Only non-resource preferences such as appearance, language, timeline display, desktop behavior, startup preferences, and remote-status configuration are accepted. Tracker pause/AFK, audio, browser bridge, and local API settings are rejected here and must use their dedicated endpoints so live resources and persistence cannot diverge.
+Only non-resource preferences such as appearance, language, timeline display, desktop window behavior, Desktop launch-at-login, and remote-status configuration are accepted. The host-owned `background_tracking_at_login` preference is deliberately rejected until the dedicated systemd service transition endpoint and rollback state machine are available. Tracker pause/AFK, audio, browser bridge, local API, and daemon service settings are also rejected here so live resources and persistence cannot diverge. No current MCP tool can change daemon login activation.
 
 ### `POST /api/v1/data/cleanup`
 

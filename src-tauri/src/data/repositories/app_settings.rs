@@ -8,6 +8,7 @@ use sqlx::{Pool, Row, Sqlite};
 const CLOSE_BEHAVIOR_KEY: &str = "close_behavior";
 const MINIMIZE_BEHAVIOR_KEY: &str = "minimize_behavior";
 const LAUNCH_AT_LOGIN_KEY: &str = "launch_at_login";
+const BACKGROUND_TRACKING_AT_LOGIN_KEY: &str = "background_tracking_at_login";
 const START_MINIMIZED_KEY: &str = "start_minimized";
 const BACKGROUND_OPTIMIZATION_KEY: &str = "background_optimization";
 const AUDIO_PARTICIPATION_ENABLED_KEY: &str = "audio_participation_enabled";
@@ -32,10 +33,11 @@ pub struct AppSettingMutation {
 pub async fn load_desktop_behavior_settings(
     pool: &Pool<Sqlite>,
 ) -> Result<DesktopBehaviorSettings, sqlx::Error> {
-    let rows = sqlx::query("SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?, ?)")
+    let rows = sqlx::query("SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?, ?, ?)")
         .bind(CLOSE_BEHAVIOR_KEY)
         .bind(MINIMIZE_BEHAVIOR_KEY)
         .bind(LAUNCH_AT_LOGIN_KEY)
+        .bind(BACKGROUND_TRACKING_AT_LOGIN_KEY)
         .bind(START_MINIMIZED_KEY)
         .bind(BACKGROUND_OPTIMIZATION_KEY)
         .fetch_all(pool)
@@ -44,6 +46,7 @@ pub async fn load_desktop_behavior_settings(
     let mut close_behavior_raw: Option<String> = None;
     let mut minimize_behavior_raw: Option<String> = None;
     let mut launch_at_login_raw: Option<String> = None;
+    let mut background_tracking_at_login_raw: Option<String> = None;
     let mut start_minimized_raw: Option<String> = None;
     let mut background_optimization_raw: Option<String> = None;
 
@@ -59,6 +62,9 @@ pub async fn load_desktop_behavior_settings(
             LAUNCH_AT_LOGIN_KEY => {
                 launch_at_login_raw = Some(value);
             }
+            BACKGROUND_TRACKING_AT_LOGIN_KEY => {
+                background_tracking_at_login_raw = Some(value);
+            }
             START_MINIMIZED_KEY => {
                 start_minimized_raw = Some(value);
             }
@@ -73,9 +79,47 @@ pub async fn load_desktop_behavior_settings(
         close_behavior_raw.as_deref(),
         minimize_behavior_raw.as_deref(),
         launch_at_login_raw.as_deref(),
+        background_tracking_at_login_raw.as_deref(),
         start_minimized_raw.as_deref(),
         background_optimization_raw.as_deref(),
     ))
+}
+
+pub async fn ensure_background_tracking_login_preference(
+    pool: &Pool<Sqlite>,
+) -> Result<(), String> {
+    sqlx::query(
+        "INSERT OR IGNORE INTO settings (key, value)
+         VALUES (
+             ?,
+             COALESCE(
+                 (
+                     SELECT CASE
+                         WHEN LOWER(TRIM(value)) IN ('1', 'true', 'yes', 'on') THEN '1'
+                         WHEN LOWER(TRIM(value)) IN ('0', 'false', 'no', 'off') THEN '0'
+                         ELSE NULL
+                     END
+                     FROM settings
+                     WHERE key = ?
+                     LIMIT 1
+                 ),
+                 ?
+             )
+         )",
+    )
+    .bind(BACKGROUND_TRACKING_AT_LOGIN_KEY)
+    .bind(LAUNCH_AT_LOGIN_KEY)
+    .bind(
+        if crate::domain::settings::DEFAULT_BACKGROUND_TRACKING_AT_LOGIN {
+            "1"
+        } else {
+            "0"
+        },
+    )
+    .execute(pool)
+    .await
+    .map_err(|error| format!("failed to migrate background tracking login preference: {error}"))?;
+    Ok(())
 }
 
 pub async fn commit_app_setting_mutations(
@@ -172,6 +216,7 @@ fn is_allowed_app_setting_key(key: &str) -> bool {
             | "color_scheme_light"
             | "color_scheme_dark"
             | "launch_at_login"
+            | "background_tracking_at_login"
             | "start_minimized"
             | "background_optimization"
             | "audio_participation_enabled"
@@ -552,6 +597,57 @@ mod tests {
 
             let settings = load_desktop_behavior_settings(&pool).await.unwrap();
             assert!(settings.should_optimize_background_resources());
+        });
+    }
+
+    #[test]
+    fn background_tracking_login_preference_migrates_once_from_desktop_login() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            seed_legacy_setting(&pool, LAUNCH_AT_LOGIN_KEY, "0").await;
+
+            ensure_background_tracking_login_preference(&pool)
+                .await
+                .unwrap();
+            assert_eq!(
+                load_setting(&pool, BACKGROUND_TRACKING_AT_LOGIN_KEY)
+                    .await
+                    .as_deref(),
+                Some("0")
+            );
+
+            sqlx::query("UPDATE settings SET value = '1' WHERE key = ?")
+                .bind(LAUNCH_AT_LOGIN_KEY)
+                .execute(&pool)
+                .await
+                .unwrap();
+            ensure_background_tracking_login_preference(&pool)
+                .await
+                .unwrap();
+            assert_eq!(
+                load_setting(&pool, BACKGROUND_TRACKING_AT_LOGIN_KEY)
+                    .await
+                    .as_deref(),
+                Some("0")
+            );
+        });
+    }
+
+    #[test]
+    fn background_tracking_login_preference_uses_release_default_without_legacy_value() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+
+            ensure_background_tracking_login_preference(&pool)
+                .await
+                .unwrap();
+
+            assert_eq!(
+                load_setting(&pool, BACKGROUND_TRACKING_AT_LOGIN_KEY)
+                    .await
+                    .as_deref(),
+                Some("1")
+            );
         });
     }
 

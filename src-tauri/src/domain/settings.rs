@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_LAUNCH_AT_LOGIN: bool = true;
+pub const DEFAULT_BACKGROUND_TRACKING_AT_LOGIN: bool = true;
 pub const DEFAULT_START_MINIMIZED: bool = true;
 pub const DEFAULT_BACKGROUND_OPTIMIZATION: bool = false;
 pub const DEFAULT_AUDIO_PARTICIPATION_ENABLED: bool = true;
@@ -39,6 +40,7 @@ pub struct DesktopBehaviorSettings {
     pub close_behavior: CloseBehavior,
     pub minimize_behavior: MinimizeBehavior,
     pub launch_at_login: bool,
+    pub background_tracking_at_login: bool,
     pub start_minimized: bool,
     pub background_optimization: bool,
 }
@@ -236,6 +238,7 @@ impl Default for DesktopBehaviorSettings {
             close_behavior: CloseBehavior::Tray,
             minimize_behavior: MinimizeBehavior::Widget,
             launch_at_login: DEFAULT_LAUNCH_AT_LOGIN,
+            background_tracking_at_login: DEFAULT_BACKGROUND_TRACKING_AT_LOGIN,
             start_minimized: DEFAULT_START_MINIMIZED,
             background_optimization: DEFAULT_BACKGROUND_OPTIMIZATION,
         }
@@ -270,6 +273,13 @@ impl DesktopBehaviorSettings {
         }
     }
 
+    pub fn with_background_tracking_at_login(self, background_tracking_at_login: bool) -> Self {
+        Self {
+            background_tracking_at_login,
+            ..self
+        }
+    }
+
     pub fn with_background_optimization(self, background_optimization: bool) -> Self {
         Self {
             background_optimization,
@@ -281,6 +291,7 @@ impl DesktopBehaviorSettings {
         close_behavior: Option<&str>,
         minimize_behavior: Option<&str>,
         launch_at_login: Option<&str>,
+        background_tracking_at_login: Option<&str>,
         start_minimized: Option<&str>,
         background_optimization: Option<&str>,
     ) -> Self {
@@ -291,6 +302,9 @@ impl DesktopBehaviorSettings {
         let launch_at_login = launch_at_login
             .map(|raw| parse_boolean_setting(raw, DEFAULT_LAUNCH_AT_LOGIN))
             .unwrap_or(DEFAULT_LAUNCH_AT_LOGIN);
+        let background_tracking_at_login = background_tracking_at_login
+            .map(|raw| parse_boolean_setting(raw, launch_at_login))
+            .unwrap_or(launch_at_login);
         let start_minimized = start_minimized
             .map(|raw| parse_boolean_setting(raw, DEFAULT_START_MINIMIZED))
             .unwrap_or(DEFAULT_START_MINIMIZED);
@@ -301,6 +315,7 @@ impl DesktopBehaviorSettings {
         Self::default()
             .with_desktop_behavior(close_behavior, minimize_behavior)
             .with_launch_behavior(launch_at_login, start_minimized)
+            .with_background_tracking_at_login(background_tracking_at_login)
             .with_background_optimization(background_optimization)
     }
 
@@ -375,8 +390,8 @@ mod tests {
         parse_web_activity_port, CloseBehavior, DesktopBehaviorSettings, MinimizeBehavior,
         RemoteStatusBridgeSettings, WebActivityBridgeSettings, WebActivitySettings,
         WebActivityUrlPrivacyMode, DEFAULT_AUDIO_PARTICIPATION_ENABLED,
-        DEFAULT_BACKGROUND_OPTIMIZATION, DEFAULT_LAUNCH_AT_LOGIN, DEFAULT_START_MINIMIZED,
-        DEFAULT_WEB_ACTIVITY_PORT,
+        DEFAULT_BACKGROUND_OPTIMIZATION, DEFAULT_BACKGROUND_TRACKING_AT_LOGIN,
+        DEFAULT_LAUNCH_AT_LOGIN, DEFAULT_START_MINIMIZED, DEFAULT_WEB_ACTIVITY_PORT,
     };
 
     #[test]
@@ -509,14 +524,20 @@ mod tests {
         let updated = defaults
             .with_desktop_behavior(CloseBehavior::Tray, MinimizeBehavior::Taskbar)
             .with_launch_behavior(false, true)
+            .with_background_tracking_at_login(false)
             .with_background_optimization(true);
 
         assert_eq!(updated.close_behavior, CloseBehavior::Tray);
         assert_eq!(updated.minimize_behavior, MinimizeBehavior::Taskbar);
         assert!(!updated.launch_at_login);
+        assert!(!updated.background_tracking_at_login);
         assert!(updated.start_minimized);
         assert!(updated.background_optimization);
         assert_eq!(defaults.launch_at_login, DEFAULT_LAUNCH_AT_LOGIN);
+        assert_eq!(
+            defaults.background_tracking_at_login,
+            DEFAULT_BACKGROUND_TRACKING_AT_LOGIN
+        );
         assert_eq!(
             defaults.background_optimization,
             DEFAULT_BACKGROUND_OPTIMIZATION
@@ -525,19 +546,22 @@ mod tests {
 
     #[test]
     fn from_storage_values_applies_defaults_and_domain_parsing() {
-        let defaults = DesktopBehaviorSettings::from_storage_values(None, None, None, None, None);
+        let defaults =
+            DesktopBehaviorSettings::from_storage_values(None, None, None, None, None, None);
         assert_eq!(defaults, DesktopBehaviorSettings::default());
 
         let merged = DesktopBehaviorSettings::from_storage_values(
             Some("tray"),
             Some("widget"),
             Some("no"),
+            None,
             Some("invalid"),
             Some("yes"),
         );
         assert_eq!(merged.close_behavior, CloseBehavior::Tray);
         assert_eq!(merged.minimize_behavior, MinimizeBehavior::Widget);
         assert!(!merged.launch_at_login);
+        assert!(!merged.background_tracking_at_login);
         assert_eq!(merged.start_minimized, DEFAULT_START_MINIMIZED);
         assert!(merged.background_optimization);
     }

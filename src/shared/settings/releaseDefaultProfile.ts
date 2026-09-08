@@ -55,6 +55,7 @@ export interface ReleaseDefaultSettingsProfile {
     | "vscode-plus"
     | "xcode";
   launchAtLogin: boolean;
+  backgroundTrackingAtLogin: boolean;
   startMinimized: boolean;
   backgroundOptimization: boolean;
   audioParticipationEnabled: boolean;
@@ -85,6 +86,7 @@ export const RELEASE_DEFAULT_SETTINGS: ReleaseDefaultSettingsProfile = {
   colorSchemeLight: "default",
   colorSchemeDark: "default",
   launchAtLogin: true,
+  backgroundTrackingAtLogin: true,
   startMinimized: true,
   backgroundOptimization: false,
   audioParticipationEnabled: true,

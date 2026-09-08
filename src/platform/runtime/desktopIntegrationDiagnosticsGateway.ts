@@ -13,6 +13,7 @@ interface RawAutostartDiagnosticsSnapshot {
 
 interface RawDesktopIntegrationDiagnosticsSnapshot {
   launch_at_login: boolean;
+  background_tracking_at_login: boolean;
   start_minimized: boolean;
   autostart: RawAutostartDiagnosticsSnapshot;
 }
@@ -27,6 +28,7 @@ export interface AutostartDiagnosticsSnapshot {
 
 export interface DesktopIntegrationDiagnosticsSnapshot {
   launchAtLogin: boolean;
+  backgroundTrackingAtLogin: boolean;
   startMinimized: boolean;
   autostart: AutostartDiagnosticsSnapshot;
 }
@@ -53,6 +55,7 @@ function isRawDesktopIntegrationDiagnostics(
 
   const record = value as Record<string, unknown>;
   return typeof record.launch_at_login === "boolean"
+    && typeof record.background_tracking_at_login === "boolean"
     && typeof record.start_minimized === "boolean"
     && isRawAutostartDiagnostics(record.autostart);
 }
@@ -62,6 +65,7 @@ function mapRawDesktopIntegrationDiagnostics(
 ): DesktopIntegrationDiagnosticsSnapshot {
   return {
     launchAtLogin: raw.launch_at_login,
+    backgroundTrackingAtLogin: raw.background_tracking_at_login,
     startMinimized: raw.start_minimized,
     autostart: raw.autostart,
   };

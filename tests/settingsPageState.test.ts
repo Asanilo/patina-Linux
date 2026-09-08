@@ -97,6 +97,7 @@ interface AppSettings {
     | "vscode-plus"
     | "xcode";
   launchAtLogin: boolean;
+  backgroundTrackingAtLogin: boolean;
   startMinimized: boolean;
   backgroundOptimization: boolean;
   audioParticipationEnabled: boolean;
@@ -129,6 +130,7 @@ const BASE_SETTINGS: AppSettings = {
   colorSchemeLight: "default",
   colorSchemeDark: "default",
   launchAtLogin: false,
+  backgroundTrackingAtLogin: false,
   startMinimized: false,
   backgroundOptimization: false,
   audioParticipationEnabled: true,
@@ -350,14 +352,16 @@ await runTest("commitSettingsPatchWithDeps does not attempt runtime sync when pe
   assert.deepEqual(events, ["persist"]);
 });
 
-await runTest("buildSettingsPatch excludes dedicated local API fields", () => {
+await runTest("buildSettingsPatch excludes dedicated resource settings", () => {
   const saved = buildSettings({
     localApiPort: 14840,
     localApiToken: "old-token",
+    backgroundTrackingAtLogin: true,
   });
   const draft = buildSettings({
     localApiPort: 14840,
     localApiToken: "new-token",
+    backgroundTrackingAtLogin: false,
   });
 
   assert.deepEqual(SettingsRuntimeAdapterService.buildSettingsPatch(saved, draft), {});
@@ -554,6 +558,16 @@ await runTest("normalizeSettingsRecord accepts current minimize behavior values"
   assert.equal(widgetSettings.minimizeBehavior, "widget");
   assert.equal(widgetSettings.closeBehavior, "tray");
   assert.equal(widgetSettings.backgroundOptimization, true);
+
+  const migratedBackgroundLogin = normalizeSettingsRecord({
+    launch_at_login: "0",
+  });
+  assert.equal(migratedBackgroundLogin.backgroundTrackingAtLogin, false);
+  const explicitBackgroundLogin = normalizeSettingsRecord({
+    launch_at_login: "0",
+    background_tracking_at_login: "1",
+  });
+  assert.equal(explicitBackgroundLogin.backgroundTrackingAtLogin, true);
 
   const retiredTraySettings = normalizeSettingsRecord({
     minimize_behavior: "tray",

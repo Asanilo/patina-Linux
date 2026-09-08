@@ -214,7 +214,11 @@ export class SettingsRuntimeAdapterService {
     const patchRecord = patch as Record<keyof AppSettings, AppSettings[keyof AppSettings]>;
     const keys = Object.keys(saved) as Array<keyof AppSettings>;
     for (const key of keys) {
-      if (key === "localApiPort" || key === "localApiToken") {
+      if (
+        key === "localApiPort"
+        || key === "localApiToken"
+        || key === "backgroundTrackingAtLogin"
+      ) {
         continue;
       }
       if (saved[key] !== draft[key]) {

@@ -209,7 +209,7 @@ domain ─────────┘          │
 - 未来 TUI / CLI 只能作为 daemon 客户端，不建立第二套 tracking 或数据库写侧
 - 迁移完成前允许 desktop 继续内嵌运行时，但必须通过显式模式和 `RuntimeLease` 保证同一 profile 只有一个后台 owner
 
-首个 daemon-backed Linux 安装使用一个产品包原子交付 Patina Desktop、`patinad` 与 systemd user unit，不先拆分独立 daemon 包。包安装阶段只放置 unit；首次桌面迁移在当前用户会话中通过 owner-only reservation 分两次进程完成：embedded owner 只准备 unit 与重启意图，释放 RuntimeLease 后的新进程才启动 daemon 并进入 client 模式，避免 `postinst` 对多用户环境做全局选择，也避免交接窗口出现双 owner。“后台追踪随登录启动”与“桌面客户端随登录打开”是两个独立偏好，启动时最小化只属于桌面客户端。
+首个 daemon-backed Linux 安装使用一个产品包原子交付 Patina Desktop、`patinad` 与 systemd user unit，不先拆分独立 daemon 包。包安装阶段只放置 unit；首次桌面迁移在当前用户会话中通过 owner-only reservation 分两次进程完成：embedded owner 只准备 unit 与重启意图，释放 RuntimeLease 后的新进程才启动 daemon 并进入 client 模式，避免 `postinst` 对多用户环境做全局选择，也避免交接窗口出现双 owner。“后台追踪随登录启动”由 host-owned `background_tracking_at_login` 表达，“桌面客户端随登录打开”继续由 `launch_at_login` 表达；新键缺失时只继承一次旧值，此后独立持久化，启动时最小化只属于桌面客户端。两个偏好都不能由普通 app-settings API 直接驱动系统资源。
 
 共享运行内核至少需要以下窄边界：
 

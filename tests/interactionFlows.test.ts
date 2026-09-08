@@ -51,6 +51,7 @@ const BASE_SETTINGS: AppSettings = {
   colorSchemeLight: "default",
   colorSchemeDark: "default",
   launchAtLogin: false,
+  backgroundTrackingAtLogin: false,
   startMinimized: false,
   backgroundOptimization: false,
   onboardingCompleted: false,

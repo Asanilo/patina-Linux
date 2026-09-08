@@ -17,13 +17,19 @@ pub struct DaemonServiceDiagnosticsSnapshot {
 }
 
 pub async fn inspect(
+    background_tracking_at_login: bool,
     desktop_launch_at_login: bool,
     desktop_autostart_valid: bool,
 ) -> DaemonServiceDiagnosticsSnapshot {
     #[cfg(target_os = "linux")]
     {
         let service = crate::platform::linux::systemd_user_service::inspect_patinad_service().await;
-        build_diagnostics(service, desktop_launch_at_login, desktop_autostart_valid)
+        build_diagnostics(
+            service,
+            background_tracking_at_login,
+            desktop_launch_at_login,
+            desktop_autostart_valid,
+        )
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -72,6 +78,7 @@ fn should_stop_conflicting_service(
 #[cfg(target_os = "linux")]
 fn build_diagnostics(
     service: crate::platform::linux::systemd_user_service::SystemdUserServiceSnapshot,
+    background_tracking_at_login: bool,
     desktop_launch_at_login: bool,
     desktop_autostart_valid: bool,
 ) -> DaemonServiceDiagnosticsSnapshot {
@@ -90,12 +97,17 @@ fn build_diagnostics(
             "owner-conflict",
             "patinad.service is enabled or active while Patina Desktop still owns tracking",
         )
-    } else if desktop_launch_at_login && desktop_autostart_valid {
+    } else if background_tracking_at_login && (!desktop_launch_at_login || desktop_autostart_valid)
+    {
         (
             "ready",
-            "desktop autostart can be migrated after the desktop becomes a daemon client",
+            if desktop_launch_at_login {
+                "desktop autostart can be migrated after the desktop becomes a daemon client"
+            } else {
+                "background tracking can be enabled without desktop autostart"
+            },
         )
-    } else if desktop_launch_at_login {
+    } else if background_tracking_at_login {
         (
             "blocked",
             "desktop launch-at-login is enabled but its autostart entry is not valid",
@@ -132,15 +144,26 @@ mod tests {
 
     #[test]
     fn disabled_installed_service_is_ready_for_a_future_autostart_migration() {
-        let snapshot = build_diagnostics(service_snapshot("disabled", false), true, true);
+        let snapshot = build_diagnostics(service_snapshot("disabled", false), true, true, true);
 
         assert_eq!(snapshot.migration_state, "ready");
         assert!(!snapshot.control_available);
     }
 
     #[test]
+    fn background_login_does_not_require_desktop_autostart_when_desktop_login_is_disabled() {
+        let snapshot = build_diagnostics(service_snapshot("disabled", false), true, false, false);
+
+        assert_eq!(snapshot.migration_state, "ready");
+        assert_eq!(
+            snapshot.migration_reason,
+            "background tracking can be enabled without desktop autostart"
+        );
+    }
+
+    #[test]
     fn enabled_service_is_a_conflict_before_desktop_owner_cutover() {
-        let snapshot = build_diagnostics(service_snapshot("enabled", true), true, true);
+        let snapshot = build_diagnostics(service_snapshot("enabled", true), true, true, true);
 
         assert_eq!(snapshot.migration_state, "owner-conflict");
         assert!(!snapshot.control_available);

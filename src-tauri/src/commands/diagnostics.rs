@@ -45,6 +45,7 @@ pub struct AutostartDiagnosticsSnapshot {
 #[derive(Clone, Debug, Serialize)]
 pub struct DesktopIntegrationDiagnosticsSnapshot {
     pub launch_at_login: bool,
+    pub background_tracking_at_login: bool,
     pub start_minimized: bool,
     pub autostart: AutostartDiagnosticsSnapshot,
 }
@@ -149,6 +150,7 @@ pub fn cmd_get_desktop_integration_diagnostics(
 
     DesktopIntegrationDiagnosticsSnapshot {
         launch_at_login: settings.launch_at_login,
+        background_tracking_at_login: settings.background_tracking_at_login,
         start_minimized: settings.start_minimized,
         autostart,
     }
@@ -163,10 +165,12 @@ pub async fn cmd_get_daemon_service_diagnostics(
         .snapshot();
     let autostart = crate::app::autostart::inspect_autostart_desktop_file();
 
-    Ok(
-        crate::app::daemon_service::inspect(desktop_settings.launch_at_login, autostart.valid())
-            .await,
+    Ok(crate::app::daemon_service::inspect(
+        desktop_settings.background_tracking_at_login,
+        desktop_settings.launch_at_login,
+        autostart.valid(),
     )
+    .await)
 }
 
 #[tauri::command]
@@ -192,10 +196,12 @@ pub fn cmd_repair_autostart_desktop_file(
     desktop_behavior_state: State<crate::app::state::DesktopBehaviorState>,
 ) -> Result<DesktopIntegrationDiagnosticsSnapshot, String> {
     crate::app::autostart::repair_current_exe_autostart_desktop_file()?;
+    let settings = desktop_behavior_state.snapshot();
 
     Ok(DesktopIntegrationDiagnosticsSnapshot {
-        launch_at_login: desktop_behavior_state.snapshot().launch_at_login,
-        start_minimized: desktop_behavior_state.snapshot().start_minimized,
+        launch_at_login: settings.launch_at_login,
+        background_tracking_at_login: settings.background_tracking_at_login,
+        start_minimized: settings.start_minimized,
         autostart: build_autostart_diagnostics_snapshot(
             crate::app::autostart::inspect_autostart_desktop_file(),
         ),

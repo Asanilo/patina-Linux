@@ -44,6 +44,7 @@ type RawAppSettingsKey =
   | "color_scheme_light"
   | "color_scheme_dark"
   | "launch_at_login"
+  | "background_tracking_at_login"
   | "start_minimized"
   | "background_optimization"
   | "audio_participation_enabled"
@@ -73,6 +74,7 @@ const APP_SETTINGS_RAW_KEYS: Record<keyof AppSettings, RawAppSettingsKey> = {
   colorSchemeLight: "color_scheme_light",
   colorSchemeDark: "color_scheme_dark",
   launchAtLogin: "launch_at_login",
+  backgroundTrackingAtLogin: "background_tracking_at_login",
   startMinimized: "start_minimized",
   backgroundOptimization: "background_optimization",
   audioParticipationEnabled: "audio_participation_enabled",
@@ -300,6 +302,10 @@ export function normalizeSettingsRecord(record: Record<string, string | undefine
       DARK_COLOR_SCHEMES,
     ),
     launchAtLogin: parseBooleanSetting(record.launch_at_login, DEFAULT_SETTINGS.launchAtLogin),
+    backgroundTrackingAtLogin: parseBooleanSetting(
+      record.background_tracking_at_login,
+      parseBooleanSetting(record.launch_at_login, DEFAULT_SETTINGS.backgroundTrackingAtLogin),
+    ),
     startMinimized: parseBooleanSetting(record.start_minimized, DEFAULT_SETTINGS.startMinimized),
     backgroundOptimization: parseBooleanSetting(
       record.background_optimization,

@@ -50,6 +50,7 @@ export interface AppSettings {
   colorSchemeLight: ColorScheme;
   colorSchemeDark: ColorScheme;
   launchAtLogin: boolean;
+  backgroundTrackingAtLogin: boolean;
   startMinimized: boolean;
   backgroundOptimization: boolean;
   audioParticipationEnabled: boolean;

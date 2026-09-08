@@ -4,6 +4,7 @@ use sqlx::{Row, Sqlite, Transaction};
 const HOST_INTEGRATION_SETTING_KEYS: &[&str] = &[
     "local_api_port",
     "local_api_token",
+    "background_tracking_at_login",
     "web_activity_port",
     "web_activity_token",
     "remote_status_bridge_enabled",

@@ -57,6 +57,7 @@ await runTest("settings diagnostics mark Linux autostart Exec failures as danger
     webActivityBridge: null,
     desktopIntegration: {
       launchAtLogin: true,
+      backgroundTrackingAtLogin: true,
       startMinimized: true,
       autostart: {
         path: "/home/user/.config/autostart/Patina.desktop",

@@ -109,6 +109,9 @@ pub async fn open_prepared_sqlite_pool_at_path(
     prepare_current_schema_for_pool(&pool)
         .await
         .map_err(|error| format!("{error} (`{}`)", db_path.display()))?;
+    crate::data::repositories::app_settings::ensure_background_tracking_login_preference(&pool)
+        .await
+        .map_err(|error| format!("{error} (`{}`)", db_path.display()))?;
     Ok(pool)
 }
 

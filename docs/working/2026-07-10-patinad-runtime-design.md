@@ -1,6 +1,6 @@
 # `patinad` 后台运行时设计
 
-> 状态：Stage 0 至 Stage 2H.2、Stage 2H.3a systemd 诊断、Stage 2H.3b.1/2 typed daemon client 与只读 runtime adapter、Stage 2H.3b.3 显式 desktop client 模式，以及 Stage 2H.3c.1 至 2H.3c.7b 写侧 owner 收口均已完成并验证；下一阶段是 Stage 2H.3d 首次启动迁移、服务启停和默认 owner 切换。
+> 状态：Stage 0 至 Stage 2H.2、Stage 2H.3a systemd 诊断、Stage 2H.3b typed daemon client、Stage 2H.3c 写侧 owner 收口，以及 Stage 2H.3d.1/2 systemd 控制基础和登录偏好数据拆分均已完成并验证；当前进入 Stage 2H.3d.3 两阶段默认 owner 交接。
 > 生命周期：本设计是当前 `patinad` 实施依据；后台接管稳定完成后移入 `docs/archive/`。
 
 ## 1. 目标
@@ -157,7 +157,7 @@
 Stage 2H.3d 不做一次性切换，按下面五个可回滚批次推进：
 
 1. **2H.3d.1 systemd 控制基础（已实现，待安装包实机 mutation 验收）**：`platform/linux` 已补齐固定 `patinad.service` 的 enable/disable/start/stop、8 秒超时、幂等短路与操作后复核；`app` 层在 Production embedded 启动前会停止提前运行的 packaged daemon，Dev/Local 不受影响。当前不开放通用 unit 名称、shell 命令、HTTP、MCP 或 UI 开关；已通过状态机测试和只读 user manager 实机检查，当前系统尚未安装该 unit，因此真实启停并入 2H.3d.5 的 DEB 验收。
-2. **2H.3d.2 登录偏好拆分**：新增“后台追踪随登录启动”和“桌面客户端随登录打开”两个独立设置；旧 `launch_at_login` 只在一次性迁移中作为来源，`start_minimized` 只依赖桌面客户端偏好。数据库提交与 systemd/XDG 外部状态不伪装成一个跨系统事务，失败时保留可对账状态和明确重试入口。
+2. **2H.3d.2 登录偏好拆分（数据语义已实现）**：已新增 host-owned `background_tracking_at_login`，并保留 `launch_at_login` 作为“桌面客户端随登录打开”；旧数据库首次打开时，新键只在缺失时继承旧值，此后不再被旧键覆盖，新安装保持现有默认行为。`start_minimized` 仍只依赖桌面客户端偏好；备份 Replace/Merge 保留当前机器的后台登录偏好。当前不开放 UI、HTTP 或 MCP 写入，也尚不据此启停 unit；外部状态应用与失败对账分别进入 2H.3d.3/4。
 3. **2H.3d.3 两阶段 owner 交接**：第一进程只写入 owner-only cutover reservation、启用 unit 并安排受控重启，不在 embedded tracker 存活时启动 daemon；新 Desktop 进程读 reservation 后进入 daemon-client 模式，启动并协商 daemon，成功后才提交完成状态。daemon 不可用或版本不兼容时显示暂停与修复诊断，不自动回退 embedded。
 4. **2H.3d.4 设置与回滚入口**：在 Quiet Pro Settings 中提供后台服务状态、启停和显式回滚。停用 daemon 前必须先封口并停止服务，确认 RuntimeLease 已释放后才能预约下一次 embedded 启动；不允许两个 owner 同时运行，也不把服务管理暴露给浏览器 UI、MCP 或 Agent。
 5. **2H.3d.5 自动化与 DEB 实机验收**：覆盖首次迁移中断、重复执行、unit 缺失、systemd 不可用、服务崩溃、Token/端口不一致、旧 XDG autostart、pending storage migration 和自定义挂载目录。最后在已安装 DEB 上验证登录启动、关闭 UI 后持续记录、重开 UI、锁屏/睡眠、浏览器活动、升级、卸载与数据保留。
@@ -325,12 +325,14 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 - 已完成 Stage 2H.3c.6：受控恢复使用 owner-only 暂存、systemd restart、启动维护事务和 durable receipt
 - 已完成 Stage 2H.3c.7a：WebDAV 非密钥设置走 daemon app-settings，Linux 密码走 profile-scoped Secret Service，显式上传由 daemon 从自己的 SQLite snapshot 执行
 - 已实现 Stage 2H.3c.7b：remote backup 列表、ID 派生路径校验、有界下载与下载归档进入受控恢复状态机的衔接；完成门禁后 Stage 2H.3c 写侧收口
-- 待实施 Stage 2H.3d：首次启动迁移、服务启停设置、默认 owner 切换和双 owner 验收
+- 已完成 Stage 2H.3d.1：固定 unit 的受限 systemd 控制基础，以及 Production embedded 启动前的单 owner 防护
+- 已完成 Stage 2H.3d.2 数据语义：后台追踪与桌面客户端登录偏好分键，旧值只作一次性缺省来源，host-owned 偏好不随备份覆盖目标机器；当前尚未开放 UI 或应用到 systemd
+- 待实施 Stage 2H.3d.3 至 2H.3d.5：两阶段 owner 交接、服务设置/回滚和 DEB 实机验收
 - Tauri 改为 daemon desktop client，并保留 tray、通知、文件选择和 updater
 - 默认切换后 desktop 不启动或自动回退 embedded tracker；daemon 不可用时明确暂停、诊断和重启
 - 一个 `patina` 产品包同时交付 Patina Desktop、`patinad` 和 systemd user unit
 - DEB 不在 `postinst` 全局 enable；首次桌面启动在用户会话中迁移并启用服务
-- 将“后台追踪随登录启动”与“桌面客户端随登录打开”拆成独立设置，启动时最小化只属于桌面客户端
+- “后台追踪随登录启动”与“桌面客户端随登录打开”的持久化语义已拆分；启动时最小化只属于桌面客户端，服务实际应用待安全交接完成
 - 首个 daemon-backed DEB 使用 beta 版本验证且只发布 DEB；AppImage 在解决 daemon 版本化解包与原子更新前不进入该发布
 - embedded runtime 至少跨一个稳定版本保留为显式开发回滚路径
 
