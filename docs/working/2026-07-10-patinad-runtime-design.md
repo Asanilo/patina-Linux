@@ -152,6 +152,18 @@
 4. **已实现列表与有界下载**：远端 index 由 daemon 以 1 MiB 上限读取，逐项验证产品、版本、ID、重复项、大小和 ID 派生路径；归档下载使用 `create_new`、`0600` 和 512 MiB 上限，超限或失败只删除本次临时文件。
 5. **已完成并验证恢复衔接**：用户先根据索引元数据确认；daemon 下载并复核实际归档及其索引元数据后写入 2H.3c.6 的 owner-only staging，直接预约同一 systemd 启动恢复。调度失败时先检查票据是否已被 reservation 持有，无法证明安全时保留文件。前端/集成门禁、516 项 Rust 测试和 Clippy 已通过；跨 systemd 重启的真实远端服务验收并入 Stage 2H.3d 的 DEB 实机清单。
 
+### 3.6 下一阶段：Stage 2H.3d 默认 owner 切换
+
+Stage 2H.3d 不做一次性切换，按下面五个可回滚批次推进：
+
+1. **2H.3d.1 systemd 控制基础（已实现，待安装包实机 mutation 验收）**：`platform/linux` 已补齐固定 `patinad.service` 的 enable/disable/start/stop、8 秒超时、幂等短路与操作后复核；`app` 层在 Production embedded 启动前会停止提前运行的 packaged daemon，Dev/Local 不受影响。当前不开放通用 unit 名称、shell 命令、HTTP、MCP 或 UI 开关；已通过状态机测试和只读 user manager 实机检查，当前系统尚未安装该 unit，因此真实启停并入 2H.3d.5 的 DEB 验收。
+2. **2H.3d.2 登录偏好拆分**：新增“后台追踪随登录启动”和“桌面客户端随登录打开”两个独立设置；旧 `launch_at_login` 只在一次性迁移中作为来源，`start_minimized` 只依赖桌面客户端偏好。数据库提交与 systemd/XDG 外部状态不伪装成一个跨系统事务，失败时保留可对账状态和明确重试入口。
+3. **2H.3d.3 两阶段 owner 交接**：第一进程只写入 owner-only cutover reservation、启用 unit 并安排受控重启，不在 embedded tracker 存活时启动 daemon；新 Desktop 进程读 reservation 后进入 daemon-client 模式，启动并协商 daemon，成功后才提交完成状态。daemon 不可用或版本不兼容时显示暂停与修复诊断，不自动回退 embedded。
+4. **2H.3d.4 设置与回滚入口**：在 Quiet Pro Settings 中提供后台服务状态、启停和显式回滚。停用 daemon 前必须先封口并停止服务，确认 RuntimeLease 已释放后才能预约下一次 embedded 启动；不允许两个 owner 同时运行，也不把服务管理暴露给浏览器 UI、MCP 或 Agent。
+5. **2H.3d.5 自动化与 DEB 实机验收**：覆盖首次迁移中断、重复执行、unit 缺失、systemd 不可用、服务崩溃、Token/端口不一致、旧 XDG autostart、pending storage migration 和自定义挂载目录。最后在已安装 DEB 上验证登录启动、关闭 UI 后持续记录、重开 UI、锁屏/睡眠、浏览器活动、升级、卸载与数据保留。
+
+切换约束：开发版和现有已安装稳定版继续默认 embedded；只有完成 reservation 的安装版才默认 daemon client。`--daemon-client-preview` 在 beta 验收期继续保留，显式 embedded 回滚只用于开发/故障恢复并必须经过 RuntimeLease。Stage 2H.3d.5 通过前不发布 daemon-backed stable，也不恢复 AppImage 发布。
+
 ## 4. 目标结构
 
 迁移期共享运行时结构：

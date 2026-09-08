@@ -204,11 +204,12 @@ domain ─────────┘          │
 - `patinad` 最终唯一拥有 tracking、watchdog、SQLite 运行时写侧、Linux 平台信号、浏览器桥接和本地 API
 - 桌面客户端当前由 Tauri 实现，并拥有窗口、tray、WebView、用户交互和桌面 updater；Stage 2H.3 切换完成后，它通过稳定客户端边界访问 daemon
 - 默认 owner 切换后，桌面客户端不得自动启动 embedded tracker；daemon 不可用时必须明确报告暂停状态并通过受控服务入口恢复，不能静默切换 owner
+- 默认 owner 切换前，Production embedded Desktop 启动会停止提前运行的 packaged daemon，再依靠 RuntimeLease 获取唯一 owner；Dev/Local profile 不控制 production unit
 - browser UI 由 `patinad` 在 loopback 提供，通过 HTTP API 和本机 event stream 访问同一运行时，不直接打开 SQLite
 - 未来 TUI / CLI 只能作为 daemon 客户端，不建立第二套 tracking 或数据库写侧
 - 迁移完成前允许 desktop 继续内嵌运行时，但必须通过显式模式和 `RuntimeLease` 保证同一 profile 只有一个后台 owner
 
-首个 daemon-backed Linux 安装使用一个产品包原子交付 Patina Desktop、`patinad` 与 systemd user unit，不先拆分独立 daemon 包。包安装阶段只放置 unit；首次桌面启动在当前用户会话中迁移旧 XDG autostart 并启用后台服务，避免 `postinst` 对多用户环境做全局选择。“后台追踪随登录启动”与“桌面客户端随登录打开”是两个独立偏好，启动时最小化只属于桌面客户端。
+首个 daemon-backed Linux 安装使用一个产品包原子交付 Patina Desktop、`patinad` 与 systemd user unit，不先拆分独立 daemon 包。包安装阶段只放置 unit；首次桌面迁移在当前用户会话中通过 owner-only reservation 分两次进程完成：embedded owner 只准备 unit 与重启意图，释放 RuntimeLease 后的新进程才启动 daemon 并进入 client 模式，避免 `postinst` 对多用户环境做全局选择，也避免交接窗口出现双 owner。“后台追踪随登录启动”与“桌面客户端随登录打开”是两个独立偏好，启动时最小化只属于桌面客户端。
 
 共享运行内核至少需要以下窄边界：
 

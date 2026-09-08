@@ -196,6 +196,13 @@ fn register_runtime_hooks(
         .setup(move |app| {
             if runtime_mode.owns_embedded_runtime() {
                 let profile = crate::platform::app_paths::app_profile(app.handle());
+                #[cfg(target_os = "linux")]
+                tauri::async_runtime::block_on(
+                    crate::app::daemon_service::stop_conflicting_service_before_embedded_startup(
+                        profile,
+                    ),
+                )
+                .map_err(std::io::Error::other)?;
                 let control_root =
                     crate::platform::storage_paths::default_storage_paths(app.handle())?
                         .control_root;

@@ -2,6 +2,35 @@ use zbus::{proxy, zvariant::OwnedObjectPath};
 
 pub const PATINAD_SERVICE_NAME: &str = "patinad.service";
 const INSPECTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+const CONTROL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+const CONTROL_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
+
+type UnitFileChange = (String, String, String);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PatinadServiceControlAction {
+    #[allow(dead_code)] // Wired by Stage 2H.3d.2 after the login preferences are split.
+    Enable,
+    #[allow(dead_code)] // Wired by Stage 2H.3d.2 after the login preferences are split.
+    Disable,
+    Start,
+    Stop,
+}
+
+impl PatinadServiceControlAction {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Enable => "enable",
+            Self::Disable => "disable",
+            Self::Start => "start",
+            Self::Stop => "stop",
+        }
+    }
+
+    fn changes_login_start(self) -> bool {
+        self == Self::Enable || self == Self::Disable
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SystemdUserServiceSnapshot {
@@ -54,6 +83,30 @@ trait SystemdUserManager {
 
     #[zbus(name = "GetUnit")]
     fn get_unit(&self, name: &str) -> zbus::Result<OwnedObjectPath>;
+
+    #[zbus(name = "EnableUnitFiles")]
+    fn enable_unit_files(
+        &self,
+        files: Vec<&str>,
+        runtime: bool,
+        force: bool,
+    ) -> zbus::Result<(bool, Vec<UnitFileChange>)>;
+
+    #[zbus(name = "DisableUnitFiles")]
+    fn disable_unit_files(
+        &self,
+        files: Vec<&str>,
+        runtime: bool,
+    ) -> zbus::Result<Vec<UnitFileChange>>;
+
+    #[zbus(name = "StartUnit")]
+    fn start_unit(&self, name: &str, mode: &str) -> zbus::Result<OwnedObjectPath>;
+
+    #[zbus(name = "StopUnit")]
+    fn stop_unit(&self, name: &str, mode: &str) -> zbus::Result<OwnedObjectPath>;
+
+    #[zbus(name = "Reload")]
+    fn reload(&self) -> zbus::Result<()>;
 }
 
 #[proxy(
@@ -77,6 +130,19 @@ pub async fn inspect_patinad_service() -> SystemdUserServiceSnapshot {
     }
 }
 
+pub async fn control_patinad_service(
+    action: PatinadServiceControlAction,
+) -> Result<SystemdUserServiceSnapshot, String> {
+    tokio::time::timeout(CONTROL_TIMEOUT, control_patinad_service_inner(action))
+        .await
+        .map_err(|_| {
+            format!(
+                "timed out while trying to {} {PATINAD_SERVICE_NAME}",
+                action.label()
+            )
+        })?
+}
+
 async fn inspect_patinad_service_inner() -> SystemdUserServiceSnapshot {
     let connection = match zbus::Connection::session().await {
         Ok(connection) => connection,
@@ -86,7 +152,13 @@ async fn inspect_patinad_service_inner() -> SystemdUserServiceSnapshot {
             ));
         }
     };
-    let manager = match SystemdUserManagerProxy::new(&connection).await {
+    inspect_patinad_service_with_connection(&connection).await
+}
+
+async fn inspect_patinad_service_with_connection(
+    connection: &zbus::Connection,
+) -> SystemdUserServiceSnapshot {
+    let manager = match SystemdUserManagerProxy::new(connection).await {
         Ok(manager) => manager,
         Err(error) => {
             return SystemdUserServiceSnapshot::manager_unavailable(format!(
@@ -139,7 +211,7 @@ async fn inspect_patinad_service_inner() -> SystemdUserServiceSnapshot {
             error: None,
         };
     };
-    let unit_builder = match SystemdUserUnitProxy::builder(&connection).path(unit_path) {
+    let unit_builder = match SystemdUserUnitProxy::builder(connection).path(unit_path) {
         Ok(builder) => builder,
         Err(error) => {
             return SystemdUserServiceSnapshot {
@@ -204,6 +276,101 @@ async fn inspect_patinad_service_inner() -> SystemdUserServiceSnapshot {
     }
 }
 
+async fn control_patinad_service_inner(
+    action: PatinadServiceControlAction,
+) -> Result<SystemdUserServiceSnapshot, String> {
+    let connection = zbus::Connection::session()
+        .await
+        .map_err(|error| format!("failed to connect to the user session bus: {error}"))?;
+    let before = inspect_patinad_service_with_connection(&connection).await;
+    ensure_controllable(&before)?;
+    if action_satisfied(action, &before) {
+        return Ok(before);
+    }
+
+    let manager = SystemdUserManagerProxy::new(&connection)
+        .await
+        .map_err(|error| format!("failed to connect to the systemd user manager: {error}"))?;
+    match action {
+        PatinadServiceControlAction::Enable => {
+            manager
+                .enable_unit_files(vec![PATINAD_SERVICE_NAME], false, false)
+                .await
+                .map_err(|error| format!("failed to enable {PATINAD_SERVICE_NAME}: {error}"))?;
+        }
+        PatinadServiceControlAction::Disable => {
+            manager
+                .disable_unit_files(vec![PATINAD_SERVICE_NAME], false)
+                .await
+                .map_err(|error| format!("failed to disable {PATINAD_SERVICE_NAME}: {error}"))?;
+        }
+        PatinadServiceControlAction::Start => {
+            manager
+                .start_unit(PATINAD_SERVICE_NAME, "replace")
+                .await
+                .map_err(|error| format!("failed to start {PATINAD_SERVICE_NAME}: {error}"))?;
+        }
+        PatinadServiceControlAction::Stop => {
+            manager
+                .stop_unit(PATINAD_SERVICE_NAME, "replace")
+                .await
+                .map_err(|error| format!("failed to stop {PATINAD_SERVICE_NAME}: {error}"))?;
+        }
+    }
+    if action.changes_login_start() {
+        manager.reload().await.map_err(|error| {
+            format!(
+                "failed to reload the systemd user manager after {}: {error}",
+                action.label()
+            )
+        })?;
+    }
+
+    loop {
+        let snapshot = inspect_patinad_service_with_connection(&connection).await;
+        ensure_controllable(&snapshot)?;
+        if action_satisfied(action, &snapshot) {
+            return Ok(snapshot);
+        }
+        if action == PatinadServiceControlAction::Start
+            && snapshot.active_state.as_deref() == Some("failed")
+        {
+            return Err(format!(
+                "{PATINAD_SERVICE_NAME} entered failed state while starting"
+            ));
+        }
+        tokio::time::sleep(CONTROL_POLL_INTERVAL).await;
+    }
+}
+
+fn ensure_controllable(snapshot: &SystemdUserServiceSnapshot) -> Result<(), String> {
+    if !snapshot.manager_available {
+        return Err(snapshot
+            .error
+            .clone()
+            .unwrap_or_else(|| "systemd user manager is unavailable".to_string()));
+    }
+    if !snapshot.unit_installed {
+        return Err(format!("{PATINAD_SERVICE_NAME} is not installed"));
+    }
+    if let Some(error) = snapshot.error.as_ref() {
+        return Err(error.clone());
+    }
+    Ok(())
+}
+
+fn action_satisfied(
+    action: PatinadServiceControlAction,
+    snapshot: &SystemdUserServiceSnapshot,
+) -> bool {
+    match action {
+        PatinadServiceControlAction::Enable => snapshot.enabled,
+        PatinadServiceControlAction::Disable => !snapshot.enabled,
+        PatinadServiceControlAction::Start => snapshot.active,
+        PatinadServiceControlAction::Stop => !snapshot.active,
+    }
+}
+
 fn unit_file_state_enables_login_start(state: &str) -> bool {
     matches!(state, "enabled" | "enabled-runtime")
 }
@@ -224,7 +391,23 @@ fn is_missing_unit_error(error: &zbus::Error) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{active_state_is_running, unit_file_state_enables_login_start};
+    use super::{
+        action_satisfied, active_state_is_running, unit_file_state_enables_login_start,
+        PatinadServiceControlAction, SystemdUserServiceSnapshot,
+    };
+
+    fn service_snapshot(enabled: bool, active: bool) -> SystemdUserServiceSnapshot {
+        SystemdUserServiceSnapshot {
+            manager_available: true,
+            unit_installed: true,
+            unit_file_state: Some(if enabled { "enabled" } else { "disabled" }.to_string()),
+            enabled,
+            active_state: Some(if active { "active" } else { "inactive" }.to_string()),
+            sub_state: Some(if active { "running" } else { "dead" }.to_string()),
+            active,
+            error: None,
+        }
+    }
 
     #[test]
     fn only_enabled_unit_file_states_start_at_login() {
@@ -244,6 +427,37 @@ mod tests {
         assert!(!active_state_is_running("inactive"));
         assert!(!active_state_is_running("failed"));
         assert!(!active_state_is_running("deactivating"));
+    }
+
+    #[test]
+    fn service_control_postconditions_are_action_specific() {
+        let disabled = service_snapshot(false, false);
+        assert!(action_satisfied(
+            PatinadServiceControlAction::Disable,
+            &disabled
+        ));
+        assert!(action_satisfied(
+            PatinadServiceControlAction::Stop,
+            &disabled
+        ));
+        assert!(!action_satisfied(
+            PatinadServiceControlAction::Enable,
+            &disabled
+        ));
+
+        let running = service_snapshot(true, true);
+        assert!(action_satisfied(
+            PatinadServiceControlAction::Enable,
+            &running
+        ));
+        assert!(action_satisfied(
+            PatinadServiceControlAction::Start,
+            &running
+        ));
+        assert!(!action_satisfied(
+            PatinadServiceControlAction::Stop,
+            &running
+        ));
     }
 
     #[tokio::test]

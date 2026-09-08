@@ -44,6 +44,32 @@ pub async fn inspect(
 }
 
 #[cfg(target_os = "linux")]
+pub async fn stop_conflicting_service_before_embedded_startup(
+    profile: crate::platform::app_paths::AppProfile,
+) -> Result<(), String> {
+    let snapshot = crate::platform::linux::systemd_user_service::inspect_patinad_service().await;
+    if !should_stop_conflicting_service(profile, &snapshot) {
+        return Ok(());
+    }
+    eprintln!(
+        "[patinad] stopping an active packaged daemon before the embedded desktop owner starts"
+    );
+    crate::platform::linux::systemd_user_service::control_patinad_service(
+        crate::platform::linux::systemd_user_service::PatinadServiceControlAction::Stop,
+    )
+    .await?;
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn should_stop_conflicting_service(
+    profile: crate::platform::app_paths::AppProfile,
+    service: &crate::platform::linux::systemd_user_service::SystemdUserServiceSnapshot,
+) -> bool {
+    profile == crate::platform::app_paths::AppProfile::Production && service.active
+}
+
+#[cfg(target_os = "linux")]
 fn build_diagnostics(
     service: crate::platform::linux::systemd_user_service::SystemdUserServiceSnapshot,
     desktop_launch_at_login: bool,
@@ -100,7 +126,8 @@ fn build_diagnostics(
 
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
-    use super::build_diagnostics;
+    use super::{build_diagnostics, should_stop_conflicting_service};
+    use crate::platform::app_paths::AppProfile;
     use crate::platform::linux::systemd_user_service::SystemdUserServiceSnapshot;
 
     #[test]
@@ -117,6 +144,29 @@ mod tests {
 
         assert_eq!(snapshot.migration_state, "owner-conflict");
         assert!(!snapshot.control_available);
+    }
+
+    #[test]
+    fn only_production_embedded_startup_stops_a_conflicting_service() {
+        let mut service = service_snapshot("enabled", true);
+        service.active = true;
+        service.active_state = Some("active".to_string());
+
+        assert!(should_stop_conflicting_service(
+            AppProfile::Production,
+            &service
+        ));
+        assert!(!should_stop_conflicting_service(
+            AppProfile::Local,
+            &service
+        ));
+        assert!(!should_stop_conflicting_service(AppProfile::Dev, &service));
+
+        service.active = false;
+        assert!(!should_stop_conflicting_service(
+            AppProfile::Production,
+            &service
+        ));
     }
 
     fn service_snapshot(unit_file_state: &str, enabled: bool) -> SystemdUserServiceSnapshot {
