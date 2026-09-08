@@ -148,6 +148,25 @@
 
 ### 5.6 当前实施主线：`patinad`
 
+`patinad` 是当前唯一的架构实施主线。Linux `main` 作为已发布桌面产品的稳定功能基线，在 daemon-backed beta 完成前不再单独扩展一条持续追平 Windows 上游的功能线。上游改动只作为定期审查输入，满足以下条件之一时才进入当前实施序列：
+
+- 修复计时正确性、数据安全、隐私或安全边界问题
+- 对 Linux 同样成立，且能够落入现有明确 owner
+- 能以较小冲突改善高频核心页面，同时不会让 embedded runtime 与 daemon 同时增长
+
+Windows runtime、installer、updater、ARM/UWP 等平台专属实现不移植；纯功能扩张、本地化扩张和低优先级界面增强默认等 daemon-backed beta 后再评估。同步上游时按行为契约重新实现或选择性移植，不整体 merge `upstream/main`，也不以版本号追平作为完成标准。
+
+当前分支收敛顺序固定为：
+
+1. 把 Linux `main` 已验证的功能提交合入 `feature/patinad-daemon`，只做稳定基线到未来架构线的单向收敛。
+2. 审计活动导入、定时备份和其他新增写路径，确保 daemon client 模式不会重新绕过 runtime/database owner。
+3. 按语义审查上游 `1.9.5` 的计时边界、网页区间去重和备份恢复边界修复；只移植 Linux 仍缺失的部分。
+4. 完成 backup/restore、remote backup 等 Stage 2H.3c 剩余写侧收口。
+5. 完成首次启动迁移、systemd 服务控制、默认 owner 切换和双 owner 验收。
+6. 发布 daemon-backed DEB beta 并完成登录启动、关闭 UI 后持续记录、崩溃恢复、升级、卸载和数据保留验证。
+
+在第 6 步完成前，不再把新的上游大型功能只加入 Linux `main` 而不进入 patinad 架构线。
+
 当前结构主线按以下顺序推进：
 
 1. Stage 0 基础已完成：数据 profile、存储锚点、运行时唯一 owner、API 凭据、受限请求解析与生命周期、OpenAPI 一致性和优雅关闭已有自动验证。

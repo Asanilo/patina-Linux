@@ -1,6 +1,6 @@
 # `patinad` 后台运行时设计
 
-> 状态：Stage 0 至 Stage 2H.2、Stage 2H.3a systemd 诊断、Stage 2H.3b.1/2 typed daemon client 与只读 runtime adapter、Stage 2H.3b.3 显式 desktop client 模式，以及 Stage 2H.3c.1/2 Desktop 写侧转发与连接重配置均已完成并验证；Stage 2H.3c 默认 owner 切换仍未完成。
+> 状态：Stage 0 至 Stage 2H.2、Stage 2H.3a systemd 诊断、Stage 2H.3b.1/2 typed daemon client 与只读 runtime adapter、Stage 2H.3b.3 显式 desktop client 模式，以及 Stage 2H.3c.1/2 Desktop 写侧转发与连接重配置均已完成并验证；当前进入 Linux `main` 功能收敛与剩余数据库写侧审计，Stage 2H.3 默认 owner 切换仍未完成。
 > 生命周期：本设计是当前 `patinad` 实施依据；后台接管稳定完成后移入 `docs/archive/`。
 
 ## 1. 目标
@@ -18,7 +18,7 @@
 - 不扩大 KDE、wlroots 或移动端支持
 - 不为 MCP 提供任意文件操作能力
 
-## 3. 当前 Stage 2H.3b.3 状态
+## 3. 当前 Stage 2H.3c.2 状态
 
 当前分支已经提供并验证：
 
@@ -84,6 +84,26 @@
 - daemon 连接断开时清除 live snapshot，不把旧窗口继续显示为当前状态；daemon 本身不随 desktop 退出
 - Token 不存在或 daemon 暂不可达时 preview desktop 仍可打开，并在 client runtime state 中保留明确错误
 - 真实 GNOME 会话验收确认 desktop 与 daemon 可使用同一 production profile 共存，runtime lease 始终属于 daemon，desktop 退出后 daemon API 和 tracking snapshot 继续更新
+
+### 3.1 当前收敛批次
+
+本批次解决 Linux 稳定产品线与 daemon 架构线继续分叉的问题，不改变 `main` 的已发布行为，也不把尚未完成的 daemon 反向合入稳定分支。
+
+实施顺序：
+
+1. 将 Linux `main` 自 patinad 分支点之后的已验证提交单向合入本分支，保留活动详情、应用/分类/网页趋势、安全活动导入与本地定时备份。
+2. 对合入能力逐项决定 owner：只读查询可继续复用 transport-neutral read model；导入、备份调度、恢复和任何 SQLite mutation 必须进入 daemon 写侧清单，不能因兼容 embedded 模式而在 daemon client 模式直接打开写连接。
+3. 对照上游 `1.9.5` 的行为修复审查暂停、锁屏、休眠、采样失败、网页区间去重和备份恢复边界。已有 daemon 等价保护时补回归测试，不复制 Windows runtime；确有缺口时在 tracking、web activity 或 backup owner 内修复。
+4. 完成 backup/restore 与 remote backup 的 owner 收口。恢复继续采用 Desktop 受控暂存、重启前预约、daemon 启动时维护模式，不开放任意路径 HTTP 写入。
+5. 完成首次启动迁移、服务启停、默认 daemon owner 和双 owner 防护，再进入 daemon-backed DEB beta。
+
+本批次验收：
+
+- patinad 分支包含 Linux `main` 的稳定功能，版本与 changelog 状态不倒退
+- daemon client 模式不存在新增的直接 SQLite 写路径或第二个后台调度 owner
+- 上游正确性修复已逐项记录为“已有等价保护、已移植或明确不适用”
+- frontend、真实浏览器 smoke、Rust、Clippy、bundle 与架构边界门禁全部通过
+- 合流结果只推送 patinad 分支，不改变当前 Linux Release
 
 ## 4. 目标结构
 
