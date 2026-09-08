@@ -214,6 +214,19 @@ npm run tauri build -- --bundles deb --config '{"bundle":{"createUpdaterArtifact
 
 This checks the `.deb` bundler without requiring the updater signing secret. The real tagged release still uses GitHub Actions with `createUpdaterArtifacts: true`, so both signed package artifacts and the package-aware `latest.json` remain part of the release workflow.
 
+### Installed Daemon Package Acceptance
+
+The installed-package collector is read-only and can be run from the repository against the current production profile:
+
+```bash
+npm run release:inspect-installed-patinad -- --phase baseline --expected-version 1.8.3
+npm run release:inspect-installed-patinad -- --phase managed --expected-version 1.9.0-beta.1
+```
+
+Use `--output /absolute/new-file.json` to retain evidence. The collector creates that file as `0600` and refuses to overwrite an existing path. It never prints the API Token, window titles, or visited URLs; API output is reduced to protocol and capability readiness. It also never installs a package, enables or stops a service, changes owner state, or deletes data.
+
+Supported phases are `baseline`, `installed`, `managed`, `rolled-back`, and `uninstalled`. The authoritative action order and safety gates live in [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md); do not use a passing snapshot as a substitute for the before/after checks around UI exit, service crash, lock/suspend, upgrade, rollback, and uninstall.
+
 ## MCP Wrapper
 
 The MCP wrapper is a stdio server that maps MCP tool calls to the local API:

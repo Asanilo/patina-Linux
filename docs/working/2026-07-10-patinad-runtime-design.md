@@ -174,6 +174,30 @@ Stage 2H.3d 不做一次性切换，按下面五个可回滚批次推进：
    - **2H.3d.5b DEB-only beta 发布契约（已实现）**：带预发布后缀的 daemon-backed 版本只构建和上传 `.deb`、对应签名、DEB updater 元数据及扩展资产；稳定 tag 仍保留 AppImage、DEB 和通用 AppImage fallback。发布说明、bundle target、资产复制、GitHub Release 附件和 `latest.json` 平台项由同一版本策略决定，并有自动化防止 beta 混入 AppImage。预发布 manifest 只挂在对应 prerelease，不替换稳定 `/releases/latest/`；专用 beta 自动更新通道不属于首次实机验收前置条件。
    - **2H.3d.5c 已安装包实机验收（待实施）**：在可回退的数据备份和当前用户会话中执行完整检查表，保留每一步的 unit、reservation、lease、API capability 和数据库边界证据。
 
+2H.3d.5c 使用同一 working 文档收口，不再新建一次性顶层文档。仓库提供 `npm run release:inspect-installed-patinad -- ...` 作为只读证据采集器；它只检查固定包路径、systemd 状态、owner 文件、SQLite `quick_check` 和裁剪后的 capability，不输出 API Token、窗口标题或 URL，不安装软件、不控制服务、不覆盖已有证据文件。输出文件使用 `create_new` 和 `0600`。
+
+实机验收必须按以下顺序执行：
+
+1. **升级前基线与可恢复备份**：关闭不必要的写入操作，通过设置页导出一份已验证的结构化备份，并把它保存在当前 Patina 数据目录之外；记录现有包版本、数据库完整性和行数基线。没有可读取的备份不得进入安装步骤。
+2. **安装后、首次切换前**：安装静态验证已通过的 `X.Y.Z-beta.N` DEB，立即确认 Desktop、`patinad` 和 unit 来自同一包；维护脚本不得启动或启用 unit，用户数据与旧 XDG autostart 仍存在。
+3. **首次 owner 交接**：启动 Desktop，完成显式迁移与受控重启；确认 reservation 为 `completed`、lease owner 为 `daemon`、systemd service active，并且 capability 同时报告 daemon runtime、tracking ready 和 managed service ready。任一条件失败均保持 fail-closed，先使用设置页重试或回滚，不手工删除 owner 文件。
+4. **常驻与 Linux 信号**：关闭 Desktop 后保持正常操作，确认 session 与网页活动继续增长；再验证 GNOME 锁屏/解锁、睡眠/恢复、Zen/Firefox 网页同步、音频参与和 MPRIS，检查每个边界都封口且统计不倒退、不重复。
+5. **崩溃恢复与偏好对账**：记录 `ExecMainPID`/`NRestarts` 后只对固定 `patinad.service` 注入一次失败，确认 systemd 生成新 PID、API 恢复、仍只有 daemon lease；分别验证后台登录偏好开关与 unit enable 状态收敛。
+6. **显式回滚与再次接管**：从设置页执行回滚，确认 service 停止、reservation 为 `rolled-back` 且 daemon lease 释放；随后使用显式重试重新完成 managed 状态。不得通过删除 lock/reservation 模拟成功。
+7. **升级与卸载**：用后一 beta 覆盖前一 beta，确认包内 Desktop/daemon 协议一致、数据和设置保留；卸载包后确认包属文件消失而数据库、备份与 Token 留存且数据库仍通过 `quick_check`。完成后可重新安装当前候选包继续使用。
+
+建议证据命令如下；每个 `--output` 必须使用尚不存在的绝对路径：
+
+```bash
+npm run release:inspect-installed-patinad -- --phase baseline --expected-version 1.8.3 --output /tmp/patina-before-beta.json
+npm run release:inspect-installed-patinad -- --phase installed --expected-version "$BETA_VERSION" --output /tmp/patina-beta-installed.json
+npm run release:inspect-installed-patinad -- --phase managed --expected-version "$BETA_VERSION" --output /tmp/patina-beta-managed.json
+npm run release:inspect-installed-patinad -- --phase rolled-back --expected-version "$BETA_VERSION" --output /tmp/patina-beta-rolled-back.json
+npm run release:inspect-installed-patinad -- --phase uninstalled --output /tmp/patina-beta-uninstalled.json
+```
+
+以上文件只证明采集时刻。关闭 UI 后持续记录、锁屏/睡眠、浏览器活动和崩溃重启仍需在动作前后各采集一次，并核对 PID、restart count、session/web row counts 与时间边界；单份“最终正常”快照不能替代中断过程证据。
+
 2H.3d.3d 的自动化证据矩阵：
 
 | 故障或中断点 | 安全行为 | 自动化证据 |

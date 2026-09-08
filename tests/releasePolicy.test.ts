@@ -374,6 +374,10 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
     packageJson.scripts["release:verify-daemon-deb"],
     "node --experimental-strip-types scripts/verify-daemon-deb.ts",
   );
+  assert.equal(
+    packageJson.scripts["release:inspect-installed-patinad"],
+    "node --experimental-strip-types scripts/patinad-installed-acceptance.ts",
+  );
   assert.match(cargoManifest, /^default-run = "patina"$/m);
   assert.equal(
     tauriConfig.bundle.linux.deb.files["/usr/bin/patinad"],
