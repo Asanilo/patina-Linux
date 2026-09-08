@@ -170,11 +170,11 @@ Windows runtime、installer、updater、ARM/UWP 等平台专属实现不移植�
 1. 把 Linux `main` 已验证的功能提交合入 `feature/patinad-daemon`，只做稳定基线到未来架构线的单向收敛。
 2. 审计活动导入、定时备份和其他新增写路径，确保 daemon client 模式不会重新绕过 runtime/database owner。
 3. 按语义审查上游 `1.9.5` 的计时边界、网页区间去重和备份恢复边界修复；只移植 Linux 仍缺失的部分。
-4. 完成按应用删除、backup/restore、remote backup 等 Stage 2H.3c 剩余写侧收口。
+4. 完成 backup/restore、remote backup 等 Stage 2H.3c 剩余写侧收口。
 5. 完成首次启动迁移、systemd 服务控制、默认 owner 切换和双 owner 验收。
 6. 发布 daemon-backed DEB beta 并完成登录启动、关闭 UI 后持续记录、崩溃恢复、升级、卸载和数据保留验证。
 
-当前执行位置：第 1 步已完成单向合流；第 2 步已完成 owner 审计和 fail-closed 防护，活动导入已通过 owner-only 暂存票据收口，定时备份也已由 daemon 持有唯一调度任务、配置 API、运行状态与 SSE 失效通知，Desktop preview 只通过 typed client 访问。第 3 步已移植启动恢复、采样恢复、watchdog 竞态、browser bridge 重试、网页趋势区间去重、power lifecycle generation、暂停原子边界，以及网页段与活动原生浏览器 session 的持久化事务绑定。下一写侧是按应用删除；剩余正确性工作集中在 restore 的 active timing 和网页关系重建，不应在 Desktop 热恢复路径上另建协议。详细状态以 [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md) 为准。
+当前执行位置：第 1 步已完成单向合流；第 2 步已完成 owner 审计和 fail-closed 防护，活动导入已通过 owner-only 暂存票据收口，定时备份也已由 daemon 持有唯一调度任务、配置 API、运行状态与 SSE 失效通知，按应用删除已通过受确认的事务 API 和 typed client 收口。第 3 步已移植启动恢复、采样恢复、watchdog 竞态、browser bridge 重试、网页趋势区间去重、power lifecycle generation、暂停原子边界，以及网页段与活动原生浏览器 session 的持久化事务绑定。下一写侧是受控恢复；其正确性工作集中在 active timing 和网页关系重建，不应在 Desktop 热恢复路径上另建协议。详细状态以 [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md) 为准。
 
 在第 6 步完成前，不再把新的上游大型功能只加入 Linux `main` 而不进入 patinad 架构线。
 
@@ -195,7 +195,7 @@ Windows runtime、installer、updater、ARM/UWP 等平台专属实现不移植�
 12. Stage 2G Tools runtime preview 已完成：服务版本、协议上下限、write scope 协商、app mapping、classification、AFK threshold、tracking pause、运行中 browser/audio 配置，以及 Tools runtime owner、系统通知、SSE 与写侧 HTTP/MCP 已完成。
 13. Stage 2H.1 local API configuration preview 已完成：daemon 从 profile 存储读取端口并迁移旧数据库 Token，运行中换端口采用预绑定/提交/切换，Token 原子轮换后撤销旧 bearer 与 SSE，会通过 HTTP/MCP 暴露不含密钥的确认状态。
 14. Stage 2H.2 systemd service preview 已完成：DEB 构建输入包含 `patinad` 和默认禁用的 user unit；受控重启先持久化 owner-only ticket、返回 `202 pending`，再优雅退出并由 systemd 重启，下一实例确认同一 ticket。下一步仍需首次桌面启动迁移、服务启停设置和默认 owner 切换；切换后不自动回退 embedded tracker。
-15. Stage 2H.3 分三步完成默认切换：2H.3a 已完成 systemd 状态与迁移诊断；2H.3b.1/2 已完成安全 typed client，以及组合 `/current`、active session、SSE replay/resync 的只读 runtime adapter；2H.3b.3 已完成显式 `--daemon-client-preview` 接线、协议 v2 完整快照、embedded owner 隔离和真实 GNOME 桌面验收；2H.3c.1 已让 preview desktop 的 AFK threshold、tracking pause、audio participation、classification 与 Tools 读写通过 Rust host typed client 转发给 daemon，并把 Tools SSE 变更重新读取为前端既有完整 snapshot。2H.3c.2 已迁移 browser runtime、local API 配置、受白名单保护的普通 app settings，以及带显式确认的通用 session/title 数据清理；端口或 Token 变化会主动重建 typed client、SSE 与后续请求。2H.3c.3 已迁移活动导入提交、批次列表与批次删除：Desktop 仅创建 owner-only 一次性暂存票据，daemon 重新校验文件并拥有数据库事务。2H.3c.4 已迁移本机定时备份：daemon 唯一持有调度循环、数据库状态、安全发布与保留策略，Desktop 通过 typed client 读写配置。2H.3c 后续仍需收口按应用删除、backup/restore、remote backup 等数据库写侧，再启用服务并完成默认 owner 切换验收。默认切换前不得暴露会启动第二个 tracking owner 的服务开关。
+15. Stage 2H.3 分三步完成默认切换：2H.3a 已完成 systemd 状态与迁移诊断；2H.3b.1/2 已完成安全 typed client，以及组合 `/current`、active session、SSE replay/resync 的只读 runtime adapter；2H.3b.3 已完成显式 `--daemon-client-preview` 接线、协议 v2 完整快照、embedded owner 隔离和真实 GNOME 桌面验收；2H.3c.1 已让 preview desktop 的 AFK threshold、tracking pause、audio participation、classification 与 Tools 读写通过 Rust host typed client 转发给 daemon，并把 Tools SSE 变更重新读取为前端既有完整 snapshot。2H.3c.2 已迁移 browser runtime、local API 配置、受白名单保护的普通 app settings，以及带显式确认的通用 session/title 数据清理；端口或 Token 变化会主动重建 typed client、SSE 与后续请求。2H.3c.3 已迁移活动导入提交、批次列表与批次删除：Desktop 仅创建 owner-only 一次性暂存票据，daemon 重新校验文件并拥有数据库事务。2H.3c.4 已迁移本机定时备份：daemon 唯一持有调度循环、数据库状态、安全发布与保留策略，Desktop 通过 typed client 读写配置。2H.3c.5 已迁移按应用删除：daemon 在单事务内删除选定 executable 的原生和导入事实并返回计数，Desktop 只通过显式确认后的 typed client 调用。2H.3c 后续仍需收口 backup/restore、remote backup 等数据库写侧，再启用服务并完成默认 owner 切换验收。默认切换前不得暴露会启动第二个 tracking owner 的服务开关。
 16. 用一个 `patina` 产品包同时安装 Patina Desktop、`patinad` 和 systemd user unit；首次桌面启动在用户会话中迁移旧 XDG autostart 并启用后台服务，把“后台追踪随登录启动”与“桌面客户端随登录打开”拆成独立设置。
 17. 首个 daemon-backed DEB 先发布为 beta，验证关闭 UI 后持续记录、登录启动、崩溃重启、锁屏、睡眠、浏览器活动、升级、卸载和数据保留；该 beta 只发布 DEB，不发布无法稳定安装 service owner 的 AppImage。embedded runtime 至少保留一个稳定版本作为显式开发回滚路径。
 18. beta 验收后让完整 monorepo 脱离 Windows 上游 fork network，保留 Git 历史、MIT 许可与 attribution；不拆分独立 `patinad` 仓库。

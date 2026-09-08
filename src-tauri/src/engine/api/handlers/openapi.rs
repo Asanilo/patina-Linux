@@ -378,6 +378,17 @@ fn paths(surface: ApiSurface) -> Value {
         }),
     );
     object.insert(
+        "/api/v1/data/apps/delete".to_string(),
+        json!({
+            "post": post_operation(
+                "Delete native and imported activity for a bounded executable set and optional complete time range.",
+                vec![],
+                "AppTrackingDataCleanupRequest",
+                "AppTrackingDataCleanupResponse",
+            )
+        }),
+    );
+    object.insert(
         "/api/v1/system/service".to_string(),
         json!({
             "get": get_operation(
@@ -1441,6 +1452,44 @@ fn schemas() -> Value {
             ),
         ])),
     );
+    schemas.insert(
+        "AppTrackingDataCleanupRequest".to_string(),
+        object_schema(vec![
+            (
+                "exe_names",
+                json!({
+                    "type": "array",
+                    "items": bounded_string_schema(1, 256),
+                    "minItems": 1,
+                    "maxItems": 512
+                }),
+            ),
+            (
+                "start_time_ms",
+                nullable_bounded_integer_schema(0, i64::MAX),
+            ),
+            ("end_time_ms", nullable_bounded_integer_schema(0, i64::MAX)),
+            ("confirmed", bool_schema()),
+        ]),
+    );
+    schemas.insert(
+        "AppTrackingDataCleanupResponse".to_string(),
+        envelope(object_schema(vec![
+            ("sessions_deleted", bounded_integer_schema(0, i64::MAX)),
+            (
+                "imported_exact_sessions_deleted",
+                bounded_integer_schema(0, i64::MAX),
+            ),
+            (
+                "imported_time_buckets_deleted",
+                bounded_integer_schema(0, i64::MAX),
+            ),
+            (
+                "import_batches_deleted",
+                bounded_integer_schema(0, i64::MAX),
+            ),
+        ])),
+    );
 
     Value::Object(schemas)
 }
@@ -1799,6 +1848,20 @@ fn nullable_integer_schema() -> Value {
     json!({ "type": ["integer", "null"], "format": "int64" })
 }
 
+fn nullable_bounded_integer_schema(minimum: i64, maximum: i64) -> Value {
+    json!({
+        "oneOf": [
+            {
+                "type": "integer",
+                "format": "int64",
+                "minimum": minimum,
+                "maximum": maximum
+            },
+            { "type": "null" }
+        ]
+    })
+}
+
 fn number_schema() -> Value {
     json!({ "type": "number" })
 }
@@ -1862,6 +1925,8 @@ mod tests {
         assert!(schemas.contains_key("TrackingDataCleanupRequest"));
         assert!(schemas.contains_key("TrackingDataCleanupResponse"));
         assert!(schemas.contains_key("WindowTitleCleanupResponse"));
+        assert!(schemas.contains_key("AppTrackingDataCleanupRequest"));
+        assert!(schemas.contains_key("AppTrackingDataCleanupResponse"));
         assert!(schemas.contains_key("ScheduledBackupConfigRequest"));
         assert!(schemas.contains_key("ScheduledBackupSnapshotResponse"));
         assert!(response

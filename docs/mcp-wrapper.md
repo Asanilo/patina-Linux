@@ -150,7 +150,7 @@ All Tools write tools require the tracking-owner daemon and the `tools` write sc
 
 The HTTP API advertises an `app-settings` write scope for Patina Desktop's validated batch persistence. The MCP wrapper intentionally does not expose a generic key/value settings tool: agents should use the narrower tracker, runtime, app-mapping, and local API tools above. Add a dedicated typed MCP tool when a new setting needs agent control instead of forwarding arbitrary setting keys.
 
-The HTTP API also advertises `data-maintenance` for the Desktop cleanup flow. The MCP wrapper intentionally omits session deletion and bulk title redaction because these operations are destructive; possessing the API Token alone is not treated as user intent, and the HTTP request still requires `confirmed: true`.
+The HTTP API also advertises `data-maintenance` for the Desktop cleanup flow. The MCP wrapper intentionally omits global cleanup, app-scoped activity deletion, and bulk title redaction because these operations are destructive; possessing the API Token alone is not treated as user intent, and the HTTP request still requires `confirmed: true`.
 
 The HTTP API advertises `activity-import` for the Desktop/daemon handoff. MCP intentionally does not expose canonical file import or batch deletion: import commit requires a one-time owner-only staging ticket created by the Desktop file picker, while deletion is destructive and requires explicit UI confirmation. Agents may use the read-only import batch list when it becomes useful, but must not be given an arbitrary local-file-to-import bridge.
 

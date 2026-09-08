@@ -1,6 +1,6 @@
 # `patinad` 后台运行时设计
 
-> 状态：Stage 0 至 Stage 2H.2、Stage 2H.3a systemd 诊断、Stage 2H.3b.1/2 typed daemon client 与只读 runtime adapter、Stage 2H.3b.3 显式 desktop client 模式，以及 Stage 2H.3c.1 至 2H.3c.4 Desktop 写侧转发、活动导入和定时备份 owner 均已完成并验证；Linux `main` 功能已经单向合入本分支，当前继续收口剩余数据库写侧，Stage 2H.3 默认 owner 切换仍未完成。
+> 状态：Stage 0 至 Stage 2H.2、Stage 2H.3a systemd 诊断、Stage 2H.3b.1/2 typed daemon client 与只读 runtime adapter、Stage 2H.3b.3 显式 desktop client 模式，以及 Stage 2H.3c.1 至 2H.3c.5 Desktop 写侧转发、活动导入、定时备份和按应用删除均已完成并验证；Linux `main` 功能已经单向合入本分支，当前继续收口受控恢复和 remote backup，Stage 2H.3 默认 owner 切换仍未完成。
 > 生命周期：本设计是当前 `patinad` 实施依据；后台接管稳定完成后移入 `docs/archive/`。
 
 ## 1. 目标
@@ -122,12 +122,13 @@
 ### 3.3 合入功能的写侧边界
 
 - 活动详情、应用/分类/网页趋势和导入数据聚合属于只读能力，可以继续复用 transport-neutral read model。
-- 历史清理、标题清理和按应用删除已由 Rust data owner 统一覆盖原生 session、导入事实和网页活动；daemon API 已覆盖通用清理与标题清理。
+- 历史清理由 Rust data owner 统一覆盖原生 session、导入事实和网页活动；标题清理覆盖原生与导入标题；按应用删除只按 executable 清理原生和导入事实，网页历史继续使用独立的域名删除语义。daemon API 已覆盖这三类维护操作。
 - 活动导入提交、批次列表和批次删除已由 daemon owner 接管：Desktop 只把预览后未变化的 CSV 写入 profile 控制目录中的 `0700` 暂存目录和 `0600` 随机票据文件，API 只传票据、文件名与预览指纹；daemon 一次性消费文件并重新检查 128 MiB 上限、SHA-256 和 CSV 内容。API 不接受任意本机路径或大文件正文，该入口不作为 MCP 通用文件读取工具。
 - 定时备份已由 daemon owner 接管：调度循环只随 tracking owner 启动，配置和运行状态通过 `/api/v1/backups/schedule` 读写，变更通过 SSE 通知 Desktop 重读；embedded owner 仅保留为兼容路径，同一 profile 不得同时运行两套调度器。
-- 备份恢复和按应用删除在 `--daemon-client-preview` 下暂时明确拒绝，不允许回退为 Desktop 直接写库。
+- 按应用删除已由 daemon data owner 接管：请求必须显式确认并限定 1 至 512 个 executable，可选时间范围必须同时提供完整半开区间；原生和导入事实、批次计数在同一事务更新，Desktop 只接收删除计数和刷新事件。
+- 备份恢复在 `--daemon-client-preview` 下暂时明确拒绝，不允许回退为 Desktop 直接写库。
 - remote backup 设置仍是待迁移写侧；不得在默认 daemon owner 切换前继续保留 Desktop SQLite mutation。
-- 下一写侧批次按“按应用删除 -> 受控恢复 -> remote backup”推进。文件和目录选择保留为 Desktop 能力，数据库提交、调度状态与恢复事务属于 daemon。
+- 下一写侧批次按“受控恢复 -> remote backup”推进。文件和目录选择保留为 Desktop 能力，数据库提交、调度状态与恢复事务属于 daemon。
 
 ## 4. 目标结构
 
@@ -247,7 +248,8 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 - 已完成：本地备份导出使用跨表 SQLite snapshot transaction 和 owner-only 原子文件发布；备份读取已限制 archive/entry/解压总量并拒绝符号链接与重复 ZIP entry
 - 已完成：活动导入提交/列表/删除通过 owner-only 暂存票据和 typed client 迁移到 daemon，Desktop 不向 API 发送任意路径或大文件正文
 - 已完成：本机定时备份由 daemon 唯一持有调度循环、配置与运行状态；Desktop typed client 可读取和显式确认完整配置，任务关闭会等待当前归档安全结束
-- 待实施：按应用删除、backup/restore、remote backup 等剩余写侧迁移；preview 当前 fail closed，不把这些操作回退给 Desktop SQLite owner
+- 已完成：按应用删除通过受确认的 daemon API 在单事务内清理原生和导入事实并返回计数；Desktop preview 不再直接打开 SQLite 写入
+- 待实施：backup/restore、remote backup 等剩余写侧迁移；preview 当前 fail closed，不把这些操作回退给 Desktop SQLite owner
 
 验收：关闭 UI 后继续记录；重开 UI 恢复当前状态；AFK、锁屏、睡眠、恢复和异常封口正确；统计不倒退、不重复。
 
@@ -284,7 +286,8 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 - 已完成 Stage 2H.3c.2 核心设置迁移：browser/local API 配置与普通 app settings 通过 daemon API 写入；运行中换端口或轮换 Token 会通过共享 revision 主动重建 Desktop client、SSE、Tools 刷新和诊断请求。Desktop 会在发起首个资源写入前校验完整设置 patch；多个专用 runtime endpoint 之间不承诺跨资源事务，后续若开放非 UI 调用方，需升级为 daemon 侧统一批量命令或提供明确补偿语义
 - 已完成 Stage 2H.3c.3：活动导入的文件选择/暂存归 Desktop，文件复核、数据库提交和批次删除归 daemon；暂存票据一次性消费并受路径、权限、大小和指纹约束
 - 已完成 Stage 2H.3c.4：定时备份配置、调度 tick、运行状态、安全文件发布和保留策略归 daemon；Desktop 通过 typed client 读写，SSE 只发送失效通知，客户端重读完整 snapshot
-- 待实施 Stage 2H.3c 后续：按“按应用删除 -> 受控恢复 -> remote backup”迁移剩余写侧；preview 当前 fail closed
+- 已完成 Stage 2H.3c.5：按应用删除要求显式确认和有界 executable/range，请求通过 typed client 交给 daemon，在同一事务维护原生、导入事实和批次计数
+- 待实施 Stage 2H.3c 后续：按“受控恢复 -> remote backup”迁移剩余写侧；preview 当前 fail closed
 - 待实施 Stage 2H.3d：首次启动迁移、服务启停设置、默认 owner 切换和双 owner 验收
 - Tauri 改为 daemon desktop client，并保留 tray、通知、文件选择和 updater
 - 默认切换后 desktop 不启动或自动回退 embedded tracker；daemon 不可用时明确暂停、诊断和重启

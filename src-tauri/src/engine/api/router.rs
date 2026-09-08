@@ -100,6 +100,9 @@ pub(crate) async fn route_request(
         ("POST", "/api/v1/data/window-titles/clear") => {
             handlers::data_maintenance::clear_window_titles(context, body).await
         }
+        ("POST", "/api/v1/data/apps/delete") => {
+            handlers::data_maintenance::delete_app_tracking_data(context, body).await
+        }
         ("GET", "/api/v1/system/service") => handlers::service::get_service(context).await,
         ("POST", "/api/v1/system/service/restart") => {
             handlers::service::restart_service(context, body).await
@@ -950,13 +953,45 @@ mod tests {
         assert_eq!(redaction.status, 200);
         assert_eq!(redaction.body["data"]["sessions_redacted"], 1);
         assert_eq!(redaction.body["data"]["title_samples_deleted"], 1);
-        assert_eq!(sink.events().len(), 2);
+        assert_eq!(
+            route(
+                &context,
+                surface,
+                "POST",
+                "/api/v1/data/apps/delete",
+                serde_json::json!({
+                    "exe_names": ["new"],
+                    "start_time_ms": null,
+                    "end_time_ms": null,
+                    "confirmed": false
+                }),
+            )
+            .await
+            .status,
+            400
+        );
+        let app_cleanup = route(
+            &context,
+            surface,
+            "POST",
+            "/api/v1/data/apps/delete",
+            serde_json::json!({
+                "exe_names": ["new"],
+                "start_time_ms": null,
+                "end_time_ms": null,
+                "confirmed": true
+            }),
+        )
+        .await;
+        assert_eq!(app_cleanup.status, 200);
+        assert_eq!(app_cleanup.body["data"]["sessions_deleted"], 1);
+        assert_eq!(sink.events().len(), 3);
         assert_eq!(
             sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM sessions")
                 .fetch_one(&pool)
                 .await
                 .unwrap(),
-            1
+            0
         );
         assert_eq!(
             sqlx::query_scalar::<_, i64>(

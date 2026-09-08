@@ -85,6 +85,7 @@ Current caveats:
 | `/api/v1/settings/local-api/token/rotate` | `POST` | Tracking daemon | Rotate the owner-only API Token and revoke old clients |
 | `/api/v1/data/cleanup` | `POST` | Tracking daemon | Delete tracking rows starting before an explicitly confirmed cutoff |
 | `/api/v1/data/window-titles/clear` | `POST` | Tracking daemon | Explicitly confirm deletion and redaction of stored window titles |
+| `/api/v1/data/apps/delete` | `POST` | Tracking daemon | Explicitly confirm deletion of native and imported activity for selected executables |
 | `/api/v1/system/service` | `GET` | Managed tracking daemon | Read systemd service identity and latest restart ticket |
 | `/api/v1/system/service/restart` | `POST` | Managed tracking daemon | Persist a restart ticket and gracefully return control to systemd |
 | `/api/v1/tools/snapshot` | `GET` | Implemented | Current Tools runtime snapshot |
@@ -1147,6 +1148,24 @@ curl -s -X POST "$PATINA_API_BASE/api/v1/data/window-titles/clear" \
 ```
 
 The response reports `title_samples_deleted`, `sessions_redacted`, and `imported_exact_sessions_redacted`. This clears existing data; it does not disable future title capture. Use per-app title recording controls for that policy. The endpoint is intentionally absent from the MCP wrapper.
+
+### `POST /api/v1/data/apps/delete`
+
+Deletes native sessions and imported exact/hour facts for one bounded executable set. The optional time range must provide both bounds and uses `[start_time_ms, end_time_ms)` against each row's start time. Imported batch counts and empty batches are updated in the same SQLite transaction.
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/data/apps/delete" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "exe_names":["code","code-insiders"],
+    "start_time_ms":null,
+    "end_time_ms":null,
+    "confirmed":true
+  }'
+```
+
+`exe_names` must contain 1 through 512 non-empty names, each at most 256 bytes. Missing/false confirmation, a partial range, a negative start, or `end_time_ms <= start_time_ms` returns `400` without writing. The response reports `sessions_deleted`, `imported_exact_sessions_deleted`, `imported_time_buckets_deleted`, and `import_batches_deleted`. Browser page history has a separate domain-scoped deletion flow and is not inferred from an executable name. This destructive endpoint is intentionally absent from MCP.
 
 ### `GET /api/v1/settings/runtime`
 

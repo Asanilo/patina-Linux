@@ -490,6 +490,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn client_deletes_application_activity_through_daemon_transport() {
+        let runtime = TestApiRuntime::start_tracking().await;
+        let client = PatinadClient::new(runtime.port, TEST_TOKEN).unwrap();
+
+        let result = client
+            .delete_app_tracking_data(vec!["ghostty".to_string()], None, None)
+            .await
+            .unwrap();
+
+        assert_eq!(result.sessions_deleted, 1);
+        assert_eq!(result.imported_exact_sessions_deleted, 0);
+        assert!(
+            crate::data::repositories::sessions::fetch_all_for_backup(&runtime.pool)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        runtime.shutdown().await;
+    }
+
+    #[tokio::test]
     async fn runtime_adapter_reads_current_and_active_state_and_follows_sse() {
         let runtime = TestApiRuntime::start_tracking().await;
         let client = PatinadClient::new(runtime.port, TEST_TOKEN).unwrap();

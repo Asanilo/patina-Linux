@@ -1,4 +1,7 @@
-use crate::domain::data_maintenance::{TrackingDataCleanupResult, WindowTitleCleanupResult};
+use crate::domain::data_maintenance::{
+    validate_app_tracking_data_cleanup, AppTrackingDataCleanupResult, TrackingDataCleanupResult,
+    WindowTitleCleanupResult,
+};
 use sqlx::{Pool, Sqlite};
 
 pub async fn delete_tracking_data_before(
@@ -125,31 +128,18 @@ pub async fn delete_app_tracking_data(
     exe_names: &[String],
     start_time_ms: Option<i64>,
     end_time_ms: Option<i64>,
-) -> Result<(), String> {
-    if exe_names.is_empty() || exe_names.len() > 512 {
-        return Err("application cleanup requires between 1 and 512 executable names".to_string());
-    }
+) -> Result<AppTrackingDataCleanupResult, String> {
+    validate_app_tracking_data_cleanup(exe_names, start_time_ms, end_time_ms)?;
     let exe_names = exe_names
         .iter()
         .map(|value| value.trim())
         .collect::<Vec<_>>();
-    if exe_names
-        .iter()
-        .any(|value| value.is_empty() || value.len() > 256 || value.chars().any(char::is_control))
-    {
-        return Err("application cleanup contains an invalid executable name".to_string());
-    }
-    match (start_time_ms, end_time_ms) {
-        (None, None) => {}
-        (Some(start), Some(end)) if start >= 0 && end > start => {}
-        _ => return Err("application cleanup requires a valid complete time range".to_string()),
-    }
 
     let mut tx = pool
         .begin()
         .await
         .map_err(|error| format!("failed to start application data cleanup: {error}"))?;
-    delete_app_rows(
+    let sessions_deleted = delete_app_rows(
         &mut tx,
         "sessions",
         "start_time",
@@ -158,7 +148,7 @@ pub async fn delete_app_tracking_data(
         end_time_ms,
     )
     .await?;
-    delete_app_rows(
+    let imported_exact_sessions_deleted = delete_app_rows(
         &mut tx,
         "import_exact_sessions",
         "start_time",
@@ -167,7 +157,7 @@ pub async fn delete_app_tracking_data(
         end_time_ms,
     )
     .await?;
-    delete_app_rows(
+    let imported_time_buckets_deleted = delete_app_rows(
         &mut tx,
         "import_time_buckets",
         "bucket_start_time",
@@ -190,16 +180,24 @@ pub async fn delete_app_tracking_data(
     .execute(&mut *tx)
     .await
     .map_err(|error| format!("failed to update imported activity batch counts: {error}"))?;
-    sqlx::query(
+    let import_batches_deleted = sqlx::query(
         "DELETE FROM import_batches
          WHERE exact_session_count = 0 AND hour_bucket_count = 0",
     )
     .execute(&mut *tx)
     .await
-    .map_err(|error| format!("failed to delete empty imported activity batches: {error}"))?;
+    .map_err(|error| format!("failed to delete empty imported activity batches: {error}"))?
+    .rows_affected();
     tx.commit()
         .await
-        .map_err(|error| format!("failed to commit application data cleanup: {error}"))
+        .map_err(|error| format!("failed to commit application data cleanup: {error}"))?;
+
+    Ok(AppTrackingDataCleanupResult {
+        sessions_deleted,
+        imported_exact_sessions_deleted,
+        imported_time_buckets_deleted,
+        import_batches_deleted,
+    })
 }
 
 async fn delete_app_rows(
@@ -209,7 +207,7 @@ async fn delete_app_rows(
     exe_names: &[&str],
     start_time_ms: Option<i64>,
     end_time_ms: Option<i64>,
-) -> Result<(), String> {
+) -> Result<u64, String> {
     let mut query =
         sqlx::QueryBuilder::<Sqlite>::new(format!("DELETE FROM {table} WHERE exe_name IN ("));
     {
@@ -226,12 +224,13 @@ async fn delete_app_rows(
             .push(format!(" AND {time_column} < "))
             .push_bind(end);
     }
-    query
+    let rows_deleted = query
         .build()
         .execute(&mut **tx)
         .await
-        .map_err(|error| format!("failed to delete application data from {table}: {error}"))?;
-    Ok(())
+        .map_err(|error| format!("failed to delete application data from {table}: {error}"))?
+        .rows_affected();
+    Ok(rows_deleted)
 }
 
 #[cfg(test)]
@@ -432,7 +431,7 @@ mod tests {
         let pool = test_pool().await;
         seed(&pool).await;
 
-        delete_app_tracking_data(
+        let result = delete_app_tracking_data(
             &pool,
             &[
                 "old".to_string(),
@@ -444,6 +443,11 @@ mod tests {
         )
         .await
         .unwrap();
+
+        assert_eq!(result.sessions_deleted, 1);
+        assert_eq!(result.imported_exact_sessions_deleted, 1);
+        assert_eq!(result.imported_time_buckets_deleted, 1);
+        assert_eq!(result.import_batches_deleted, 1);
 
         assert_eq!(
             sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM sessions")

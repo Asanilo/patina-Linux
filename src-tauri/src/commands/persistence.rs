@@ -50,11 +50,12 @@ pub async fn cmd_delete_app_tracking_data<R: Runtime>(
     end_time_ms: Option<i64>,
     app: AppHandle<R>,
 ) -> Result<(), String> {
-    if crate::app::daemon_client::command_client(&app)?.is_some() {
-        return Err(
-            "application activity deletion is not available in daemon client preview yet"
-                .to_string(),
-        );
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        client
+            .delete_app_tracking_data(exe_names, start_time_ms, end_time_ms)
+            .await
+            .map_err(|error| error.to_string())?;
+        return Ok(());
     }
     let pool = sqlite_pool::wait_for_sqlite_pool(&app).await?;
     maintenance::delete_app_tracking_data(&pool, &exe_names, start_time_ms, end_time_ms).await?;

@@ -290,6 +290,14 @@ pub struct TrackingDataCleanupRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+pub struct AppTrackingDataCleanupRequest {
+    pub exe_names: Vec<String>,
+    pub start_time_ms: Option<i64>,
+    pub end_time_ms: Option<i64>,
+    pub confirmed: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct StagedActivityImportCommitRequest {
     pub ticket: String,
     pub source_name: String,

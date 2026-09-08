@@ -369,6 +369,26 @@ impl PatinadClient {
         .await
     }
 
+    pub async fn delete_app_tracking_data(
+        &self,
+        exe_names: Vec<String>,
+        start_time_ms: Option<i64>,
+        end_time_ms: Option<i64>,
+    ) -> Result<crate::domain::data_maintenance::AppTrackingDataCleanupResult, PatinadClientError>
+    {
+        self.post_json(
+            "/api/v1/data/apps/delete",
+            &crate::engine::api::types::AppTrackingDataCleanupRequest {
+                exe_names,
+                start_time_ms,
+                end_time_ms,
+                confirmed: true,
+            },
+            "application data cleanup",
+        )
+        .await
+    }
+
     pub async fn activity_import_batches(
         &self,
     ) -> Result<Vec<crate::domain::activity_import::ImportBatchDto>, PatinadClientError> {

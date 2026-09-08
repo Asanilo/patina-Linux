@@ -1,6 +1,7 @@
 use crate::engine::api::context::ApiRuntimeContext;
 use crate::engine::api::types::{
-    ApiError, ApiResponse, ConfirmedActionRequest, RouteResponse, TrackingDataCleanupRequest,
+    ApiError, ApiResponse, AppTrackingDataCleanupRequest, ConfirmedActionRequest, RouteResponse,
+    TrackingDataCleanupRequest,
 };
 
 pub async fn delete_tracking_data_before(
@@ -40,6 +41,37 @@ pub async fn clear_window_titles(context: &ApiRuntimeContext, body: &[u8]) -> Ro
     match crate::data::maintenance::clear_all_window_titles(context.pool()).await {
         Ok(result) => {
             context.emit_tracking_data_changed("window-titles-cleared");
+            ok(result)
+        }
+        Err(error) => internal_error(&error),
+    }
+}
+
+pub async fn delete_app_tracking_data(context: &ApiRuntimeContext, body: &[u8]) -> RouteResponse {
+    let request: AppTrackingDataCleanupRequest = match serde_json::from_slice(body) {
+        Ok(request) => request,
+        Err(_) => return bad_request("invalid JSON body"),
+    };
+    if !request.confirmed {
+        return bad_request("application data cleanup requires confirmed=true");
+    }
+    if let Err(error) = crate::domain::data_maintenance::validate_app_tracking_data_cleanup(
+        &request.exe_names,
+        request.start_time_ms,
+        request.end_time_ms,
+    ) {
+        return bad_request(&error);
+    }
+    match crate::data::maintenance::delete_app_tracking_data(
+        context.pool(),
+        &request.exe_names,
+        request.start_time_ms,
+        request.end_time_ms,
+    )
+    .await
+    {
+        Ok(result) => {
+            context.emit_tracking_data_changed("application-tracking-data-deleted");
             ok(result)
         }
         Err(error) => internal_error(&error),

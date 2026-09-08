@@ -335,6 +335,10 @@ const DAEMON_TRACKING_ENDPOINTS: &[ApiEndpoint] = &[
         path: "/api/v1/data/window-titles/clear",
     },
     ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/data/apps/delete",
+    },
+    ApiEndpoint {
         method: "GET",
         path: "/api/v1/system/service",
     },
@@ -583,6 +587,7 @@ mod tests {
         assert!(surface.allows("POST", "/api/v1/settings/runtime/browser-activity"));
         assert!(surface.allows("POST", "/api/v1/data/cleanup"));
         assert!(surface.allows("POST", "/api/v1/data/window-titles/clear"));
+        assert!(surface.allows("POST", "/api/v1/data/apps/delete"));
         assert!(surface.allows("POST", "/api/v1/imports/canonical/commit"));
         assert!(surface.allows_request("POST", "/api/v1/imports/import-123/delete"));
         assert!(surface.allows("GET", "/api/v1/backups/schedule"));
