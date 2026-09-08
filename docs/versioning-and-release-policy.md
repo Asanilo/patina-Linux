@@ -368,6 +368,7 @@ GitHub Release 继续作为正式发布源、主下载入口和主更新清单�
 - `npm run release:validate-version-files -- <version>` 或工作流中的等价校验
 - `npm run release:validate-changelog -- <version>` 或工作流中的等价校验
 - `npm run test:release`
+- `npm run release:verify-daemon-deb -- <deb-path> <version>`，适用于已经生成的 daemon-backed Debian 包
 - `npm run extension:gnome:check`
 - `npm run extension:chromium:check`
 - `npm run extension:firefox:check`

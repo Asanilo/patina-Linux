@@ -135,6 +135,16 @@ Validate the source packaging contract without installing it:
 npm run test:release
 ```
 
+After building a Debian package, validate the actual package payload without installing it:
+
+```bash
+npm run release:verify-daemon-deb -- \
+  src-tauri/target/release/bundle/deb/Patina_<version>_amd64.deb \
+  <version>
+```
+
+This checks the package identity, both executables, the default-disabled user unit, its required safety settings, the GNOME extension UUID, and maintainer scripts that could otherwise enable the service outside the first-launch handoff.
+
 After installing a daemon-backed DEB, systemd can also validate the real installed executable and unit paths:
 
 ```bash

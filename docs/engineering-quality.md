@@ -138,6 +138,7 @@ Rust 默认门槛包含 `npm run check:rust-boundaries`、`cargo check`、Rust �
 - 改动 Rust tracking 主链、数据边界或恢复路径：追加 `npm run check:rust`
 - 改动 release / changelog / updater：追加 `npm run release:validate-changelog`
 - 准备正式发布：本地执行 `npm run release:check`，安装包构建与 updater 产物生成默认交给 GitHub Actions
+- 生成 daemon-backed Debian 包后：执行 `npm run release:verify-daemon-deb -- <deb-path> <version>`，检查最终包内容而不安装或启用服务
 
 当前仓库默认 CI gate 与 release workflow 的质量校验入口统一为 `npm run check:full`。
 

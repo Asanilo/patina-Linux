@@ -283,6 +283,8 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   assert.match(workflow, /rm -f "\$RUNNER_TEMP\/tauri-signing\.key"/);
   assert.match(workflow, /Package Chromium extension/);
   assert.match(workflow, /npm run extension:firefox:verify-signed/);
+  assert.match(workflow, /Verify daemon-backed Debian package/);
+  assert.match(workflow, /npm run release:verify-daemon-deb/);
   assert.match(workflow, /Publish Linux release/);
   assert.doesNotMatch(
     workflow,
@@ -316,6 +318,10 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   assert.equal(
     packageJson.scripts["build:patinad:release"],
     "cargo build --manifest-path src-tauri/Cargo.toml --release --bin patinad",
+  );
+  assert.equal(
+    packageJson.scripts["release:verify-daemon-deb"],
+    "node --experimental-strip-types scripts/verify-daemon-deb.ts",
   );
   assert.match(cargoManifest, /^default-run = "patina"$/m);
   assert.equal(
