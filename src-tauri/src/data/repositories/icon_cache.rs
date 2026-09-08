@@ -38,9 +38,12 @@ pub async fn fetch_icon_for_exe(
     Ok(row.map(|row| row.get("icon_base64")))
 }
 
-pub async fn fetch_all_for_backup(pool: &Pool<Sqlite>) -> Result<Vec<BackupIconCache>, String> {
+pub async fn fetch_all_for_backup<'e, E>(executor: E) -> Result<Vec<BackupIconCache>, String>
+where
+    E: sqlx::Executor<'e, Database = Sqlite>,
+{
     let rows = sqlx::query("SELECT exe_name, icon_base64, last_updated FROM icon_cache")
-        .fetch_all(pool)
+        .fetch_all(executor)
         .await
         .map_err(|error| format!("failed to read icon cache for backup: {error}"))?;
 

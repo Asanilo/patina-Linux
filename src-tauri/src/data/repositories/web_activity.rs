@@ -304,9 +304,12 @@ pub async fn query_segments(
         .collect())
 }
 
-pub async fn fetch_all_for_backup(
-    pool: &Pool<Sqlite>,
-) -> Result<Vec<BackupWebActivitySegment>, String> {
+pub async fn fetch_all_for_backup<'e, E>(
+    executor: E,
+) -> Result<Vec<BackupWebActivitySegment>, String>
+where
+    E: sqlx::Executor<'e, Database = Sqlite>,
+{
     let rows = sqlx::query(
         "SELECT id, browser_client_id, browser_kind, browser_exe_name, domain,
                 normalized_domain, url, title, favicon_url, start_time, end_time,
@@ -314,7 +317,7 @@ pub async fn fetch_all_for_backup(
          FROM web_activity_segments
          ORDER BY id ASC",
     )
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await
     .map_err(|error| format!("failed to read web activity for backup: {error}"))?;
 

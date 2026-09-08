@@ -9,8 +9,8 @@ use crate::platform::storage_paths;
 use crc32fast::Hasher;
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Sqlite};
-use std::collections::BTreeMap;
-use std::fs;
+use std::collections::{BTreeMap, HashSet};
+use std::fs::{self, OpenOptions};
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Runtime};
@@ -31,6 +31,10 @@ const BACKUP_TOOL_TIMERS_ENTRY_NAME: &str = "data/tool_timers.json";
 const BACKUP_TOOL_TIMER_LAPS_ENTRY_NAME: &str = "data/tool_timer_laps.json";
 const BACKUP_TOOL_POMODORO_RUNS_ENTRY_NAME: &str = "data/tool_pomodoro_runs.json";
 const BACKUP_TOOL_DAILY_STATS_ENTRY_NAME: &str = "data/tool_daily_stats.json";
+const MAX_BACKUP_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_BACKUP_ARCHIVE_ENTRIES: usize = 64;
+const MAX_BACKUP_ENTRY_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_BACKUP_UNCOMPRESSED_BYTES: u64 = 1024 * 1024 * 1024;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct BackupArchiveManifest {
@@ -140,16 +144,24 @@ fn resolve_backup_path<R: Runtime>(
 
 async fn load_backup_payload<R: Runtime>(app: &AppHandle<R>) -> Result<BackupPayload, String> {
     let pool = wait_for_sqlite_pool(app).await?;
-    let sessions = repositories::sessions::fetch_all_for_backup(&pool).await?;
-    let title_samples = repositories::session_title_samples::fetch_all_for_backup(&pool).await?;
-    let settings = repositories::settings::fetch_all_for_backup(&pool).await?;
-    let icon_cache = repositories::icon_cache::fetch_all_for_backup(&pool).await?;
-    let web_activity_segments = repositories::web_activity::fetch_all_for_backup(&pool).await?;
-    let tool_reminders = repositories::tools::fetch_all_reminders_for_backup(&pool).await?;
-    let tool_timers = repositories::tools::fetch_all_timers_for_backup(&pool).await?;
-    let tool_timer_laps = repositories::tools::fetch_all_timer_laps_for_backup(&pool).await?;
-    let tool_pomodoro_runs = repositories::tools::fetch_all_pomodoro_runs_for_backup(&pool).await?;
-    let tool_daily_stats = repositories::tools::fetch_all_daily_stats_for_backup(&pool).await?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|error| format!("failed to start backup snapshot transaction: {error}"))?;
+    let sessions = repositories::sessions::fetch_all_for_backup(&mut *tx).await?;
+    let title_samples = repositories::session_title_samples::fetch_all_for_backup(&mut *tx).await?;
+    let settings = repositories::settings::fetch_all_for_backup(&mut *tx).await?;
+    let icon_cache = repositories::icon_cache::fetch_all_for_backup(&mut *tx).await?;
+    let web_activity_segments = repositories::web_activity::fetch_all_for_backup(&mut *tx).await?;
+    let tool_reminders = repositories::tools::fetch_all_reminders_for_backup(&mut *tx).await?;
+    let tool_timers = repositories::tools::fetch_all_timers_for_backup(&mut *tx).await?;
+    let tool_timer_laps = repositories::tools::fetch_all_timer_laps_for_backup(&mut *tx).await?;
+    let tool_pomodoro_runs =
+        repositories::tools::fetch_all_pomodoro_runs_for_backup(&mut *tx).await?;
+    let tool_daily_stats = repositories::tools::fetch_all_daily_stats_for_backup(&mut *tx).await?;
+    tx.commit()
+        .await
+        .map_err(|error| format!("failed to finish backup snapshot transaction: {error}"))?;
 
     Ok(BackupPayload {
         version: CURRENT_BACKUP_VERSION,
@@ -439,6 +451,11 @@ fn read_zip_entry(
             backup_path.display()
         )
     })?;
+    if entry.size() > MAX_BACKUP_ENTRY_BYTES {
+        return Err(format!(
+            "backup archive entry `{entry_name}` exceeds the size limit"
+        ));
+    }
     let mut content = String::new();
     entry.read_to_string(&mut content).map_err(|error| {
         format!(
@@ -688,6 +705,30 @@ fn decode_structured_backup_archive(
 }
 
 fn read_backup_payload(backup_path: &Path) -> Result<BackupPayload, String> {
+    let metadata = fs::symlink_metadata(backup_path).map_err(|error| {
+        format!(
+            "failed to inspect backup file `{}`: {error}",
+            backup_path.display()
+        )
+    })?;
+    if metadata.file_type().is_symlink() {
+        return Err(format!(
+            "backup file `{}` must not be a symbolic link",
+            backup_path.display()
+        ));
+    }
+    if !metadata.is_file() {
+        return Err(format!(
+            "backup path `{}` is not a regular file",
+            backup_path.display()
+        ));
+    }
+    if metadata.len() > MAX_BACKUP_ARCHIVE_BYTES {
+        return Err(format!(
+            "backup file `{}` exceeds the archive size limit",
+            backup_path.display()
+        ));
+    }
     let raw_bytes = fs::read(backup_path).map_err(|error| {
         format!(
             "failed to read backup file `{}`: {error}",
@@ -702,6 +743,7 @@ fn read_backup_payload(backup_path: &Path) -> Result<BackupPayload, String> {
                 backup_path.display()
             )
         })?;
+        validate_backup_archive_limits(&mut archive, backup_path)?;
 
         if archive.by_name(BACKUP_MANIFEST_ENTRY_NAME).is_ok() {
             return decode_structured_backup_archive(&mut archive, backup_path);
@@ -719,13 +761,114 @@ fn read_backup_payload(backup_path: &Path) -> Result<BackupPayload, String> {
     ))
 }
 
+fn validate_backup_archive_limits(
+    archive: &mut ZipArchive<Cursor<Vec<u8>>>,
+    backup_path: &Path,
+) -> Result<(), String> {
+    if archive.len() > MAX_BACKUP_ARCHIVE_ENTRIES {
+        return Err(format!(
+            "backup archive `{}` contains too many entries",
+            backup_path.display()
+        ));
+    }
+
+    let mut names = HashSet::with_capacity(archive.len());
+    let mut total_uncompressed_bytes = 0_u64;
+    for index in 0..archive.len() {
+        let entry = archive.by_index(index).map_err(|error| {
+            format!(
+                "failed to inspect backup archive `{}` entry {index}: {error}",
+                backup_path.display()
+            )
+        })?;
+        if entry.size() > MAX_BACKUP_ENTRY_BYTES {
+            return Err(format!(
+                "backup archive `{}` entry `{}` exceeds the size limit",
+                backup_path.display(),
+                entry.name()
+            ));
+        }
+        total_uncompressed_bytes = total_uncompressed_bytes
+            .checked_add(entry.size())
+            .ok_or_else(|| "backup archive uncompressed size overflowed".to_string())?;
+        if total_uncompressed_bytes > MAX_BACKUP_UNCOMPRESSED_BYTES {
+            return Err(format!(
+                "backup archive `{}` exceeds the uncompressed size limit",
+                backup_path.display()
+            ));
+        }
+        if !names.insert(entry.name().to_string()) {
+            return Err(format!(
+                "backup archive `{}` contains duplicate entry `{}`",
+                backup_path.display(),
+                entry.name()
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn write_backup_archive_atomic(target_path: &Path, archive: &[u8]) -> Result<(), String> {
+    let parent = target_path.parent().ok_or_else(|| {
+        format!(
+            "backup target `{}` has no parent directory",
+            target_path.display()
+        )
+    })?;
+    let mut random = [0_u8; 16];
+    getrandom::fill(&mut random)
+        .map_err(|error| format!("failed to create backup temporary file name: {error}"))?;
+    let suffix = random
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let file_name = target_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Patina-backup.zip");
+    let temp_path = parent.join(format!(".{file_name}.{suffix}.tmp"));
+    let result = (|| -> Result<(), String> {
+        let mut options = OpenOptions::new();
+        options.create_new(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&temp_path).map_err(|error| {
+            format!(
+                "failed to create backup temporary file `{}`: {error}",
+                temp_path.display()
+            )
+        })?;
+        file.write_all(archive)
+            .map_err(|error| format!("failed to write backup temporary file: {error}"))?;
+        file.sync_all()
+            .map_err(|error| format!("failed to sync backup temporary file: {error}"))?;
+        drop(file);
+        fs::rename(&temp_path, target_path)
+            .map_err(|error| format!("failed to atomically replace backup file: {error}"))?;
+        #[cfg(unix)]
+        fs::File::open(parent)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|error| format!("failed to sync backup directory: {error}"))?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temp_path);
+    }
+    result
+}
+
 pub async fn export_backup(backup_path: Option<String>, app: AppHandle) -> Result<String, String> {
     let payload = load_backup_payload(&app).await?;
     let target_path = resolve_backup_path(&app, backup_path)?;
 
     let archive = encode_backup_archive(&payload)?;
-    fs::write(&target_path, archive)
-        .map_err(|error| format!("failed to write backup file: {error}"))?;
+    if archive.len() as u64 > MAX_BACKUP_ARCHIVE_BYTES {
+        return Err("generated backup exceeds the archive size limit".to_string());
+    }
+    write_backup_archive_atomic(&target_path, &archive)?;
 
     Ok(target_path.to_string_lossy().to_string())
 }
@@ -848,12 +991,56 @@ mod tests {
     use crate::domain::backup::{BackupIconCache, BackupSession, BackupSetting, BackupTitleSample};
     use sqlx::{Executor, SqlitePool};
 
+    fn temp_backup_path(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "patina-backup-{label}-{}-{}.zip",
+            std::process::id(),
+            crate::app::runtime::now_ms()
+        ))
+    }
+
     #[test]
     fn backup_file_name_uses_timestamp_zip_format() {
         assert_eq!(
             backup_file_name_for_timestamp("20260515-213045"),
             "Patina-backup-20260515-213045.zip"
         );
+    }
+
+    #[test]
+    fn backup_archive_write_is_atomic_and_owner_only() {
+        let path = temp_backup_path("atomic");
+        fs::write(&path, b"old").unwrap();
+
+        write_backup_archive_atomic(&path, b"new archive").unwrap();
+
+        assert_eq!(fs::read(&path).unwrap(), b"new archive");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        fs::remove_file(path).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backup_reader_rejects_symbolic_links() {
+        use std::os::unix::fs::symlink;
+
+        let target = temp_backup_path("symlink-target");
+        let link = temp_backup_path("symlink-link");
+        fs::write(&target, b"not a backup").unwrap();
+        symlink(&target, &link).unwrap();
+
+        let error = read_backup_payload(&link).unwrap_err();
+
+        assert!(error.contains("must not be a symbolic link"));
+        fs::remove_file(link).unwrap();
+        fs::remove_file(target).unwrap();
     }
 
     #[test]

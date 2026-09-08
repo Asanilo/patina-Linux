@@ -4,14 +4,17 @@ use crate::domain::tracking::ActiveSessionSnapshot;
 use sqlx::{Pool, Row, Sqlite, Transaction};
 use std::collections::HashMap;
 
-pub async fn fetch_all_for_backup(pool: &Pool<Sqlite>) -> Result<Vec<BackupSession>, String> {
+pub async fn fetch_all_for_backup<'e, E>(executor: E) -> Result<Vec<BackupSession>, String>
+where
+    E: sqlx::Executor<'e, Database = Sqlite>,
+{
     let rows = sqlx::query(
         "SELECT id, app_name, exe_name, window_title, start_time, end_time, duration,
                 continuity_group_start_time
          FROM sessions
          ORDER BY id ASC",
     )
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await
     .map_err(|error| format!("failed to read sessions for backup: {error}"))?;
 

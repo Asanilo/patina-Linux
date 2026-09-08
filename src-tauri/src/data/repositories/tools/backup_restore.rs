@@ -2,17 +2,20 @@ use crate::domain::backup::{
     BackupToolDailyStats, BackupToolPomodoroRun, BackupToolReminder, BackupToolTimer,
     BackupToolTimerLap,
 };
-use sqlx::{Pool, Row, Sqlite, Transaction};
+use sqlx::{Row, Sqlite, Transaction};
 
-pub async fn fetch_all_reminders_for_backup(
-    pool: &Pool<Sqlite>,
-) -> Result<Vec<BackupToolReminder>, String> {
+pub async fn fetch_all_reminders_for_backup<'e, E>(
+    executor: E,
+) -> Result<Vec<BackupToolReminder>, String>
+where
+    E: sqlx::Executor<'e, Database = Sqlite>,
+{
     let rows = sqlx::query(
         "SELECT id, label, scheduled_at, created_at, status, fired_at, cancelled_at
          FROM tool_reminders
          ORDER BY id ASC",
     )
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await
     .map_err(|error| format!("failed to read tool reminders for backup: {error}"))?;
 
@@ -30,16 +33,17 @@ pub async fn fetch_all_reminders_for_backup(
         .collect())
 }
 
-pub async fn fetch_all_timers_for_backup(
-    pool: &Pool<Sqlite>,
-) -> Result<Vec<BackupToolTimer>, String> {
+pub async fn fetch_all_timers_for_backup<'e, E>(executor: E) -> Result<Vec<BackupToolTimer>, String>
+where
+    E: sqlx::Executor<'e, Database = Sqlite>,
+{
     let rows = sqlx::query(
         "SELECT id, mode, label, duration_ms, accumulated_ms, started_at, paused_at,
                 completed_at, status, created_at, updated_at
          FROM tool_timers
          ORDER BY id ASC",
     )
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await
     .map_err(|error| format!("failed to read tool timers for backup: {error}"))?;
 
@@ -61,15 +65,18 @@ pub async fn fetch_all_timers_for_backup(
         .collect())
 }
 
-pub async fn fetch_all_timer_laps_for_backup(
-    pool: &Pool<Sqlite>,
-) -> Result<Vec<BackupToolTimerLap>, String> {
+pub async fn fetch_all_timer_laps_for_backup<'e, E>(
+    executor: E,
+) -> Result<Vec<BackupToolTimerLap>, String>
+where
+    E: sqlx::Executor<'e, Database = Sqlite>,
+{
     let rows = sqlx::query(
         "SELECT id, timer_id, lap_index, started_at, ended_at, duration_ms
          FROM tool_timer_laps
          ORDER BY id ASC",
     )
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await
     .map_err(|error| format!("failed to read tool timer laps for backup: {error}"))?;
 
@@ -86,9 +93,12 @@ pub async fn fetch_all_timer_laps_for_backup(
         .collect())
 }
 
-pub async fn fetch_all_pomodoro_runs_for_backup(
-    pool: &Pool<Sqlite>,
-) -> Result<Vec<BackupToolPomodoroRun>, String> {
+pub async fn fetch_all_pomodoro_runs_for_backup<'e, E>(
+    executor: E,
+) -> Result<Vec<BackupToolPomodoroRun>, String>
+where
+    E: sqlx::Executor<'e, Database = Sqlite>,
+{
     let rows = sqlx::query(
         "SELECT id, phase, status, cycle_index, focus_ms, short_break_ms, long_break_ms,
                 long_break_every, phase_started_at, phase_paused_at, phase_remaining_ms,
@@ -96,7 +106,7 @@ pub async fn fetch_all_pomodoro_runs_for_backup(
          FROM tool_pomodoro_runs
          ORDER BY id ASC",
     )
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await
     .map_err(|error| format!("failed to read tool pomodoro runs for backup: {error}"))?;
 
@@ -121,15 +131,18 @@ pub async fn fetch_all_pomodoro_runs_for_backup(
         .collect())
 }
 
-pub async fn fetch_all_daily_stats_for_backup(
-    pool: &Pool<Sqlite>,
-) -> Result<Vec<BackupToolDailyStats>, String> {
+pub async fn fetch_all_daily_stats_for_backup<'e, E>(
+    executor: E,
+) -> Result<Vec<BackupToolDailyStats>, String>
+where
+    E: sqlx::Executor<'e, Database = Sqlite>,
+{
     let rows = sqlx::query(
         "SELECT date_key, completed_pomodoros, updated_at
          FROM tool_daily_stats
          ORDER BY date_key ASC",
     )
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await
     .map_err(|error| format!("failed to read tool daily stats for backup: {error}"))?;
 

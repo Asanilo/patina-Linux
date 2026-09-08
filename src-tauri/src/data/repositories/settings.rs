@@ -1,9 +1,12 @@
 use crate::domain::backup::BackupSetting;
-use sqlx::{Pool, Row, Sqlite, Transaction};
+use sqlx::{Row, Sqlite, Transaction};
 
-pub async fn fetch_all_for_backup(pool: &Pool<Sqlite>) -> Result<Vec<BackupSetting>, String> {
+pub async fn fetch_all_for_backup<'e, E>(executor: E) -> Result<Vec<BackupSetting>, String>
+where
+    E: sqlx::Executor<'e, Database = Sqlite>,
+{
     let rows = sqlx::query("SELECT key, value FROM settings ORDER BY key ASC")
-        .fetch_all(pool)
+        .fetch_all(executor)
         .await
         .map_err(|error| format!("failed to read settings for backup: {error}"))?;
 

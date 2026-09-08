@@ -242,6 +242,8 @@ Local API 端口和 Token 属于 typed client 自身的连接配置。daemon 成
 
 数据清理属于数据库 owner，而不是 WebView persistence。Desktop 负责展示确认对话和计算用户选择的时间边界，Rust data owner 负责参数校验、关联表事务与 refresh event；daemon-client 模式必须通过 authenticated typed client 执行。批量删除和窗口标题清除即使已经通过 Bearer Token 认证，也必须显式提交 `confirmed: true`，且默认不暴露为 MCP tool。
 
+备份文件的选择、预览与本地目标写入属于 Desktop 文件能力，数据库恢复属于 runtime/database owner。导出必须在一个 SQLite 只读 snapshot transaction 中读取所有表，并以同目录临时文件、owner-only 权限、`fsync` 和原子 rename 发布；读取必须拒绝符号链接、超限 archive、超限解压总量与重复 ZIP entry。daemon 默认接管前，恢复路径必须升级为“Desktop 受控暂存 + daemon 重启前预约 + daemon 启动时恢复”，不能在追踪任务运行时热改数据库，也不能通过 HTTP 接受任意本机路径。
+
 浏览器 UI 不是公开 Web 部署面。daemon 默认只监听 loopback，并校验 loopback Host 与严格 Origin；浏览器 UI 使用 same-origin、HttpOnly、SameSite session，不获得长期 API Token。owner-only Bearer Token 只供 MCP、CLI 和 Agent 使用；浏览器扩展继续使用独立 bridge credential。浏览器写侧开放前，必须增加 CSRF 防护和操作确认，并验证跨站请求、DNS rebinding 与日志泄漏边界。
 
 Tauri 是当前桌面客户端实现，不是长期协议 owner。未来可以在不改变 daemon、数据库、浏览器 UI、TUI 和 MCP 契约的前提下评估 GPUI 或其他 Linux 桌面 UI 框架；框架替换必须作为独立项目，以实测内存、启动速度、桌面集成完整性和维护成本决定。

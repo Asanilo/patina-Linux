@@ -196,6 +196,7 @@ Rust 默认门槛包含 `npm run check:rust-boundaries`、`cargo check`、Rust �
 - tracking runtime 主链
 - read model 与 replay 边界
 - backup / restore / cleanup / release / upgrade 链路
+- 备份导出跨表读取必须来自同一个 SQLite snapshot；归档发布必须原子且默认 owner-only，导入在解析前限制文件、entry 和总解压大小并拒绝符号链接与重复 entry
 - app 壳层与兼容壳回流
 - 跨层 facade 或 forwarding 重新变厚
 - 高频刷新、轮询、缓存与 SQLite 查询成本

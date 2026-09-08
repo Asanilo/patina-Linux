@@ -1,14 +1,19 @@
 use crate::domain::backup::BackupTitleSample;
-use sqlx::{Pool, Row, Sqlite, Transaction};
+#[cfg(test)]
+use sqlx::Pool;
+use sqlx::{Row, Sqlite, Transaction};
 use std::collections::HashMap;
 
-pub async fn fetch_all_for_backup(pool: &Pool<Sqlite>) -> Result<Vec<BackupTitleSample>, String> {
+pub async fn fetch_all_for_backup<'e, E>(executor: E) -> Result<Vec<BackupTitleSample>, String>
+where
+    E: sqlx::Executor<'e, Database = Sqlite>,
+{
     let rows = sqlx::query(
         "SELECT id, session_id, title, start_time, end_time
          FROM session_title_samples
          ORDER BY id ASC",
     )
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await
     .map_err(|error| format!("failed to read title samples for backup: {error}"))?;
 
