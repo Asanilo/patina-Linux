@@ -22,6 +22,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener as StdTcpListener};
 use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
@@ -33,6 +34,9 @@ const WEB_ACTIVITY_BRIDGE_HTTP_BODY_MAX_BYTES: usize = 64 * 1024;
 const WEB_ACTIVITY_BRIDGE_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const WEB_ACTIVITY_BRIDGE_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 const WEB_ACTIVITY_BRIDGE_CONCURRENCY_LIMIT: usize = 8;
+const WEB_ACTIVITY_BRIDGE_RETRY_INITIAL_DELAY: Duration = Duration::from_secs(1);
+const WEB_ACTIVITY_BRIDGE_RETRY_MAX_DELAY: Duration = Duration::from_secs(30);
+const WEB_ACTIVITY_BRIDGE_RETRY_MAX_FAILURES: u32 = 7;
 pub const WEB_ACTIVITY_BRIDGE_SETTINGS_CHANGED_EVENT: &str = "app-settings-changed";
 pub const WEB_ACTIVITY_BRIDGE_ACTIVE_WINDOW_EVENT: &str = "active-window-changed";
 pub const WEB_ACTIVITY_BRIDGE_TRACKING_DATA_EVENT: &str = "tracking-data-changed";
@@ -123,6 +127,7 @@ impl WebActivityBridgeServerHandle {
 #[derive(Default)]
 pub struct WebActivityBridgeRuntimeState {
     inner: Mutex<WebActivityBridgeRuntimeInner>,
+    update_generation: AtomicU64,
 }
 
 #[derive(Default)]
@@ -132,17 +137,73 @@ struct WebActivityBridgeRuntimeInner {
 }
 
 impl WebActivityBridgeRuntimeState {
+    #[cfg(test)]
     pub async fn update(
         &self,
         settings: WebActivityBridgeSettings,
         handler: WebActivityBridgeHttpHandler,
         readiness: WebActivityBridgeReadinessHandler,
     ) -> Result<bool, String> {
-        self.update_with_commit(settings, handler, readiness, || async { Ok(()) })
+        self.begin_update();
+        self.update_once_with_commit(settings, handler, readiness, || async { Ok(()) })
             .await
     }
 
+    pub async fn update_with_retry(
+        &self,
+        settings: WebActivityBridgeSettings,
+        handler: WebActivityBridgeHttpHandler,
+        readiness: WebActivityBridgeReadinessHandler,
+    ) -> Result<bool, String> {
+        let generation = self.begin_update();
+        let mut failure_count = 0_u32;
+        loop {
+            if self.update_generation.load(Ordering::Acquire) != generation {
+                return Ok(false);
+            }
+            match self
+                .update_once_with_commit(
+                    settings.clone(),
+                    handler.clone(),
+                    readiness.clone(),
+                    || async { Ok(()) },
+                )
+                .await
+            {
+                Ok(listening) => return Ok(listening),
+                Err(error) => {
+                    failure_count = failure_count.saturating_add(1);
+                    if failure_count >= WEB_ACTIVITY_BRIDGE_RETRY_MAX_FAILURES {
+                        return Err(error);
+                    }
+                    let delay = retry_delay(failure_count);
+                    eprintln!(
+                        "[web-activity-bridge] bind failed; retrying in {}ms: {error}",
+                        delay.as_millis()
+                    );
+                    tokio::time::sleep(delay).await;
+                }
+            }
+        }
+    }
+
     pub async fn update_with_commit<F, Fut>(
+        &self,
+        settings: WebActivityBridgeSettings,
+        handler: WebActivityBridgeHttpHandler,
+        readiness: WebActivityBridgeReadinessHandler,
+        commit: F,
+    ) -> Result<bool, String>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<(), String>>,
+    {
+        self.begin_update();
+        self.update_once_with_commit(settings, handler, readiness, commit)
+            .await
+    }
+
+    async fn update_once_with_commit<F, Fut>(
         &self,
         settings: WebActivityBridgeSettings,
         handler: WebActivityBridgeHttpHandler,
@@ -203,11 +264,25 @@ impl WebActivityBridgeRuntimeState {
     }
 
     pub async fn shutdown(&self) {
+        self.begin_update();
         let server = self.inner.lock().await.server.take();
         if let Some(server) = server {
             server.shutdown().await;
         }
     }
+
+    fn begin_update(&self) -> u64 {
+        self.update_generation
+            .fetch_add(1, Ordering::AcqRel)
+            .wrapping_add(1)
+    }
+}
+
+fn retry_delay(failure_count: u32) -> Duration {
+    let exponent = failure_count.saturating_sub(1).min(31);
+    WEB_ACTIVITY_BRIDGE_RETRY_INITIAL_DELAY
+        .saturating_mul(1_u32 << exponent)
+        .min(WEB_ACTIVITY_BRIDGE_RETRY_MAX_DELAY)
 }
 
 pub fn prepare_web_activity_bridge_server(
@@ -502,6 +577,44 @@ mod tests {
         let (address, recovered_listener) = open_web_activity_bridge_listener(port).unwrap();
         assert_eq!(address.port(), port);
         drop(recovered_listener);
+    }
+
+    #[test]
+    fn retry_delay_is_bounded_exponential_backoff() {
+        let delays = (1..=7)
+            .map(|failure| retry_delay(failure).as_secs())
+            .collect::<Vec<_>>();
+        assert_eq!(delays, vec![1, 2, 4, 8, 16, 30, 30]);
+    }
+
+    #[tokio::test]
+    async fn runtime_retry_recovers_after_occupied_port_is_released() {
+        let runtime = WebActivityBridgeRuntimeState::default();
+        let occupied_listener = StdTcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = occupied_listener.local_addr().unwrap().port();
+        let release = async move {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            drop(occupied_listener);
+        };
+        let apply = runtime.update_with_retry(
+            WebActivityBridgeSettings {
+                enabled: true,
+                port,
+                token: "token".to_string(),
+            },
+            ok_handler(),
+            Arc::new(|_| {}),
+        );
+
+        let (_, result) = tokio::join!(release, apply);
+        assert!(result.unwrap());
+        let response = exchange(
+            port,
+            b"POST /web-activity HTTP/1.1\r\nHost: localhost\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+        )
+        .await;
+        assert!(response.starts_with("HTTP/1.1 200 OK"));
+        runtime.shutdown().await;
     }
 
     #[tokio::test]

@@ -1,0 +1,50 @@
+[
+  {
+    "name": "native masks exact and shares remaining bucket capacity",
+    "scope": { "startTime": 0, "endTime": 100 },
+    "records": [
+      { "key": "exact", "origin": "import_exact", "startTime": 0, "endTime": 60 },
+      { "key": "native", "origin": "native", "startTime": 10, "endTime": 30 },
+      { "key": "bucket-a", "origin": "import_bucket", "startTime": 0, "endTime": 40, "capacityEndTime": 100 },
+      { "key": "bucket-b", "origin": "import_bucket", "startTime": 0, "endTime": 40, "capacityEndTime": 100 }
+    ],
+    "expectedDurationByKey": {
+      "native": 20,
+      "exact": 40,
+      "bucket-a": 20,
+      "bucket-b": 20
+    }
+  },
+  {
+    "name": "partial bucket range is prorated before native capacity",
+    "scope": { "startTime": 0, "endTime": 20 },
+    "records": [
+      { "key": "native", "origin": "native", "startTime": 0, "endTime": 20 },
+      { "key": "bucket", "origin": "import_bucket", "startTime": 0, "endTime": 60, "capacityEndTime": 100 }
+    ],
+    "expectedDurationByKey": {
+      "native": 20
+    }
+  },
+  {
+    "name": "partial bucket range receives only its proportional quantity",
+    "scope": { "startTime": 20, "endTime": 70 },
+    "records": [
+      { "key": "bucket", "origin": "import_bucket", "startTime": 0, "endTime": 60, "capacityEndTime": 100 }
+    ],
+    "expectedDurationByKey": {
+      "bucket": 30
+    }
+  },
+  {
+    "name": "overlapping imported exact facts choose the stable first winner",
+    "scope": { "startTime": 20, "endTime": 80 },
+    "records": [
+      { "key": "first", "origin": "import_exact", "startTime": 0, "endTime": 100 },
+      { "key": "second", "origin": "import_exact", "startTime": 20, "endTime": 80 }
+    ],
+    "expectedDurationByKey": {
+      "first": 60
+    }
+  }
+]

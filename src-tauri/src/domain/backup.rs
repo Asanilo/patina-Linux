@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 pub const CURRENT_BACKUP_VERSION: u32 = 1;
-pub const CURRENT_BACKUP_SCHEMA_VERSION: u32 = 8;
+pub const CURRENT_BACKUP_SCHEMA_VERSION: u32 = 9;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BackupMeta {
@@ -126,6 +126,43 @@ pub struct BackupToolDailyStats {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BackupImportBatch {
+    pub id: String,
+    pub imported_at: i64,
+    pub source_name: String,
+    pub source_kind: String,
+    pub source_fingerprint: String,
+    pub exact_session_count: i64,
+    pub hour_bucket_count: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BackupImportExactSession {
+    pub id: i64,
+    pub batch_id: String,
+    pub fingerprint: String,
+    pub app_name: String,
+    pub exe_name: String,
+    pub window_title: String,
+    pub start_time: i64,
+    pub end_time: i64,
+    pub duration: i64,
+    pub source_category: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BackupImportTimeBucket {
+    pub id: i64,
+    pub batch_id: String,
+    pub fingerprint: String,
+    pub app_name: String,
+    pub exe_name: String,
+    pub bucket_start_time: i64,
+    pub duration: i64,
+    pub source_category: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BackupPayload {
     pub version: u32,
     pub meta: BackupMeta,
@@ -146,6 +183,12 @@ pub struct BackupPayload {
     pub tool_pomodoro_runs: Vec<BackupToolPomodoroRun>,
     #[serde(default)]
     pub tool_daily_stats: Vec<BackupToolDailyStats>,
+    #[serde(default)]
+    pub import_batches: Vec<BackupImportBatch>,
+    #[serde(default)]
+    pub import_exact_sessions: Vec<BackupImportExactSession>,
+    #[serde(default)]
+    pub import_time_buckets: Vec<BackupImportTimeBucket>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -168,6 +211,9 @@ pub struct BackupPreview {
     pub tool_timer_lap_count: usize,
     pub tool_pomodoro_run_count: usize,
     pub tool_daily_stats_count: usize,
+    pub import_batch_count: usize,
+    pub import_exact_session_count: usize,
+    pub import_time_bucket_count: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -249,6 +295,9 @@ impl BackupPayload {
             tool_timer_lap_count: self.tool_timer_laps.len(),
             tool_pomodoro_run_count: self.tool_pomodoro_runs.len(),
             tool_daily_stats_count: self.tool_daily_stats.len(),
+            import_batch_count: self.import_batches.len(),
+            import_exact_session_count: self.import_exact_sessions.len(),
+            import_time_bucket_count: self.import_time_buckets.len(),
         }
     }
 }
@@ -300,6 +349,9 @@ mod tests {
             tool_timer_laps: Vec::new(),
             tool_pomodoro_runs: Vec::new(),
             tool_daily_stats: Vec::new(),
+            import_batches: Vec::new(),
+            import_exact_sessions: Vec::new(),
+            import_time_buckets: Vec::new(),
         }
     }
 

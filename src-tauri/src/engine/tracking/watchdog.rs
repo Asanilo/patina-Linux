@@ -121,7 +121,10 @@ async fn seal_stale_session(
     event_sink: &dyn RuntimeEventSink,
     sample_time_ms: i64,
 ) {
-    match data.end_active_sessions(sample_time_ms).await {
+    match data
+        .end_active_sessions_started_at_or_before(sample_time_ms)
+        .await
+    {
         Ok(did_seal) => {
             health_state.note_watchdog_seal(sample_time_ms);
 
@@ -249,6 +252,34 @@ mod tests {
                 changed_at_ms: 5_000,
             }]
         );
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn stale_watchdog_sample_cannot_close_a_newer_active_session() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        pool.execute(crate::data::schema::CURRENT_BASELINE_SCHEMA_SQL)
+            .await
+            .unwrap();
+        crate::data::repositories::sessions::start_session(
+            &pool, "Current", "current", "Current", 10_000, 10_000,
+        )
+        .await
+        .unwrap();
+        let context = RuntimeContext::new(pool.clone(), Arc::new(FixedClock(20_000)));
+        let health = RuntimeHealthState::default();
+        health.note_successful_sample(5_000);
+        let sink = MemoryRuntimeEventSink::default();
+
+        run_iteration(&context, &health, &sink).await;
+
+        let end_time: Option<i64> =
+            sqlx::query_scalar("SELECT end_time FROM sessions WHERE exe_name = 'current'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(end_time, None);
+        assert!(sink.events().is_empty());
         pool.close().await;
     }
 }

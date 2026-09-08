@@ -58,10 +58,7 @@ struct StoredAppOverride {
 pub async fn load_observed_app_configurations(
     pool: &Pool<Sqlite>,
 ) -> Result<Vec<ObservedAppConfiguration>, String> {
-    let session_rows = sqlx::query("SELECT DISTINCT exe_name FROM sessions ORDER BY exe_name")
-        .fetch_all(pool)
-        .await
-        .map_err(|error| format!("failed to load observed apps: {error}"))?;
+    let recorded_apps = super::activity_read_model::load_recorded_apps(pool).await?;
     let setting_rows = sqlx::query(
         "SELECT key, value FROM settings
          WHERE key LIKE ? OR key LIKE ? OR key LIKE ?",
@@ -92,16 +89,17 @@ pub async fn load_observed_app_configurations(
         }
     }
 
-    Ok(session_rows
+    Ok(recorded_apps
         .into_iter()
-        .filter_map(|row| row.try_get::<String, _>("exe_name").ok())
-        .map(|exe_name| {
+        .map(|recorded| {
+            let exe_name = recorded.exe_name;
             let app_key = canonical_app_key(&exe_name);
             let override_value = overrides.get(&app_key);
             ObservedAppConfiguration {
                 display_name: override_value
                     .and_then(|value| value.display_name.clone())
                     .filter(|value| !value.trim().is_empty())
+                    .or_else(|| (!recorded.app_name.trim().is_empty()).then_some(recorded.app_name))
                     .unwrap_or_else(|| exe_name.clone()),
                 category: override_value
                     .and_then(|value| value.category.clone())
@@ -285,6 +283,9 @@ mod tests {
     async fn setup_test_db() -> SqlitePool {
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
         pool.execute(db_schema::CURRENT_BASELINE_SCHEMA_SQL)
+            .await
+            .unwrap();
+        pool.execute(db_schema::ACTIVITY_IMPORT_SCHEMA_SQL)
             .await
             .unwrap();
         pool

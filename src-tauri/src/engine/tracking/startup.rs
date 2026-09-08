@@ -69,9 +69,12 @@ pub(crate) async fn seal_startup_active_session(
         return Ok(None);
     };
 
-    let last_heartbeat_ms = data.load_tracker_heartbeat_timestamp().await?;
-    let end_time =
-        resolve_startup_seal_time(existing_session.start_time, last_heartbeat_ms, now_ms);
+    let last_successful_sample_ms = data.load_tracker_successful_sample_timestamp().await?;
+    let end_time = resolve_startup_seal_time(
+        existing_session.start_time,
+        last_successful_sample_ms,
+        now_ms,
+    );
 
     if data.end_active_sessions(end_time).await? {
         return Ok(Some(end_time));
@@ -98,14 +101,12 @@ async fn persist_startup_self_heal_if_needed(
 
 pub(crate) fn resolve_startup_seal_time(
     session_start_time: i64,
-    last_heartbeat_ms: Option<i64>,
+    last_successful_sample_ms: Option<i64>,
     now_ms: i64,
 ) -> i64 {
-    let Some(last_heartbeat_ms) = last_heartbeat_ms else {
-        return now_ms;
-    };
-
-    now_ms.min(session_start_time.max(last_heartbeat_ms))
+    last_successful_sample_ms
+        .filter(|sample| *sample >= session_start_time && *sample <= now_ms)
+        .unwrap_or(session_start_time)
 }
 
 fn log_startup_error(message: impl AsRef<str>) {
@@ -133,17 +134,18 @@ mod tests {
     }
 
     #[test]
-    fn startup_seal_time_prefers_valid_heartbeat() {
+    fn startup_seal_time_requires_a_valid_successful_sample() {
         assert_eq!(resolve_startup_seal_time(1_000, Some(8_000), 20_000), 8_000);
         assert_eq!(
             resolve_startup_seal_time(1_000, Some(30_000), 20_000),
-            20_000
+            1_000
         );
-        assert_eq!(resolve_startup_seal_time(5_000, None, 20_000), 20_000);
+        assert_eq!(resolve_startup_seal_time(5_000, None, 20_000), 5_000);
+        assert_eq!(resolve_startup_seal_time(5_000, Some(4_000), 20_000), 5_000);
     }
 
     #[test]
-    fn startup_seal_closes_active_session_from_last_heartbeat() {
+    fn startup_seal_closes_active_session_from_last_successful_sample() {
         tauri::async_runtime::block_on(async {
             let pool = setup_test_db().await;
 
@@ -152,7 +154,7 @@ mod tests {
                 .unwrap();
             tracker_settings::save_tracker_timestamp(
                 &pool,
-                tracker_settings::TRACKER_LAST_HEARTBEAT_KEY,
+                tracker_settings::TRACKER_LAST_SUCCESSFUL_SAMPLE_KEY,
                 8_000,
             )
             .await
@@ -169,6 +171,35 @@ mod tests {
 
             assert_eq!(end_time, Some(8_000));
             assert_eq!(ended, Some((8_000, 7_000)));
+        });
+    }
+
+    #[test]
+    fn heartbeat_without_successful_sample_does_not_count_downtime() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            sessions::start_session(&pool, "A", "a", "A", 1_000, 1_000)
+                .await
+                .unwrap();
+            tracker_settings::save_tracker_timestamp(
+                &pool,
+                tracker_settings::TRACKER_LAST_HEARTBEAT_KEY,
+                19_000,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(
+                seal_startup_active_session(&data_store(&pool), 20_000)
+                    .await
+                    .unwrap(),
+                Some(1_000)
+            );
+            let duration: i64 = sqlx::query_scalar("SELECT duration FROM sessions")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(duration, 0);
         });
     }
 

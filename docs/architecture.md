@@ -120,6 +120,7 @@ IPC 契约应保持稳定、可解析、可测试。
 - settings 读写
 - classification 读写
 - history / dashboard 读模型查询
+- 桌面端本机活动与外部导入活动的只读组合
 
 这条通道不是默认自由边界，而是显式受控边界。规则如下：
 
@@ -270,6 +271,7 @@ src/
     classification/
     data/
     dashboard/
+    destination/
     history/
     settings/
     tools/
@@ -279,6 +281,10 @@ src/
 ```
 
 `src/styles/` 是 CSS-only 的 Quiet Pro 样式资产区，由 `src/App.css` 作为单入口汇总导入；它不承接 TypeScript 业务代码、平台适配或跨层逻辑，因此不视为新的前端 owner 层。
+
+`features/destination/*` 拥有应用与网站活动详情的共享只读领域模型和详情界面；`Data`、`History`、`Dashboard` 只能通过其公开 target/request 契约启动详情，不各自复制聚合与时间线规则。
+
+`features/data/*` 拥有长期趋势的页面状态与纯只读模型。`Data` 页面父级负责总趋势、热力图、应用趋势快照和首屏 bootstrap 持久化；feature-owned 目标趋势面板负责应用、分类、网页模式及其搜索、选择和图表交互，不能自行写入 bootstrap 或复制快照读取链路。应用趋势和分类趋势复用同一会话规范化、排除、别名合并、区间裁剪与本地日期边界；分类维度不能为方便展示而新建第二条数据库读取路径。网页趋势复用现有网页活动表、域名 override 与本地日期规则，但通过独立的域名级只读 adapter 只读取域名、图标和时间边界，不把 URL 或标题带入趋势模型；该 adapter 与快照仅在用户切换到网页趋势后加载。外部活动导入采用有明确 owner 的独立事实表，并在共享 persistence 读边界按“本机精确事实 > 外部精确事实 > 外部小时汇总”即时组合；它不引入持久化聚合 schema 或后台 worker。小时汇总不得进入 History 或详情时间线，网页明细继续由 `features/destination/*` 统一读取和展示。
 
 前端终局结构中不再保留：
 
@@ -552,6 +558,10 @@ engine/tracking/
 - repositories
 - backup / restore 数据读写
 - 数据边界与仓储实现
+
+自动备份遵循 `app / engine / domain / data` 的同一 owner 链：`app/scheduled_backup.rs` 只持有运行锁、唤醒和事件，`engine/scheduled_backup.rs` 负责任务执行、恢复对账与安全保留策略，`domain/backup_schedule.rs` 负责计划和时间槽语义，`data/repositories/scheduled_backup.rs` 只负责 SQLite 状态转换，归档编解码继续由 `data/backup.rs` 持有。Tauri command 只映射 IPC 参数，不能承接调度流程。
+
+活动导入同样遵循 owner-first：`engine/activity_import.rs` 负责格式解析与记录校验，`domain/activity_import.rs` 负责稳定名词、限制和指纹契约，`data/repositories/activity_import.rs` 负责独立事实表与事务，`app/activity_import.rs` 负责文件预览、提交复核和刷新事件，`commands/activity_import.rs` 只映射 IPC。前端设置页通过 feature-owned service 访问 platform gateway；跨来源统计优先级留在明确的只读模型边界，不能散落到组件。Rust 侧由 `domain/activity_read_model.rs` 持有优先级与小时桶容量规则，`data/repositories/activity_read_model.rs` 组装三类事实，HTTP / MCP handler 只消费其贡献结果；桌面端 TypeScript 读边界使用同一范围语义，并与 Rust 共同消费 `tests/fixtures/activity-read-model-cases.json` 契约 fixture，不能让各 API handler 或页面独立重写规则。Dashboard、Data 与 Classification 消费聚合记录，History 只消费可定位的精确会话；聚合记录必须保留原生活动会话的 live 元数据，以继续应用 tracker heartbeat 截止和异常诊断。
 
 它必须持续拦住这些细节回流到：
 

@@ -1,8 +1,8 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { HistorySession } from "../../../shared/types/sessions";
 import {
   buildDashboardReadModel,
   loadIconSnapshot,
+  type DashboardActivityRecord,
   type DashboardReadModel,
   type DashboardSnapshot,
 } from "../services/dashboardReadModel";
@@ -25,10 +25,10 @@ export function useDashboardStats(
 ): UseStatsResult {
   const initialSnapshot = getDashboardSnapshotCache();
   const hasRequestedInitialSnapshotRef = useRef(false);
-  const [rawSessions, setRawSessions] = useState<HistorySession[]>(
+  const [rawSessions, setRawSessions] = useState<DashboardActivityRecord[]>(
     () => initialSnapshot?.sessions ?? [],
   );
-  const [rawYesterdaySessions, setRawYesterdaySessions] = useState<HistorySession[]>(
+  const [rawYesterdaySessions, setRawYesterdaySessions] = useState<DashboardActivityRecord[]>(
     () => initialSnapshot?.yesterdaySessions ?? [],
   );
   const [icons, setIcons] = useState<Record<string, string>>(
@@ -64,7 +64,9 @@ export function useDashboardStats(
   }, [classificationReady, foregroundRefreshEnabled, refreshKey, loadSnapshot]);
 
   useEffect(() => {
-    const hasLiveSession = rawSessions.some((session) => session.endTime === null);
+    const hasLiveSession = rawSessions.some((session) => (
+      session.isLive ?? session.endTime === null
+    ));
     if (!classificationReady || !foregroundRefreshEnabled || !hasLiveSession || trackerHealth.status !== "healthy") {
       return;
     }

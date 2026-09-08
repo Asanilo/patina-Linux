@@ -288,6 +288,7 @@ impl WindowTransitionDecision {
 
 #[derive(Clone, Debug)]
 pub struct ActiveSessionSnapshot {
+    pub exe_name: String,
     pub start_time: i64,
     pub continuity_group_start_time: i64,
 }

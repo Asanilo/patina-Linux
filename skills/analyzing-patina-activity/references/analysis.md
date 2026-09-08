@@ -9,12 +9,13 @@ Start with diagnostics. State degraded or unavailable window tracking, stale tra
 - Timestamps and durations are milliseconds.
 - Today uses the machine's local day boundary.
 - Week uses local time and starts Monday.
-- Today/week/range summaries include closed sessions and the active session, clipped to their range.
-- Session queries return closed sessions only, filter on `start_time`, and do not clip rows to range boundaries.
+- Today/week/range summaries combine native sessions, imported exact facts, and imported hour buckets with `native > import_exact > import_bucket` precedence.
+- Summary exact facts include the active native session and are clipped to their range; partial imported hour buckets are proportional aggregate quantities.
+- Session queries return closed sessions from the native tracker only, filter on `start_time`, and do not clip rows to range boundaries.
 - The active session has realtime duration sampled at `sampled_at_ms`.
 - Do not add the active session to a summary that already includes it.
 
-For exact custom totals, prefer `/api/v1/summary/range`. For forensic detail, use sessions and state their filtering semantics.
+For exact custom totals, prefer `/api/v1/summary/range`. For forensic detail, use sessions and state their filtering semantics. Do not interpret an imported hour bucket as evidence that an app occupied a specific minute inside that hour.
 
 ## Privacy
 

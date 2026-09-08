@@ -129,47 +129,6 @@ function tauriStubFor(path: string) {
   throw new Error(`Missing Tauri smoke stub for ${path}`);
 }
 
-function createMotionStub() {
-  const React = require("react") as typeof import("react");
-  const cache = new Map<string | symbol, unknown>();
-  const ignoredMotionProps = new Set([
-    "animate",
-    "exit",
-    "initial",
-    "layout",
-    "transition",
-    "variants",
-    "whileHover",
-    "whileTap",
-  ]);
-
-  const motion = new Proxy({}, {
-    get(_target, prop) {
-      if (prop === "__esModule") return false;
-      if (cache.has(prop)) return cache.get(prop);
-      const tag = String(prop);
-      const Component = React.forwardRef((props: Record<string, unknown>, ref) => {
-        const domProps: Record<string, unknown> = {};
-        for (const [key, value] of Object.entries(props)) {
-          if (!ignoredMotionProps.has(key)) {
-            domProps[key] = value;
-          }
-        }
-        return React.createElement(tag, { ...domProps, ref });
-      });
-      cache.set(prop, Component);
-      return Component;
-    },
-  });
-
-  return {
-    AnimatePresence: ({ children }: { children?: unknown }) => (
-      React.createElement(React.Fragment, null, children)
-    ),
-    motion,
-  };
-}
-
 function createRechartsStub() {
   const React = require("react") as typeof import("react");
   const Container = ({ children }: { children?: unknown }) => (
@@ -255,9 +214,6 @@ function installSmokeRenderHooks() {
     if (request.startsWith("@tauri-apps/")) {
       return tauriStubFor(request);
     }
-    if (request === "framer-motion") {
-      return createMotionStub();
-    }
     if (request === "lucide-react") {
       return createLucideStub();
     }
@@ -329,6 +285,7 @@ await runTest("app shell keeps History and Data snapshot loaders on their owning
   assert.match(historyBranch, /loadHistorySnapshot=\{loadHistoryRuntimeSnapshot\}/);
   assert.doesNotMatch(historyBranch, /loadDataTrendSnapshot=/);
   assert.match(dataBranch, /loadDataTrendSnapshot=\{loadDataTrendRuntimeSnapshot\}/);
+  assert.match(dataBranch, /webEnabled=\{appSettings\.webActivityEnabled\}/);
   assert.doesNotMatch(dataBranch, /loadHistorySnapshot=/);
 });
 
@@ -345,6 +302,43 @@ await runTest("Data regular view avoids visible loading and skeleton branches", 
   assert.match(data, /isDailyFutureCell/);
   assert.match(data, /isWeeklyFutureCell/);
   assert.match(data, /selectedHeatmapView === "recent"/);
+});
+
+await runTest("Data category trends reuse the destination panel without a second persistence path", () => {
+  const data = readUtf8("src/features/data/components/Data.tsx");
+  const destinationPanel = readUtf8("src/features/data/components/DataDestinationTrendPanel.tsx");
+  const categoryReadModel = readUtf8("src/features/data/services/dataCategoryTrendReadModel.ts");
+  const dataCss = readUtf8("src/styles/features/data.css");
+  const segmentedFilter = readUtf8("src/shared/components/QuietSegmentedFilter.tsx");
+
+  assert.match(data, /lazy\(\(\) => import\("\.\/DataDestinationTrendPanel\.tsx"\)\)/);
+  assert.match(data, /onAppTrendViewModelChange=\{setCurrentAppTrendViewModel\}/);
+  assert.match(
+    readUtf8("src/app/services/viewChunkPreloadService.ts"),
+    /import\("\.\.\/\.\.\/features\/data\/components\/DataDestinationTrendPanel"\)/,
+  );
+  assert.match(destinationPanel, /type DataDestinationMode = "app" \| "category" \| "web"/);
+  assert.match(destinationPanel, /buildDataCategoryTrendViewModel/);
+  assert.match(destinationPanel, /data-destination-mode/);
+  assert.match(destinationPanel, /event\.ctrlKey \|\| event\.metaKey/);
+  assert.match(categoryReadModel, /buildDataTrendSessionContext/);
+  assert.doesNotMatch(categoryReadModel, /sessionReadRepository|Database|invoke\(/);
+  assert.match(dataCss, /--data-category-color/);
+  assert.doesNotMatch(dataCss, /#[0-9a-f]{3,8}/i);
+  assert.match(segmentedFilter, /aria-label=\{ariaLabel\}/);
+});
+
+await runTest("Data web trends keep page details outside the trend persistence boundary", () => {
+  const destinationPanel = readUtf8("src/features/data/components/DataDestinationTrendPanel.tsx");
+  const hook = readUtf8("src/features/data/hooks/useDataWebActivitySnapshot.ts");
+  const snapshot = readUtf8("src/features/data/services/dataWebActivitySnapshot.ts");
+  const trendRepository = readUtf8("src/platform/persistence/dataWebActivityTrendRepository.ts");
+
+  assert.match(destinationPanel, /enabled: webEnabled && destinationMode === "web"/);
+  assert.match(hook, /import\("\.\.\/services\/dataWebActivitySnapshot\.ts"\)/);
+  assert.match(snapshot, /dataWebActivityTrendRepository/);
+  assert.match(trendRepository, /SELECT id,[\s\S]*normalized_domain,[\s\S]*favicon_url,[\s\S]*start_time,[\s\S]*end_time/);
+  assert.doesNotMatch(trendRepository, /\burl\b|\btitle\b/i);
 });
 
 await runTest("History regular view avoids visible loading copy", () => {
@@ -394,6 +388,31 @@ await runTest("History separates timeline list dialog from zoom dialog", () => {
   assert.match(historyTimeline, /export function snapHistoryTimelineFocusToNearestHalfHour/);
   assert.match(historyCss, /\.history-timeline-zoom-dialog-timeline/);
   assert.match(historyCss, /overscroll-behavior: contain/);
+});
+
+await runTest("destination detail stays owned by one lazy shared feature", () => {
+  const shell = readUtf8("src/app/AppShell.tsx");
+  const history = readUtf8("src/features/history/components/History.tsx");
+  const data = readUtf8("src/features/data/components/Data.tsx");
+  const dashboard = readUtf8("src/features/dashboard/components/Dashboard.tsx");
+  const dashboardTopApplications = readUtf8("src/features/dashboard/components/DashboardTopApplications.tsx");
+  const entry = readUtf8("src/features/destination/components/DestinationDetailDialogEntry.tsx");
+  const dialog = readUtf8("src/features/destination/components/DestinationDetailDialog.tsx");
+  const destinationCss = readUtf8("src/styles/features/destination.css");
+
+  assert.match(shell, /useDestinationDetailLauncher/);
+  assert.match(shell, /DestinationDetailDialogEntry/);
+  assert.match(history, /onOpenDestinationDetail/);
+  assert.match(data, /onOpenDestinationDetail/);
+  assert.match(dashboard, /onOpenDestinationDetail/);
+  assert.match(dashboard, /lazy\(\(\) => import\("\.\/DashboardTopApplications\.tsx"\)\)/);
+  assert.match(dashboardTopApplications, /createDestinationDetailTarget/);
+  assert.match(entry, /lazy\(\(\) => import\("\.\/DestinationDetailDialog\.tsx"\)\)/);
+  assert.match(dialog, /useDestinationDetail/);
+  assert.match(dialog, /buildDestinationDetailTimelineSegments/);
+  assert.match(dialog, /clipDestinationDetailActivitiesToViewport/);
+  assert.match(destinationCss, /var\(--qp-border-subtle\)/);
+  assert.doesNotMatch(destinationCss, /#[0-9a-f]{3,8}/i);
 });
 
 await runTest("operation-oriented pages keep explicit busy feedback", () => {

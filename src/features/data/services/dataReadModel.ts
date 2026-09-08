@@ -63,6 +63,23 @@ export interface DataAppTrendPoint {
   duration: number;
 }
 
+export interface DataDestinationTrendSeries {
+  key: string;
+  dataKey: string;
+  displayName: string;
+  color: string;
+}
+
+export interface DataDestinationTrendChartRow {
+  label: string;
+  date: string;
+  duration: number;
+  hours: number;
+  totalDuration: number;
+  totalHours: number;
+  [key: string]: string | number;
+}
+
 export interface DataAppDayRow {
   date: string;
   label: string;
@@ -123,9 +140,16 @@ const HEATMAP_SESSION_CACHE_LIMIT = 2;
 const heatmapSessionCache = new Map<string, AggregateSessionRecord[]>();
 let earliestSessionStartTimeCache: number | null | undefined;
 
-interface CompiledDataSession extends AggregateSessionRecord {
+export interface CompiledDataSession extends AggregateSessionRecord {
   appKey: string;
   displayName: string;
+}
+
+export interface DataTrendSessionContext {
+  range: ResolvedDataTrendRange;
+  dayRanges: SessionRange[];
+  monthRanges: SessionRange[];
+  sessions: CompiledDataSession[];
 }
 
 function startOfLocalDay(date: Date) {
@@ -167,7 +191,7 @@ function formatHeatmapMonthLabel(date: Date) {
   return UI_TEXT.date.monthLabel(date.getMonth() + 1);
 }
 
-function buildChartAxis(points: DataTrendPoint[]) {
+export function buildDataChartAxis(points: DataTrendPoint[]) {
   const maxHours = Math.max(0, ...points.map((point) => point.hours));
   const intervalCount = 3;
   const rawStep = Math.max(1, maxHours / intervalCount);
@@ -202,7 +226,7 @@ function getRangeBounds(ranges: SessionRange[]) {
   };
 }
 
-function getClippedSessionDuration(
+export function getClippedSessionDuration(
   session: { startTime: number; endTime: number },
   rangeStartMs: number,
   rangeEndMs: number,
@@ -267,6 +291,25 @@ function compileDataSessions(
       endTime: Math.min(session.endTime, range.endMs),
     }))
     .filter((session) => session.endTime > session.startTime);
+}
+
+export function buildDataTrendSessionContext(
+  sessions: AggregateSessionRecord[],
+  selection: DataTrendRange | ResolvedDataTrendRange,
+  nowMs: number,
+): DataTrendSessionContext {
+  const range = typeof selection === "number"
+    ? resolveDataTrendRange({ kind: "rolling", days: selection }, nowMs)
+    : selection;
+  const dayRanges = buildDataDayRanges(range);
+  const bounds = getRangeBounds(dayRanges);
+
+  return {
+    range,
+    dayRanges,
+    monthRanges: buildDataMonthRanges(range),
+    sessions: compileDataSessions(sessions, bounds),
+  };
 }
 
 function buildDataAppStats(sessions: CompiledDataSession[]) {
@@ -415,7 +458,7 @@ export function buildDataTrendViewModel(
     averageDuration: Math.round(totalDuration / averageDivisor),
     averageDivisor,
     chartData,
-    chartAxis: buildChartAxis(chartData),
+    chartAxis: buildDataChartAxis(chartData),
     metricLabels: {
       total: UI_TEXT.data.rangeTotal(rangeLabel),
       average: shouldGroupByMonth ? UI_TEXT.data.yearlyAverage : UI_TEXT.data.dailyAverage,
@@ -546,7 +589,7 @@ export function buildDataAppTrendViewModel(
     appOptions,
     selectedApp,
     chartData,
-    chartAxis: buildChartAxis(chartData),
+    chartAxis: buildDataChartAxis(chartData),
     dayRows: selectedDayRows.slice().reverse(),
     peakDay: peakDay && peakDay.duration > 0 ? peakDay : null,
   };

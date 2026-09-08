@@ -1260,7 +1260,7 @@ mod tests {
                 .unwrap());
             tracker_settings::save_tracker_timestamp(
                 &pool,
-                tracker_settings::TRACKER_LAST_HEARTBEAT_KEY,
+                tracker_settings::TRACKER_LAST_SUCCESSFUL_SAMPLE_KEY,
                 8_000,
             )
             .await
@@ -1298,7 +1298,7 @@ mod tests {
                 .unwrap());
             tracker_settings::save_tracker_timestamp(
                 &pool,
-                tracker_settings::TRACKER_LAST_HEARTBEAT_KEY,
+                tracker_settings::TRACKER_LAST_SUCCESSFUL_SAMPLE_KEY,
                 8_000,
             )
             .await
@@ -1336,7 +1336,7 @@ mod tests {
                 .unwrap());
             tracker_settings::save_tracker_timestamp(
                 &pool,
-                tracker_settings::TRACKER_LAST_HEARTBEAT_KEY,
+                tracker_settings::TRACKER_LAST_SUCCESSFUL_SAMPLE_KEY,
                 8_000,
             )
             .await

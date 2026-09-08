@@ -112,11 +112,11 @@ If the client does not inherit your shell environment, set either `PATINA_API_TO
 | `set_local_api_port` | `POST /api/v1/settings/local-api/port` | required: `port` | Atomically move the loopback API listener |
 | `rotate_local_api_token` | `POST /api/v1/settings/local-api/token/rotate` | required: `confirmed=true` | Rotate the API Token and revoke old clients |
 | `get_current_activity` | `GET /api/v1/current` | none | Read current foreground activity snapshot |
-| `query_sessions` | `GET /api/v1/sessions` | `from`, `to`, `app`, `limit` | Query closed activity sessions |
+| `query_sessions` | `GET /api/v1/sessions` | `from`, `to`, `app`, `limit` | Query closed native sessions by start time |
 | `get_active_session` | `GET /api/v1/sessions/active` | none | Read current active session |
-| `get_today_summary` | `GET /api/v1/summary/today` | none | Read local-day summary |
-| `get_week_summary` | `GET /api/v1/summary/week` | none | Read local-week summary |
-| `get_activity_trend` | `GET /api/v1/trend` | `period`, `granularity` | Read daily week/month trend |
+| `get_today_summary` | `GET /api/v1/summary/today` | none | Read cross-source local-day summary |
+| `get_week_summary` | `GET /api/v1/summary/week` | none | Read cross-source local-week summary |
+| `get_activity_trend` | `GET /api/v1/trend` | `period`, `granularity` | Read cross-source daily week/month trend |
 | `query_web_activity` | `GET /api/v1/web-activity` | `from`, `to`, `domain`, `limit` | Query browser activity segments |
 | `get_activity_context` | `GET /api/v1/ai/activity-context` | none | Fetch an AI-oriented activity context bundle |
 | `get_tools_snapshot` | `GET /api/v1/tools/snapshot` | none | Fetch Tools runtime state |
@@ -139,6 +139,7 @@ If the client does not inherit your shell environment, set either `PATINA_API_TO
 | `set_tracking_paused` | `POST /api/v1/settings/tracker/pause` | required: `paused` | Set tracking pause state |
 | `set_audio_participation` | `POST /api/v1/settings/runtime/audio-participation` | required: `enabled` | Apply the Linux audio participation switch |
 | `configure_browser_activity` | `POST /api/v1/settings/runtime/browser-activity` | required: `enabled`, `port`, `token`, `urlPrivacy` | Replace the browser activity runtime configuration |
+| `list_apps` | `GET /api/v1/apps` | none | List apps from native and imported facts |
 | `classify_app` | `POST /api/v1/apps/{exe_name}/classify` | required: `exeName`, `category` | Save app category |
 | `rename_app` | `POST /api/v1/apps/{exe_name}/rename` | required: `exeName`, `displayName` | Save app display name |
 | `set_app_excluded` | `POST /api/v1/apps/{exe_name}/exclude` | required: `exeName`, `excluded` | Save app exclusion flag |
@@ -161,6 +162,8 @@ Service lifecycle tools are available only when capabilities advertise `service-
 | `restart_daemon_service` | `POST /api/v1/system/service/restart` | required: `confirmed=true` | Persist a restart ticket, gracefully stop, and let systemd start the next instance |
 
 Before restart, call `get_daemon_service` and record its `instance_id`. A successful restart request returns a `pending` ticket and disconnects the client shortly afterward. Reconnect, call `get_daemon_service` again, and accept success only when the same `request_id` is `completed` with a different `completed_instance_id`. A manually launched preview daemon rejects restart because no supervisor can bring it back.
+
+Summary and trend tools apply `native > import_exact > import_bucket` precedence. Imported hour buckets remain aggregate-only and never appear in `query_sessions`; use summaries or trend for totals that include them.
 
 ### Errors
 

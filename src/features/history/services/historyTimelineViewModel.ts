@@ -1,6 +1,7 @@
 import { AppClassification } from "../../../shared/classification/appClassification.ts";
 import type { AppCategory } from "../../../shared/classification/categoryTokens.ts";
 import type { CompiledSession } from "../../../shared/lib/sessionReadCompiler.ts";
+import { snapTimelineFocusToNearestInterval } from "../../../shared/lib/timelineAxis.ts";
 
 const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -148,13 +149,12 @@ export function snapHistoryTimelineFocusToNearestHalfHour({
   requestedTimeMs: number;
 }) {
   const { dayStartMs, dayEndMs } = getFullDayRange(selectedDate);
-  const safeRequestedTimeMs = typeof requestedTimeMs === "number" && Number.isFinite(requestedTimeMs)
-    ? requestedTimeMs
-    : dayStartMs;
-  const snappedTimeMs = dayStartMs
-    + Math.round((safeRequestedTimeMs - dayStartMs) / HALF_HOUR_MS) * HALF_HOUR_MS;
-
-  return clampNumber(snappedTimeMs, dayStartMs, dayEndMs);
+  return snapTimelineFocusToNearestInterval({
+    dayStartMs,
+    dayEndMs,
+    requestedTimeMs,
+    intervalMs: HALF_HOUR_MS,
+  });
 }
 
 export function normalizeHistoryTimelineViewportAroundFocus({

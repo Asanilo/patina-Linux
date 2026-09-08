@@ -174,7 +174,8 @@ pub async fn load_active_session(
     pool: &Pool<Sqlite>,
 ) -> Result<Option<ActiveSessionSnapshot>, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT start_time,
+        "SELECT exe_name,
+                start_time,
                 COALESCE(continuity_group_start_time, start_time) AS continuity_group_start_time
          FROM sessions
          WHERE end_time IS NULL
@@ -185,6 +186,7 @@ pub async fn load_active_session(
     .await?;
 
     Ok(row.map(|row| ActiveSessionSnapshot {
+        exe_name: row.get("exe_name"),
         start_time: row.get("start_time"),
         continuity_group_start_time: row.get("continuity_group_start_time"),
     }))
@@ -195,7 +197,17 @@ pub async fn end_active_sessions(
     raw_end_time: i64,
 ) -> Result<bool, sqlx::Error> {
     let mut tx = pool.begin().await?;
-    let did_end = end_active_sessions_tx(&mut tx, raw_end_time).await?;
+    let did_end = end_active_sessions_tx(&mut tx, raw_end_time, None).await?;
+    tx.commit().await?;
+    Ok(did_end)
+}
+
+pub async fn end_active_sessions_started_at_or_before(
+    pool: &Pool<Sqlite>,
+    raw_end_time: i64,
+) -> Result<bool, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let did_end = end_active_sessions_tx(&mut tx, raw_end_time, Some(raw_end_time)).await?;
     tx.commit().await?;
     Ok(did_end)
 }
@@ -203,15 +215,31 @@ pub async fn end_active_sessions(
 async fn end_active_sessions_tx(
     tx: &mut Transaction<'_, Sqlite>,
     raw_end_time: i64,
+    latest_start_time: Option<i64>,
 ) -> Result<bool, sqlx::Error> {
-    let active_sessions = sqlx::query(
-        "SELECT id, start_time
-         FROM sessions
-         WHERE end_time IS NULL
-         ORDER BY start_time DESC, id DESC",
-    )
-    .fetch_all(&mut **tx)
-    .await?;
+    let active_sessions = match latest_start_time {
+        Some(latest_start_time) => {
+            sqlx::query(
+                "SELECT id, start_time
+                 FROM sessions
+                 WHERE end_time IS NULL AND start_time <= ?
+                 ORDER BY start_time DESC, id DESC",
+            )
+            .bind(latest_start_time)
+            .fetch_all(&mut **tx)
+            .await?
+        }
+        None => {
+            sqlx::query(
+                "SELECT id, start_time
+                 FROM sessions
+                 WHERE end_time IS NULL
+                 ORDER BY start_time DESC, id DESC",
+            )
+            .fetch_all(&mut **tx)
+            .await?
+        }
+    };
 
     if active_sessions.is_empty() {
         return Ok(false);
@@ -318,7 +346,7 @@ pub async fn start_session(
             return Ok(false);
         }
 
-        end_active_sessions_tx(&mut tx, start_time).await?;
+        end_active_sessions_tx(&mut tx, start_time, None).await?;
     }
 
     let result = sqlx::query(

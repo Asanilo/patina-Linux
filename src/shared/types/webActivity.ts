@@ -15,6 +15,18 @@ export interface WebActivitySegment {
   duration: number | null;
 }
 
+export interface WebActivityTrendSegment {
+  id: number;
+  browserClientId: string;
+  browserKind: string;
+  browserExeName: string;
+  domain: string;
+  normalizedDomain: string;
+  faviconUrl: string | null;
+  startTime: number;
+  endTime: number | null;
+}
+
 export interface WebDomainOverride {
   category?: UserAssignableAppCategory;
   displayName?: string;

@@ -1,7 +1,10 @@
+pub mod activity_import;
+pub mod activity_read_model;
 pub mod app_mappings;
 pub mod app_settings;
 pub mod classification_settings;
 pub mod icon_cache;
+pub mod scheduled_backup;
 pub mod session_title_samples;
 pub mod sessions;
 pub mod settings;

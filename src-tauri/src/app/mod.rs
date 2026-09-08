@@ -1,3 +1,4 @@
+pub mod activity_import;
 pub mod api_runtime;
 pub mod autostart;
 pub mod backup;
@@ -10,6 +11,7 @@ pub mod main_window;
 pub mod runtime;
 pub mod runtime_lease;
 pub mod runtime_tasks;
+pub mod scheduled_backup;
 pub mod state;
 pub mod tray;
 pub mod web_activity;

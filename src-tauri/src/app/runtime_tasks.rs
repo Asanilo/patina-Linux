@@ -1,3 +1,4 @@
+use crate::app::scheduled_backup;
 use crate::engine::runtime_context::RuntimeContext;
 use crate::engine::tools as tools_runtime;
 use crate::engine::tracking::{runtime as tracking_runtime, watchdog as tracking_watchdog};
@@ -88,6 +89,25 @@ pub(crate) fn spawn_tools_runtime_restart_loop<R: Runtime + 'static>(app: AppHan
                 continue;
             }
 
+            break;
+        }
+    });
+}
+
+pub(crate) fn spawn_scheduled_backup_runtime_restart_loop(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let mut retry_delay = RestartBackoff::new();
+        loop {
+            if let Err(error) = scheduled_backup::run(app.clone()).await {
+                eprintln!("[scheduled-backup] runtime stopped: {error}");
+                let delay = retry_delay.next_delay();
+                eprintln!(
+                    "[scheduled-backup] restarting runtime in {} seconds...",
+                    delay.as_secs()
+                );
+                sleep(delay).await;
+                continue;
+            }
             break;
         }
     });

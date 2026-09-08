@@ -305,6 +305,9 @@ mod tests {
         pool.execute(crate::data::schema::SOFTWARE_REMINDER_RULES_SCHEMA_SQL)
             .await
             .unwrap();
+        pool.execute(crate::data::schema::ACTIVITY_IMPORT_SCHEMA_SQL)
+            .await
+            .unwrap();
         let sink = Arc::new(crate::engine::runtime_event::MemoryRuntimeEventSink::default());
         let event_sink: Arc<dyn RuntimeEventSink> = sink.clone();
         let control = Arc::new(TestRuntimeControl::default());

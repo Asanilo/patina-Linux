@@ -1,6 +1,6 @@
 [package]
 name = "patina"
-version = "1.8.3"
+version = "1.8.4"
 description = "Local-first Linux desktop time tracking"
 authors = ["Patina maintainers"]
 license = "MIT"
@@ -37,6 +37,8 @@ base64 = "0.22.1"
 chrono = "0.4.44"
 tokio = { version = "1.50.0", features = ["rt-multi-thread", "time", "net", "sync", "macros", "signal"] }
 tower = { version = "0.5", features = ["util"] }
+sha2 = "0.10"
+csv = "1"
 tokio-tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }

@@ -48,6 +48,19 @@ Windows code follows a freeze-then-remove policy:
 - Windows cfgs, dependencies, and sources will be removed in a separate release after daemon ownership is stable.
 - Linux tracking correctness, data safety, desktop usability, and release reliability take priority over platform parity.
 
+Selected cross-platform capabilities already adapted to the Linux product include:
+
+- History timeline zoom.
+- History category distribution fix when Web Sync is disabled.
+- Custom-category rename/merge and excluded filtering, restricted so built-in categories cannot be renamed or deleted.
+- Upgrade protection for invalid Data bootstrap snapshots.
+- Automatic browser bridge recovery after temporary port conflicts.
+- Removal of the `framer-motion` runtime while retaining Quiet Pro CSS feedback.
+- Linux-native data-directory and WebView-cache management.
+- App/site activity details, app/category/web trends, safe activity import, and local scheduled backups.
+
+Upstream changes are reviewed for Linux correctness and data-safety value. They are not merged wholesale or used as a version-parity target while the daemon-backed architecture is being completed.
+
 ## Interface Preview
 |  |  |
 | --- | --- |

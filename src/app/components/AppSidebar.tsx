@@ -1,5 +1,4 @@
 import type { CSSProperties, ReactNode } from "react";
-import { motion } from "framer-motion";
 import { ArrowUpCircle, Monitor, Clock, Settings2, Sparkles, BarChart3, Info, ToolCase } from "lucide-react";
 import appIconUrl from "../../../src-tauri/icons/32x32.png";
 import { UI_TEXT } from "../../shared/copy/uiText";
@@ -34,10 +33,7 @@ export default function AppSidebar({
   ];
 
   return (
-    <motion.aside
-      initial={{ x: -4, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      transition={{ duration: 0.16, ease: "easeOut" }}
+    <aside
       className="qp-canvas w-[88px] md:w-[96px] shrink-0 flex flex-col items-center py-5 md:py-6 gap-5"
       style={NO_DRAG_STYLE}
     >
@@ -47,7 +43,8 @@ export default function AppSidebar({
 
       <nav className="flex flex-col gap-2.5 mt-1 w-full px-2">
         {navItems.map((item) => (
-          <motion.button
+          <button
+            type="button"
             key={item.id}
             onClick={() => onNavigate(item.id)}
             aria-label={item.label}
@@ -61,28 +58,25 @@ export default function AppSidebar({
             {currentView === item.id && (
               <div className="absolute left-[-1px] top-[9px] w-[2px] h-[22px] rounded-full bg-[var(--qp-accent-default)]" />
             )}
-          </motion.button>
+          </button>
         ))}
       </nav>
 
       <div className="mt-auto flex w-full flex-col items-center gap-2 px-2">
         {footerContent}
         {showUpdateEntry ? (
-          <motion.button
+          <button
             type="button"
             onClick={onOpenUpdateDialog}
-            whileHover={{ x: 0.5 }}
-            whileTap={{ scale: 0.995 }}
-            transition={{ duration: 0.1, ease: "easeOut" }}
             className="qp-chip flex h-7 w-[66px] items-center justify-center rounded-[8px] border border-[var(--qp-border-subtle)] bg-[var(--qp-bg-elevated)] px-0 text-[var(--qp-text-secondary)] transition-colors hover:border-[var(--qp-border-strong)] hover:bg-[var(--qp-bg-panel)] hover:text-[var(--qp-text-primary)] active:border-[var(--qp-border-strong)] active:bg-[var(--qp-bg-panel)]"
           >
             <span className="inline-flex w-full items-center justify-center gap-1 pl-px text-[10px] leading-none font-medium">
               <ArrowUpCircle size={11} strokeWidth={1.85} className="shrink-0" />
               <span className="block leading-none">{UI_TEXT.update.sidebarEntry}</span>
             </span>
-          </motion.button>
+          </button>
         ) : null}
       </div>
-    </motion.aside>
+    </aside>
   );
 }

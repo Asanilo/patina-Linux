@@ -300,6 +300,50 @@ await runTest("aggregate repository mapping filters legacy lifecycle noise using
   assert.equal(rows[0].exeName, "alma.exe");
 });
 
+await runTest("aggregate repository mapping prorates partial imported bucket ranges", () => {
+  const rows = mapRawAggregateSessionCandidates([
+    {
+      record_id: 1,
+      origin: "import_bucket",
+      app_name: "Cursor",
+      exe_name: "cursor.exe",
+      window_title: "",
+      start_time: 0,
+      effective_end_time: 60,
+      capacity_end_time: 100,
+    },
+  ], { startTime: 20, endTime: 70 });
+
+  assert.deepEqual(rows, [{
+    appName: "Cursor",
+    exeName: "cursor.exe",
+    startTime: 20,
+    endTime: 50,
+  }]);
+});
+
+await runTest("aggregate repository mapping preserves live native ownership", () => {
+  const rows = mapRawAggregateSessionCandidates([{
+    record_id: 1,
+    origin: "native",
+    app_name: "Cursor",
+    exe_name: "cursor.exe",
+    window_title: "README.md",
+    start_time: 10_000,
+    effective_end_time: 20_000,
+    capacity_end_time: 20_000,
+    is_live: 1,
+  }]);
+
+  assert.deepEqual(rows, [{
+    appName: "Cursor",
+    exeName: "cursor.exe",
+    startTime: 10_000,
+    endTime: 20_000,
+    isLive: true,
+  }]);
+});
+
 await runTest("activity trend clips sessions at range boundaries", () => {
   const nowMs = new Date(2026, 4, 8, 12, 0, 0).getTime();
   const rows = buildDataTrendViewModel([
@@ -442,6 +486,29 @@ await runTest("data bootstrap snapshot loads a valid persisted payload into cach
 
   assert.equal(loaded?.createdAtMs, snapshot.createdAtMs);
   assert.equal(loaded?.overviewTrendViewModel.totalDuration, snapshot.overviewTrendViewModel.totalDuration);
+});
+
+await runTest("data bootstrap snapshot rejects incomplete app options and clears the payload", async () => {
+  const snapshot = makeBootstrapSnapshot();
+  const staleOption = snapshot.appTrendViewModel.appOptions[0] as unknown as Record<string, unknown>;
+  delete staleOption.exeName;
+  let cleared = false;
+
+  const loaded = await loadPersistedDataBootstrapSnapshot({
+    loadPayload: async () => JSON.stringify(snapshot),
+    savePayload: async () => {
+      throw new Error("unexpected save");
+    },
+    clearPayload: async () => {
+      cleared = true;
+    },
+    warn: () => {
+      throw new Error("unexpected warning");
+    },
+  });
+
+  assert.equal(loaded, null);
+  assert.equal(cleared, true);
 });
 
 await runTest("data bootstrap snapshot refuses oversized payloads", async () => {

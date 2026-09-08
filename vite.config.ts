@@ -18,6 +18,18 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (
+            id.includes("/src/features/data/services/dataWebActivityCopy.ts")
+            || id.includes("/src/shared/classification/domainColor.ts")
+            || id.includes("/src/shared/components/QuietSegmentedFilter.tsx")
+          ) {
+            return "ui";
+          }
+
+          if (id.includes("/src/platform/persistence/nativeSessionPrecedence.ts")) {
+            return "activity-precedence";
+          }
+
+          if (
             id.includes("/src/platform/storage/")
             || id.includes("/src/features/settings/storageSettingsCopy.ts")
             || id.includes("/src/features/settings/hooks/useStorageSettingsState.ts")

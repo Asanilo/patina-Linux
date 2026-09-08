@@ -42,3 +42,26 @@ pub async fn cmd_clear_all_window_titles<R: Runtime>(
         .map_err(|error| format!("failed to emit window title cleanup event: {error}"))?;
     Ok(result)
 }
+
+#[tauri::command]
+pub async fn cmd_delete_app_tracking_data<R: Runtime>(
+    exe_names: Vec<String>,
+    start_time_ms: Option<i64>,
+    end_time_ms: Option<i64>,
+    app: AppHandle<R>,
+) -> Result<(), String> {
+    if crate::app::daemon_client::command_client(&app)?.is_some() {
+        return Err(
+            "application activity deletion is not available in daemon client preview yet"
+                .to_string(),
+        );
+    }
+    let pool = sqlite_pool::wait_for_sqlite_pool(&app).await?;
+    maintenance::delete_app_tracking_data(&pool, &exe_names, start_time_ms, end_time_ms).await?;
+    emit_tracking_data_changed(
+        &app,
+        "application-tracking-data-deleted",
+        crate::app::runtime::now_ms(),
+    )
+    .map_err(|error| format!("failed to emit app data cleanup event: {error}"))
+}

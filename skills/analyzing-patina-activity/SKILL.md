@@ -49,6 +49,7 @@ Analyze Patina's local activity data without inventing missing context or exposi
 
 - Do not add active-session duration to today/week summaries; those summaries already include it.
 - Do not treat closed-session queries as complete realtime totals.
+- Do not treat an imported hour bucket as a precise timeline segment; use it only in summary or trend totals.
 - Do not assume missing web activity means no browser use; inspect bridge diagnostics first.
 - Do not print, log, summarize, or persist API or browser extension bearer tokens.
 - Do not expose full URLs or window titles unless they are needed for the user's request.

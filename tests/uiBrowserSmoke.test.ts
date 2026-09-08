@@ -135,9 +135,47 @@ function tauriStubFor(path: string) {
         };
       }
 
+      function scheduledBackupSnapshot() {
+        return {
+          config: {
+            enabled: false,
+            cadence: "weekly",
+            weekday: 5,
+            localTimeMinutes: 1260,
+            targetDir: "/home/smoke/.local/share/Patina/backups",
+            targetGeneration: "smoke-generation",
+            scheduleAnchorAtMs: Date.now(),
+            updatedAtMs: Date.now(),
+          },
+          nextExecutionAtMs: null,
+          recentSuccess: null,
+          recentFailure: null,
+          activeRun: null,
+        };
+      }
+
       export async function invoke(command, payload = {}) {
         if (command === "cmd_get_storage_snapshot") {
           return storageSnapshot();
+        }
+        if (command === "cmd_get_scheduled_backup_snapshot") {
+          return scheduledBackupSnapshot();
+        }
+        if (command === "cmd_save_scheduled_backup_config") {
+          return {
+            ...scheduledBackupSnapshot(),
+            config: {
+              ...scheduledBackupSnapshot().config,
+              ...payload.input,
+              updatedAtMs: Date.now(),
+            },
+          };
+        }
+        if (command === "cmd_pick_scheduled_backup_directory") {
+          return "/home/smoke/Backups";
+        }
+        if (command === "cmd_list_activity_import_batches") {
+          return [];
         }
         if (command === "cmd_commit_app_settings") {
           const settings = loadStoredSettings();
@@ -259,6 +297,29 @@ function tauriStubFor(path: string) {
         });
       }
 
+      function webActivityRows() {
+        const timing = smokeSessionTiming();
+        const split = timing.start + Math.floor(timing.duration * 0.6);
+        return [
+          {
+            id: 1201,
+            domain: "github.com",
+            normalized_domain: "github.com",
+            favicon_url: null,
+            start_time: timing.start,
+            end_time: split,
+          },
+          {
+            id: 1202,
+            domain: "docs.rs",
+            normalized_domain: "docs.rs",
+            favicon_url: null,
+            start_time: split,
+            end_time: timing.end,
+          },
+        ];
+      }
+
       export default class Database {
         static get() {
           return new Database();
@@ -282,8 +343,24 @@ function tauriStubFor(path: string) {
           if (normalizedQuery.includes("from session_title_samples")) {
             return historyTitleSampleRows();
           }
+          if (normalizedQuery.includes("from web_activity_segments")) {
+            return webActivityRows();
+          }
           if (normalizedQuery.includes("from sessions")) {
-            return historySessionRows();
+            const rows = historySessionRows();
+            if (normalizedQuery.includes("effective_end_time")) {
+              return rows.map((row) => ({
+                ...row,
+                record_id: row.id,
+                origin: "native",
+                effective_end_time: row.end_time,
+                capacity_end_time: row.end_time,
+              }));
+            }
+            if (normalizedQuery.includes("'native' as origin")) {
+              return rows.map((row) => ({ ...row, origin: "native" }));
+            }
+            return rows;
           }
           return [];
         }
@@ -642,11 +719,56 @@ try {
     );
 
     for (const marker of DASHBOARD_MARKERS) {
-      assert.equal(
-        await evaluate(client!, sessionId, `document.body.innerText.includes(${jsonString(marker)})`),
-        true,
+      await waitForExpression(
+        client!,
+        sessionId,
+        `document.body.innerText.includes(${jsonString(marker)})`,
+        FIRST_RENDER_TIMEOUT_MS,
+        `dashboard marker ${marker}`,
       );
     }
+  });
+
+  await runTest("Dashboard opens shared application details", async () => {
+    await waitForExpression(
+      client!,
+      sessionId,
+      `Boolean(document.querySelector(".dashboard-top-app-detail"))`,
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const button = document.querySelector(".dashboard-top-app-detail");
+          if (!button) return false;
+          button.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(
+      client!,
+      sessionId,
+      `document.querySelector(".destination-detail-dialog")?.textContent?.includes("活动详情") === true`,
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const dialog = document.querySelector(".destination-detail-dialog");
+          const close = Array.from(dialog?.querySelectorAll("button") ?? [])
+            .find((node) => node.textContent?.trim() === "关闭");
+          if (!close) return false;
+          close.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(
+      client!,
+      sessionId,
+      `document.querySelector(".destination-detail-dialog") === null`,
+    );
   });
 
   await runTest("primary navigation switches views in a real browser", async () => {
@@ -1286,6 +1408,87 @@ try {
     );
   });
 
+  await runTest("Data switches across app category and web trends without overflowing the panel", async () => {
+    await client!.command("Emulation.setDeviceMetricsOverride", {
+      width: 900,
+      height: 760,
+      deviceScaleFactor: 1,
+      mobile: false,
+    }, sessionId);
+    const switched = await evaluate(client!, sessionId, `
+      (() => {
+        const group = document.querySelector('[aria-label=' + ${jsonString(JSON.stringify("活动趋势"))} + ']');
+        const button = Array.from(group?.querySelectorAll("button") ?? [])
+          .find((node) => node.textContent?.trim() === "分类趋势");
+        if (!button) return false;
+        button.click();
+        return true;
+      })()
+    `);
+    assert.equal(switched, true);
+    await waitForExpression(
+      client!,
+      sessionId,
+      `document.querySelector('[aria-label=' + ${jsonString(JSON.stringify("活动趋势"))} + '] button[aria-pressed="true"]')?.textContent?.trim() === "分类趋势"`,
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const panel = document.querySelector(".data-app-panel");
+          if (!panel) return false;
+          return panel.scrollWidth <= panel.clientWidth + 1;
+        })()
+      `),
+      true,
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const group = document.querySelector('[aria-label=' + ${jsonString(JSON.stringify("活动趋势"))} + ']');
+          const button = Array.from(group?.querySelectorAll("button") ?? [])
+            .find((node) => node.textContent?.trim() === "网页趋势");
+          if (!button) return false;
+          button.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(
+      client!,
+      sessionId,
+      `document.querySelector('[aria-label=' + ${jsonString(JSON.stringify("网站列表"))} + ']')?.textContent?.includes("github.com") === true`,
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const panel = document.querySelector(".data-app-panel");
+          return Boolean(panel) && panel.scrollWidth <= panel.clientWidth + 1;
+        })()
+      `),
+      true,
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const group = document.querySelector('[aria-label=' + ${jsonString(JSON.stringify("活动趋势"))} + ']');
+          const button = Array.from(group?.querySelectorAll("button") ?? [])
+            .find((node) => node.textContent?.trim() === "应用趋势");
+          if (!button) return false;
+          button.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await client!.command("Emulation.setDeviceMetricsOverride", {
+      width: 1280,
+      height: 820,
+      deviceScaleFactor: 1,
+      mobile: false,
+    }, sessionId);
+  });
+
   await runTest("History navigation is immediate and avoids visible loading copy", async () => {
     const clicked = await evaluate(client!, sessionId, `
       (() => {
@@ -1489,6 +1692,66 @@ try {
     await waitForExpression(client!, sessionId, "!document.querySelector('[role=\"dialog\"]')");
   });
 
+  await runTest("settings scheduled backup dialog fits a compact viewport", async () => {
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const node = document.querySelector('[aria-label=' + ${jsonString(JSON.stringify("设置"))} + ']');
+          if (!node) return false;
+          node.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(client!, sessionId, `document.body.innerText.includes(${jsonString("设置计划")})`);
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const trigger = Array.from(document.querySelectorAll("button"))
+            .find((node) => node.textContent?.trim() === "设置计划");
+          if (!trigger) return false;
+          trigger.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(client!, sessionId, `document.body.innerText.includes(${jsonString("启用自动备份")})`);
+
+    await client!.command("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+    }, sessionId);
+    await delay(100);
+    assert.equal(
+      await evaluate(client!, sessionId, "document.documentElement.scrollWidth <= window.innerWidth + 1"),
+      true,
+      "Settings scheduled backup dialog overflowed at 390px",
+    );
+
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const cancel = Array.from(document.querySelectorAll("button"))
+            .find((node) => node.textContent?.trim() === "取消");
+          if (!cancel) return false;
+          cancel.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await client!.command("Emulation.setDeviceMetricsOverride", {
+      width: 1280,
+      height: 820,
+      deviceScaleFactor: 1,
+      mobile: false,
+    }, sessionId);
+  });
+
   await runTest("settings local storage controls fit a compact viewport", async () => {
     assert.equal(
       await evaluate(client!, sessionId, `
@@ -1524,6 +1787,76 @@ try {
       "Settings local storage controls overflowed at 390px",
     );
 
+    await client!.command("Emulation.setDeviceMetricsOverride", {
+      width: 1280,
+      height: 820,
+      deviceScaleFactor: 1,
+      mobile: false,
+    }, sessionId);
+  });
+
+  await runTest("settings activity import panel and batch dialog fit a compact viewport", async () => {
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const node = document.querySelector('[aria-label=' + ${jsonString(JSON.stringify("设置"))} + ']');
+          if (!node) return false;
+          node.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(client!, sessionId, `document.body.innerText.includes(${jsonString("活动导入")})`);
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const trigger = Array.from(document.querySelectorAll("button"))
+            .find((node) => node.textContent?.trim() === "管理批次");
+          if (!trigger) return false;
+          trigger.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(client!, sessionId, `document.body.innerText.includes(${jsonString("暂无导入批次")})`);
+    await waitForExpression(client!, sessionId, `
+      Array.from(document.querySelectorAll('[role="dialog"]'))
+        .some((dialog) => dialog.textContent?.includes("导入批次")
+          && dialog.querySelector(".qp-dialog-actions button:not([disabled])"))
+    `);
+
+    await client!.command("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+    }, sessionId);
+    await delay(100);
+    assert.equal(
+      await evaluate(client!, sessionId, "document.documentElement.scrollWidth <= window.innerWidth + 1"),
+      true,
+      "Settings activity import dialog overflowed at 390px",
+    );
+
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const dialog = Array.from(document.querySelectorAll('[role="dialog"]'))
+            .find((node) => node.textContent?.includes("导入批次"));
+          const close = dialog?.querySelector(".qp-dialog-actions button:not([disabled])");
+          if (!close) return false;
+          close.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(client!, sessionId, `
+      !Array.from(document.querySelectorAll('[role="dialog"]'))
+        .some((dialog) => dialog.textContent?.includes("导入批次"))
+    `);
     await client!.command("Emulation.setDeviceMetricsOverride", {
       width: 1280,
       height: 820,
@@ -2037,6 +2370,75 @@ try {
     );
   });
 
+  await runTest("history opens application details without viewport overflow", async () => {
+    await waitForExpression(
+      client!,
+      sessionId,
+      `Boolean(document.querySelector(".history-app-distribution-card .history-distribution-detail-trigger"))`,
+    );
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const trigger = document.querySelector(".history-app-distribution-card .history-distribution-detail-trigger");
+          if (!(trigger instanceof HTMLElement)) return false;
+          trigger.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(
+      client!,
+      sessionId,
+      `Boolean(document.querySelector(".destination-detail-dialog .destination-detail-timeline-track"))`,
+    );
+    const desktopLayout = await evaluate(client!, sessionId, `
+      (() => {
+        const surface = document.querySelector(".destination-detail-dialog");
+        const track = document.querySelector(".destination-detail-timeline-track");
+        const records = document.querySelector(".destination-detail-activities");
+        return {
+          hasSurface: Boolean(surface),
+          hasTrack: Boolean(track),
+          hasRecords: Boolean(records),
+          overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+          surfaceWithinViewport: surface instanceof HTMLElement
+            ? surface.getBoundingClientRect().right <= window.innerWidth && surface.getBoundingClientRect().left >= 0
+            : false,
+        };
+      })()
+    `) as {
+      hasSurface: boolean;
+      hasTrack: boolean;
+      hasRecords: boolean;
+      overflowX: boolean;
+      surfaceWithinViewport: boolean;
+    };
+    assert.deepEqual(desktopLayout, {
+      hasSurface: true,
+      hasTrack: true,
+      hasRecords: true,
+      overflowX: false,
+      surfaceWithinViewport: true,
+    });
+    assert.equal(
+      await evaluate(client!, sessionId, `
+        (() => {
+          const closeButton = document.querySelector(".destination-detail-dialog .qp-dialog-action");
+          if (!(closeButton instanceof HTMLElement)) return false;
+          closeButton.click();
+          return true;
+        })()
+      `),
+      true,
+    );
+    await waitForExpression(
+      client!,
+      sessionId,
+      `!document.querySelector(".destination-detail-dialog")`,
+    );
+  });
+
   await runTest("history timeline opens list dialog from timeline axis", async () => {
     await client!.command("Emulation.setDeviceMetricsOverride", {
       width: 2048,
@@ -2133,7 +2535,7 @@ try {
           return Boolean(
             dialog
             && dialog.getAttribute("role") === "dialog"
-            && dialog.getAttribute("aria-label") === "时间线"
+            && document.getElementById(dialog.getAttribute("aria-labelledby") ?? "")?.textContent === "时间线"
             && dialogList
             && dialogDurationControls
             && compactTrack
@@ -2221,7 +2623,7 @@ try {
           hasDialog: Boolean(
             dialog
             && dialog.getAttribute("role") === "dialog"
-            && dialog.getAttribute("aria-label") === "时间轴缩放"
+            && document.getElementById(dialog.getAttribute("aria-labelledby") ?? "")?.textContent === "时间轴缩放"
             && timeline
           ),
           zoomHours: timeline?.getAttribute("data-history-timeline-zoom-hours") ?? null,

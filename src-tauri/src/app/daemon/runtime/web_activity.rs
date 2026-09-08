@@ -35,7 +35,9 @@ impl DaemonWebActivityControl {
     }
 
     pub(super) async fn apply(&self, settings: WebActivityBridgeSettings) -> Result<bool, String> {
-        self.apply_with_commit(settings, || async { Ok(()) }).await
+        self.runtime
+            .update_with_retry(settings, self.handler(), self.readiness_handler())
+            .await
     }
 
     pub(super) async fn apply_with_commit<F, Fut>(

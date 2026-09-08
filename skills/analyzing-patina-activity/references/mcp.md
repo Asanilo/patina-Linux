@@ -12,16 +12,17 @@ Use this workflow when the host exposes the Patina MCP server. Tool names may ca
 | `get_daemon_service` | none | Read systemd ownership, current daemon instance, and latest restart ticket |
 | `get_current_activity` | none | Read the foreground-window sample |
 | `get_active_session` | none | Read the realtime active session or `null` |
-| `get_today_summary` | none | Read the local-day aggregate |
-| `get_week_summary` | none | Read the Monday-based local-week aggregate |
-| `query_sessions` | optional `from`, `to`, `app`, `limit` | Query closed sessions by start time |
-| `get_activity_trend` | optional `period`, `granularity` | Read `week` or `month`; granularity is currently `day` |
+| `get_today_summary` | none | Read the cross-source local-day aggregate |
+| `get_week_summary` | none | Read the cross-source Monday-based local-week aggregate |
+| `query_sessions` | optional `from`, `to`, `app`, `limit` | Query closed native sessions by start time |
+| `get_activity_trend` | optional `period`, `granularity` | Read cross-source `week` or `month`; granularity is currently `day` |
 | `query_web_activity` | optional `from`, `to`, `domain`, `limit` | Query browser segments |
 | `get_activity_context` | none | Fetch diagnostics, active session, today/week summaries, and 25 recent web segments |
 | `get_tools_snapshot` | none | Read reminders, timer, and pomodoro state |
 | `list_apps` | none | Read known app mappings |
 
 All timestamp arguments are Unix epoch milliseconds.
+Summary and trend tools include imported exact and aggregate facts after precedence resolution. `query_sessions` remains native-only, and aggregate-only hour buckets have no precise intra-hour position.
 
 ## Write Tools
 

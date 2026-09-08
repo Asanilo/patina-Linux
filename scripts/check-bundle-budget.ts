@@ -8,11 +8,18 @@ const KI_B = 1024;
 const CHUNK_BUDGETS = [
   { label: "charts", pattern: /^charts-.*\.js$/, gzipKiB: 125 },
   { label: "react-vendor", pattern: /^react-vendor-.*\.js$/, gzipKiB: 70 },
-  { label: "motion", pattern: /^motion-.*\.js$/, gzipKiB: 50 },
   { label: "icons", pattern: /^icons-.*\.js$/, gzipKiB: 15 },
   { label: "tauri", pattern: /^tauri-.*\.js$/, gzipKiB: 6 },
   { label: "settings-storage", pattern: /^settings-storage-.*\.js$/, gzipKiB: 8 },
-  { label: "index", pattern: /^index-.*\.js$/, gzipKiB: 71 },
+  { label: "settings-runtime-adapter", pattern: /^settingsRuntimeAdapterService-.*\.js$/, gzipKiB: 3 },
+  { label: "settings-scheduled-backup", pattern: /^SettingsScheduledBackupPanel-.*\.js$/, gzipKiB: 7 },
+  { label: "settings-activity-import", pattern: /^SettingsActivityImportPanel-.*\.js$/, gzipKiB: 3 },
+  { label: "activity-precedence", pattern: /^activity-precedence-.*\.js$/, gzipKiB: 3 },
+  { label: "destination-detail", pattern: /^DestinationDetailDialog-.*\.js$/, gzipKiB: 8 },
+  { label: "ui-shared", pattern: /^ui-.*\.js$/, gzipKiB: 2 },
+  { label: "data-destination", pattern: /^DataDestinationTrendPanel-.*\.js$/, gzipKiB: 7 },
+  { label: "data", pattern: /^Data-.*\.js$/, gzipKiB: 11 },
+  { label: "index", pattern: /^index-.*\.js$/, gzipKiB: 72 },
 ] as const;
 
 const FEATURE_OTHER_CHUNKS_GZIP_BUDGET_KI_B = 70;

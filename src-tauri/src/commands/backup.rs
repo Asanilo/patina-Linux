@@ -5,6 +5,7 @@ use crate::data::remote_backup::{
     WebDavBackupConfigDto, WebDavTestResult,
 };
 use crate::domain::backup::BackupPreview;
+use crate::domain::backup_schedule::{ScheduledBackupConfigInput, ScheduledBackupSnapshot};
 use tauri::AppHandle;
 
 #[tauri::command]
@@ -31,6 +32,9 @@ pub async fn cmd_restore_backup(
     restore_strategy: Option<RestoreStrategy>,
     app: AppHandle,
 ) -> Result<(), String> {
+    if crate::app::daemon_client::command_client(&app)?.is_some() {
+        return Err("backup restore requires the pending daemon maintenance flow".to_string());
+    }
     app::backup::restore_backup_and_refresh(app, backup_path, restore_strategy.unwrap_or_default())
         .await
 }
@@ -90,4 +94,30 @@ pub async fn cmd_download_webdav_backup(
     app: AppHandle,
 ) -> Result<RemoteBackupDownloadResult, String> {
     remote_backup::download_webdav_backup(app, config, id).await
+}
+
+#[tauri::command]
+pub async fn cmd_get_scheduled_backup_snapshot(
+    app: AppHandle,
+) -> Result<ScheduledBackupSnapshot, String> {
+    app::scheduled_backup::get_snapshot(&app).await
+}
+
+#[tauri::command]
+pub fn cmd_pick_scheduled_backup_directory(initial_path: Option<String>) -> Option<String> {
+    app::scheduled_backup::pick_directory(initial_path)
+}
+
+#[tauri::command]
+pub async fn cmd_save_scheduled_backup_config(
+    input: ScheduledBackupConfigInput,
+    app: AppHandle,
+) -> Result<ScheduledBackupSnapshot, String> {
+    if crate::app::daemon_client::command_client(&app)?.is_some() {
+        return Err(
+            "scheduled backup configuration is not available in daemon client preview yet"
+                .to_string(),
+        );
+    }
+    app::scheduled_backup::save_config(&app, input).await
 }

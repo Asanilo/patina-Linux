@@ -71,8 +71,13 @@ pub(crate) async fn recover_missing_active_session(
         return Ok(None);
     }
 
-    if data.load_active_session().await?.is_some() {
-        return Ok(None);
+    if let Some(active) = data.load_active_session().await? {
+        if active.exe_name.eq_ignore_ascii_case(&window.exe_name) {
+            return Ok(data
+                .refresh_active_session_metadata(&window.exe_name, &window.title, now_ms)
+                .await?
+                .then_some("session-metadata-refreshed"));
+        }
     }
 
     if start_session(data, window, now_ms, continuity_group_start_time).await? {
@@ -161,4 +166,64 @@ fn to_tracking_candidate(window: &tracker::WindowInfo) -> WindowTrackingCandidat
         &window.window_class,
         window.is_afk,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data::{repositories::sessions, schema, tracking_runtime::TrackingRuntimeDataStore};
+    use crate::engine::tracking::active_session::start_session_for_transition;
+    use sqlx::{Executor, SqlitePool};
+
+    fn window(exe_name: &str, title: &str) -> tracker::WindowInfo {
+        tracker::WindowInfo {
+            hwnd: "1".to_string(),
+            root_owner_hwnd: "1".to_string(),
+            process_id: 1,
+            window_class: "Window".to_string(),
+            title: title.to_string(),
+            exe_name: exe_name.to_string(),
+            process_path: String::new(),
+            is_afk: false,
+            idle_time_ms: 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn recovery_reconciles_a_stale_active_app_with_the_latest_window() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        pool.execute(schema::CURRENT_BASELINE_SCHEMA_SQL)
+            .await
+            .unwrap();
+        sessions::start_session(&pool, "A", "a", "A", 1_000, 1_000)
+            .await
+            .unwrap();
+        let data = TrackingRuntimeDataStore::new(pool.clone());
+        let current = window("b", "B");
+
+        let reason = recover_missing_active_session(
+            &data,
+            &current,
+            5_000,
+            5_000,
+            start_session_for_transition,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(reason, Some("session-recovered"));
+        let rows: Vec<(String, i64, Option<i64>)> =
+            sqlx::query_as("SELECT exe_name, start_time, end_time FROM sessions ORDER BY id")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                ("a".to_string(), 1_000, Some(5_000)),
+                ("b".to_string(), 5_000, None),
+            ]
+        );
+        pool.close().await;
+    }
 }

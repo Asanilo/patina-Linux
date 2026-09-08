@@ -1,3 +1,4 @@
+use crate::data::repositories::activity_read_model;
 use crate::engine::api::context::ApiRuntimeContext;
 use crate::engine::api::types::{
     ActiveSessionResponse, ApiError, ApiResponse, AppSummaryEntry, CategorySummaryEntry,
@@ -169,6 +170,13 @@ pub async fn get_summary_range(context: &ApiRuntimeContext, query: Option<&str>)
                 .unwrap_or_default(),
         };
     };
+    if to <= from {
+        return RouteResponse {
+            status: 400,
+            body: serde_json::to_value(ApiError::bad_request("'to' must be greater than 'from'"))
+                .unwrap_or_default(),
+        };
+    }
 
     let label = format!(
         "{}..{}",
@@ -196,95 +204,63 @@ async fn build_summary_response(
 ) -> RouteResponse {
     let pool = context.pool();
     let sampled_at_ms = context.now_ms();
-    let active_cutoff_ms = sampled_at_ms.min(to_ms);
+    let snapshot =
+        match activity_read_model::load_snapshot(pool, from_ms, to_ms, sampled_at_ms).await {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                return RouteResponse {
+                    status: 500,
+                    body: serde_json::to_value(ApiError::internal(&error)).unwrap_or_default(),
+                };
+            }
+        };
+    let contributions = snapshot.contributions(from_ms, to_ms);
 
-    let rows = match sqlx::query(
-        "SELECT exe_name, start_time, end_time
-         FROM sessions
-         WHERE start_time < ?
-           AND COALESCE(end_time, ?) > ?
-         ORDER BY start_time ASC",
-    )
-    .bind(to_ms)
-    .bind(active_cutoff_ms)
-    .bind(from_ms)
-    .fetch_all(pool)
-    .await
-    {
-        Ok(r) => r,
-        Err(e) => {
+    let app_semantics = match activity_read_model::load_app_semantics(pool).await {
+        Ok(semantics) => semantics,
+        Err(error) => {
             return RouteResponse {
                 status: 500,
-                body: serde_json::to_value(ApiError::internal(&e.to_string())).unwrap_or_default(),
+                body: serde_json::to_value(ApiError::internal(&error)).unwrap_or_default(),
             };
         }
     };
-
-    let sessions = rows
-        .iter()
-        .map(|row| SummarySessionInput {
-            exe_name: row.try_get::<String, _>("exe_name").unwrap_or_default(),
-            start_time: row.try_get::<i64, _>("start_time").unwrap_or(0),
-            end_time: row.try_get::<Option<i64>, _>("end_time").unwrap_or(None),
-        })
-        .collect();
-
-    // Category aggregation: load category overrides from settings
-    let category_rows =
-        sqlx::query("SELECT key, value FROM settings WHERE key LIKE '__app_category::%'")
-            .fetch_all(pool)
-            .await
-            .unwrap_or_default();
-
-    let mut exe_to_category: HashMap<String, String> = HashMap::new();
-
-    for row in &category_rows {
-        let key: String = row.try_get("key").unwrap_or_default();
-        let value: String = row.try_get("value").unwrap_or_default();
-        if let Some(exe) = key.strip_prefix("__app_category::") {
-            exe_to_category.insert(exe.to_string(), value);
-        }
-    }
-
     RouteResponse {
         status: 200,
         body: serde_json::to_value(ApiResponse {
-            data: build_summary_from_sessions(
-                label,
-                from_ms,
-                to_ms,
-                sampled_at_ms,
-                sessions,
-                &exe_to_category,
-            ),
+            data: build_summary_from_contributions(label, contributions, &app_semantics),
         })
         .unwrap_or_default(),
     }
 }
 
-#[derive(Clone, Debug)]
-struct SummarySessionInput {
-    exe_name: String,
-    start_time: i64,
-    end_time: Option<i64>,
-}
-
-fn build_summary_from_sessions(
+fn build_summary_from_contributions(
     label: &str,
-    from_ms: i64,
-    to_ms: i64,
-    sampled_at_ms: i64,
-    sessions: Vec<SummarySessionInput>,
-    exe_to_category: &HashMap<String, String>,
+    contributions: Vec<
+        crate::domain::activity_read_model::ActivityContribution<activity_read_model::ActivityFact>,
+    >,
+    app_semantics: &activity_read_model::ActivityAppSemantics,
 ) -> SummaryResponse {
     let mut app_totals = HashMap::<String, i64>::new();
+    let mut category_totals = HashMap::<String, i64>::new();
 
-    for session in sessions {
-        let overlap_start = session.start_time.max(from_ms);
-        let overlap_end = session.end_time.unwrap_or(sampled_at_ms).min(to_ms);
-        let duration = overlap_end.saturating_sub(overlap_start);
-        if duration > 0 {
-            *app_totals.entry(session.exe_name).or_insert(0) += duration;
+    for contribution in contributions {
+        if contribution.duration_ms <= 0 {
+            continue;
+        }
+        let fact = contribution.value;
+        if app_semantics.is_excluded(&fact.exe_name) {
+            continue;
+        }
+        let app_key = normalize_app_key(&fact.exe_name);
+        *app_totals.entry(app_key.clone()).or_insert(0) += contribution.duration_ms;
+        if let Some(category) = app_semantics
+            .category_for(&app_key)
+            .map(str::to_string)
+            .or(fact.source_category)
+            .filter(|category| !category.trim().is_empty())
+        {
+            *category_totals.entry(category).or_insert(0) += contribution.duration_ms;
         }
     }
 
@@ -308,12 +284,6 @@ fn build_summary_from_sessions(
             .then_with(|| left.exe_name.cmp(&right.exe_name))
     });
 
-    let mut category_totals = HashMap::<String, i64>::new();
-    for (exe_name, total_ms) in &app_totals {
-        if let Some(category) = exe_to_category.get(exe_name) {
-            *category_totals.entry(category.clone()).or_insert(0) += total_ms;
-        }
-    }
     let mut categories = category_totals
         .into_iter()
         .map(|(name, total_ms)| CategorySummaryEntry { name, total_ms })
@@ -331,6 +301,10 @@ fn build_summary_from_sessions(
         apps,
         categories,
     }
+}
+
+fn normalize_app_key(exe_name: &str) -> String {
+    exe_name.trim().to_ascii_lowercase()
 }
 
 fn parse_session_query(query: Option<&str>) -> SessionQueryParams {
@@ -474,7 +448,36 @@ mod local_summary_range_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::activity_read_model::{ActivityContribution, ActivityOrigin};
     use std::collections::HashMap;
+
+    fn contribution(
+        exe_name: &str,
+        duration_ms: i64,
+        source_category: Option<&str>,
+    ) -> ActivityContribution<activity_read_model::ActivityFact> {
+        ActivityContribution {
+            origin: ActivityOrigin::Native,
+            duration_ms,
+            value: activity_read_model::ActivityFact {
+                record_id: 1,
+                app_name: exe_name.to_string(),
+                exe_name: exe_name.to_string(),
+                window_title: String::new(),
+                source_category: source_category.map(str::to_string),
+            },
+        }
+    }
+
+    fn semantics(
+        categories: HashMap<String, String>,
+        excluded: &[&str],
+    ) -> activity_read_model::ActivityAppSemantics {
+        activity_read_model::ActivityAppSemantics {
+            categories,
+            excluded: excluded.iter().map(|value| value.to_string()).collect(),
+        }
+    }
 
     #[test]
     fn active_session_response_includes_realtime_duration_and_window_fields() {
@@ -515,23 +518,11 @@ mod tests {
     }
 
     #[test]
-    fn summary_clips_cross_boundary_sessions_and_counts_active_session_until_sample_time() {
-        let sessions = vec![
-            SummarySessionInput {
-                exe_name: "ghostty".to_string(),
-                start_time: 500,
-                end_time: Some(1_500),
-            },
-            SummarySessionInput {
-                exe_name: "ghostty".to_string(),
-                start_time: 2_500,
-                end_time: None,
-            },
-            SummarySessionInput {
-                exe_name: "obsidian".to_string(),
-                start_time: 1_500,
-                end_time: Some(3_500),
-            },
+    fn summary_aggregates_resolved_contributions_and_categories() {
+        let contributions = vec![
+            contribution("ghostty", 500, None),
+            contribution("ghostty", 500, None),
+            contribution("obsidian", 1_500, Some("Imported writing")),
         ];
         let categories = HashMap::from([
             ("ghostty".to_string(), "Development".to_string()),
@@ -539,7 +530,7 @@ mod tests {
         ]);
 
         let summary =
-            build_summary_from_sessions("range", 1_000, 3_000, 3_000, sessions, &categories);
+            build_summary_from_contributions("range", contributions, &semantics(categories, &[]));
 
         assert_eq!(summary.total_active_ms, 2_500);
         assert_eq!(summary.apps.len(), 2);
@@ -578,21 +569,32 @@ mod tests {
     }
 
     #[test]
-    fn summary_does_not_count_active_session_past_sample_time() {
-        let summary = build_summary_from_sessions(
+    fn summary_uses_imported_category_when_no_local_override_exists() {
+        let summary = build_summary_from_contributions(
             "range",
-            1_000,
-            5_000,
-            3_000,
-            vec![SummarySessionInput {
-                exe_name: "ghostty".to_string(),
-                start_time: 2_000,
-                end_time: None,
-            }],
-            &HashMap::new(),
+            vec![contribution("imported", 1_000, Some("Imported category"))],
+            &semantics(HashMap::new(), &[]),
         );
 
         assert_eq!(summary.total_active_ms, 1_000);
         assert_eq!(summary.apps[0].total_ms, 1_000);
+        assert_eq!(summary.categories[0].name, "Imported category");
+        assert_eq!(summary.categories[0].total_ms, 1_000);
+    }
+
+    #[test]
+    fn summary_omits_excluded_apps() {
+        let summary = build_summary_from_contributions(
+            "range",
+            vec![
+                contribution("ghostty", 1_000, None),
+                contribution("obsidian", 2_000, None),
+            ],
+            &semantics(HashMap::new(), &["ghostty"]),
+        );
+
+        assert_eq!(summary.total_active_ms, 2_000);
+        assert_eq!(summary.apps.len(), 1);
+        assert_eq!(summary.apps[0].exe_name, "obsidian");
     }
 }

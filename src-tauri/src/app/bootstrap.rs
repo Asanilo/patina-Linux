@@ -73,6 +73,7 @@ fn register_managed_state_and_plugins(
         .manage(crate::engine::api::auth::ApiCredentialStore::new())
         .manage(crate::engine::api::server::ApiServerState::new())
         .manage(ToolsRuntimeState::default())
+        .manage(crate::app::scheduled_backup::ScheduledBackupRuntimeState::default())
         .manage(crate::platform::web_activity_bridge::WebActivityBridgeRuntimeState::default())
         .manage(crate::engine::remote_status_bridge::RemoteStatusBridgeRuntimeState::default())
         .manage(WebActivityRuntimeState::default())
@@ -90,6 +91,11 @@ fn register_managed_state_and_plugins(
 
 fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     builder.invoke_handler(tauri::generate_handler![
+        commands::activity_import::cmd_pick_activity_import_file,
+        commands::activity_import::cmd_preview_activity_import,
+        commands::activity_import::cmd_commit_activity_import,
+        commands::activity_import::cmd_list_activity_import_batches,
+        commands::activity_import::cmd_delete_activity_import_batch,
         commands::apps::get_icon,
         commands::tracking::get_current_active_window,
         commands::tracking::get_current_tracking_snapshot,
@@ -160,9 +166,13 @@ fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Build
         commands::backup::cmd_upload_webdav_backup,
         commands::backup::cmd_list_webdav_backups,
         commands::backup::cmd_download_webdav_backup,
+        commands::backup::cmd_get_scheduled_backup_snapshot,
+        commands::backup::cmd_pick_scheduled_backup_directory,
+        commands::backup::cmd_save_scheduled_backup_config,
         commands::persistence::cmd_reopen_sqlite_pool,
         commands::persistence::cmd_delete_tracking_data_before,
         commands::persistence::cmd_clear_all_window_titles,
+        commands::persistence::cmd_delete_app_tracking_data,
         commands::diagnostics::cmd_get_local_api_diagnostics,
         commands::diagnostics::cmd_get_local_api_settings,
         commands::diagnostics::cmd_get_desktop_integration_diagnostics,

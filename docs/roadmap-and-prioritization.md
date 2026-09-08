@@ -93,6 +93,10 @@
 
 当前基线中，本地存储位置与安全缓存控制已实现：活动数据库和 WebView 持久目录可独立迁移，迁移在重启时验证执行，旧目录保留；缓存维护只允许清理精确的 `WebKitCache`。后续工作应以回归验证和恢复可靠性为主，不再重复建设另一套存储向导。
 
+本地自动备份也已进入当前基线：支持按本机时间每天或每周执行，只写入用户选择的本机目录；文件采用不覆盖创建并在发布后重新解析校验，失败会有限重试，异常退出会在下次轮询对账。系统默认保留最近 3 份已验证且有数据库归属记录的快照，清理前必须再次核对目录、文件类型、大小和摘要；无法确认归属时保留文件。覆盖恢复会停用并换代原计划。自动上传 WebDAV 不属于当前基线，不能把手动 WebDAV 备份配置隐式升级为后台任务。
+
+平台中立的 Patina CSV 活动导入也已进入桌面端基线：导入前预览并在提交时复核文件指纹，记录保存在独立事实表中，可按批次删除；本机精确记录优先于外部精确记录，外部精确记录优先于小时汇总。小时汇总只进入聚合统计，不进入 History 时间线。导入事实随手动和定时备份保存，并纳入恢复、历史清理、标题清理和应用删除。Tai / Taix 等来源适配器不属于当前基线。
+
 ## 5.3 主题三：核心页面体验打磨
 
 核心页面是当前产品价值的主要承载面。
@@ -102,6 +106,11 @@
 - `Dashboard` 的可读性
 - `History` 的回看效率
 - `Data` 的长期活动理解效率
+- `Data` 当前已支持应用、分类与网页趋势；网页趋势按需读取域名级活动并遵循现有分类、排除和隐私边界，不复制上游持久化聚合链路
+- `Dashboard / History / Data / Classification` 的桌面 SQLite 读模型已能组合本机事实与外部导入事实；本机记录始终优先，局部小时范围先按覆盖比例折算，小时汇总不伪造成 History 时间线
+- HTTP / MCP 的 Summary、Trend 与 Apps 已通过 Rust 共享活动读模型纳入外部导入事实，并与桌面端遵守同一优先级契约；`/sessions` 仍只暴露原生精确记录，小时汇总只用于聚合，不能在 API handler 中复制另一套统计规则
+- 后续 Data 工作优先统一跨页面的日期、详情与筛选语义并补回归验证，不为单一图表新建后台聚合 worker 或第二套事实表
+- 应用详情已由 `Dashboard / History / Data` 共用同一 owner，网站详情已由 `History / Data` 共用同一 owner；后续新增入口必须继续保持同一聚合、日期和时间线语义
 - `Classification` 的管理清晰度
 - `Tools` 的轻量主动工具体验
 - `Settings` 的行为透明度
@@ -165,6 +174,8 @@ Windows runtime、installer、updater、ARM/UWP 等平台专属实现不移植�
 5. 完成首次启动迁移、systemd 服务控制、默认 owner 切换和双 owner 验收。
 6. 发布 daemon-backed DEB beta 并完成登录启动、关闭 UI 后持续记录、崩溃恢复、升级、卸载和数据保留验证。
 
+当前执行位置：第 1 步已完成单向合流；第 2 步已完成 owner 审计和 fail-closed 防护，但活动导入、定时备份、按应用删除、恢复与 remote backup 的 daemon 写侧尚待补齐；第 3 步已移植启动恢复、采样恢复、watchdog 竞态、browser bridge 重试和网页趋势区间去重，仍需处理 lifecycle generation、网页段与原生 session 的事务边界及恢复时序。详细状态以 [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md) 为准。
+
 在第 6 步完成前，不再把新的上游大型功能只加入 Linux `main` 而不进入 patinad 架构线。
 
 当前结构主线按以下顺序推进：
@@ -183,7 +194,7 @@ Windows runtime、installer、updater、ARM/UWP 等平台专属实现不移植�
 12. Stage 2G Tools runtime preview 已完成：服务版本、协议上下限、write scope 协商、app mapping、classification、AFK threshold、tracking pause、运行中 browser/audio 配置，以及 Tools runtime owner、系统通知、SSE 与写侧 HTTP/MCP 已完成。
 13. Stage 2H.1 local API configuration preview 已完成：daemon 从 profile 存储读取端口并迁移旧数据库 Token，运行中换端口采用预绑定/提交/切换，Token 原子轮换后撤销旧 bearer 与 SSE，会通过 HTTP/MCP 暴露不含密钥的确认状态。
 14. Stage 2H.2 systemd service preview 已完成：DEB 构建输入包含 `patinad` 和默认禁用的 user unit；受控重启先持久化 owner-only ticket、返回 `202 pending`，再优雅退出并由 systemd 重启，下一实例确认同一 ticket。下一步仍需首次桌面启动迁移、服务启停设置和默认 owner 切换；切换后不自动回退 embedded tracker。
-15. Stage 2H.3 分三步完成默认切换：2H.3a 已完成 systemd 状态与迁移诊断；2H.3b.1/2 已完成安全 typed client，以及组合 `/current`、active session、SSE replay/resync 的只读 runtime adapter；2H.3b.3 已完成显式 `--daemon-client-preview` 接线、协议 v2 完整快照、embedded owner 隔离和真实 GNOME 桌面验收；2H.3c.1 已让 preview desktop 的 AFK threshold、tracking pause、audio participation、classification 与 Tools 读写通过 Rust host typed client 转发给 daemon，并把 Tools SSE 变更重新读取为前端既有完整 snapshot。2H.3c.2 已迁移 browser runtime、local API 配置、受白名单保护的普通 app settings，以及带显式确认的 session/title 数据清理；端口或 Token 变化会主动重建 typed client、SSE 与后续请求。2H.3c 后续仍需收口 backup/restore、remote backup 等数据库写侧，再启用服务并完成默认 owner 切换验收。默认切换前不得暴露会启动第二个 tracking owner 的服务开关。
+15. Stage 2H.3 分三步完成默认切换：2H.3a 已完成 systemd 状态与迁移诊断；2H.3b.1/2 已完成安全 typed client，以及组合 `/current`、active session、SSE replay/resync 的只读 runtime adapter；2H.3b.3 已完成显式 `--daemon-client-preview` 接线、协议 v2 完整快照、embedded owner 隔离和真实 GNOME 桌面验收；2H.3c.1 已让 preview desktop 的 AFK threshold、tracking pause、audio participation、classification 与 Tools 读写通过 Rust host typed client 转发给 daemon，并把 Tools SSE 变更重新读取为前端既有完整 snapshot。2H.3c.2 已迁移 browser runtime、local API 配置、受白名单保护的普通 app settings，以及带显式确认的通用 session/title 数据清理；端口或 Token 变化会主动重建 typed client、SSE 与后续请求。2H.3c 后续仍需收口活动导入、定时备份、按应用删除、backup/restore、remote backup 等数据库写侧，再启用服务并完成默认 owner 切换验收。默认切换前不得暴露会启动第二个 tracking owner 的服务开关。
 16. 用一个 `patina` 产品包同时安装 Patina Desktop、`patinad` 和 systemd user unit；首次桌面启动在用户会话中迁移旧 XDG autostart 并启用后台服务，把“后台追踪随登录启动”与“桌面客户端随登录打开”拆成独立设置。
 17. 首个 daemon-backed DEB 先发布为 beta，验证关闭 UI 后持续记录、登录启动、崩溃重启、锁屏、睡眠、浏览器活动、升级、卸载和数据保留；该 beta 只发布 DEB，不发布无法稳定安装 service owner 的 AppImage。embedded runtime 至少保留一个稳定版本作为显式开发回滚路径。
 18. beta 验收后让完整 monorepo 脱离 Windows 上游 fork network，保留 Git 历史、MIT 许可与 attribution；不拆分独立 `patinad` 仓库。

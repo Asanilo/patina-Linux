@@ -149,6 +149,8 @@ Rust 默认门槛包含 `npm run check:rust-boundaries`、`cargo check`、Rust �
 
 压缩 SQLite migration 基线时，必须同时保留旧版本数据库直升保护：新安装可以走当前压缩基线，已安装旧数据库在归一化 `_sqlx_migrations` 前必须先完成幂等的 legacy schema repair，并用 Rust 自动化测试覆盖缺列补齐、历史数据保留、必要回填、active session 归一化和不完整 schema 不误标为当前基线。
 
+自动备份属于数据安全链路。验证至少应覆盖计划时间槽、配置约束、迁移 schema、IPC payload、归档写后校验和覆盖恢复后的调度重置。保留策略必须按“无法证明归属就不删除”实现；不能仅凭文件名前缀、扩展名或目录位置删除快照，也不能用覆盖写入实现定时发布。
+
 兼容清理必须区分两类代码：
 
 - 历史产品身份、旧目录、旧本地存储键、旧远端目录、旧备份格式等“迁移窗口兼容”，可以在承诺窗口结束、发布说明充分提醒且验证通过后退出。
@@ -160,7 +162,9 @@ Rust 默认门槛包含 `npm run check:rust-boundaries`、`cargo check`、Rust �
 
 `test:ui-browser-smoke` 是真实浏览器/Vite 页面防线。它启动本地 Vite server，用 headless Edge/Chrome 打开主界面，在 stub Tauri API 下检查 Dashboard、主导航、Settings 主题弹窗、控制台 error 与基础横向溢出。
 
-`check:bundle` 是保守 bundle 预算防线。它在生产构建之后检查关键 JS chunk 与总 gzip 体积，防止静默引入明显超预算依赖。
+`check:bundle` 是保守 bundle 预算防线。它在生产构建之后检查关键 JS chunk、Data 等命名 feature chunk 与总 gzip 体积，防止功能增长被“其他 chunk”汇总掩盖或静默放宽首屏预算。Data 保持独立 `11 KiB gzip` 上限，按需加载的目标趋势面板保持独立 `7 KiB gzip` 上限，设置运行时 adapter、活动导入设置面板与跨来源优先级算法各保持独立 `3 KiB gzip` 上限，微型 UI 共享 chunk 保持 `2 KiB gzip` 上限；仅在网页趋势模式加载的数据库快照仍计入 feature/other 与总预算。命名 chunk 只是让归属和预算可见，不能替代总 gzip 上限。
+
+跨来源活动优先级同时存在于桌面 TypeScript 读边界与 Rust API 读边界时，必须共同运行 `tests/fixtures/activity-read-model-cases.json`。fixture 至少覆盖本机遮蔽外部精确事实、多个小时桶共享容量、部分桶范围折算和重叠外部精确事实的稳定胜者；修改任一实现时不能只更新单侧期望。
 
 性能优化的额外规则：
 

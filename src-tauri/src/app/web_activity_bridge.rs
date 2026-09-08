@@ -73,7 +73,7 @@ async fn update_runtime_state<R: Runtime + 'static>(
                 web_state.set_listening(listening);
             }
         });
-        if let Err(error) = state.update(settings, handler, readiness).await {
+        if let Err(error) = state.update_with_retry(settings, handler, readiness).await {
             eprintln!("[web-activity-bridge] failed to apply settings: {error}");
         }
     }

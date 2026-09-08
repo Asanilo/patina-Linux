@@ -156,7 +156,7 @@ function buildPreview(overrides: Partial<BackupPreview> = {}): BackupPreview {
   return {
     version: 2,
     exportedAtMs: 1_714_000_000_000,
-    schemaVersion: 8,
+    schemaVersion: 9,
     appVersion: "0.3.2",
     restoreSupported: true,
     restoreMessageKey: null,
@@ -172,6 +172,9 @@ function buildPreview(overrides: Partial<BackupPreview> = {}): BackupPreview {
     toolTimerLapCount: 0,
     toolPomodoroRunCount: 0,
     toolDailyStatsCount: 0,
+    importBatchCount: 0,
+    importExactSessionCount: 0,
+    importTimeBucketCount: 0,
     ...overrides,
   };
 }
@@ -748,7 +751,7 @@ await runTest("prepareBackupRestoreWithDeps builds a summary for compatible prev
   assert.equal(receivedInitialPath, "backup.db");
   assert.equal(preparation?.compatible, true);
   assert.equal(preparation?.path, "C:/tmp/backup.db");
-  assert.ok(preparation?.previewSummary.includes("Schema 8"));
+  assert.ok(preparation?.previewSummary.includes("Schema 9"));
   assert.ok(preparation?.previewSummary.includes("42"));
 });
 

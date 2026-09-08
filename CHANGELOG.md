@@ -20,6 +20,9 @@ App note en: TBD.
 
 - `patinad --track` 接管提醒、软件使用提醒、计时器和番茄钟运行时，并通过 Linux 系统通知与 SSE 发布完成事件。
 - 本地 API 和 MCP wrapper 新增受 capability 限制的 Tools 创建与控制操作，OpenAPI 提供完整请求、响应和事件 schema。
+- Dashboard、History 与 Data 的应用聚合，以及 History、Data 的网页聚合新增共享活动详情入口，可按本地日期查看记录时长、可缩放时间轴、连续活动以及窗口标题或网页 URL 明细。
+- Data 新增应用/分类趋势切换；分类趋势支持搜索、组合比较、本地日期边界统计和分类语义色曲线。
+- 启用网页同步后，Data 可切换到网页趋势，按域名搜索、组合比较和查看详情；趋势统计遵循网页分类、排除与自定义颜色设置。
 
 ### Changed
 
@@ -36,6 +39,45 @@ App note en: TBD.
 ### Internal
 
 - 新增 Tools owner、daemon readiness、HTTP/MCP 路由、OpenAPI/文档契约和真实 loopback smoke 验证。
+- 新增应用与网站活动详情的共享只读领域模型，统一本地日期边界、连续活动、标题/URL 明细和 stale tracker 截断，为后续 Data、History 与 daemon 客户端共用详情能力建立 owner。
+- 新增详情日期状态、偏好持久化和可缩放时间轴视口，并提取 History 与详情共用的时间焦点算法，为详情弹窗接入建立可测试的交互基础。
+- 详情界面通过 AppShell 的单一 launcher 懒加载，Data 与 History 只提交公开 request，不各自持有查询、状态或交互实现。
+- Bundle 门槛为按需加载的详情 chunk 设置独立 `8 KiB gzip` 上限，继续分别约束首屏、其他 feature 与总 JS 体积。
+- 分类趋势复用 Data 现有的会话规范化、排除、别名合并和区间裁剪口径，不引入新的数据库表或第二条持久化读取路径；Data 懒加载 chunk 新增独立 `11 KiB gzip` 上限。
+- 网页趋势使用独立的域名级只读查询，只读取域名、图标和时间边界，不把 URL 或标题带入趋势模型；查询与快照仅在用户切换到网页趋势后加载，并保持有限缓存和并发去重。
+- Bundle 门槛为微型 UI 共享 chunk 设置独立 `2 KiB gzip` 上限，网页趋势文案、域名颜色和分段控件不回流首屏入口。
+- Dashboard 应用排行抽为 feature-owned 懒加载面板并保留稳定首屏占位，详情依赖不回流主入口，应用排行、History 和 Data 继续共用同一个详情 launcher。
+- Data 父级保留总趋势、热力图、应用快照和 bootstrap 持久化，应用/分类/网页模式及其搜索、选择和图表交互收口到按需加载并随 Data 一同空闲预热的 feature-owned 目标趋势面板；该子 chunk 使用独立 `7 KiB gzip` 上限。
+
+## [1.8.4] - 2026-08-30
+
+Release: 修复 Linux 安装包更新分流，并提升网页同步、数据恢复与弹窗交互稳定性。
+App note: 修复 Linux 更新分流，并提升网页同步与界面稳定性。
+App note en: Fixes Linux update routing and improves web sync and interface reliability.
+
+### Added
+
+- 暂无。
+
+### Changed
+
+- 移除 `framer-motion` 前端运行时依赖；现有导航、弹窗、Toast、进度条和历史页面改用原生元素及 Quiet Pro CSS token，减少 WebView 动效闪烁和 bundle 开销。
+- 弹窗改由共享组件管理初始焦点、Tab 循环、嵌套层级和关闭后的焦点恢复，避免键盘操作逃出当前弹窗。
+
+### Fixed
+
+- 修复 Linux updater 对 AppImage 与 `.deb` 安装来源不区分的问题；更新清单现在为两种安装包提供独立 URL 与签名，并保留旧客户端所需的 AppImage 回退项。
+- 修复同一时刻连续出现多个 Toast 时可能生成重复 ID、导致消息覆盖或错误消失的问题。
+- 修复旧 Data 首屏快照缺少当前必需字段时可能触发页面异常的问题；无效快照会在进入页面前被拒绝并清理。
+- 修复浏览器网页同步端口暂时占用后本次运行无法自行恢复的问题；桥接现在使用有界指数退避，并在端口、Token 或启用状态变化时取消旧重试。
+
+### Removed
+
+- 暂无。
+
+### Internal
+
+- 新增可离线校验 refs、Release 附件和 SHA-256 清单的 GitHub 脱离备份工具，且不读取或导出仓库 Secrets。
 
 ## [1.8.3] - 2026-07-03
 

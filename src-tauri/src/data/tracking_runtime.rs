@@ -55,10 +55,10 @@ impl TrackingRuntimeDataStore {
         tracker_settings::load_tracker_timestamp(&self.pool, key).await
     }
 
-    pub async fn load_tracker_heartbeat_timestamp(
+    pub async fn load_tracker_successful_sample_timestamp(
         &self,
     ) -> Result<Option<i64>, TrackingRuntimeDataError> {
-        self.load_tracker_timestamp(tracker_settings::TRACKER_LAST_HEARTBEAT_KEY)
+        self.load_tracker_timestamp(tracker_settings::TRACKER_LAST_SUCCESSFUL_SAMPLE_KEY)
             .await
     }
 
@@ -98,6 +98,13 @@ impl TrackingRuntimeDataStore {
         raw_end_time: i64,
     ) -> Result<bool, TrackingRuntimeDataError> {
         sessions::end_active_sessions(&self.pool, raw_end_time).await
+    }
+
+    pub async fn end_active_sessions_started_at_or_before(
+        &self,
+        raw_end_time: i64,
+    ) -> Result<bool, TrackingRuntimeDataError> {
+        sessions::end_active_sessions_started_at_or_before(&self.pool, raw_end_time).await
     }
 
     pub async fn refresh_active_session_metadata(

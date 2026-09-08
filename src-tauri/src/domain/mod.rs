@@ -1,4 +1,7 @@
+pub mod activity_import;
+pub mod activity_read_model;
 pub mod backup;
+pub mod backup_schedule;
 pub mod data_maintenance;
 pub mod settings;
 pub mod storage;

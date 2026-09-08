@@ -63,7 +63,7 @@ Current caveats:
 | `/api/v1/trend` | `GET` | Partial | Daily activity trend for week/month |
 | `/api/v1/web-activity` | `GET` | Implemented | Browser activity segment query |
 | `/api/v1/ai/activity-context` | `GET` | Implemented | Aggregated diagnostics, active session, summaries, and recent web activity for external AI analysis |
-| `/api/v1/apps` | `GET` | Implemented | Known apps from recorded sessions |
+| `/api/v1/apps` | `GET` | Implemented | Known apps from native and imported facts |
 | `/api/v1/apps/{exe_name}/classify` | `POST` | Implemented | Save app category |
 | `/api/v1/apps/{exe_name}/rename` | `POST` | Implemented | Save app display name |
 | `/api/v1/apps/{exe_name}/exclude` | `POST` | Implemented | Save app exclusion flag |
@@ -424,6 +424,8 @@ Current behavior:
 
 - Returns closed sessions only.
 - Filters by `start_time`; it does not clip sessions to the requested range.
+- Returns native tracker sessions only. Imported exact records are not yet exposed through this endpoint.
+- Never exposes imported hour buckets because they have no exact timeline position.
 
 ### `GET /api/v1/sessions/active`
 
@@ -502,8 +504,10 @@ Schema:
 Current behavior:
 
 - Uses local day boundary.
-- Includes closed sessions and the current active session.
-- Clips every session to the local-day range before aggregation.
+- Combines native sessions, imported exact sessions, and imported hour buckets using `native > import_exact > import_bucket` precedence.
+- Includes the current native active session and clips exact facts to the local-day range.
+- Treats hour buckets as aggregate quantities; a partial-hour query receives only its proportional share and never fabricates a timeline segment.
+- Omits apps marked excluded; a local category override takes priority over an imported source category.
 
 ### `GET /api/v1/summary/range`
 
@@ -526,8 +530,10 @@ Same response shape as `GET /api/v1/summary/today`.
 Current behavior:
 
 - Uses caller-provided millisecond bounds.
-- Includes closed sessions and the current active session.
-- Selects sessions that overlap the requested range and clips them to both boundaries.
+- Uses the same cross-source precedence as today/week summaries.
+- Includes the current native active session and clips exact facts to both boundaries.
+- Pro-rates aggregate-only hour buckets for partial bucket windows before applying remaining-capacity limits.
+- Omits apps marked excluded.
 
 ### `GET /api/v1/summary/week`
 
@@ -545,8 +551,9 @@ Same response shape as `GET /api/v1/summary/today`; `date` is currently `"week"`
 Current behavior:
 
 - Uses local week boundary, Monday start.
-- Includes closed sessions and the current active session.
-- Clips every session to the local-week range before aggregation.
+- Uses the same cross-source precedence as today/range summaries.
+- Includes the current native active session and clips exact facts to the local-week range.
+- Omits apps marked excluded.
 
 ### `GET /api/v1/trend`
 
@@ -585,8 +592,10 @@ Schema:
 Current behavior:
 
 - Uses local date buckets.
-- Splits cross-day sessions at local midnight.
-- Counts active sessions until current time.
+- Combines native sessions, imported exact sessions, and imported hour buckets with the same precedence as summary endpoints.
+- Splits exact facts at local midnight and counts the active native session until current time.
+- Keeps imported hour buckets aggregate-only.
+- Omits apps marked excluded.
 - Returns one point per day with:
   - `date`
   - `active_ms`
@@ -742,7 +751,7 @@ curl -s "$PATINA_API_BASE/api/v1/apps" \
   -H "Authorization: Bearer $PATINA_API_TOKEN"
 ```
 
-Returns apps discovered from recorded sessions:
+Returns apps discovered from native sessions and imported activity facts:
 
 - `exe_name`
 - `display_name`
@@ -766,9 +775,7 @@ Schema:
 }
 ```
 
-Known gap:
-
-- Only apps with session history appear.
+Executable names are merged case-insensitively. A native identity is preferred when the same app also appears in imported data.
 
 ### `POST /api/v1/apps/{exe_name}/classify`
 
@@ -957,7 +964,7 @@ Only non-resource preferences such as appearance, language, timeline display, de
 
 ### `POST /api/v1/data/cleanup`
 
-Deletes session title samples, sessions, and browser activity segments whose owning row starts before `cutoff_time_ms`. The related deletes commit in one SQLite transaction. A session crossing the cutoff is deleted according to its start time, matching the Settings cleanup policy.
+Deletes session title samples, native sessions, browser activity segments, imported exact sessions, and imported hour buckets whose owning row starts before `cutoff_time_ms`. Imported batch counts and empty batches are updated in the same SQLite transaction. A record crossing the cutoff is deleted according to its start time, matching the Settings cleanup policy.
 
 ```bash
 curl -s -X POST "$PATINA_API_BASE/api/v1/data/cleanup" \
@@ -975,11 +982,11 @@ Schema:
 }
 ```
 
-The response reports `title_samples_deleted`, `sessions_deleted`, and `web_activity_segments_deleted`. A negative cutoff or missing/false confirmation returns `400` without writing.
+The response reports `title_samples_deleted`, `sessions_deleted`, `web_activity_segments_deleted`, `imported_exact_sessions_deleted`, `imported_time_buckets_deleted`, and `import_batches_deleted`. A negative cutoff or missing/false confirmation returns `400` without writing.
 
 ### `POST /api/v1/data/window-titles/clear`
 
-Deletes all title samples and replaces every non-empty legacy `sessions.window_title` value with an empty string in one transaction.
+Deletes all title samples and replaces every non-empty native or imported exact-session window title with an empty string in one transaction.
 
 ```bash
 curl -s -X POST "$PATINA_API_BASE/api/v1/data/window-titles/clear" \
@@ -988,7 +995,7 @@ curl -s -X POST "$PATINA_API_BASE/api/v1/data/window-titles/clear" \
   -d '{"confirmed":true}'
 ```
 
-The response reports `title_samples_deleted` and `sessions_redacted`. This clears existing data; it does not disable future title capture. Use per-app title recording controls for that policy. The endpoint is intentionally absent from the MCP wrapper.
+The response reports `title_samples_deleted`, `sessions_redacted`, and `imported_exact_sessions_redacted`. This clears existing data; it does not disable future title capture. Use per-app title recording controls for that policy. The endpoint is intentionally absent from the MCP wrapper.
 
 ### `GET /api/v1/settings/runtime`
 
@@ -1394,11 +1401,11 @@ Current MCP tools:
 | `get_daemon_service` | `GET /api/v1/system/service` | none | Read systemd ownership and the latest restart ticket |
 | `restart_daemon_service` | `POST /api/v1/system/service/restart` | `confirmed` must be `true` | Request graceful restart and return a ticket for post-reconnect verification |
 | `get_current_activity` | `GET /api/v1/current` | none | Read current foreground activity snapshot |
-| `query_sessions` | `GET /api/v1/sessions` | `from`, `to`, `app`, `limit` | Query closed activity sessions |
+| `query_sessions` | `GET /api/v1/sessions` | `from`, `to`, `app`, `limit` | Query closed native sessions |
 | `get_active_session` | `GET /api/v1/sessions/active` | none | Read the currently active session with realtime duration |
-| `get_today_summary` | `GET /api/v1/summary/today` | none | Read local-day summary |
-| `get_week_summary` | `GET /api/v1/summary/week` | none | Read local-week summary |
-| `get_activity_trend` | `GET /api/v1/trend` | `period`, `granularity` | Read daily week/month trend |
+| `get_today_summary` | `GET /api/v1/summary/today` | none | Read cross-source local-day summary |
+| `get_week_summary` | `GET /api/v1/summary/week` | none | Read cross-source local-week summary |
+| `get_activity_trend` | `GET /api/v1/trend` | `period`, `granularity` | Read cross-source daily week/month trend |
 | `query_web_activity` | `GET /api/v1/web-activity` | `from`, `to`, `domain`, `limit` | Query browser extension activity segments |
 | `get_activity_context` | `GET /api/v1/ai/activity-context` | none | Fetch diagnostics, active session, summaries, and recent web activity for external AI analysis |
 | `get_tools_snapshot` | `GET /api/v1/tools/snapshot` | none | Fetch current Tools runtime snapshot |
@@ -1421,6 +1428,7 @@ Current MCP tools:
 | `set_tracking_paused` | `POST /api/v1/settings/tracker/pause` | `paused` | Set tracking pause state |
 | `set_audio_participation` | `POST /api/v1/settings/runtime/audio-participation` | `enabled` | Apply the Linux audio participation switch |
 | `configure_browser_activity` | `POST /api/v1/settings/runtime/browser-activity` | `enabled`, `port`, `token`, `urlPrivacy` | Replace browser activity runtime configuration |
+| `list_apps` | `GET /api/v1/apps` | none | List apps from native and imported facts |
 | `classify_app` | `POST /api/v1/apps/{exe_name}/classify` | `exeName`, `category` | Save an app category |
 | `rename_app` | `POST /api/v1/apps/{exe_name}/rename` | `exeName`, `displayName` | Save an app display name |
 | `set_app_excluded` | `POST /api/v1/apps/{exe_name}/exclude` | `exeName`, `excluded` | Save an app exclusion flag |
