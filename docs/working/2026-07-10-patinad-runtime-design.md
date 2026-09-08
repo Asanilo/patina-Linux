@@ -1,6 +1,6 @@
 # `patinad` 后台运行时设计
 
-> 状态：Stage 0 至 Stage 2H.2、Stage 2H.3a systemd 诊断、Stage 2H.3b.1/2 typed daemon client 与只读 runtime adapter、Stage 2H.3b.3 显式 desktop client 模式，以及 Stage 2H.3c.1 至 2H.3c.6 Desktop 写侧转发、活动导入、定时备份、按应用删除和受控恢复均已完成并验证；Stage 2H.3c.7a 的 WebDAV 非密钥配置、Linux Secret Service 凭据和显式上传已实现，下一批次收口远端列表、下载与受控恢复衔接，Stage 2H.3 默认 owner 切换仍未完成。
+> 状态：Stage 0 至 Stage 2H.2、Stage 2H.3a systemd 诊断、Stage 2H.3b.1/2 typed daemon client 与只读 runtime adapter、Stage 2H.3b.3 显式 desktop client 模式，以及 Stage 2H.3c.1 至 2H.3c.7b 写侧 owner 收口均已完成并验证；下一阶段是 Stage 2H.3d 首次启动迁移、服务启停和默认 owner 切换。
 > 生命周期：本设计是当前 `patinad` 实施依据；后台接管稳定完成后移入 `docs/archive/`。
 
 ## 1. 目标
@@ -95,7 +95,7 @@
 1. 将 Linux `main` 自 patinad 分支点之后的已验证提交单向合入本分支，保留活动详情、应用/分类/网页趋势、安全活动导入与本地定时备份。
 2. 对合入能力逐项决定 owner：只读查询可继续复用 transport-neutral read model；导入、备份调度、恢复和任何 SQLite mutation 必须进入 daemon 写侧清单，不能因兼容 embedded 模式而在 daemon client 模式直接打开写连接。
 3. 对照上游 `1.9.5` 的行为修复审查暂停、锁屏、休眠、采样失败、网页区间去重和备份恢复边界。已有 daemon 等价保护时补回归测试，不复制 Windows runtime；确有缺口时在 tracking、web activity 或 backup owner 内修复。
-4. 完成 backup/restore 与 remote backup 的 owner 收口。受控恢复与 remote upload 已完成；下一批次把远端列表/下载接入 daemon，并让下载结果复用 Desktop 受控暂存、重启前预约、daemon 启动时维护模式，不开放任意路径 HTTP 写入。
+4. 完成 backup/restore 与 remote backup 的 owner 收口。受控恢复、remote upload、列表和下载恢复衔接均已实现；远端归档不经过 Desktop 路径，直接复用 owner-only 暂存、重启前预约和 daemon 启动维护模式。
 5. 完成首次启动迁移、服务启停、默认 daemon owner 和双 owner 防护，再进入 daemon-backed DEB beta。
 
 本批次验收：
@@ -129,7 +129,7 @@
 - 按应用删除已由 daemon data owner 接管：请求必须显式确认并限定 1 至 512 个 executable，可选时间范围必须同时提供完整半开区间；原生和导入事实、批次计数在同一事务更新，Desktop 只接收删除计数和刷新事件。
 - 备份恢复已由 daemon owner 接管：Desktop 只预览和创建 owner-only 随机暂存票据，daemon 验证后预约 systemd restart，新实例在启动后台任务前执行单事务恢复；daemon client 模式不回退为 Desktop 直接写库。
 - remote backup 的 URL、用户名、远端目录和最近完成时间已通过 daemon app-settings owner 写入；密码按 profile 存入系统凭据服务，不进入 SQLite、HTTP 响应、日志、OpenAPI 示例或 MCP 输出。
-- 显式上传已由 daemon 串行执行并复用 SQLite snapshot backup；Desktop daemon-client 模式只发送非密钥配置与 `confirmed: true`。远端列表、下载和下载后的受控恢复衔接仍待迁移，兼容路径不能作为默认 owner 切换的完成依据。
+- 显式上传、远端列表与恢复下载已由 daemon 串行执行。Desktop daemon-client 模式只发送非密钥配置、索引 ID、策略与显式确认；daemon 校验 index 派生路径，有界下载实际归档，并直接复用受控启动恢复状态机，不返回本机路径。
 
 ### 3.4 Stage 2H.3c.6 受控恢复完成状态
 
@@ -149,8 +149,8 @@
 1. **已完成 owner 审计**：已枚举 WebDAV secret、测试连接、上传、下载、列表和 remote-status 路径；remote-status 是独立兼容能力，不与 WebDAV backup 混为同一 owner。
 2. **已完成 fail-closed 与设置收口**：daemon-client 模式下 WebDAV 非密钥设置不再直接写 SQLite；普通 app-settings 白名单只接受 URL、用户名、远端目录和完成时间，拒绝密码键。
 3. **已完成凭据与上传 owner**：Linux 密码按 Production/Local/Dev profile 存入 Secret Service；Windows 冻结兼容路径保留 Credential Manager。`POST /api/v1/backups/remote/upload` 只接受非密钥配置和 `confirmed: true`，daemon 从自身 pool 生成 snapshot、使用 `0700` 临时目录与 `0600` 文件、复核归档并串行上传，最后删除精确临时文件。
-4. **下一批次列表与下载**：把远端 index 读取和归档下载移入 daemon owner，增加有界响应/文件、超时、取消、索引损坏和网络失败测试；Desktop 只接收受控票据或只读元数据，不能获得 daemon 任意路径能力。
-5. **下一批次恢复衔接**：下载归档必须复用 2H.3c.6 的 owner-only 暂存与启动恢复状态机，不建立第二套热恢复协议；覆盖内容校验失败、重启中断、取消和关闭顺序后，再进入首次启动迁移与默认 daemon owner 切换。
+4. **已实现列表与有界下载**：远端 index 由 daemon 以 1 MiB 上限读取，逐项验证产品、版本、ID、重复项、大小和 ID 派生路径；归档下载使用 `create_new`、`0600` 和 512 MiB 上限，超限或失败只删除本次临时文件。
+5. **已完成并验证恢复衔接**：用户先根据索引元数据确认；daemon 下载并复核实际归档及其索引元数据后写入 2H.3c.6 的 owner-only staging，直接预约同一 systemd 启动恢复。调度失败时先检查票据是否已被 reservation 持有，无法证明安全时保留文件。前端/集成门禁、516 项 Rust 测试和 Clippy 已通过；跨 systemd 重启的真实远端服务验收并入 Stage 2H.3d 的 DEB 实机清单。
 
 ## 4. 目标结构
 
@@ -272,7 +272,7 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 - 已完成：本机定时备份由 daemon 唯一持有调度循环、配置与运行状态；Desktop typed client 可读取和显式确认完整配置，任务关闭会等待当前归档安全结束
 - 已完成：按应用删除通过受确认的 daemon API 在单事务内清理原生和导入事实并返回计数；Desktop preview 不再直接打开 SQLite 写入
 - 已完成：受控 backup restore 以及 remote backup 非密钥配置、Linux 系统凭据和显式上传的 daemon owner 迁移
-- 待实施：remote backup 列表、下载与受控恢复衔接；preview 未迁移路径不得回退为 Desktop SQLite owner
+- 已完成并验证：remote backup 列表、有界下载与受控恢复衔接；daemon client 不再把下载路径交回 Desktop
 
 验收：关闭 UI 后继续记录；重开 UI 恢复当前状态；AFK、锁屏、睡眠、恢复和异常封口正确；统计不倒退、不重复。
 
@@ -312,7 +312,7 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 - 已完成 Stage 2H.3c.5：按应用删除要求显式确认和有界 executable/range，请求通过 typed client 交给 daemon，在同一事务维护原生、导入事实和批次计数
 - 已完成 Stage 2H.3c.6：受控恢复使用 owner-only 暂存、systemd restart、启动维护事务和 durable receipt
 - 已完成 Stage 2H.3c.7a：WebDAV 非密钥设置走 daemon app-settings，Linux 密码走 profile-scoped Secret Service，显式上传由 daemon 从自己的 SQLite snapshot 执行
-- 待实施 Stage 2H.3c.7b：remote backup 列表、下载与下载归档进入受控恢复状态机的衔接；preview 当前未迁移路径保持 fail closed
+- 已实现 Stage 2H.3c.7b：remote backup 列表、ID 派生路径校验、有界下载与下载归档进入受控恢复状态机的衔接；完成门禁后 Stage 2H.3c 写侧收口
 - 待实施 Stage 2H.3d：首次启动迁移、服务启停设置、默认 owner 切换和双 owner 验收
 - Tauri 改为 daemon desktop client，并保留 tray、通知、文件选择和 updater
 - 默认切换后 desktop 不启动或自动回退 embedded tracker；daemon 不可用时明确暂停、诊断和重启

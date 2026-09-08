@@ -403,6 +403,8 @@ async fn api_handler(State(state): State<ApiTransportState>, request: Request) -
             "/api/v1/imports/canonical/commit"
                 | "/api/v1/backups/restore"
                 | "/api/v1/backups/remote/upload"
+                | "/api/v1/backups/remote/list"
+                | "/api/v1/backups/remote/restore"
         ) {
         STAGED_FILE_HANDLER_TIMEOUT
     } else {

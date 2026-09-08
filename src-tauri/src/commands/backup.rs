@@ -1,8 +1,7 @@
 use crate::app;
 use crate::data::backup;
 use crate::data::remote_backup::{
-    self, RemoteBackupDownloadResult, RemoteBackupEntry, RemoteBackupUploadResult,
-    WebDavBackupConfig, WebDavTestResult,
+    self, RemoteBackupEntry, RemoteBackupUploadResult, WebDavBackupConfig, WebDavTestResult,
 };
 use crate::domain::backup::BackupPreview;
 use crate::domain::backup::RestoreStrategy;
@@ -131,16 +130,55 @@ pub async fn cmd_list_webdav_backups(
     config: WebDavBackupConfig,
     app: AppHandle,
 ) -> Result<Vec<RemoteBackupEntry>, String> {
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        return client
+            .list_remote_backups(config)
+            .await
+            .map_err(|error| error.to_string());
+    }
     remote_backup::list_webdav_backups(crate::platform::app_paths::app_profile(&app), config).await
 }
 
 #[tauri::command]
-pub async fn cmd_download_webdav_backup(
+pub async fn cmd_restore_webdav_backup(
     config: WebDavBackupConfig,
     id: String,
+    restore_strategy: RestoreStrategy,
     app: AppHandle,
-) -> Result<RemoteBackupDownloadResult, String> {
-    remote_backup::download_webdav_backup(app, config, id).await
+) -> Result<(), String> {
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        let scheduled = client
+            .schedule_remote_backup_restore(config, id, restore_strategy)
+            .await
+            .map_err(|error| error.to_string())?;
+        client
+            .wait_for_backup_restore(&scheduled.restore.request_id)
+            .await
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+
+    let download = remote_backup::download_webdav_backup(app.clone(), config, id).await?;
+    let path = download.path.clone();
+    let result = if download.preview.restore_supported {
+        app::backup::restore_backup_and_refresh(app.clone(), path.clone(), restore_strategy).await
+    } else {
+        Err(download.preview.restore_message)
+    };
+    let cleanup = remote_backup::discard_downloaded_webdav_backup(&app, &path);
+    match (result, cleanup) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Ok(()), Err(error)) => {
+            eprintln!(
+                "[backup] restore completed, but the temporary remote download was not removed: {error}"
+            );
+            Ok(())
+        }
+        (Err(error), Ok(())) => Err(error),
+        (Err(error), Err(cleanup_error)) => Err(format!(
+            "{error}; failed to remove the temporary download: {cleanup_error}"
+        )),
+    }
 }
 
 #[tauri::command]

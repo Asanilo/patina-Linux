@@ -165,7 +165,7 @@ fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Build
         commands::backup::cmd_test_webdav_backup_target,
         commands::backup::cmd_upload_webdav_backup,
         commands::backup::cmd_list_webdav_backups,
-        commands::backup::cmd_download_webdav_backup,
+        commands::backup::cmd_restore_webdav_backup,
         commands::backup::cmd_get_scheduled_backup_snapshot,
         commands::backup::cmd_pick_scheduled_backup_directory,
         commands::backup::cmd_save_scheduled_backup_config,

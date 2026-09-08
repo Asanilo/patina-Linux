@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { parseBackupPreview, type BackupPreview } from "./backupRuntimeGateway.ts";
+import type { BackupRestoreStrategy } from "./backupRuntimeGateway.ts";
 
 export interface WebDavBackupConfig {
   url: string;
@@ -28,11 +28,6 @@ interface RawRemoteBackupUploadResult {
   indexMessage?: string | null;
 }
 
-interface RawRemoteBackupDownloadResult {
-  path: string;
-  preview: unknown;
-}
-
 export interface RemoteBackupEntry {
   id: string;
   fileName: string;
@@ -52,11 +47,6 @@ export interface RemoteBackupUploadResult {
   entry: RemoteBackupEntry;
   indexUpdated: boolean;
   indexMessage: string | null;
-}
-
-export interface RemoteBackupDownloadResult {
-  path: string;
-  preview: BackupPreview;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -115,17 +105,6 @@ function parseUploadResult(value: unknown): RemoteBackupUploadResult {
   };
 }
 
-function parseDownloadResult(value: unknown): RemoteBackupDownloadResult {
-  if (!isRecord(value) || typeof value.path !== "string") {
-    throw new Error("Received invalid remote backup download payload");
-  }
-  const raw = value as unknown as RawRemoteBackupDownloadResult;
-  return {
-    path: raw.path,
-    preview: parseBackupPreview(raw.preview),
-  };
-}
-
 export async function saveWebDavBackupSecret(username: string, password: string): Promise<void> {
   await invoke("cmd_save_webdav_backup_secret", { username, password });
 }
@@ -160,10 +139,10 @@ export async function listWebDavBackups(config: WebDavBackupConfig): Promise<Rem
   return result.map(parseRemoteBackupEntry);
 }
 
-export async function downloadWebDavBackup(
+export async function restoreWebDavBackup(
   config: WebDavBackupConfig,
   id: string,
-): Promise<RemoteBackupDownloadResult> {
-  const result = await invoke<unknown>("cmd_download_webdav_backup", { config, id });
-  return parseDownloadResult(result);
+  restoreStrategy: BackupRestoreStrategy,
+): Promise<void> {
+  await invoke("cmd_restore_webdav_backup", { config, id, restoreStrategy });
 }

@@ -34,7 +34,7 @@ Current caveats:
 - `/api/v1/openapi.json` exposes the machine-readable OpenAPI 3.1 schema with paths, query/path parameters, request bodies, response envelopes, auth, error envelopes, and field-level component schemas.
 - The OpenAPI server URL uses a configurable `{port}` variable whose default is `14840`.
 - This document remains the human-maintained reference for behavior notes and implementation caveats.
-- The desktop runtime exposes the shared JSON endpoints below. Default `patinad` mode exposes authenticated reads plus SSE and rejects all `POST` endpoints. Explicit `--track` mode is the current runtime owner and additionally exposes the bounded activity-import, scheduled-backup, remote-backup upload, backup-restore, app-mapping, app-settings, classification, data-maintenance, local-API, runtime, service, Tools, and tracker writes listed by `/api/v1/capabilities`.
+- The desktop runtime exposes the shared JSON endpoints below. Default `patinad` mode exposes authenticated reads plus SSE and rejects all `POST` endpoints. Explicit `--track` mode is the current runtime owner and additionally exposes the bounded activity-import, scheduled-backup, remote-backup list/upload/restore, backup-restore, app-mapping, app-settings, classification, data-maintenance, local-API, runtime, service, Tools, and tracker writes listed by `/api/v1/capabilities`.
 - Default daemon mode remains historical/read-only: `GET /api/v1/current` returns `503` and live tracker/browser diagnostics are `null`.
 - Stage 2H.2 preview mode is explicit: run `patinad --profile dev --serve-api --track --port 0`. It owns tracking, Tools, and the local API listener for that profile, serves a live `/current`, observes Linux lock/suspend/resume/shutdown, runs audio/MPRIS participation sources, and owns the browser activity bridge configured for that profile. Never run desktop and daemon tracking against the same profile.
 - Stage 2F capability migration, Stage 2F.1 browser crash/heartbeat semantics, and Stage 2F.2 loopback transport migration are complete. API, SSE, and the independent browser extension bridge use Axum with 32/8/8 fail-fast concurrency budgets, bounded handlers, strict Host/origin policies, and task-coupled listener readiness. The extension protocol remains `POST /web-activity` with its separate Token; its CORS response only echoes Firefox/Zen or Chromium extension origins and never returns `Access-Control-Allow-Origin: *`.
@@ -74,6 +74,8 @@ Current caveats:
 | `/api/v1/backups/schedule` | `GET` | Tracking daemon | Read the local scheduled-backup configuration and latest run state |
 | `/api/v1/backups/schedule` | `POST` | Tracking daemon | Explicitly confirm and replace the daemon-owned local backup schedule |
 | `/api/v1/backups/remote/upload` | `POST` | Tracking daemon | Create a database snapshot and upload it to a confirmed WebDAV target using the profile keyring credential |
+| `/api/v1/backups/remote/list` | `POST` | Tracking daemon | Read and validate the WebDAV backup index without exposing its credential |
+| `/api/v1/backups/remote/restore` | `POST` | Managed tracking daemon | Download, validate, privately stage, and schedule controlled restore for one indexed WebDAV backup |
 | `/api/v1/backups/restore` | `GET` | Tracking daemon | Read the latest or specified controlled restore reservation |
 | `/api/v1/backups/restore` | `POST` | Managed tracking daemon | Validate a staged archive, reserve startup restore, and request a controlled restart |
 | `/api/v1/backups/restore/cancel` | `POST` | Managed tracking daemon | Explicitly cancel one failed restore reservation and remove its exact staged archive |
@@ -128,7 +130,7 @@ Current scope:
 - Auth model: bearer token through `components.securitySchemes.bearerAuth`
 - Paths: the exact endpoints enabled for the current desktop or daemon API surface
 - Parameters: query params for sessions, summary range, trend, web activity; path params for app management
-- Request bodies: classify, rename, exclude, AFK threshold, tracking pause, classification/app-settings batches, audio participation, complete browser runtime configuration, confirmed scheduled-backup configuration, confirmed remote-backup upload, controlled backup restore scheduling/cancellation, confirmed service restart, reminders, timers, software reminders, and pomodoro writes
+- Request bodies: classify, rename, exclude, AFK threshold, tracking pause, classification/app-settings batches, audio participation, complete browser runtime configuration, confirmed scheduled-backup configuration, remote-backup list/upload/restore, controlled backup restore scheduling/cancellation, confirmed service restart, reminders, timers, software reminders, and pomodoro writes
 - Responses: success envelopes and standard `400` / `401` / `403` / `404` / `409` / `413` / `500` / `503` error envelopes
 - Components: field-level schemas for health, capabilities, all runtime event variants, diagnostics, current window, sessions, active session, summaries, trend, web activity, apps, imports, scheduled backups and restore reservations, tracker/runtime settings, AI activity context, Tools snapshots, alerts, and Tools write requests
 
@@ -1050,7 +1052,73 @@ Schema:
 
 The daemon serializes remote backup operations, writes the temporary archive beneath the current profile's protected storage as a `0600` file, validates it through the normal backup reader, and removes that exact temporary file after the operation. A missing credential or unavailable keyring/WebDAV service returns `503`; invalid target input returns `400`. A successful archive upload can still return `indexUpdated=false` or a non-null `indexMessage` when the remote index or local completion timestamp could not be updated. The password is never accepted by this endpoint and is absent from logs, responses, and OpenAPI schemas.
 
-This endpoint is for the trusted Desktop typed client and is intentionally absent from MCP. Remote listing and download still use the compatibility Desktop path in the current preview; they remain part of the next owner-migration batch.
+This endpoint is for the trusted Desktop typed client and is intentionally absent from MCP.
+
+### `POST /api/v1/backups/remote/list`
+
+The tracking daemon reads `backup-index.json` with a bounded response, validates every ID and derives each allowed remote path from that ID. A forged filename, path traversal, duplicate ID, oversized entry, malformed product, or unsupported index version rejects the whole index instead of being passed to the Desktop.
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/backups/remote/list" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "config": {
+      "url": "https://dav.example.test/remote.php/dav/files/user",
+      "username": "user",
+      "remoteDir": "/Patina"
+    }
+  }'
+```
+
+Schema:
+
+```json
+{
+  "data": [
+    {
+      "id": "20260908-140501-a1b2c3d4",
+      "fileName": "Patina-backup-20260908-140501-a1b2c3d4.zip",
+      "remotePath": "/Patina/Patina-backup-20260908-140501-a1b2c3d4.zip",
+      "createdAtMs": 1788847501000,
+      "sizeBytes": 1048576,
+      "appVersion": "1.9.5",
+      "backupVersion": 1,
+      "schemaVersion": 16,
+      "sessionCount": 120,
+      "titleSampleCount": 80,
+      "settingCount": 24,
+      "iconCacheCount": 12
+    }
+  ]
+}
+```
+
+At most 50 entries are returned. The request carries non-secret target metadata; the password is read from the current profile's operating-system credential store.
+
+### `POST /api/v1/backups/remote/restore`
+
+This endpoint requires a systemd-managed tracking daemon and `confirmed=true`. It does not return a local path and does not accept an archive body. The daemon finds the selected ID only through the validated remote index, downloads the archive into a private `create_new` file with a 512 MiB limit, validates backup structure and compatibility, copies it into the existing owner-only restore staging boundary, and schedules the same startup restore used by local files.
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/backups/remote/restore" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "config": {
+      "url": "https://dav.example.test/remote.php/dav/files/user",
+      "username": "user",
+      "remoteDir": "/Patina"
+    },
+    "id": "20260908-140501-a1b2c3d4",
+    "strategy": "replace",
+    "confirmed": true
+  }'
+```
+
+The HTTP `202` response uses the same `BackupRestoreScheduleResponse` schema as `POST /api/v1/backups/restore`. The client records `data.restore.request_id`, reconnects after systemd restarts the daemon, and polls `GET /api/v1/backups/restore?request_id=...` for the terminal state. Download or validation failure leaves the live database untouched. If scheduling fails before a reservation owns the new staging ticket, the daemon removes that exact file; an ambiguous reservation state preserves it rather than risking deletion of restore input.
+
+The trusted Desktop asks for confirmation from indexed metadata before invoking this endpoint. The daemon still treats the downloaded archive as untrusted, revalidates the actual bytes, and verifies the archive size, version, schema, app version, and indexed record counts against that confirmed metadata before restart. This endpoint is intentionally absent from MCP, browser UI, CLI, and Agent tools.
 
 ### `GET /api/v1/backups/restore`
 

@@ -3,10 +3,10 @@ import type { QuietToastTone } from "../../../shared/components/QuietToast";
 import { UI_TEXT } from "../../../shared/copy/uiText.ts";
 import {
   deleteWebDavBackupSecret,
-  downloadWebDavBackup,
   hasWebDavBackupSecret,
   listWebDavBackups,
   revealWebDavBackupSecret,
+  restoreWebDavBackup,
   saveWebDavBackupSecret,
   testWebDavBackupTarget,
   uploadWebDavBackup,
@@ -21,7 +21,6 @@ import {
   type PersistedRemoteBackupConfig,
 } from "../../../platform/persistence/remoteBackupSettingsStore.ts";
 import type { BackupRestoreStrategy } from "../services/settingsRuntimeAdapterService.ts";
-import { buildBackupPreviewSummary } from "../services/settingsRuntimeAdapterService.ts";
 
 type ConfirmFn = (options: {
   title: string;
@@ -71,7 +70,6 @@ export interface RemoteBackupState {
 interface UseRemoteBackupStateOptions {
   confirm: ConfirmFn;
   notify: NotifyFn;
-  restoreBackup: (path: string, restoreStrategy: BackupRestoreStrategy) => Promise<void>;
   reload: () => void;
 }
 
@@ -91,10 +89,18 @@ function draftToRuntimeConfig(draft: RemoteBackupFormDraft): WebDavBackupConfig 
   };
 }
 
+function buildRemoteBackupSummary(entry: RemoteBackupEntry): string {
+  return [
+    `${UI_TEXT.backup.versionLabel(entry.backupVersion)}（${UI_TEXT.backup.schemaLabel(entry.schemaVersion)}）`,
+    UI_TEXT.backup.exportedAt(new Date(entry.createdAtMs).toLocaleString()),
+    UI_TEXT.backup.appVersion(entry.appVersion),
+    UI_TEXT.backup.itemCounts(entry.sessionCount, entry.settingCount, entry.iconCacheCount),
+  ].join("\n");
+}
+
 export function useRemoteBackupState({
   confirm,
   notify,
-  restoreBackup,
   reload,
 }: UseRemoteBackupStateOptions): RemoteBackupState {
   const [config, setConfig] = useState<PersistedRemoteBackupConfig | null>(null);
@@ -302,25 +308,20 @@ export function useRemoteBackupState({
 
   const restoreEntry = useCallback(async (entry: RemoteBackupEntry, restoreStrategy: BackupRestoreStrategy) => {
     if (!config || isDownloading) return;
+    const accepted = await confirm({
+      title: UI_TEXT.settings.restoreConfirmTitle,
+      description: UI_TEXT.settings.restoreConfirmDetail(
+        entry.fileName,
+        buildRemoteBackupSummary(entry),
+        UI_TEXT.settings.restoreStrategyOptions[restoreStrategy],
+      ),
+      confirmLabel: UI_TEXT.settings.backupRestoreAction,
+      danger: restoreStrategy === "replace",
+    });
+    if (!accepted) return;
     setIsDownloading(true);
     try {
-      const download = await downloadWebDavBackup(toRuntimeConfig(config), entry.id);
-      if (!download.preview.restoreSupported) {
-        notify(UI_TEXT.toast.backupIncompatible(download.preview.restoreMessage), "warning");
-        return;
-      }
-      const accepted = await confirm({
-        title: UI_TEXT.settings.restoreConfirmTitle,
-        description: UI_TEXT.settings.restoreConfirmDetail(
-          download.path,
-          buildBackupPreviewSummary(download.preview),
-          UI_TEXT.settings.restoreStrategyOptions[restoreStrategy],
-        ),
-        confirmLabel: UI_TEXT.settings.backupRestoreAction,
-        danger: restoreStrategy === "replace",
-      });
-      if (!accepted) return;
-      await restoreBackup(download.path, restoreStrategy);
+      await restoreWebDavBackup(toRuntimeConfig(config), entry.id, restoreStrategy);
       notify(UI_TEXT.toast.backupRestoreSuccess, "success");
       reload();
     } catch (error) {
@@ -329,7 +330,7 @@ export function useRemoteBackupState({
     } finally {
       setIsDownloading(false);
     }
-  }, [config, confirm, isDownloading, notify, reload, restoreBackup]);
+  }, [config, confirm, isDownloading, notify, reload]);
 
   return {
     config,

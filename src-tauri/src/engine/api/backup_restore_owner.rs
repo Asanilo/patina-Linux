@@ -56,4 +56,8 @@ pub trait BackupRestoreOwner: Send + Sync {
     ) -> BackupRestoreOwnerFuture<'_, Option<BackupRestoreSnapshot>>;
 
     fn cancel(&self, request_id: String) -> BackupRestoreOwnerFuture<'_, BackupRestoreSnapshot>;
+
+    fn references_staged_ticket(&self, _ticket: String) -> BackupRestoreOwnerFuture<'_, bool> {
+        Box::pin(async { Ok(false) })
+    }
 }

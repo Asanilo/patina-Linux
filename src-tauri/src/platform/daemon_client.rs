@@ -470,6 +470,42 @@ impl PatinadClient {
         .await
     }
 
+    pub async fn list_remote_backups(
+        &self,
+        config: crate::domain::remote_backup::WebDavBackupConfig,
+    ) -> Result<Vec<crate::domain::remote_backup::RemoteBackupEntry>, PatinadClientError> {
+        self.post_json_with_timeout(
+            "/api/v1/backups/remote/list",
+            &crate::engine::api::types::RemoteBackupListRequest { config },
+            "remote backup list",
+            RESTORE_REQUEST_TIMEOUT,
+        )
+        .await
+    }
+
+    pub async fn schedule_remote_backup_restore(
+        &self,
+        config: crate::domain::remote_backup::WebDavBackupConfig,
+        id: String,
+        strategy: crate::domain::backup::RestoreStrategy,
+    ) -> Result<
+        crate::engine::api::backup_restore_owner::BackupRestoreScheduleResult,
+        PatinadClientError,
+    > {
+        self.post_json_with_timeout(
+            "/api/v1/backups/remote/restore",
+            &crate::engine::api::types::RemoteBackupRestoreRequest {
+                config,
+                id,
+                strategy,
+                confirmed: true,
+            },
+            "remote backup restore scheduling",
+            RESTORE_REQUEST_TIMEOUT,
+        )
+        .await
+    }
+
     pub async fn schedule_backup_restore(
         &self,
         request: &crate::engine::api::types::StagedBackupRestoreRequest,

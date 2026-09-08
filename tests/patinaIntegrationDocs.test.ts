@@ -26,6 +26,8 @@ const implementedEndpoints = [
   "GET /api/v1/backups/schedule",
   "POST /api/v1/backups/schedule",
   "POST /api/v1/backups/remote/upload",
+  "POST /api/v1/backups/remote/list",
+  "POST /api/v1/backups/remote/restore",
   "GET /api/v1/backups/restore",
   "POST /api/v1/backups/restore",
   "POST /api/v1/backups/restore/cancel",

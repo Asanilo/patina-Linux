@@ -1,6 +1,26 @@
 use crate::engine::api::context::ApiRuntimeContext;
 use crate::engine::api::remote_backup_owner::RemoteBackupOwnerError;
-use crate::engine::api::types::{ApiError, ApiResponse, RemoteBackupUploadRequest, RouteResponse};
+use crate::engine::api::types::{
+    ApiError, ApiResponse, RemoteBackupListRequest, RemoteBackupRestoreRequest,
+    RemoteBackupUploadRequest, RouteResponse,
+};
+
+pub async fn list(context: &ApiRuntimeContext, body: &[u8]) -> RouteResponse {
+    let request: RemoteBackupListRequest = match serde_json::from_slice(body) {
+        Ok(request) => request,
+        Err(_) => return bad_request("invalid JSON body"),
+    };
+    let Some(owner) = context.remote_backup_owner() else {
+        return unavailable("remote backup owner is unavailable");
+    };
+    match owner.list(request.config).await {
+        Ok(entries) => RouteResponse {
+            status: 200,
+            body: serde_json::to_value(ApiResponse { data: entries }).unwrap_or_default(),
+        },
+        Err(error) => owner_error(error),
+    }
+}
 
 pub async fn upload(context: &ApiRuntimeContext, body: &[u8]) -> RouteResponse {
     let request: RemoteBackupUploadRequest = match serde_json::from_slice(body) {
@@ -18,9 +38,46 @@ pub async fn upload(context: &ApiRuntimeContext, body: &[u8]) -> RouteResponse {
             status: 200,
             body: serde_json::to_value(ApiResponse { data: result }).unwrap_or_default(),
         },
-        Err(RemoteBackupOwnerError::InvalidInput(message)) => bad_request(&message),
-        Err(RemoteBackupOwnerError::Unavailable(message)) => unavailable(&message),
-        Err(RemoteBackupOwnerError::Internal(message)) => RouteResponse {
+        Err(error) => owner_error(error),
+    }
+}
+
+pub async fn restore(context: &ApiRuntimeContext, body: &[u8]) -> RouteResponse {
+    let request: RemoteBackupRestoreRequest = match serde_json::from_slice(body) {
+        Ok(request) => request,
+        Err(_) => return bad_request("invalid JSON body"),
+    };
+    if !request.confirmed {
+        return bad_request("remote backup restore requires confirmed=true");
+    }
+    let Some(owner) = context.remote_backup_owner() else {
+        return unavailable("remote backup owner is unavailable");
+    };
+    match owner
+        .restore(request.config, request.id, request.strategy)
+        .await
+    {
+        Ok(result) => RouteResponse {
+            status: 202,
+            body: serde_json::to_value(ApiResponse { data: result }).unwrap_or_default(),
+        },
+        Err(error) => owner_error(error),
+    }
+}
+
+fn owner_error(error: RemoteBackupOwnerError) -> RouteResponse {
+    match error {
+        RemoteBackupOwnerError::InvalidInput(message) => bad_request(&message),
+        RemoteBackupOwnerError::NotFound(message) => RouteResponse {
+            status: 404,
+            body: serde_json::to_value(ApiError::not_found(&message)).unwrap_or_default(),
+        },
+        RemoteBackupOwnerError::Conflict(message) => RouteResponse {
+            status: 409,
+            body: serde_json::to_value(ApiError::conflict(&message)).unwrap_or_default(),
+        },
+        RemoteBackupOwnerError::Unavailable(message) => unavailable(&message),
+        RemoteBackupOwnerError::Internal(message) => RouteResponse {
             status: 500,
             body: serde_json::to_value(ApiError::internal(&message)).unwrap_or_default(),
         },
@@ -79,6 +136,29 @@ mod tests {
                 })
             })
         }
+
+        fn list(
+            &self,
+            _config: WebDavBackupConfig,
+        ) -> RemoteBackupOwnerFuture<'_, Vec<RemoteBackupEntry>> {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+
+        fn restore(
+            &self,
+            _config: WebDavBackupConfig,
+            _id: String,
+            _strategy: crate::domain::backup::RestoreStrategy,
+        ) -> RemoteBackupOwnerFuture<
+            '_,
+            crate::engine::api::backup_restore_owner::BackupRestoreScheduleResult,
+        > {
+            Box::pin(async {
+                Err(RemoteBackupOwnerError::Conflict(
+                    "restore unavailable in upload test".to_string(),
+                ))
+            })
+        }
     }
 
     #[tokio::test]
@@ -126,6 +206,31 @@ mod tests {
         assert_eq!(response.status, 200);
         assert_eq!(response.body["data"]["entry"]["id"], "backup-id");
         assert_eq!(response.body["data"]["indexUpdated"], true);
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn restore_requires_explicit_confirmation_before_owner_lookup() {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let context = ApiRuntimeContext::new(
+            crate::engine::runtime_context::RuntimeContext::system(pool.clone()),
+        );
+        let body = serde_json::to_vec(&serde_json::json!({
+            "config": {
+                "url": "https://dav.example.test",
+                "username": "arin",
+                "remoteDir": "/Patina"
+            },
+            "id": "backup-id",
+            "strategy": "replace",
+            "confirmed": false
+        }))
+        .unwrap();
+
+        let response = restore(&context, &body).await;
+
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["code"], "bad_request");
         pool.close().await;
     }
 }

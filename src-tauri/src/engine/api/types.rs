@@ -317,6 +317,19 @@ pub struct RemoteBackupUploadRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+pub struct RemoteBackupListRequest {
+    pub config: crate::domain::remote_backup::WebDavBackupConfig,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct RemoteBackupRestoreRequest {
+    pub config: crate::domain::remote_backup::WebDavBackupConfig,
+    pub id: String,
+    pub strategy: crate::domain::backup::RestoreStrategy,
+    pub confirmed: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct StagedBackupRestoreRequest {
     pub ticket: String,
     pub expected_sha256: String,

@@ -210,11 +210,13 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
             service_lifecycle.clone(),
         )) as Arc<dyn crate::engine::api::backup_restore_owner::BackupRestoreOwner>
     });
-    let remote_backup_owner = options.track.then(|| {
+    let remote_backup_owner = backup_restore_owner.as_ref().map(|backup_restore_owner| {
         Arc::new(remote_backup::DaemonRemoteBackupOwner::new(
             runtime_context.clone(),
             storage_paths.remote_backup_temp_dir.clone(),
+            storage_paths.backup_restore_staging_dir.clone(),
             options.profile,
+            backup_restore_owner.clone(),
         )) as Arc<dyn crate::engine::api::remote_backup_owner::RemoteBackupOwner>
     });
     let confirmed_port = if let Some(api_listener) = api_listener.as_ref() {

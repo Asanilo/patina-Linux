@@ -230,6 +230,24 @@ impl BackupRestoreOwner for DaemonBackupRestoreOwner {
             Ok(snapshot(&reservation))
         })
     }
+
+    fn references_staged_ticket(&self, ticket: String) -> BackupRestoreOwnerFuture<'_, bool> {
+        Box::pin(async move {
+            let _guard = self.operation_lock.lock().await;
+            Ok(read_reservation(&self.control_root)
+                .map_err(BackupRestoreOwnerError::Internal)?
+                .is_some_and(|reservation| {
+                    reservation.ticket == ticket
+                        && matches!(
+                            reservation.status,
+                            ReservationStatus::Prepared
+                                | ReservationStatus::PendingRestart
+                                | ReservationStatus::Running
+                                | ReservationStatus::Failed
+                        )
+                }))
+        })
+    }
 }
 
 pub async fn run_startup_restore(

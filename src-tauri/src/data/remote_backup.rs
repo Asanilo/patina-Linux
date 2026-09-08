@@ -10,6 +10,7 @@ use crate::platform::webdav::{normalize_remote_dir, WebDavClient, WebDavConfig};
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
@@ -62,8 +63,46 @@ fn remote_backup_id() -> Result<String, String> {
     ))
 }
 
+fn random_download_file_name() -> Result<String, String> {
+    let mut random = [0_u8; 16];
+    getrandom::fill(&mut random)
+        .map_err(|error| format!("failed to generate remote download file name: {error}"))?;
+    Ok(format!(
+        ".remote-download-{}.zip",
+        random
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    ))
+}
+
 fn remote_backup_file_name(id: &str) -> String {
     format!("Patina-backup-{id}.zip")
+}
+
+fn validate_backup_id(id: &str) -> Result<(), String> {
+    if id.is_empty()
+        || id.len() > 128
+        || !id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        return Err("WebDAV backup id is invalid".to_string());
+    }
+    Ok(())
+}
+
+fn is_managed_download_file_name(file_name: &str) -> bool {
+    let Some(random) = file_name
+        .strip_prefix(".remote-download-")
+        .and_then(|value| value.strip_suffix(".zip"))
+    else {
+        return false;
+    };
+    random.len() == 32
+        && random
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn remote_path(remote_dir: &str, file_name: &str) -> String {
@@ -87,6 +126,27 @@ fn parse_index(raw: &str) -> Result<RemoteBackupIndex, String> {
         return Err("WebDAV backup index belongs to another product".to_string());
     }
     Ok(index)
+}
+
+fn validate_index(index: &RemoteBackupIndex, remote_dir: &str) -> Result<(), String> {
+    let mut ids = HashSet::with_capacity(index.backups.len());
+    for entry in &index.backups {
+        validate_backup_id(&entry.id)
+            .map_err(|_| "WebDAV backup index contains an invalid backup id".to_string())?;
+        if !ids.insert(entry.id.as_str()) {
+            return Err("WebDAV backup index contains duplicate backup ids".to_string());
+        }
+        let expected_file_name = remote_backup_file_name(&entry.id);
+        if entry.file_name != expected_file_name
+            || entry.remote_path != remote_path(remote_dir, &expected_file_name)
+        {
+            return Err("WebDAV backup index contains an unsafe backup path".to_string());
+        }
+        if entry.size_bytes > crate::domain::backup::MAX_BACKUP_ARCHIVE_BYTES {
+            return Err("WebDAV backup index contains an oversized backup".to_string());
+        }
+    }
+    Ok(())
 }
 
 fn empty_index() -> RemoteBackupIndex {
@@ -142,12 +202,45 @@ fn ensure_temp_backup_dir(dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-struct TempBackupGuard(PathBuf);
+struct TempBackupGuard(Option<PathBuf>);
+
+impl TempBackupGuard {
+    fn new(path: PathBuf) -> Self {
+        Self(Some(path))
+    }
+
+    fn persist(mut self) {
+        self.0 = None;
+    }
+}
 
 impl Drop for TempBackupGuard {
     fn drop(&mut self) {
-        let _ = fs::remove_file(&self.0);
+        if let Some(path) = self.0.as_ref() {
+            let _ = fs::remove_file(path);
+        }
     }
+}
+
+fn validate_downloaded_entry(
+    entry: &RemoteBackupEntry,
+    preview: &BackupPreview,
+    size_bytes: u64,
+) -> Result<(), String> {
+    if entry.size_bytes != size_bytes
+        || entry.app_version != preview.app_version
+        || entry.backup_version != preview.version
+        || entry.schema_version != preview.schema_version
+        || entry.session_count != preview.session_count
+        || entry.title_sample_count != preview.title_sample_count
+        || entry.setting_count != preview.setting_count
+        || entry.icon_cache_count != preview.icon_cache_count
+    {
+        return Err(
+            "downloaded WebDAV backup does not match its validated index metadata".to_string(),
+        );
+    }
+    Ok(())
 }
 
 fn build_entry(
@@ -267,7 +360,7 @@ pub async fn upload_webdav_backup_from_pool(
     let id = remote_backup_id()?;
     let file_name = remote_backup_file_name(&id);
     let local_path = temp_dir.join(&file_name);
-    let _temp_guard = TempBackupGuard(local_path.clone());
+    let _temp_guard = TempBackupGuard::new(local_path.clone());
     backup::export_backup_from_pool(pool, &local_path).await?;
     let (preview, _, size_bytes) = backup::inspect_restore_archive(&local_path)?;
     let remote_path = remote_path(&config.remote_dir, &file_name);
@@ -276,12 +369,13 @@ pub async fn upload_webdav_backup_from_pool(
 
     let entry = build_entry(id, file_name, remote_path, size_bytes, &preview);
     let mut result = match load_index(&client, &config.remote_dir).await {
-        Ok(mut index) => {
+        Ok(mut index) if validate_index(&index, &config.remote_dir).is_ok() => {
             index.backups.retain(|item| item.id != entry.id);
             index.backups.insert(0, entry.clone());
             index
                 .backups
                 .sort_by_key(|entry| Reverse(entry.created_at_ms));
+            index.backups.truncate(MAX_BACKUP_LIST_ITEMS);
             index.updated_at_ms = now_ms();
             match save_index(&client, &config.remote_dir, &index).await {
                 Ok(()) => RemoteBackupUploadResult {
@@ -296,6 +390,11 @@ pub async fn upload_webdav_backup_from_pool(
                 },
             }
         }
+        Ok(index) => RemoteBackupUploadResult {
+            entry,
+            index_updated: false,
+            index_message: validate_index(&index, &config.remote_dir).err(),
+        },
         Err(error) => RemoteBackupUploadResult {
             entry,
             index_updated: false,
@@ -330,6 +429,7 @@ pub async fn list_webdav_backups(
 ) -> Result<Vec<RemoteBackupEntry>, String> {
     let (config, client) = webdav_client(profile, config).await?;
     let mut index = load_index(&client, &config.remote_dir).await?;
+    validate_index(&index, &config.remote_dir)?;
     index
         .backups
         .sort_by_key(|entry| Reverse(entry.created_at_ms));
@@ -343,35 +443,151 @@ pub async fn download_webdav_backup(
     id: String,
 ) -> Result<RemoteBackupDownloadResult, String> {
     let trimmed_id = id.trim();
-    if trimmed_id.is_empty() {
-        return Err("remote backup id cannot be empty".to_string());
-    }
+    validate_backup_id(trimmed_id)?;
 
     let profile = crate::platform::app_paths::app_profile(&app);
     let (config, client) = webdav_client(profile, config).await?;
     let index = load_index(&client, &config.remote_dir).await?;
+    validate_index(&index, &config.remote_dir)?;
     let entry = index
         .backups
         .iter()
         .find(|entry| entry.id == trimmed_id)
         .ok_or_else(|| "remote backup was not found in the WebDAV index".to_string())?;
-    let local_path = temp_backup_path(&app, &entry.file_name)?;
+    let local_path = temp_backup_path(&app, &random_download_file_name()?)?;
     client
-        .download_file(&entry.remote_path, &local_path)
+        .download_file_bounded(
+            &entry.remote_path,
+            &local_path,
+            crate::domain::backup::MAX_BACKUP_ARCHIVE_BYTES,
+        )
         .await?;
+    let temp_guard = TempBackupGuard::new(local_path.clone());
     let local_path_string = local_path.to_string_lossy().to_string();
-    let preview = backup::preview_backup(local_path_string.clone()).await?;
+    let (preview, _, size_bytes) = backup::inspect_restore_archive(&local_path)?;
+    validate_downloaded_entry(entry, &preview, size_bytes)?;
+    temp_guard.persist();
     Ok(RemoteBackupDownloadResult {
         path: local_path_string,
         preview,
     })
 }
 
+pub fn discard_downloaded_webdav_backup(app: &AppHandle, path: &str) -> Result<(), String> {
+    let root = temp_backup_dir(app)?;
+    let candidate = PathBuf::from(path);
+    let file_name = candidate
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "remote backup download path is invalid".to_string())?;
+    if candidate.parent() != Some(root.as_path()) || !is_managed_download_file_name(file_name) {
+        return Err("refusing to remove an unmanaged remote backup download".to_string());
+    }
+    match fs::symlink_metadata(&candidate) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+            Err("remote backup download must be a regular non-symlink file".to_string())
+        }
+        Ok(_) => fs::remove_file(&candidate)
+            .map_err(|error| format!("failed to remove remote backup download: {error}")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("failed to inspect remote backup download: {error}")),
+    }
+}
+
+pub async fn stage_webdav_backup_for_restore(
+    profile: crate::platform::app_paths::AppProfile,
+    config: WebDavBackupConfig,
+    id: String,
+    temp_dir: &Path,
+    restore_staging_dir: &Path,
+) -> Result<crate::platform::backup_restore_staging::StagedBackupArchive, String> {
+    let trimmed_id = id.trim();
+    validate_backup_id(trimmed_id)?;
+    let (config, client) = webdav_client(profile, config).await?;
+    let index = load_index(&client, &config.remote_dir).await?;
+    validate_index(&index, &config.remote_dir)?;
+    let entry = index
+        .backups
+        .iter()
+        .find(|entry| entry.id == trimmed_id)
+        .ok_or_else(|| "remote backup was not found in the WebDAV index".to_string())?;
+
+    ensure_temp_backup_dir(temp_dir)?;
+    let local_path = temp_dir.join(random_download_file_name()?);
+    let _temp_guard = TempBackupGuard::new(local_path.clone());
+    client
+        .download_file_bounded(
+            &entry.remote_path,
+            &local_path,
+            crate::domain::backup::MAX_BACKUP_ARCHIVE_BYTES,
+        )
+        .await?;
+    let local_path_for_inspection = local_path.clone();
+    let (preview, _, size_bytes) = tokio::task::spawn_blocking(move || {
+        backup::inspect_restore_archive(&local_path_for_inspection)
+    })
+    .await
+    .map_err(|error| format!("remote backup inspection task failed: {error}"))??;
+    validate_downloaded_entry(entry, &preview, size_bytes)?;
+
+    let staging_root = restore_staging_dir.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        crate::platform::backup_restore_staging::stage_file(&staging_root, &local_path)
+    })
+    .await
+    .map_err(|error| format!("remote backup staging task failed: {error}"))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_temp_backup_dir, parse_index, remote_backup_file_name, remote_backup_id, remote_path,
+        ensure_temp_backup_dir, is_managed_download_file_name, parse_index,
+        remote_backup_file_name, remote_backup_id, remote_path, validate_downloaded_entry,
+        validate_index,
     };
+    use crate::domain::backup::BackupPreview;
+    use crate::domain::remote_backup::RemoteBackupEntry;
+
+    fn matching_entry_and_preview() -> (RemoteBackupEntry, BackupPreview) {
+        let entry = RemoteBackupEntry {
+            id: "safe-id".to_string(),
+            file_name: "Patina-backup-safe-id.zip".to_string(),
+            remote_path: "/Patina/Patina-backup-safe-id.zip".to_string(),
+            created_at_ms: 1,
+            size_bytes: 42,
+            app_version: "1.8.4".to_string(),
+            backup_version: 1,
+            schema_version: 10,
+            session_count: 2,
+            title_sample_count: 3,
+            setting_count: 4,
+            icon_cache_count: 5,
+        };
+        let preview = BackupPreview {
+            version: 1,
+            exported_at_ms: 1,
+            schema_version: 10,
+            app_version: "1.8.4".to_string(),
+            restore_supported: true,
+            restore_message_key: "backup.restore.compatible".to_string(),
+            restore_message_args: Vec::new(),
+            restore_message: "compatible".to_string(),
+            session_count: 2,
+            title_sample_count: 3,
+            setting_count: 4,
+            icon_cache_count: 5,
+            web_activity_segment_count: 0,
+            tool_reminder_count: 0,
+            tool_timer_count: 0,
+            tool_timer_lap_count: 0,
+            tool_pomodoro_run_count: 0,
+            tool_daily_stats_count: 0,
+            import_batch_count: 0,
+            import_exact_session_count: 0,
+            import_time_bucket_count: 0,
+        };
+        (entry, preview)
+    }
 
     #[test]
     fn remote_file_name_uses_zip_format() {
@@ -429,6 +645,17 @@ mod tests {
     }
 
     #[test]
+    fn managed_download_names_require_the_exact_random_shape() {
+        assert!(is_managed_download_file_name(
+            ".remote-download-0123456789abcdef0123456789abcdef.zip"
+        ));
+        assert!(!is_managed_download_file_name(".remote-download-other.zip"));
+        assert!(!is_managed_download_file_name(
+            ".remote-download-0123456789abcdef0123456789abcdef.zip.old"
+        ));
+    }
+
+    #[test]
     fn parse_index_rejects_time_tracker_product() {
         let raw = r#"{"version":1,"product":"Time Tracker","updatedAtMs":1,"backups":[]}"#;
         assert!(parse_index(raw).is_err());
@@ -438,5 +665,44 @@ mod tests {
     fn parse_index_rejects_other_products() {
         let raw = r#"{"version":1,"product":"Other","updatedAtMs":1,"backups":[]}"#;
         assert!(parse_index(raw).is_err());
+    }
+
+    #[test]
+    fn remote_index_rejects_paths_not_derived_from_the_backup_id() {
+        let index = parse_index(
+            r#"{
+                "version": 1,
+                "product": "Patina",
+                "updatedAtMs": 1,
+                "backups": [{
+                    "id": "safe-id",
+                    "fileName": "../other.zip",
+                    "remotePath": "/Patina/../other.zip",
+                    "createdAtMs": 1,
+                    "sizeBytes": 1,
+                    "appVersion": "1.8.4",
+                    "backupVersion": 1,
+                    "schemaVersion": 1,
+                    "sessionCount": 0,
+                    "titleSampleCount": 0,
+                    "settingCount": 0,
+                    "iconCacheCount": 0
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        assert!(validate_index(&index, "/Patina").is_err());
+    }
+
+    #[test]
+    fn downloaded_backup_must_match_the_confirmed_index_metadata() {
+        let (entry, mut preview) = matching_entry_and_preview();
+        assert!(validate_downloaded_entry(&entry, &preview, 42).is_ok());
+
+        preview.session_count += 1;
+        assert!(validate_downloaded_entry(&entry, &preview, 42).is_err());
+        preview.session_count -= 1;
+        assert!(validate_downloaded_entry(&entry, &preview, 41).is_err());
     }
 }

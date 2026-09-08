@@ -1,6 +1,9 @@
 use reqwest::{Method, StatusCode, Url};
 use std::path::Path;
 use std::time::Duration;
+use tokio::io::AsyncWriteExt;
+
+const MAX_TEXT_RESPONSE_BYTES: u64 = 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WebDavConfig {
@@ -152,7 +155,7 @@ impl WebDavClient {
     }
 
     pub async fn read_text_optional(&self, remote_path: &str) -> Result<Option<String>, String> {
-        let response = self
+        let mut response = self
             .request(Method::GET, remote_path)
             .await?
             .send()
@@ -165,11 +168,30 @@ impl WebDavClient {
         if !status.is_success() {
             return Err(format!("failed to read WebDAV file: HTTP {status}"));
         }
-        response
-            .text()
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_TEXT_RESPONSE_BYTES)
+        {
+            return Err("WebDAV text response exceeds the size limit".to_string());
+        }
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
             .await
+            .map_err(|error| format!("failed to read WebDAV response: {error}"))?
+        {
+            let next_len = bytes
+                .len()
+                .checked_add(chunk.len())
+                .ok_or_else(|| "WebDAV text response exceeds the size limit".to_string())?;
+            if next_len as u64 > MAX_TEXT_RESPONSE_BYTES {
+                return Err("WebDAV text response exceeds the size limit".to_string());
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        String::from_utf8(bytes)
             .map(Some)
-            .map_err(|error| format!("failed to read WebDAV response: {error}"))
+            .map_err(|_| "WebDAV text response is not valid UTF-8".to_string())
     }
 
     pub async fn write_text(&self, remote_path: &str, value: &str) -> Result<(), String> {
@@ -209,8 +231,13 @@ impl WebDavClient {
         }
     }
 
-    pub async fn download_file(&self, remote_path: &str, local_path: &Path) -> Result<(), String> {
-        let response = self
+    pub async fn download_file_bounded(
+        &self,
+        remote_path: &str,
+        local_path: &Path,
+        max_bytes: u64,
+    ) -> Result<(), String> {
+        let mut response = self
             .request(Method::GET, remote_path)
             .await?
             .send()
@@ -220,24 +247,82 @@ impl WebDavClient {
         if !status.is_success() {
             return Err(format!("failed to download WebDAV backup: HTTP {status}"));
         }
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|error| format!("failed to read WebDAV backup response: {error}"))?;
-        if let Some(parent) = local_path.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|error| format!("failed to create backup download dir: {error}"))?;
+        if response
+            .content_length()
+            .is_some_and(|length| length > max_bytes)
+        {
+            return Err("downloaded WebDAV backup exceeds the size limit".to_string());
         }
-        tokio::fs::write(local_path, bytes)
+
+        let mut options = tokio::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            options.mode(0o600);
+        }
+        let mut file = options
+            .open(local_path)
             .await
-            .map_err(|error| format!("failed to write downloaded backup: {error}"))
+            .map_err(|error| format!("failed to create downloaded backup: {error}"))?;
+        let result = async {
+            let mut total = 0_u64;
+            while let Some(chunk) = response
+                .chunk()
+                .await
+                .map_err(|error| format!("failed to read WebDAV backup response: {error}"))?
+            {
+                total = total
+                    .checked_add(chunk.len() as u64)
+                    .ok_or_else(|| "downloaded WebDAV backup exceeds the size limit".to_string())?;
+                if total > max_bytes {
+                    return Err("downloaded WebDAV backup exceeds the size limit".to_string());
+                }
+                file.write_all(&chunk)
+                    .await
+                    .map_err(|error| format!("failed to write downloaded backup: {error}"))?;
+            }
+            file.sync_all()
+                .await
+                .map_err(|error| format!("failed to sync downloaded backup: {error}"))
+        }
+        .await;
+        drop(file);
+        if result.is_err() {
+            let _ = tokio::fs::remove_file(local_path).await;
+        }
+        result
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_remote_dir;
+    use super::{normalize_remote_dir, WebDavClient, WebDavConfig};
+
+    fn temp_download_path(label: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "patina-webdav-{label}-{}-{}",
+            std::process::id(),
+            crate::app::runtime::now_ms()
+        ))
+    }
+
+    async fn test_server(body: Vec<u8>) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = axum::Router::new().route(
+            "/backup.zip",
+            axum::routing::get(move || {
+                let body = body.clone();
+                async move { body }
+            }),
+        );
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        (format!("http://{address}"), task)
+    }
 
     #[test]
     fn normalize_remote_dir_applies_default_and_slashes() {
@@ -253,5 +338,53 @@ mod tests {
         assert!(normalize_remote_dir("../zotero").is_err());
         assert!(normalize_remote_dir("Patina\\backups").is_err());
         assert!(normalize_remote_dir("Patina/\n/backups").is_err());
+    }
+
+    #[tokio::test]
+    async fn bounded_download_rejects_oversized_responses_without_leaving_a_file() {
+        let (url, task) = test_server(vec![7_u8; 16]).await;
+        let client = WebDavClient::new(
+            &WebDavConfig {
+                url,
+                username: "user".to_string(),
+                remote_dir: "/Patina".to_string(),
+            },
+            "password".to_string(),
+        )
+        .unwrap();
+        let target = temp_download_path("oversized");
+
+        let result = client
+            .download_file_bounded("/backup.zip", &target, 8)
+            .await;
+
+        assert!(result.is_err());
+        assert!(!target.exists());
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn bounded_download_never_overwrites_an_existing_file() {
+        let (url, task) = test_server(b"new backup".to_vec()).await;
+        let client = WebDavClient::new(
+            &WebDavConfig {
+                url,
+                username: "user".to_string(),
+                remote_dir: "/Patina".to_string(),
+            },
+            "password".to_string(),
+        )
+        .unwrap();
+        let target = temp_download_path("existing");
+        std::fs::write(&target, b"keep").unwrap();
+
+        let result = client
+            .download_file_bounded("/backup.zip", &target, 1024)
+            .await;
+
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), b"keep");
+        std::fs::remove_file(target).unwrap();
+        task.abort();
     }
 }

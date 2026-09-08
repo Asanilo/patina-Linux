@@ -94,7 +94,6 @@ export function useSettingsPageState({
   const remoteBackup = useRemoteBackupState({
     confirm,
     notify,
-    restoreBackup: SettingsRuntimeAdapterService.restoreBackup,
     reload: () => window.location.reload(),
   });
 

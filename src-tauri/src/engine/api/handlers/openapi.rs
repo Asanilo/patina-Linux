@@ -356,6 +356,27 @@ fn paths(surface: ApiSurface) -> Value {
         }),
     );
     object.insert(
+        "/api/v1/backups/remote/list".to_string(),
+        json!({
+            "post": post_operation(
+                "Read and validate the configured WebDAV backup index without exposing credentials.",
+                vec![],
+                "RemoteBackupListRequest",
+                "RemoteBackupListResponse",
+            )
+        }),
+    );
+    object.insert(
+        "/api/v1/backups/remote/restore".to_string(),
+        json!({
+            "post": accepted_post_operation(
+                "Download and validate a selected WebDAV archive, stage it privately, and schedule the existing controlled startup restore.",
+                "RemoteBackupRestoreRequest",
+                "BackupRestoreScheduleResponse",
+            )
+        }),
+    );
+    object.insert(
         "/api/v1/settings/app".to_string(),
         json!({
             "post": post_operation(
@@ -1570,6 +1591,23 @@ fn schemas() -> Value {
         ])),
     );
     schemas.insert(
+        "RemoteBackupListRequest".to_string(),
+        object_schema(vec![("config", schema_ref("WebDavBackupConfig"))]),
+    );
+    schemas.insert(
+        "RemoteBackupListResponse".to_string(),
+        envelope(bounded_array_schema(schema_ref("RemoteBackupEntry"), 50)),
+    );
+    schemas.insert(
+        "RemoteBackupRestoreRequest".to_string(),
+        object_schema(vec![
+            ("config", schema_ref("WebDavBackupConfig")),
+            ("id", bounded_string_schema(1, 128)),
+            ("strategy", enum_schema(vec!["replace", "merge"])),
+            ("confirmed", bool_schema()),
+        ]),
+    );
+    schemas.insert(
         "TrackingDataCleanupRequest".to_string(),
         object_schema(vec![
             ("cutoff_time_ms", bounded_integer_schema(0, i64::MAX)),
@@ -2090,6 +2128,9 @@ mod tests {
         assert!(schemas.contains_key("RemoteBackupUploadRequest"));
         assert!(schemas.contains_key("RemoteBackupUploadResponse"));
         assert!(schemas.contains_key("RemoteBackupEntry"));
+        assert!(schemas.contains_key("RemoteBackupListRequest"));
+        assert!(schemas.contains_key("RemoteBackupListResponse"));
+        assert!(schemas.contains_key("RemoteBackupRestoreRequest"));
         assert!(!schemas["RemoteBackupUploadRequest"]
             .to_string()
             .contains("password"));
@@ -2109,6 +2150,20 @@ mod tests {
                 .pointer("/paths/~1api~1v1~1backups~1remote~1upload/post/requestBody/content/application~1json/schema/$ref")
                 .and_then(|value| value.as_str()),
             Some("#/components/schemas/RemoteBackupUploadRequest")
+        );
+        assert_eq!(
+            daemon
+                .body
+                .pointer("/paths/~1api~1v1~1backups~1remote~1list/post/responses/200/content/application~1json/schema/$ref")
+                .and_then(|value| value.as_str()),
+            Some("#/components/schemas/RemoteBackupListResponse")
+        );
+        assert_eq!(
+            daemon
+                .body
+                .pointer("/paths/~1api~1v1~1backups~1remote~1restore/post/responses/202/content/application~1json/schema/$ref")
+                .and_then(|value| value.as_str()),
+            Some("#/components/schemas/BackupRestoreScheduleResponse")
         );
         assert!(response
             .body

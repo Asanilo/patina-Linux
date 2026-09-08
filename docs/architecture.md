@@ -257,7 +257,7 @@ restore status 可以在重连后按 restore request ID 查询；长期 Bearer A
 
 Stage 2H.3c.6 已实现该状态机。恢复 reservation 与暂存文件按 profile 隔离；恢复事务同时记录 request ID + archive SHA-256 receipt，用于处理“数据库已提交但 completed 状态尚未落盘”的崩溃窗口。Replace 恢复对定时备份计划的停用/换代也在同一事务完成。失败 reservation 不自动重试，暂存文件只允许按精确 ticket 显式取消删除。
 
-远端备份同样按 owner 分离。WebDAV URL、用户名、远端目录和最近完成时间属于 daemon 数据 owner 的白名单 app settings；密码属于当前 profile 的系统凭据边界，Linux 使用 Secret Service，Windows 冻结兼容路径保留 Credential Manager。上传由 tracking daemon 串行执行：从自己的 SQLite pool 创建一致性快照，在 profile 私有目录中生成 `0600` 临时归档，使用同一备份读取器复核后上传，并只清理该次操作的精确文件。HTTP 请求必须显式确认且不接收、返回或记录密码；该远端写能力不暴露给 MCP。列表、下载和下载后的恢复在迁移完成前仍属于兼容 Desktop 路径，不能把上传完成误报为整个 remote backup owner 已收口。
+远端备份同样按 owner 分离。WebDAV URL、用户名、远端目录和最近完成时间属于 daemon 数据 owner 的白名单 app settings；密码属于当前 profile 的系统凭据边界，Linux 使用 Secret Service，Windows 冻结兼容路径保留 Credential Manager。上传由 tracking daemon 串行执行：从自己的 SQLite pool 创建一致性快照，在 profile 私有目录中生成 `0600` 临时归档，使用同一备份读取器复核后上传，并只清理该次操作的精确文件。远端列表也由 daemon 有界读取和验证，文件名及 remote path 必须由受限 ID 推导，不能信任 WebDAV index 提供的任意路径。远端恢复不把路径或归档正文交给 Desktop：用户先基于索引元数据确认，daemon 再有界下载、校验实际归档并复核归档大小、版本和记录计数与索引一致，随后写入既有 owner-only restore staging，并调用相同的 systemd 启动恢复状态机。HTTP 上传/恢复必须显式确认且不接收、返回或记录密码；这些远端能力不暴露给 MCP。
 
 浏览器 UI 不是公开 Web 部署面。daemon 默认只监听 loopback，并校验 loopback Host 与严格 Origin；浏览器 UI 使用 same-origin、HttpOnly、SameSite session，不获得长期 API Token。owner-only Bearer Token 只供 MCP、CLI 和 Agent 使用；浏览器扩展继续使用独立 bridge credential。浏览器写侧开放前，必须增加 CSRF 防护和操作确认，并验证跨站请求、DNS rebinding 与日志泄漏边界。
 
