@@ -10,6 +10,7 @@ pub mod diagnostics;
 pub mod health;
 pub mod local_api;
 pub mod openapi;
+pub mod remote_backup;
 pub mod runtime_settings;
 pub mod scheduled_backup;
 pub mod service;

@@ -6,6 +6,7 @@ pub mod context;
 pub mod handlers;
 pub mod listener_owner;
 pub mod protocol;
+pub mod remote_backup_owner;
 pub mod router;
 pub mod runtime_control;
 pub mod scheduled_backup_owner;

@@ -25,6 +25,7 @@ const implementedEndpoints = [
   "POST /api/v1/imports/{batch_id}/delete",
   "GET /api/v1/backups/schedule",
   "POST /api/v1/backups/schedule",
+  "POST /api/v1/backups/remote/upload",
   "GET /api/v1/backups/restore",
   "POST /api/v1/backups/restore",
   "POST /api/v1/backups/restore/cancel",

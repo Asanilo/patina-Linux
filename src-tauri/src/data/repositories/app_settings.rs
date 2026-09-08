@@ -185,6 +185,10 @@ fn is_allowed_app_setting_key(key: &str) -> bool {
             | "remote_status_bridge_url"
             | "remote_status_bridge_token"
             | "remote_status_bridge_machine_id"
+            | "webdav_backup_url"
+            | "webdav_backup_username"
+            | "webdav_backup_remote_dir"
+            | "webdav_backup_last_backup_at_ms"
     )
 }
 
@@ -508,6 +512,27 @@ mod tests {
                 Some("category".to_string())
             );
         });
+    }
+
+    #[test]
+    fn webdav_metadata_is_allowed_but_password_keys_are_rejected() {
+        let allowed = [
+            "webdav_backup_url",
+            "webdav_backup_username",
+            "webdav_backup_remote_dir",
+            "webdav_backup_last_backup_at_ms",
+        ]
+        .map(|key| AppSettingMutation {
+            key: key.to_string(),
+            value: "value".to_string(),
+        });
+
+        assert!(validate_app_setting_mutations(&allowed).is_ok());
+        assert!(validate_app_setting_mutations(&[AppSettingMutation {
+            key: "webdav_backup_password".to_string(),
+            value: "secret".to_string(),
+        }])
+        .is_err());
     }
 
     #[test]

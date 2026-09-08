@@ -58,6 +58,7 @@ xcb = { version = "1.4", features = ["xlib_xcb", "screensaver", "randr"] }
 zbus = { version = "4", default-features = false, features = ["tokio"] }
 libpulse-binding = "2"
 notify-rust = "4"
+secret-service = { version = "5.2.0", features = ["rt-tokio-crypto-rust"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = "2"

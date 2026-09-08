@@ -1,5 +1,9 @@
 use crate::data::backup;
 use crate::domain::backup::BackupPreview;
+pub use crate::domain::remote_backup::{
+    RemoteBackupDownloadResult, RemoteBackupEntry, RemoteBackupUploadResult, WebDavBackupConfig,
+    WebDavTestResult,
+};
 use crate::platform::credentials;
 use crate::platform::storage_paths;
 use crate::platform::webdav::{normalize_remote_dir, WebDavClient, WebDavConfig};
@@ -7,44 +11,13 @@ use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
 const INDEX_FILE_NAME: &str = "backup-index.json";
 const INDEX_VERSION: u32 = 1;
 const INDEX_PRODUCT: &str = "Patina";
 const MAX_BACKUP_LIST_ITEMS: usize = 50;
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WebDavBackupConfigDto {
-    pub url: String,
-    pub username: String,
-    pub remote_dir: String,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WebDavTestResult {
-    pub ok: bool,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct RemoteBackupEntry {
-    pub id: String,
-    pub file_name: String,
-    pub remote_path: String,
-    pub created_at_ms: u64,
-    pub size_bytes: u64,
-    pub app_version: String,
-    pub backup_version: u32,
-    pub schema_version: u32,
-    pub session_count: usize,
-    pub title_sample_count: usize,
-    pub setting_count: usize,
-    pub icon_cache_count: usize,
-}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -55,22 +28,7 @@ struct RemoteBackupIndex {
     backups: Vec<RemoteBackupEntry>,
 }
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RemoteBackupUploadResult {
-    pub entry: RemoteBackupEntry,
-    pub index_updated: bool,
-    pub index_message: Option<String>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RemoteBackupDownloadResult {
-    pub path: String,
-    pub preview: BackupPreview,
-}
-
-fn config_to_webdav(config: WebDavBackupConfigDto) -> Result<WebDavConfig, String> {
+fn config_to_webdav(config: WebDavBackupConfig) -> Result<WebDavConfig, String> {
     let username = config.username.trim().to_string();
     if username.is_empty() {
         return Err("WebDAV username cannot be empty".to_string());
@@ -90,8 +48,18 @@ fn now_ms() -> u64 {
         .unwrap_or_default()
 }
 
-fn remote_backup_id() -> String {
-    Local::now().format("%Y%m%d-%H%M%S").to_string()
+fn remote_backup_id() -> Result<String, String> {
+    let mut random = [0_u8; 4];
+    getrandom::fill(&mut random)
+        .map_err(|error| format!("failed to generate remote backup id: {error}"))?;
+    Ok(format!(
+        "{}-{}",
+        Local::now().format("%Y%m%d-%H%M%S"),
+        random
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    ))
 }
 
 fn remote_backup_file_name(id: &str) -> String {
@@ -149,13 +117,37 @@ async fn save_index(
 
 fn temp_backup_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = storage_paths::resolve_storage_paths(app)?.remote_backup_temp_dir;
-    fs::create_dir_all(&dir)
-        .map_err(|error| format!("failed to create temp backup dir: {error}"))?;
+    ensure_temp_backup_dir(&dir)?;
     Ok(dir)
 }
 
 fn temp_backup_path(app: &AppHandle, file_name: &str) -> Result<PathBuf, String> {
     Ok(temp_backup_dir(app)?.join(file_name))
+}
+
+fn ensure_temp_backup_dir(dir: &Path) -> Result<(), String> {
+    fs::create_dir_all(dir)
+        .map_err(|error| format!("failed to create temp backup dir: {error}"))?;
+    let metadata = fs::symlink_metadata(dir)
+        .map_err(|error| format!("failed to inspect temp backup dir: {error}"))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err("remote backup temp path must be a real directory".to_string());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))
+            .map_err(|error| format!("failed to protect temp backup dir: {error}"))?;
+    }
+    Ok(())
+}
+
+struct TempBackupGuard(PathBuf);
+
+impl Drop for TempBackupGuard {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
 }
 
 fn build_entry(
@@ -181,29 +173,39 @@ fn build_entry(
     }
 }
 
-fn webdav_client(config: WebDavBackupConfigDto) -> Result<(WebDavConfig, WebDavClient), String> {
+async fn webdav_client(
+    profile: crate::platform::app_paths::AppProfile,
+    config: WebDavBackupConfig,
+) -> Result<(WebDavConfig, WebDavClient), String> {
     let config = config_to_webdav(config)?;
-    let password = credentials::read_webdav_backup_password()?
+    let password = credentials::read_webdav_backup_password(profile)
+        .await?
         .ok_or_else(|| "WebDAV password is missing".to_string())?;
     let client = WebDavClient::new(&config, password)?;
     Ok((config, client))
 }
 
-fn webdav_client_with_password(
-    config: WebDavBackupConfigDto,
+async fn webdav_client_with_password(
+    profile: crate::platform::app_paths::AppProfile,
+    config: WebDavBackupConfig,
     password: Option<String>,
 ) -> Result<(WebDavConfig, WebDavClient), String> {
     let config = config_to_webdav(config)?;
     let password = match password {
         Some(password) if !password.is_empty() => password,
-        _ => credentials::read_webdav_backup_password()?
+        _ => credentials::read_webdav_backup_password(profile)
+            .await?
             .ok_or_else(|| "WebDAV password is missing".to_string())?,
     };
     let client = WebDavClient::new(&config, password)?;
     Ok((config, client))
 }
 
-pub fn save_webdav_backup_secret(username: String, password: String) -> Result<(), String> {
+pub async fn save_webdav_backup_secret(
+    profile: crate::platform::app_paths::AppProfile,
+    username: String,
+    password: String,
+) -> Result<(), String> {
     let username = username.trim();
     if username.is_empty() {
         return Err("WebDAV username cannot be empty".to_string());
@@ -211,53 +213,69 @@ pub fn save_webdav_backup_secret(username: String, password: String) -> Result<(
     if password.is_empty() {
         return Err("WebDAV password cannot be empty".to_string());
     }
-    credentials::save_webdav_backup_password(username, &password)
+    credentials::save_webdav_backup_password(profile, username, &password).await
 }
 
-pub fn delete_webdav_backup_secret() -> Result<(), String> {
-    credentials::delete_webdav_backup_password()
+pub async fn delete_webdav_backup_secret(
+    profile: crate::platform::app_paths::AppProfile,
+) -> Result<(), String> {
+    credentials::delete_webdav_backup_password(profile).await
 }
 
-pub fn has_webdav_backup_secret() -> Result<bool, String> {
-    credentials::has_webdav_backup_password()
+pub async fn has_webdav_backup_secret(
+    profile: crate::platform::app_paths::AppProfile,
+) -> Result<bool, String> {
+    credentials::has_webdav_backup_password(profile).await
 }
 
-pub fn reveal_webdav_backup_secret() -> Result<Option<String>, String> {
-    credentials::read_webdav_backup_password()
+pub async fn reveal_webdav_backup_secret(
+    profile: crate::platform::app_paths::AppProfile,
+) -> Result<Option<String>, String> {
+    credentials::read_webdav_backup_password(profile).await
 }
 
 pub async fn test_webdav_backup_target(
-    config: WebDavBackupConfigDto,
+    profile: crate::platform::app_paths::AppProfile,
+    config: WebDavBackupConfig,
     password: Option<String>,
 ) -> Result<WebDavTestResult, String> {
-    let (config, client) = webdav_client_with_password(config, password)?;
+    let (config, client) = webdav_client_with_password(profile, config, password).await?;
     client.ping(&config.remote_dir).await?;
     Ok(WebDavTestResult { ok: true })
 }
 
 pub async fn upload_webdav_backup(
     app: AppHandle,
-    config: WebDavBackupConfigDto,
+    config: WebDavBackupConfig,
 ) -> Result<RemoteBackupUploadResult, String> {
-    let (config, client) = webdav_client(config)?;
-    client.ensure_dir(&config.remote_dir).await?;
+    let profile = crate::platform::app_paths::app_profile(&app);
+    let pool = crate::data::sqlite_pool::wait_for_sqlite_pool(&app).await?;
+    let temp_dir = temp_backup_dir(&app)?;
+    upload_webdav_backup_from_pool(&pool, &temp_dir, profile, config).await
+}
 
-    let id = remote_backup_id();
+pub async fn upload_webdav_backup_from_pool(
+    pool: &sqlx::Pool<sqlx::Sqlite>,
+    temp_dir: &Path,
+    profile: crate::platform::app_paths::AppProfile,
+    config: WebDavBackupConfig,
+) -> Result<RemoteBackupUploadResult, String> {
+    let (config, client) = webdav_client(profile, config).await?;
+    client.ensure_dir(&config.remote_dir).await?;
+    ensure_temp_backup_dir(temp_dir)?;
+
+    let id = remote_backup_id()?;
     let file_name = remote_backup_file_name(&id);
-    let local_path = temp_backup_path(&app, &file_name)?;
-    let local_path_string = local_path.to_string_lossy().to_string();
-    backup::export_backup(Some(local_path_string.clone()), app).await?;
-    let preview = backup::preview_backup(local_path_string).await?;
-    let size_bytes = fs::metadata(&local_path)
-        .map_err(|error| format!("failed to read local backup metadata: {error}"))?
-        .len();
+    let local_path = temp_dir.join(&file_name);
+    let _temp_guard = TempBackupGuard(local_path.clone());
+    backup::export_backup_from_pool(pool, &local_path).await?;
+    let (preview, _, size_bytes) = backup::inspect_restore_archive(&local_path)?;
     let remote_path = remote_path(&config.remote_dir, &file_name);
 
     client.upload_file(&local_path, &remote_path).await?;
-    let _ = fs::remove_file(&local_path);
 
     let entry = build_entry(id, file_name, remote_path, size_bytes, &preview);
-    match load_index(&client, &config.remote_dir).await {
+    let mut result = match load_index(&client, &config.remote_dir).await {
         Ok(mut index) => {
             index.backups.retain(|item| item.id != entry.id);
             index.backups.insert(0, entry.clone());
@@ -265,25 +283,52 @@ pub async fn upload_webdav_backup(
                 .backups
                 .sort_by_key(|entry| Reverse(entry.created_at_ms));
             index.updated_at_ms = now_ms();
-            save_index(&client, &config.remote_dir, &index).await?;
-            Ok(RemoteBackupUploadResult {
-                entry,
-                index_updated: true,
-                index_message: None,
-            })
+            match save_index(&client, &config.remote_dir, &index).await {
+                Ok(()) => RemoteBackupUploadResult {
+                    entry,
+                    index_updated: true,
+                    index_message: None,
+                },
+                Err(error) => RemoteBackupUploadResult {
+                    entry,
+                    index_updated: false,
+                    index_message: Some(error),
+                },
+            }
         }
-        Err(error) => Ok(RemoteBackupUploadResult {
+        Err(error) => RemoteBackupUploadResult {
             entry,
             index_updated: false,
             index_message: Some(error),
-        }),
+        },
+    };
+    let last_backup_at_ms = result.entry.created_at_ms.to_string();
+    if let Err(error) = crate::data::repositories::app_settings::commit_app_setting_mutations(
+        pool,
+        &[
+            crate::data::repositories::app_settings::AppSettingMutation {
+                key: "webdav_backup_last_backup_at_ms".to_string(),
+                value: last_backup_at_ms,
+            },
+        ],
+    )
+    .await
+    {
+        let warning =
+            format!("remote backup uploaded, but local completion state was not saved: {error}");
+        result.index_message = Some(match result.index_message.take() {
+            Some(existing) => format!("{existing}; {warning}"),
+            None => warning,
+        });
     }
+    Ok(result)
 }
 
 pub async fn list_webdav_backups(
-    config: WebDavBackupConfigDto,
+    profile: crate::platform::app_paths::AppProfile,
+    config: WebDavBackupConfig,
 ) -> Result<Vec<RemoteBackupEntry>, String> {
-    let (config, client) = webdav_client(config)?;
+    let (config, client) = webdav_client(profile, config).await?;
     let mut index = load_index(&client, &config.remote_dir).await?;
     index
         .backups
@@ -294,7 +339,7 @@ pub async fn list_webdav_backups(
 
 pub async fn download_webdav_backup(
     app: AppHandle,
-    config: WebDavBackupConfigDto,
+    config: WebDavBackupConfig,
     id: String,
 ) -> Result<RemoteBackupDownloadResult, String> {
     let trimmed_id = id.trim();
@@ -302,7 +347,8 @@ pub async fn download_webdav_backup(
         return Err("remote backup id cannot be empty".to_string());
     }
 
-    let (config, client) = webdav_client(config)?;
+    let profile = crate::platform::app_paths::app_profile(&app);
+    let (config, client) = webdav_client(profile, config).await?;
     let index = load_index(&client, &config.remote_dir).await?;
     let entry = index
         .backups
@@ -323,7 +369,9 @@ pub async fn download_webdav_backup(
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_index, remote_backup_file_name, remote_path};
+    use super::{
+        ensure_temp_backup_dir, parse_index, remote_backup_file_name, remote_backup_id, remote_path,
+    };
 
     #[test]
     fn remote_file_name_uses_zip_format() {
@@ -331,6 +379,45 @@ mod tests {
             remote_backup_file_name("20260603-213000"),
             "Patina-backup-20260603-213000.zip"
         );
+    }
+
+    #[test]
+    fn generated_remote_backup_id_has_timestamp_and_random_suffix() {
+        let id = remote_backup_id().unwrap();
+        let bytes = id.as_bytes();
+
+        assert_eq!(bytes.len(), 24);
+        assert_eq!(bytes[8], b'-');
+        assert_eq!(bytes[15], b'-');
+        assert!(bytes[..8].iter().all(u8::is_ascii_digit));
+        assert!(bytes[9..15].iter().all(u8::is_ascii_digit));
+        assert!(bytes[16..].iter().all(u8::is_ascii_hexdigit));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn temp_backup_dir_is_private_and_rejects_symlinks() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+
+        let test_id = remote_backup_id().unwrap();
+        let root = std::env::temp_dir().join(format!("patina-remote-backup-{test_id}"));
+        let private_dir = root.join("private");
+        ensure_temp_backup_dir(&private_dir).unwrap();
+        assert_eq!(
+            std::fs::symlink_metadata(&private_dir)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+
+        let linked_dir = root.join("linked");
+        symlink(&private_dir, &linked_dir).unwrap();
+        assert!(ensure_temp_backup_dir(&linked_dir).is_err());
+
+        std::fs::remove_file(linked_dir).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

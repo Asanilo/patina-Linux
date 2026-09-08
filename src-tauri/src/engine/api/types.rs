@@ -311,6 +311,12 @@ pub struct ScheduledBackupConfigRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+pub struct RemoteBackupUploadRequest {
+    pub config: crate::domain::remote_backup::WebDavBackupConfig,
+    pub confirmed: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct StagedBackupRestoreRequest {
     pub ticket: String,
     pub expected_sha256: String,

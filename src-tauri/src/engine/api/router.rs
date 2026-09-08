@@ -67,6 +67,9 @@ pub(crate) async fn route_request(
         ("POST", "/api/v1/backups/restore/cancel") => {
             handlers::backup_restore::cancel(context, body).await
         }
+        ("POST", "/api/v1/backups/remote/upload") => {
+            handlers::remote_backup::upload(context, body).await
+        }
         ("POST", path) if path.starts_with("/api/v1/apps/") => {
             handlers::apps::handle_app_action(context, path, body).await
         }

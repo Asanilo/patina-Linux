@@ -345,6 +345,17 @@ fn paths(surface: ApiSurface) -> Value {
         }),
     );
     object.insert(
+        "/api/v1/backups/remote/upload".to_string(),
+        json!({
+            "post": post_operation(
+                "Create a daemon-owned database snapshot and upload it to the confirmed WebDAV target.",
+                vec![],
+                "RemoteBackupUploadRequest",
+                "RemoteBackupUploadResponse",
+            )
+        }),
+    );
+    object.insert(
         "/api/v1/settings/app".to_string(),
         json!({
             "post": post_operation(
@@ -504,6 +515,7 @@ fn schemas() -> Value {
                     "classification",
                     "data-maintenance",
                     "local-api-configuration",
+                    "remote-backup",
                     "runtime-settings",
                     "scheduled-backup",
                     "service-lifecycle",
@@ -1518,6 +1530,46 @@ fn schemas() -> Value {
         )]),
     );
     schemas.insert(
+        "WebDavBackupConfig".to_string(),
+        object_schema(vec![
+            ("url", bounded_string_schema(1, 4096)),
+            ("username", bounded_string_schema(1, 512)),
+            ("remoteDir", bounded_string_schema(1, 1024)),
+        ]),
+    );
+    schemas.insert(
+        "RemoteBackupUploadRequest".to_string(),
+        object_schema(vec![
+            ("config", schema_ref("WebDavBackupConfig")),
+            ("confirmed", bool_schema()),
+        ]),
+    );
+    schemas.insert(
+        "RemoteBackupEntry".to_string(),
+        object_schema(vec![
+            ("id", bounded_string_schema(1, 128)),
+            ("fileName", bounded_string_schema(1, 256)),
+            ("remotePath", bounded_string_schema(1, 4096)),
+            ("createdAtMs", bounded_integer_schema(0, i64::MAX)),
+            ("sizeBytes", bounded_integer_schema(0, i64::MAX)),
+            ("appVersion", bounded_string_schema(1, 64)),
+            ("backupVersion", bounded_integer_schema(0, i64::MAX)),
+            ("schemaVersion", bounded_integer_schema(0, i64::MAX)),
+            ("sessionCount", bounded_integer_schema(0, i64::MAX)),
+            ("titleSampleCount", bounded_integer_schema(0, i64::MAX)),
+            ("settingCount", bounded_integer_schema(0, i64::MAX)),
+            ("iconCacheCount", bounded_integer_schema(0, i64::MAX)),
+        ]),
+    );
+    schemas.insert(
+        "RemoteBackupUploadResponse".to_string(),
+        envelope(object_schema(vec![
+            ("entry", schema_ref("RemoteBackupEntry")),
+            ("indexUpdated", bool_schema()),
+            ("indexMessage", nullable_string_schema()),
+        ])),
+    );
+    schemas.insert(
         "TrackingDataCleanupRequest".to_string(),
         object_schema(vec![
             ("cutoff_time_ms", bounded_integer_schema(0, i64::MAX)),
@@ -2035,6 +2087,29 @@ mod tests {
         assert!(schemas.contains_key("AppTrackingDataCleanupResponse"));
         assert!(schemas.contains_key("ScheduledBackupConfigRequest"));
         assert!(schemas.contains_key("ScheduledBackupSnapshotResponse"));
+        assert!(schemas.contains_key("RemoteBackupUploadRequest"));
+        assert!(schemas.contains_key("RemoteBackupUploadResponse"));
+        assert!(schemas.contains_key("RemoteBackupEntry"));
+        assert!(!schemas["RemoteBackupUploadRequest"]
+            .to_string()
+            .contains("password"));
+        assert_eq!(
+            response
+                .body
+                .pointer("/paths/~1api~1v1~1backups~1remote~1upload/post/requestBody/content/application~1json/schema/$ref")
+                .and_then(|value| value.as_str()),
+            None,
+            "desktop OpenAPI must not advertise the daemon-only upload route"
+        );
+
+        let daemon = super::get_openapi(crate::engine::api::surface::ApiSurface::DaemonTracking);
+        assert_eq!(
+            daemon
+                .body
+                .pointer("/paths/~1api~1v1~1backups~1remote~1upload/post/requestBody/content/application~1json/schema/$ref")
+                .and_then(|value| value.as_str()),
+            Some("#/components/schemas/RemoteBackupUploadRequest")
+        );
         assert!(response
             .body
             .pointer("/components/schemas/BrowserActivitySettings/properties/token")

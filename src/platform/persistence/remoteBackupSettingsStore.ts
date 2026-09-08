@@ -1,5 +1,5 @@
+import { invoke } from "@tauri-apps/api/core";
 import { loadAllSettingRows } from "./settingsPersistence.ts";
-import { executeWriteBatch, type SqlWriteOperation } from "./sqlite.ts";
 
 export const DEFAULT_WEBDAV_REMOTE_DIR = "/Patina";
 
@@ -52,7 +52,9 @@ export async function loadRemoteBackupConfig(): Promise<PersistedRemoteBackupCon
 
   const remoteDir = normalizeRemoteDir(record[WEBDAV_BACKUP_REMOTE_DIR_KEY]);
   if (record[WEBDAV_BACKUP_REMOTE_DIR_KEY] !== remoteDir) {
-    await executeWriteBatch([upsertSetting(WEBDAV_BACKUP_REMOTE_DIR_KEY, remoteDir)]);
+    await commitRemoteBackupSettings({
+      [WEBDAV_BACKUP_REMOTE_DIR_KEY]: remoteDir,
+    });
   }
 
   return {
@@ -63,11 +65,10 @@ export async function loadRemoteBackupConfig(): Promise<PersistedRemoteBackupCon
   };
 }
 
-function upsertSetting(key: string, value: string): SqlWriteOperation {
-  return {
-    query: "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-    values: [key, value],
-  };
+async function commitRemoteBackupSettings(patch: Record<string, string>): Promise<void> {
+  const mutations = Object.entries(patch).map(([key, value]) => ({ key, value }));
+  if (mutations.length === 0) return;
+  await invoke("cmd_commit_app_settings", { mutations });
 }
 
 export async function saveRemoteBackupConfig(config: RemoteBackupConfigPatch): Promise<PersistedRemoteBackupConfig> {
@@ -85,38 +86,27 @@ export async function saveRemoteBackupConfig(config: RemoteBackupConfigPatch): P
     throw new Error("WebDAV username cannot be empty");
   }
 
-  const operations: SqlWriteOperation[] = [
-    upsertSetting(WEBDAV_BACKUP_URL_KEY, normalized.url),
-    upsertSetting(WEBDAV_BACKUP_USERNAME_KEY, normalized.username),
-    upsertSetting(WEBDAV_BACKUP_REMOTE_DIR_KEY, normalized.remoteDir),
-  ];
+  const patch: Record<string, string> = {
+    [WEBDAV_BACKUP_URL_KEY]: normalized.url,
+    [WEBDAV_BACKUP_USERNAME_KEY]: normalized.username,
+    [WEBDAV_BACKUP_REMOTE_DIR_KEY]: normalized.remoteDir,
+  };
 
   if (normalized.lastBackupAtMs !== null) {
-    operations.push(upsertSetting(WEBDAV_BACKUP_LAST_BACKUP_AT_MS_KEY, String(normalized.lastBackupAtMs)));
+    patch[WEBDAV_BACKUP_LAST_BACKUP_AT_MS_KEY] = String(normalized.lastBackupAtMs);
   }
 
-  await executeWriteBatch(operations);
+  await commitRemoteBackupSettings(patch);
   return normalized;
 }
 
-export async function saveRemoteBackupLastBackupAt(timestampMs: number): Promise<void> {
-  await executeWriteBatch([
-    upsertSetting(WEBDAV_BACKUP_LAST_BACKUP_AT_MS_KEY, String(timestampMs)),
-  ]);
-}
-
 export async function clearRemoteBackupConfig(): Promise<void> {
-  await executeWriteBatch([
-    {
-      query: "DELETE FROM settings WHERE key IN (?, ?, ?, ?)",
-      values: [
-        WEBDAV_BACKUP_URL_KEY,
-        WEBDAV_BACKUP_USERNAME_KEY,
-        WEBDAV_BACKUP_REMOTE_DIR_KEY,
-        WEBDAV_BACKUP_LAST_BACKUP_AT_MS_KEY,
-      ],
-    },
-  ]);
+  await commitRemoteBackupSettings({
+    [WEBDAV_BACKUP_URL_KEY]: "",
+    [WEBDAV_BACKUP_USERNAME_KEY]: "",
+    [WEBDAV_BACKUP_REMOTE_DIR_KEY]: "",
+    [WEBDAV_BACKUP_LAST_BACKUP_AT_MS_KEY]: "",
+  });
 }
 
 export const remoteBackupSettingsInternals = {

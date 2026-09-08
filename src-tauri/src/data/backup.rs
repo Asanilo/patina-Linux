@@ -165,11 +165,6 @@ fn resolve_backup_path<R: Runtime>(
     Ok(path)
 }
 
-async fn load_backup_payload<R: Runtime>(app: &AppHandle<R>) -> Result<BackupPayload, String> {
-    let pool = wait_for_sqlite_pool(app).await?;
-    load_backup_payload_from_pool(&pool).await
-}
-
 async fn load_backup_payload_from_pool(pool: &Pool<Sqlite>) -> Result<BackupPayload, String> {
     let mut tx = pool
         .begin()
@@ -924,16 +919,23 @@ fn write_backup_archive_atomic(target_path: &Path, archive: &[u8]) -> Result<(),
 }
 
 pub async fn export_backup(backup_path: Option<String>, app: AppHandle) -> Result<String, String> {
-    let payload = load_backup_payload(&app).await?;
     let target_path = resolve_backup_path(&app, backup_path)?;
+    let pool = wait_for_sqlite_pool(&app).await?;
+    export_backup_from_pool(&pool, &target_path).await?;
 
+    Ok(target_path.to_string_lossy().to_string())
+}
+
+pub async fn export_backup_from_pool(
+    pool: &Pool<Sqlite>,
+    target_path: &Path,
+) -> Result<(), String> {
+    let payload = load_backup_payload_from_pool(pool).await?;
     let archive = encode_backup_archive(&payload)?;
     if archive.len() as u64 > MAX_BACKUP_ARCHIVE_BYTES {
         return Err("generated backup exceeds the archive size limit".to_string());
     }
-    write_backup_archive_atomic(&target_path, &archive)?;
-
-    Ok(target_path.to_string_lossy().to_string())
+    write_backup_archive_atomic(target_path, &archive)
 }
 
 pub async fn export_scheduled_backup_create_new(

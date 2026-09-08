@@ -400,7 +400,9 @@ async fn api_handler(State(state): State<ApiTransportState>, request: Request) -
     let handler_timeout = if request.method == "POST"
         && matches!(
             request.path.as_str(),
-            "/api/v1/imports/canonical/commit" | "/api/v1/backups/restore"
+            "/api/v1/imports/canonical/commit"
+                | "/api/v1/backups/restore"
+                | "/api/v1/backups/remote/upload"
         ) {
         STAGED_FILE_HANDLER_TIMEOUT
     } else {

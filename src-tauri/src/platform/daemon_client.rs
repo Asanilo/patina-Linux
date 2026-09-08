@@ -454,6 +454,22 @@ impl PatinadClient {
         .await
     }
 
+    pub async fn upload_remote_backup(
+        &self,
+        config: crate::domain::remote_backup::WebDavBackupConfig,
+    ) -> Result<crate::domain::remote_backup::RemoteBackupUploadResult, PatinadClientError> {
+        self.post_json_with_timeout(
+            "/api/v1/backups/remote/upload",
+            &crate::engine::api::types::RemoteBackupUploadRequest {
+                config,
+                confirmed: true,
+            },
+            "remote backup upload",
+            RESTORE_REQUEST_TIMEOUT,
+        )
+        .await
+    }
+
     pub async fn schedule_backup_restore(
         &self,
         request: &crate::engine::api::types::StagedBackupRestoreRequest,

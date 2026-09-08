@@ -2,6 +2,7 @@ pub(crate) mod activity_import;
 mod api_runtime;
 pub(crate) mod backup_restore;
 mod options;
+mod remote_backup;
 mod runtime;
 pub(crate) mod scheduled_backup;
 mod service_lifecycle;
@@ -209,6 +210,13 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
             service_lifecycle.clone(),
         )) as Arc<dyn crate::engine::api::backup_restore_owner::BackupRestoreOwner>
     });
+    let remote_backup_owner = options.track.then(|| {
+        Arc::new(remote_backup::DaemonRemoteBackupOwner::new(
+            runtime_context.clone(),
+            storage_paths.remote_backup_temp_dir.clone(),
+            options.profile,
+        )) as Arc<dyn crate::engine::api::remote_backup_owner::RemoteBackupOwner>
+    });
     let confirmed_port = if let Some(api_listener) = api_listener.as_ref() {
         let mut context = api_runtime::build_context(
             runtime_context.clone(),
@@ -227,6 +235,9 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
         }
         if let Some(backup_restore_owner) = backup_restore_owner {
             context = context.with_backup_restore_owner(backup_restore_owner);
+        }
+        if let Some(remote_backup_owner) = remote_backup_owner {
+            context = context.with_remote_backup_owner(remote_backup_owner);
         }
         runtime.block_on(api_listener.start(requested_port, context))?
     } else {

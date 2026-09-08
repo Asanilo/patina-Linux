@@ -18,7 +18,6 @@ import {
   DEFAULT_WEBDAV_REMOTE_DIR,
   loadRemoteBackupConfig,
   saveRemoteBackupConfig,
-  saveRemoteBackupLastBackupAt,
   type PersistedRemoteBackupConfig,
 } from "../../../platform/persistence/remoteBackupSettingsStore.ts";
 import type { BackupRestoreStrategy } from "../services/settingsRuntimeAdapterService.ts";
@@ -263,7 +262,6 @@ export function useRemoteBackupState({
     setIsUploading(true);
     try {
       const result = await uploadWebDavBackup(toRuntimeConfig(config));
-      await saveRemoteBackupLastBackupAt(result.entry.createdAtMs);
       setConfig({ ...config, lastBackupAtMs: result.entry.createdAtMs });
       setConnectionStatus("ok");
       notify(

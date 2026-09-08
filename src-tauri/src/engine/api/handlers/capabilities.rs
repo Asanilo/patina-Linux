@@ -159,6 +159,10 @@ mod tests {
             .write_api
             .operations
             .contains(&"runtime-settings".to_string()));
+        assert!(starting
+            .write_api
+            .operations
+            .contains(&"remote-backup".to_string()));
         assert!(!starting
             .write_api
             .operations

@@ -284,6 +284,10 @@ const DAEMON_TRACKING_ENDPOINTS: &[ApiEndpoint] = &[
     },
     ApiEndpoint {
         method: "POST",
+        path: "/api/v1/backups/remote/upload",
+    },
+    ApiEndpoint {
+        method: "POST",
         path: "/api/v1/apps/{exe_name}/classify",
     },
     ApiEndpoint {
@@ -429,6 +433,7 @@ const DAEMON_TRACKING_WRITE_OPERATIONS: &[&str] = &[
     "classification",
     "data-maintenance",
     "local-api-configuration",
+    "remote-backup",
     "runtime-settings",
     "scheduled-backup",
     "service-lifecycle",
@@ -608,6 +613,7 @@ mod tests {
         assert!(surface.allows("GET", "/api/v1/backups/restore"));
         assert!(surface.allows("POST", "/api/v1/backups/restore"));
         assert!(surface.allows("POST", "/api/v1/backups/restore/cancel"));
+        assert!(surface.allows("POST", "/api/v1/backups/remote/upload"));
         assert_eq!(
             surface.write_operations(),
             [
@@ -618,6 +624,7 @@ mod tests {
                 "classification",
                 "data-maintenance",
                 "local-api-configuration",
+                "remote-backup",
                 "runtime-settings",
                 "scheduled-backup",
                 "service-lifecycle",

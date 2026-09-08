@@ -93,7 +93,7 @@
 
 当前基线中，本地存储位置与安全缓存控制已实现：活动数据库和 WebView 持久目录可独立迁移，迁移在重启时验证执行，旧目录保留；缓存维护只允许清理精确的 `WebKitCache`。后续工作应以回归验证和恢复可靠性为主，不再重复建设另一套存储向导。
 
-本地自动备份也已进入当前基线：支持按本机时间每天或每周执行，只写入用户选择的本机目录；文件采用不覆盖创建并在发布后重新解析校验，失败会有限重试，异常退出会在下次轮询对账。系统默认保留最近 3 份已验证且有数据库归属记录的快照，清理前必须再次核对目录、文件类型、大小和摘要；无法确认归属时保留文件。覆盖恢复会停用并换代原计划。自动上传 WebDAV 不属于当前基线，不能把手动 WebDAV 备份配置隐式升级为后台任务。
+本地自动备份也已进入当前基线：支持按本机时间每天或每周执行，只写入用户选择的本机目录；文件采用不覆盖创建并在发布后重新解析校验，失败会有限重试，异常退出会在下次轮询对账。系统默认保留最近 3 份已验证且有数据库归属记录的快照，清理前必须再次核对目录、文件类型、大小和摘要；无法确认归属时保留文件。覆盖恢复会停用并换代原计划。显式手动 WebDAV 上传已进入 daemon preview：密码存放于按 profile 隔离的系统凭据服务，上传从 daemon 自有 SQLite snapshot 完成。自动上传 WebDAV 不属于当前基线，不能把手动配置隐式升级为后台任务；远端列表、下载和受控恢复衔接仍待完成 owner 迁移。
 
 平台中立的 Patina CSV 活动导入也已进入桌面端基线：导入前预览并在提交时复核文件指纹，记录保存在独立事实表中，可按批次删除；本机精确记录优先于外部精确记录，外部精确记录优先于小时汇总。小时汇总只进入聚合统计，不进入 History 时间线。导入事实随手动和定时备份保存，并纳入恢复、历史清理、标题清理和应用删除。Tai / Taix 等来源适配器不属于当前基线。
 
@@ -170,11 +170,11 @@ Windows runtime、installer、updater、ARM/UWP 等平台专属实现不移植�
 1. 把 Linux `main` 已验证的功能提交合入 `feature/patinad-daemon`，只做稳定基线到未来架构线的单向收敛。
 2. 审计活动导入、定时备份和其他新增写路径，确保 daemon client 模式不会重新绕过 runtime/database owner。
 3. 按语义审查上游 `1.9.5` 的计时边界、网页区间去重和备份恢复边界修复；只移植 Linux 仍缺失的部分。
-4. 完成 backup/restore、remote backup 等 Stage 2H.3c 剩余写侧收口。
+4. 完成受控 backup restore，并分批收口 remote backup 的配置、上传、列表、下载与恢复衔接。
 5. 完成首次启动迁移、systemd 服务控制、默认 owner 切换和双 owner 验收。
 6. 发布 daemon-backed DEB beta 并完成登录启动、关闭 UI 后持续记录、崩溃恢复、升级、卸载和数据保留验证。
 
-当前执行位置：第 1 步已完成单向合流；第 2 步已完成 owner 审计和 fail-closed 防护，活动导入已通过 owner-only 暂存票据收口，定时备份也已由 daemon 持有唯一调度任务、配置 API、运行状态与 SSE 失效通知，按应用删除已通过受确认的事务 API 和 typed client 收口。第 3 步已移植启动恢复、采样恢复、watchdog 竞态、browser bridge 重试、网页趋势区间去重、power lifecycle generation、暂停原子边界，以及网页段与活动原生浏览器 session 的持久化事务绑定。第 4 步中的受控恢复也已完成：备份关系完整性、owner-only 暂存和预约、启动维护恢复、receipt 幂等保护，以及 Desktop typed client 跨重启查询均已落地。下一写侧只剩 remote backup owner 收口，详细顺序以 [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md) 为准。
+当前执行位置：第 1 步已完成单向合流；第 2 步已完成 owner 审计和 fail-closed 防护，活动导入已通过 owner-only 暂存票据收口，定时备份也已由 daemon 持有唯一调度任务、配置 API、运行状态与 SSE 失效通知，按应用删除已通过受确认的事务 API 和 typed client 收口。第 3 步已移植启动恢复、采样恢复、watchdog 竞态、browser bridge 重试、网页趋势区间去重、power lifecycle generation、暂停原子边界，以及网页段与活动原生浏览器 session 的持久化事务绑定。第 4 步中的受控恢复已完成；remote backup 的非密钥配置写入、Linux 系统凭据和显式上传也已归 daemon owner。下一小批次收口远端列表、下载和下载归档进入既有受控恢复状态机的衔接，详细顺序以 [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md) 为准。
 
 在第 6 步完成前，不再把新的上游大型功能只加入 Linux `main` 而不进入 patinad 架构线。
 
@@ -195,7 +195,7 @@ Windows runtime、installer、updater、ARM/UWP 等平台专属实现不移植�
 12. Stage 2G Tools runtime preview 已完成：服务版本、协议上下限、write scope 协商、app mapping、classification、AFK threshold、tracking pause、运行中 browser/audio 配置，以及 Tools runtime owner、系统通知、SSE 与写侧 HTTP/MCP 已完成。
 13. Stage 2H.1 local API configuration preview 已完成：daemon 从 profile 存储读取端口并迁移旧数据库 Token，运行中换端口采用预绑定/提交/切换，Token 原子轮换后撤销旧 bearer 与 SSE，会通过 HTTP/MCP 暴露不含密钥的确认状态。
 14. Stage 2H.2 systemd service preview 已完成：DEB 构建输入包含 `patinad` 和默认禁用的 user unit；受控重启先持久化 owner-only ticket、返回 `202 pending`，再优雅退出并由 systemd 重启，下一实例确认同一 ticket。下一步仍需首次桌面启动迁移、服务启停设置和默认 owner 切换；切换后不自动回退 embedded tracker。
-15. Stage 2H.3 分三步完成默认切换：2H.3a 已完成 systemd 状态与迁移诊断；2H.3b.1/2 已完成安全 typed client，以及组合 `/current`、active session、SSE replay/resync 的只读 runtime adapter；2H.3b.3 已完成显式 `--daemon-client-preview` 接线、协议 v2 完整快照、embedded owner 隔离和真实 GNOME 桌面验收；2H.3c.1 已让 preview desktop 的 AFK threshold、tracking pause、audio participation、classification 与 Tools 读写通过 Rust host typed client 转发给 daemon，并把 Tools SSE 变更重新读取为前端既有完整 snapshot。2H.3c.2 已迁移 browser runtime、local API 配置、受白名单保护的普通 app settings，以及带显式确认的通用 session/title 数据清理；端口或 Token 变化会主动重建 typed client、SSE 与后续请求。2H.3c.3 已迁移活动导入提交、批次列表与批次删除。2H.3c.4 已迁移本机定时备份。2H.3c.5 已迁移按应用删除。2H.3c.6 已迁移受控恢复：Desktop 只创建 owner-only 暂存票据，systemd-managed daemon 预约重启，新实例在后台任务启动前完成带 receipt 的单事务恢复并跨重启返回终态。2H.3c 只剩 remote backup 写侧，再进入服务启用和默认 owner 切换验收。默认切换前不得暴露会启动第二个 tracking owner 的服务开关。
+15. Stage 2H.3 分三步完成默认切换：2H.3a 已完成 systemd 状态与迁移诊断；2H.3b.1/2 已完成安全 typed client，以及组合 `/current`、active session、SSE replay/resync 的只读 runtime adapter；2H.3b.3 已完成显式 `--daemon-client-preview` 接线、协议 v2 完整快照、embedded owner 隔离和真实 GNOME 桌面验收；2H.3c.1 已让 preview desktop 的 AFK threshold、tracking pause、audio participation、classification 与 Tools 读写通过 Rust host typed client 转发给 daemon，并把 Tools SSE 变更重新读取为前端既有完整 snapshot。2H.3c.2 已迁移 browser runtime、local API 配置、受白名单保护的普通 app settings，以及带显式确认的通用 session/title 数据清理；端口或 Token 变化会主动重建 typed client、SSE 与后续请求。2H.3c.3 已迁移活动导入提交、批次列表与批次删除。2H.3c.4 已迁移本机定时备份。2H.3c.5 已迁移按应用删除。2H.3c.6 已迁移受控恢复：Desktop 只创建 owner-only 暂存票据，systemd-managed daemon 预约重启，新实例在后台任务启动前完成带 receipt 的单事务恢复并跨重启返回终态。2H.3c.7a 已迁移 WebDAV 非密钥配置、Linux Secret Service 凭据和显式上传；2H.3c 仍需完成远端列表、下载和受控恢复衔接，再进入服务启用和默认 owner 切换验收。默认切换前不得暴露会启动第二个 tracking owner 的服务开关。
 16. 用一个 `patina` 产品包同时安装 Patina Desktop、`patinad` 和 systemd user unit；首次桌面启动在用户会话中迁移旧 XDG autostart 并启用后台服务，把“后台追踪随登录启动”与“桌面客户端随登录打开”拆成独立设置。
 17. 首个 daemon-backed DEB 先发布为 beta，验证关闭 UI 后持续记录、登录启动、崩溃重启、锁屏、睡眠、浏览器活动、升级、卸载和数据保留；该 beta 只发布 DEB，不发布无法稳定安装 service owner 的 AppImage。embedded runtime 至少保留一个稳定版本作为显式开发回滚路径。
 18. beta 验收后让完整 monorepo 脱离 Windows 上游 fork network，保留 Git 历史、MIT 许可与 attribution；不拆分独立 `patinad` 仓库。

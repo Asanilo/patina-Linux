@@ -70,6 +70,10 @@ fn is_non_resource_setting(key: &str) -> bool {
             | "remote_status_bridge_url"
             | "remote_status_bridge_token"
             | "remote_status_bridge_machine_id"
+            | "webdav_backup_url"
+            | "webdav_backup_username"
+            | "webdav_backup_remote_dir"
+            | "webdav_backup_last_backup_at_ms"
     )
 }
 

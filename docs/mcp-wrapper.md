@@ -158,6 +158,8 @@ The HTTP API advertises `scheduled-backup` for the trusted Desktop client. MCP i
 
 The HTTP API advertises `backup-restore` only for a systemd-managed tracking daemon. MCP intentionally exposes no restore status, scheduling, or cancellation tool: restore replaces or merges the primary activity database across a daemon restart, requires a Desktop-created owner-only staging ticket, and treats explicit desktop confirmation as part of the safety boundary. The API exists for the trusted Desktop typed client, not as a generic agent file or maintenance capability.
 
+The HTTP API advertises `remote-backup` for confirmed uploads initiated by the trusted Desktop client. MCP intentionally exposes no WebDAV credential, target configuration, upload, download, or restore tool: the password remains in the profile-scoped operating-system credential store, remote writes require visible user intent, and downloaded archives must re-enter the controlled Desktop staging and startup-restore flow. Agents can analyze backup status only after a future narrow, read-only contract is defined; they are not given a general remote storage capability.
+
 Local API changes require the `local-api-configuration` write scope and explicit user intent. After a successful port change, the wrapper updates its in-process base URL. After Token rotation, the running wrapper rereads the owner-only path returned by the daemon; clients that supplied a fixed `PATINA_API_TOKEN` should still update their external configuration before restarting. Neither response contains the Token value.
 
 Service lifecycle tools are available only when capabilities advertise `service-lifecycle`:
