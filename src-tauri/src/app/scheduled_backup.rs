@@ -21,7 +21,8 @@ impl ScheduledBackupRuntimeState {
 pub async fn get_snapshot(app: &AppHandle) -> Result<ScheduledBackupSnapshot, String> {
     let state = app.state::<ScheduledBackupRuntimeState>();
     let _guard = state.run_lock.lock().await;
-    crate::engine::scheduled_backup::get_snapshot(app).await
+    let (pool, default_backup_dir) = dependencies(app).await?;
+    crate::engine::scheduled_backup::get_snapshot(&pool, &default_backup_dir).await
 }
 
 pub async fn save_config(
@@ -30,7 +31,9 @@ pub async fn save_config(
 ) -> Result<ScheduledBackupSnapshot, String> {
     let state = app.state::<ScheduledBackupRuntimeState>();
     let _guard = state.run_lock.lock().await;
-    let snapshot = crate::engine::scheduled_backup::save_config(app, input).await?;
+    let (pool, default_backup_dir) = dependencies(app).await?;
+    let snapshot =
+        crate::engine::scheduled_backup::save_config(&pool, &default_backup_dir, input).await?;
     state.wake();
     emit_changed(app);
     Ok(snapshot)
@@ -62,7 +65,8 @@ pub async fn run(app: AppHandle) -> Result<(), String> {
 async fn tick(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<ScheduledBackupRuntimeState>();
     let _guard = state.run_lock.lock().await;
-    if crate::engine::scheduled_backup::tick(app).await? {
+    let (pool, default_backup_dir) = dependencies(app).await?;
+    if crate::engine::scheduled_backup::tick(&pool, &default_backup_dir).await? {
         emit_changed(app);
     }
     Ok(())
@@ -76,11 +80,20 @@ pub(crate) async fn lock_for_restore(app: &AppHandle) -> OwnedMutexGuard<()> {
 pub(crate) async fn reset_after_replace_restore_while_locked(
     app: &AppHandle,
 ) -> Result<(), String> {
-    crate::engine::scheduled_backup::reset_after_replace_restore(app).await?;
+    let pool = crate::data::sqlite_pool::wait_for_sqlite_pool(app).await?;
+    crate::engine::scheduled_backup::reset_after_replace_restore(&pool).await?;
     let state = app.state::<ScheduledBackupRuntimeState>();
     state.wake();
     emit_changed(app);
     Ok(())
+}
+
+async fn dependencies(
+    app: &AppHandle,
+) -> Result<(sqlx::Pool<sqlx::Sqlite>, std::path::PathBuf), String> {
+    let pool = crate::data::sqlite_pool::wait_for_sqlite_pool(app).await?;
+    let default_backup_dir = crate::platform::storage_paths::resolve_storage_paths(app)?.backup_dir;
+    Ok((pool, default_backup_dir))
 }
 
 fn emit_changed(app: &AppHandle) {

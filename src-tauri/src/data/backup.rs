@@ -167,6 +167,10 @@ fn resolve_backup_path<R: Runtime>(
 
 async fn load_backup_payload<R: Runtime>(app: &AppHandle<R>) -> Result<BackupPayload, String> {
     let pool = wait_for_sqlite_pool(app).await?;
+    load_backup_payload_from_pool(&pool).await
+}
+
+async fn load_backup_payload_from_pool(pool: &Pool<Sqlite>) -> Result<BackupPayload, String> {
     let mut tx = pool
         .begin()
         .await
@@ -941,10 +945,10 @@ pub async fn export_backup(backup_path: Option<String>, app: AppHandle) -> Resul
 }
 
 pub async fn export_scheduled_backup_create_new(
-    app: &AppHandle,
+    pool: &Pool<Sqlite>,
     target_path: &Path,
 ) -> Result<(), CreateNewBackupError> {
-    let payload = load_backup_payload(app)
+    let payload = load_backup_payload_from_pool(pool)
         .await
         .map_err(CreateNewBackupError::Failed)?;
     let archive = encode_backup_archive(&payload).map_err(CreateNewBackupError::Failed)?;

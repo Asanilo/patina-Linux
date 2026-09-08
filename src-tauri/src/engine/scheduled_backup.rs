@@ -1,34 +1,33 @@
 use crate::data::backup::{self, CreateNewBackupError};
 use crate::data::repositories::scheduled_backup as repository;
-use crate::data::sqlite_pool::wait_for_sqlite_pool;
 use crate::domain::backup_schedule::{
     latest_due_slot, next_slot_after, LogicalBackupSlot, ScheduledBackupCadence,
     ScheduledBackupConfig, ScheduledBackupConfigInput, ScheduledBackupRun, ScheduledBackupSnapshot,
     DEFAULT_LOCAL_TIME_MINUTES, SCHEDULED_BACKUP_KEEP_COUNT,
 };
-use crate::platform::storage_paths;
 use chrono::{Local, NaiveDate, NaiveDateTime, TimeZone};
 use sqlx::{Pool, Sqlite};
 use std::fs;
 use std::path::{Path, PathBuf};
-use tauri::AppHandle;
 
 const MAX_NAME_CANDIDATES: u8 = 99;
 
-pub async fn get_snapshot(app: &AppHandle) -> Result<ScheduledBackupSnapshot, String> {
-    let pool = wait_for_sqlite_pool(app).await?;
-    let config = load_or_create_config(app, &pool, now_ms()).await?;
-    snapshot_from_config(&pool, config).await
+pub async fn get_snapshot(
+    pool: &Pool<Sqlite>,
+    default_backup_dir: &Path,
+) -> Result<ScheduledBackupSnapshot, String> {
+    let config = load_or_create_config(pool, default_backup_dir, now_ms()).await?;
+    snapshot_from_config(pool, config).await
 }
 
 pub async fn save_config(
-    app: &AppHandle,
+    pool: &Pool<Sqlite>,
+    default_backup_dir: &Path,
     input: ScheduledBackupConfigInput,
 ) -> Result<ScheduledBackupSnapshot, String> {
     input.validate()?;
-    let pool = wait_for_sqlite_pool(app).await?;
     let now = now_ms();
-    let current = load_or_create_config(app, &pool, now).await?;
+    let current = load_or_create_config(pool, default_backup_dir, now).await?;
     let normalized_dir = normalize_target_directory(&input.target_dir)?;
     let normalized_dir = normalized_dir.to_string_lossy().to_string();
     let target_changed = current.target_dir != normalized_dir;
@@ -51,29 +50,28 @@ pub async fn save_config(
         },
         updated_at_ms: now,
     };
-    repository::save_config(&pool, &config).await?;
-    snapshot_from_config(&pool, config).await
+    repository::save_config(pool, &config).await?;
+    snapshot_from_config(pool, config).await
 }
 
-pub async fn tick(app: &AppHandle) -> Result<bool, String> {
-    let pool = wait_for_sqlite_pool(app).await?;
+pub async fn tick(pool: &Pool<Sqlite>, default_backup_dir: &Path) -> Result<bool, String> {
     let now = now_ms();
-    let config = load_or_create_config(app, &pool, now).await?;
+    let config = load_or_create_config(pool, default_backup_dir, now).await?;
 
-    if let Some(active) = repository::load_active(&pool).await? {
-        reconcile_running_run(&pool, &config, &active, now).await?;
+    if let Some(active) = repository::load_active(pool).await? {
+        reconcile_running_run(pool, &config, &active, now).await?;
         return Ok(true);
     }
 
     if config.enabled {
         if let Some(retry) =
-            repository::load_due_retry(&pool, &config.target_generation, now).await?
+            repository::load_due_retry(pool, &config.target_generation, now).await?
         {
-            if repository::start_retry(&pool, &retry.run_key, now).await? {
-                let run = repository::load_run(&pool, &retry.run_key)
+            if repository::start_retry(pool, &retry.run_key, now).await? {
+                let run = repository::load_run(pool, &retry.run_key)
                     .await?
                     .ok_or_else(|| "scheduled backup retry disappeared".to_string())?;
-                execute_claimed(app, &pool, &config, run, now).await?;
+                execute_claimed(pool, &config, run, now).await?;
                 return Ok(true);
             }
         }
@@ -87,27 +85,26 @@ pub async fn tick(app: &AppHandle) -> Result<bool, String> {
         return Ok(false);
     };
     let run = new_run(&config, slot, now);
-    if !repository::claim_run(&pool, &run).await? {
+    if !repository::claim_run(pool, &run).await? {
         return Ok(false);
     }
-    execute_claimed(app, &pool, &config, run, now).await?;
+    execute_claimed(pool, &config, run, now).await?;
     Ok(true)
 }
 
-pub async fn reset_after_replace_restore(app: &AppHandle) -> Result<(), String> {
-    let pool = wait_for_sqlite_pool(app).await?;
-    repository::disable_and_reset(&pool, &new_generation()?, now_ms()).await
+pub async fn reset_after_replace_restore(pool: &Pool<Sqlite>) -> Result<(), String> {
+    repository::disable_and_reset(pool, &new_generation()?, now_ms()).await
 }
 
 async fn load_or_create_config(
-    app: &AppHandle,
     pool: &Pool<Sqlite>,
+    default_backup_dir: &Path,
     now_ms: i64,
 ) -> Result<ScheduledBackupConfig, String> {
     if let Some(config) = repository::load_config(pool).await? {
         return Ok(config);
     }
-    let target_dir = storage_paths::resolve_storage_paths(app)?.backup_dir;
+    let target_dir = default_backup_dir.to_path_buf();
     fs::create_dir_all(&target_dir).map_err(|error| {
         format!(
             "failed to create default scheduled backup directory `{}`: {error}",
@@ -179,7 +176,6 @@ fn new_run(
 }
 
 async fn execute_claimed(
-    app: &AppHandle,
     pool: &Pool<Sqlite>,
     config: &ScheduledBackupConfig,
     run: ScheduledBackupRun,
@@ -189,7 +185,7 @@ async fn execute_claimed(
     let target_dir = normalize_target_directory(&config.target_dir)?;
     let mut last_error = None;
     for candidate in candidate_paths(&target_dir, slot) {
-        match backup::export_scheduled_backup_create_new(app, &candidate).await {
+        match backup::export_scheduled_backup_create_new(pool, &candidate).await {
             Ok(()) => {
                 repository::update_target_path(
                     pool,
