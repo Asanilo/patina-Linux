@@ -211,6 +211,8 @@ domain ─────────┘          │
 
 首个 daemon-backed Linux 安装使用一个产品包原子交付 Patina Desktop、`patinad` 与 systemd user unit，不先拆分独立 daemon 包。包安装阶段只放置 unit；首次桌面迁移在当前用户会话中通过 owner-only reservation 分两次进程完成：embedded owner 只准备 unit 与重启意图，释放 RuntimeLease 后的新进程才启动 daemon 并进入 client 模式，避免 `postinst` 对多用户环境做全局选择，也避免交接窗口出现双 owner。“后台追踪随登录启动”由 host-owned `background_tracking_at_login` 表达，“桌面客户端随登录打开”继续由 `launch_at_login` 表达；新键缺失时只继承一次旧值，此后独立持久化，启动时最小化只属于桌面客户端。两个偏好都不能由普通 app-settings API 直接驱动系统资源。
 
+owner 交接 reservation 位于 profile 的稳定 control root，不跟随可迁移数据目录。状态只允许 `prepared → activating → completed` 或 `prepared/activating → failed`；缺少 reservation 才允许旧 embedded owner。有效、失败、损坏、不可信或 profile 错配的 reservation 都不能触发隐式 embedded 回退，恢复必须经过显式 service 修复或后续回滚入口。reservation 只记录交接意图、偏好快照、时间和有界错误，不记录 API Token 或其他凭据。
+
 共享运行内核至少需要以下窄边界：
 
 - `RuntimeContext`：数据库、设置、clock 与运行状态

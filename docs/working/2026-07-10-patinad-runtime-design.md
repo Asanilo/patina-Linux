@@ -158,7 +158,11 @@ Stage 2H.3d 不做一次性切换，按下面五个可回滚批次推进：
 
 1. **2H.3d.1 systemd 控制基础（已实现，待安装包实机 mutation 验收）**：`platform/linux` 已补齐固定 `patinad.service` 的 enable/disable/start/stop、8 秒超时、幂等短路与操作后复核；`app` 层在 Production embedded 启动前会停止提前运行的 packaged daemon，Dev/Local 不受影响。当前不开放通用 unit 名称、shell 命令、HTTP、MCP 或 UI 开关；已通过状态机测试和只读 user manager 实机检查，当前系统尚未安装该 unit，因此真实启停并入 2H.3d.5 的 DEB 验收。
 2. **2H.3d.2 登录偏好拆分（数据语义已实现）**：已新增 host-owned `background_tracking_at_login`，并保留 `launch_at_login` 作为“桌面客户端随登录打开”；旧数据库首次打开时，新键只在缺失时继承旧值，此后不再被旧键覆盖，新安装保持现有默认行为。`start_minimized` 仍只依赖桌面客户端偏好；备份 Replace/Merge 保留当前机器的后台登录偏好。当前不开放 UI、HTTP 或 MCP 写入，也尚不据此启停 unit；外部状态应用与失败对账分别进入 2H.3d.3/4。
-3. **2H.3d.3 两阶段 owner 交接**：第一进程只写入 owner-only cutover reservation、启用 unit 并安排受控重启，不在 embedded tracker 存活时启动 daemon；新 Desktop 进程读 reservation 后进入 daemon-client 模式，启动并协商 daemon，成功后才提交完成状态。daemon 不可用或版本不兼容时显示暂停与修复诊断，不自动回退 embedded。
+3. **2H.3d.3 两阶段 owner 交接（进行中）**：第一进程只写入 owner-only cutover reservation、启用 unit 并安排受控重启，不在 embedded tracker 存活时启动 daemon；新 Desktop 进程读 reservation 后进入 daemon-client 模式，启动并协商 daemon，成功后才提交完成状态。daemon 不可用或版本不兼容时显示暂停与修复诊断，不自动回退 embedded。
+   - **2H.3d.3a reservation 基础（已实现）**：`app/runtime_owner_cutover` 已提供 `prepared → activating → completed/failed` 持久状态机、请求 ID 约束、profile 校验、32 KiB 读取上限、owner-only `0600` 原子文件和幂等转换。文件缺失时才允许 embedded；任何有效 reservation 都选择 daemon-client 方向，failed 状态不隐式重试，损坏、不可信或 profile 错配文件直接 fail closed。本批不启用或启动 unit。
+   - **2H.3d.3b embedded 准备与重启（待实施）**：完成安装版前置条件检查，先持久化 reservation，再按后台登录偏好 enable/disable 固定 unit，并通过 Tauri 受控重启释放 Desktop lease；任一步失败都保留可诊断状态。
+   - **2H.3d.3c daemon-client 激活与确认（待实施）**：新进程根据 reservation 启动固定 unit、等待 capability/协议协商和 tracking readiness，成功后标记 completed；失败标记 failed 并保持客户端暂停，不回退 embedded。
+   - **2H.3d.3d 中断恢复验收（待实施）**：覆盖每个持久化边界的崩溃、重复启动、错误 request ID、service failed、API 未就绪、版本不兼容和旧 Desktop 尚未释放 lease。
 4. **2H.3d.4 设置与回滚入口**：在 Quiet Pro Settings 中提供后台服务状态、启停和显式回滚。停用 daemon 前必须先封口并停止服务，确认 RuntimeLease 已释放后才能预约下一次 embedded 启动；不允许两个 owner 同时运行，也不把服务管理暴露给浏览器 UI、MCP 或 Agent。
 5. **2H.3d.5 自动化与 DEB 实机验收**：覆盖首次迁移中断、重复执行、unit 缺失、systemd 不可用、服务崩溃、Token/端口不一致、旧 XDG autostart、pending storage migration 和自定义挂载目录。最后在已安装 DEB 上验证登录启动、关闭 UI 后持续记录、重开 UI、锁屏/睡眠、浏览器活动、升级、卸载与数据保留。
 
