@@ -7,6 +7,7 @@ pub mod listener_owner;
 pub mod protocol;
 pub mod router;
 pub mod runtime_control;
+pub mod scheduled_backup_owner;
 pub mod server;
 pub mod surface;
 pub mod types;

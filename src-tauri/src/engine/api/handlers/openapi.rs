@@ -300,6 +300,21 @@ fn paths(surface: ApiSurface) -> Value {
         }),
     );
     object.insert(
+        "/api/v1/backups/schedule".to_string(),
+        json!({
+            "get": get_operation(
+                "Read the daemon-owned local scheduled backup configuration and run state.",
+                "ScheduledBackupSnapshotResponse",
+            ),
+            "post": post_operation(
+                "Explicitly confirm and replace the daemon-owned local backup schedule.",
+                vec![],
+                "ScheduledBackupConfigRequest",
+                "ScheduledBackupSnapshotResponse",
+            )
+        }),
+    );
+    object.insert(
         "/api/v1/settings/app".to_string(),
         json!({
             "post": post_operation(
@@ -448,6 +463,7 @@ fn schemas() -> Value {
                     "data-maintenance",
                     "local-api-configuration",
                     "runtime-settings",
+                    "scheduled-backup",
                     "service-lifecycle",
                     "tools",
                     "tracker-settings",
@@ -497,6 +513,13 @@ fn schemas() -> Value {
         ]),
     );
     schemas.insert(
+        "ScheduledBackupChangedEvent".to_string(),
+        object_schema(vec![
+            ("type", enum_schema(vec!["scheduled-backup-changed"])),
+            ("changed_at_ms", integer_schema()),
+        ]),
+    );
+    schemas.insert(
         "ToolAlertEvent".to_string(),
         object_schema(vec![
             ("type", enum_schema(vec!["tool-alert"])),
@@ -508,6 +531,7 @@ fn schemas() -> Value {
         json!({
             "oneOf": [
                 schema_ref("TrackingDataChangedEvent"),
+                schema_ref("ScheduledBackupChangedEvent"),
                 schema_ref("ToolsRuntimeChangedEvent"),
                 schema_ref("ToolAlertEvent")
             ],
@@ -884,6 +908,71 @@ fn schemas() -> Value {
             ("deletedExactSessions", bounded_integer_schema(0, i64::MAX)),
             ("deletedHourBuckets", bounded_integer_schema(0, i64::MAX)),
         ])),
+    );
+    schemas.insert(
+        "ScheduledBackupConfigInput".to_string(),
+        object_schema(vec![
+            ("enabled", bool_schema()),
+            ("cadence", enum_schema(vec!["daily", "weekly"])),
+            ("weekday", nullable_integer_schema()),
+            ("localTimeMinutes", bounded_integer_schema(0, 1439)),
+            ("targetDir", bounded_string_schema(1, 4096)),
+        ]),
+    );
+    schemas.insert(
+        "ScheduledBackupConfig".to_string(),
+        object_schema(vec![
+            ("enabled", bool_schema()),
+            ("cadence", enum_schema(vec!["daily", "weekly"])),
+            ("weekday", nullable_integer_schema()),
+            ("localTimeMinutes", bounded_integer_schema(0, 1439)),
+            ("targetDir", bounded_string_schema(1, 4096)),
+            ("targetGeneration", string_schema()),
+            ("scheduleAnchorAtMs", integer_schema()),
+            ("updatedAtMs", integer_schema()),
+        ]),
+    );
+    schemas.insert(
+        "ScheduledBackupRun".to_string(),
+        object_schema(vec![
+            ("runKey", string_schema()),
+            ("targetGeneration", string_schema()),
+            ("logicalDate", string_schema()),
+            ("logicalTimeMinutes", bounded_integer_schema(0, 1439)),
+            ("targetPath", string_schema()),
+            (
+                "status",
+                enum_schema(vec!["running", "retry_wait", "succeeded", "failed"]),
+            ),
+            ("fileState", string_schema()),
+            ("attemptCount", bounded_integer_schema(0, 255)),
+            ("retryAtMs", nullable_integer_schema()),
+            ("startedAtMs", integer_schema()),
+            ("completedAtMs", nullable_integer_schema()),
+            ("archiveSha256", nullable_string_schema()),
+            ("sizeBytes", nullable_integer_schema()),
+            ("errorCode", nullable_string_schema()),
+            ("errorMessage", nullable_string_schema()),
+            ("cleanupWarning", nullable_string_schema()),
+            ("updatedAtMs", integer_schema()),
+        ]),
+    );
+    schemas.insert(
+        "ScheduledBackupSnapshotResponse".to_string(),
+        envelope(object_schema(vec![
+            ("config", schema_ref("ScheduledBackupConfig")),
+            ("nextExecutionAtMs", nullable_integer_schema()),
+            ("recentSuccess", nullable_ref_schema("ScheduledBackupRun")),
+            ("recentFailure", nullable_ref_schema("ScheduledBackupRun")),
+            ("activeRun", nullable_ref_schema("ScheduledBackupRun")),
+        ])),
+    );
+    schemas.insert(
+        "ScheduledBackupConfigRequest".to_string(),
+        object_schema(vec![
+            ("config", schema_ref("ScheduledBackupConfigInput")),
+            ("confirmed", bool_schema()),
+        ]),
     );
     schemas.insert(
         "TrackerSettingsData".to_string(),
@@ -1773,6 +1862,8 @@ mod tests {
         assert!(schemas.contains_key("TrackingDataCleanupRequest"));
         assert!(schemas.contains_key("TrackingDataCleanupResponse"));
         assert!(schemas.contains_key("WindowTitleCleanupResponse"));
+        assert!(schemas.contains_key("ScheduledBackupConfigRequest"));
+        assert!(schemas.contains_key("ScheduledBackupSnapshotResponse"));
         assert!(response
             .body
             .pointer("/components/schemas/BrowserActivitySettings/properties/token")
@@ -1833,7 +1924,21 @@ mod tests {
                 .body
                 .pointer("/components/schemas/RuntimeEvent/oneOf/1/$ref")
                 .and_then(|value| value.as_str()),
+            Some("#/components/schemas/ScheduledBackupChangedEvent")
+        );
+        assert_eq!(
+            response
+                .body
+                .pointer("/components/schemas/RuntimeEvent/oneOf/2/$ref")
+                .and_then(|value| value.as_str()),
             Some("#/components/schemas/ToolsRuntimeChangedEvent")
+        );
+        assert_eq!(
+            response
+                .body
+                .pointer("/components/schemas/ScheduledBackupRun/properties/status/enum/1")
+                .and_then(|value| value.as_str()),
+            Some("retry_wait")
         );
         assert_eq!(
             response

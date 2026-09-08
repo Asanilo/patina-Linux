@@ -12,6 +12,9 @@ pub enum RuntimeEvent {
         reason: String,
         changed_at_ms: u64,
     },
+    ScheduledBackupChanged {
+        changed_at_ms: u64,
+    },
     ToolsRuntimeChanged {
         changed_at_ms: u64,
     },
@@ -24,6 +27,7 @@ impl RuntimeEvent {
     pub fn event_name(&self) -> &'static str {
         match self {
             Self::TrackingDataChanged { .. } => "tracking-data-changed",
+            Self::ScheduledBackupChanged { .. } => "scheduled-backup-changed",
             Self::ToolsRuntimeChanged { .. } => "tools-runtime-changed",
             Self::ToolAlert { .. } => "tool-alert",
         }

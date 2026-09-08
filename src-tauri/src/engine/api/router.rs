@@ -52,6 +52,12 @@ pub(crate) async fn route_request(
         ("POST", path) if path.starts_with("/api/v1/imports/") => {
             handlers::activity_import::delete_batch(context, path, body).await
         }
+        ("GET", "/api/v1/backups/schedule") => {
+            handlers::scheduled_backup::get_snapshot(context).await
+        }
+        ("POST", "/api/v1/backups/schedule") => {
+            handlers::scheduled_backup::save_config(context, body).await
+        }
         ("POST", path) if path.starts_with("/api/v1/apps/") => {
             handlers::apps::handle_app_action(context, path, body).await
         }

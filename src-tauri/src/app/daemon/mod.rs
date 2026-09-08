@@ -2,6 +2,7 @@ pub(crate) mod activity_import;
 mod api_runtime;
 mod options;
 mod runtime;
+pub(crate) mod scheduled_backup;
 mod service_lifecycle;
 mod status;
 mod storage;
@@ -178,6 +179,13 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
             storage_paths.activity_import_staging_dir.clone(),
         )) as Arc<dyn crate::engine::api::activity_import_owner::ActivityImportOwner>
     });
+    let scheduled_backup_owner = options.track.then(|| {
+        Arc::new(scheduled_backup::DaemonScheduledBackupOwner::new(
+            runtime_context.clone(),
+            storage_paths.backup_dir.clone(),
+            event_sink.clone(),
+        ))
+    });
     let confirmed_port = if let Some(api_listener) = api_listener.as_ref() {
         let mut context = api_runtime::build_context(
             runtime_context.clone(),
@@ -190,6 +198,9 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
         );
         if let Some(activity_import_owner) = activity_import_owner {
             context = context.with_activity_import_owner(activity_import_owner);
+        }
+        if let Some(scheduled_backup_owner) = scheduled_backup_owner.as_ref() {
+            context = context.with_scheduled_backup_owner(scheduled_backup_owner.clone());
         }
         runtime.block_on(api_listener.start(requested_port, context))?
     } else {
@@ -242,16 +253,18 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
             web_activity_control,
         ) {
             (Some(snapshot), Some(tools_owner), Some(tools_ready), Some(web_activity)) => Some(
-                runtime::DaemonBackgroundTasks::start(
-                    runtime_context,
+                runtime::DaemonBackgroundTasks::start(runtime::DaemonBackgroundDependencies {
+                    context: runtime_context,
                     snapshot,
                     tools_owner,
                     tools_ready,
                     web_activity,
-                    event_hub.clone(),
+                    scheduled_backup_owner: scheduled_backup_owner
+                        .expect("tracking daemon scheduled backup owner"),
+                    event_hub: event_hub.clone(),
                     #[cfg(target_os = "linux")]
-                    audio_source.expect("tracking daemon audio source"),
-                )
+                    audio_source: audio_source.expect("tracking daemon audio source"),
+                })
                 .await,
             ),
             _ => None,

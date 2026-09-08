@@ -278,7 +278,8 @@ impl<R: Runtime> PatinadRuntimeOutput for TauriPatinadRuntimeOutput<R> {
                 crate::engine::tools::deliver_alert_to_desktop(&self.app, alert);
                 return;
             }
-            RuntimeEvent::TrackingDataChanged { .. } => {}
+            RuntimeEvent::TrackingDataChanged { .. }
+            | RuntimeEvent::ScheduledBackupChanged { .. } => {}
         }
         let sink = crate::engine::tracking::runtime::TauriRuntimeEventSink::new(self.app.clone());
         if let Err(error) = sink.emit(event.event.clone()) {

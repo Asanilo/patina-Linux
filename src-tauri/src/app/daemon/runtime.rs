@@ -30,6 +30,7 @@ use media::DaemonMediaTask;
 use power::DaemonPowerTask;
 
 pub struct DaemonBackgroundTasks {
+    scheduled_backup: super::scheduled_backup::DaemonScheduledBackupTask,
     tools: DaemonToolsTask,
     browser_activity: DaemonWebActivityTask,
     #[cfg(target_os = "linux")]
@@ -41,17 +42,35 @@ pub struct DaemonBackgroundTasks {
     tracking: DaemonTrackingTasks,
 }
 
+pub(super) struct DaemonBackgroundDependencies {
+    pub(super) context: crate::engine::runtime_context::RuntimeContext,
+    pub(super) snapshot:
+        Arc<crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState>,
+    pub(super) tools_owner: crate::engine::tools::ToolsRuntimeOwner,
+    pub(super) tools_ready: Arc<std::sync::atomic::AtomicBool>,
+    pub(super) web_activity: DaemonWebActivityControl,
+    pub(super) scheduled_backup_owner: Arc<super::scheduled_backup::DaemonScheduledBackupOwner>,
+    pub(super) event_hub: Arc<crate::engine::runtime_event::RuntimeEventHub>,
+    #[cfg(target_os = "linux")]
+    pub(super) audio_source: crate::platform::linux::audio::AudioSignalSource,
+}
+
 impl DaemonBackgroundTasks {
-    pub async fn start(
-        context: crate::engine::runtime_context::RuntimeContext,
-        snapshot: Arc<crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState>,
-        tools_owner: crate::engine::tools::ToolsRuntimeOwner,
-        tools_ready: Arc<std::sync::atomic::AtomicBool>,
-        web_activity: DaemonWebActivityControl,
-        event_hub: Arc<crate::engine::runtime_event::RuntimeEventHub>,
-        #[cfg(target_os = "linux")] audio_source: crate::platform::linux::audio::AudioSignalSource,
-    ) -> Self {
+    pub(super) async fn start(dependencies: DaemonBackgroundDependencies) -> Self {
+        let DaemonBackgroundDependencies {
+            context,
+            snapshot,
+            tools_owner,
+            tools_ready,
+            web_activity,
+            scheduled_backup_owner,
+            event_hub,
+            #[cfg(target_os = "linux")]
+            audio_source,
+        } = dependencies;
         let event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink> = event_hub.clone();
+        let scheduled_backup =
+            super::scheduled_backup::DaemonScheduledBackupTask::start(scheduled_backup_owner);
         let tools = DaemonToolsTask::start(tools_owner, tools_ready);
         let browser_activity = DaemonWebActivityTask::start(web_activity, event_hub).await;
         #[cfg(target_os = "linux")]
@@ -76,6 +95,7 @@ impl DaemonBackgroundTasks {
             media_source,
         );
         Self {
+            scheduled_backup,
             tools,
             browser_activity,
             #[cfg(target_os = "linux")]
@@ -89,6 +109,7 @@ impl DaemonBackgroundTasks {
     }
 
     async fn shutdown(self) {
+        self.scheduled_backup.shutdown().await;
         self.tools.shutdown().await;
         self.browser_activity.shutdown().await;
         #[cfg(target_os = "linux")]
@@ -286,16 +307,24 @@ mod tests {
             web_activity_state.clone(),
             event_sink,
         );
-        let background_tasks = DaemonBackgroundTasks::start(
-            runtime_context,
-            tracking_snapshot,
+        let scheduled_backup_owner = Arc::new(
+            crate::app::daemon::scheduled_backup::DaemonScheduledBackupOwner::new(
+                runtime_context.clone(),
+                root.join("backups"),
+                event_hub.clone(),
+            ),
+        );
+        let background_tasks = DaemonBackgroundTasks::start(DaemonBackgroundDependencies {
+            context: runtime_context,
+            snapshot: tracking_snapshot,
             tools_owner,
             tools_ready,
             web_activity,
-            event_hub.clone(),
+            scheduled_backup_owner,
+            event_hub: event_hub.clone(),
             #[cfg(target_os = "linux")]
-            crate::platform::linux::audio::AudioSignalSource::new(false),
-        )
+            audio_source: crate::platform::linux::audio::AudioSignalSource::new(false),
+        })
         .await;
         assert!(
             web_activity_state

@@ -296,6 +296,12 @@ pub struct StagedActivityImportCommitRequest {
     pub expected_fingerprint: String,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ScheduledBackupConfigRequest {
+    pub config: crate::domain::backup_schedule::ScheduledBackupConfigInput,
+    pub confirmed: bool,
+}
+
 #[derive(Debug, Serialize)]
 pub struct SummaryResponse {
     pub date: String,

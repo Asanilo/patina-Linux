@@ -410,6 +410,28 @@ impl PatinadClient {
         .await
     }
 
+    pub async fn scheduled_backup_snapshot(
+        &self,
+    ) -> Result<crate::domain::backup_schedule::ScheduledBackupSnapshot, PatinadClientError> {
+        self.get_json("/api/v1/backups/schedule", "scheduled backup snapshot")
+            .await
+    }
+
+    pub async fn save_scheduled_backup_config(
+        &self,
+        config: crate::domain::backup_schedule::ScheduledBackupConfigInput,
+    ) -> Result<crate::domain::backup_schedule::ScheduledBackupSnapshot, PatinadClientError> {
+        self.post_json(
+            "/api/v1/backups/schedule",
+            &crate::engine::api::types::ScheduledBackupConfigRequest {
+                config,
+                confirmed: true,
+            },
+            "scheduled backup configuration",
+        )
+        .await
+    }
+
     pub async fn tools_snapshot(
         &self,
     ) -> Result<crate::domain::tools::ToolsRuntimeSnapshot, PatinadClientError> {
@@ -682,7 +704,10 @@ fn parse_stream_event(event: Event) -> Result<PatinadStreamEvent, PatinadClientE
     let sequence = parse_optional_event_sequence(&event.id)?;
     let is_known_runtime_event = matches!(
         event.event.as_str(),
-        "tracking-data-changed" | "tools-runtime-changed" | "tool-alert"
+        "tracking-data-changed"
+            | "scheduled-backup-changed"
+            | "tools-runtime-changed"
+            | "tool-alert"
     );
     if !is_known_runtime_event {
         return Ok(PatinadStreamEvent::Ignored {

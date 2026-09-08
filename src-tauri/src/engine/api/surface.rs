@@ -263,6 +263,14 @@ const DAEMON_TRACKING_ENDPOINTS: &[ApiEndpoint] = &[
         path: "/api/v1/imports/{batch_id}/delete",
     },
     ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/backups/schedule",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/backups/schedule",
+    },
+    ApiEndpoint {
         method: "POST",
         path: "/api/v1/apps/{exe_name}/classify",
     },
@@ -405,6 +413,7 @@ const DAEMON_TRACKING_WRITE_OPERATIONS: &[&str] = &[
     "data-maintenance",
     "local-api-configuration",
     "runtime-settings",
+    "scheduled-backup",
     "service-lifecycle",
     "tools",
     "tracker-settings",
@@ -576,6 +585,8 @@ mod tests {
         assert!(surface.allows("POST", "/api/v1/data/window-titles/clear"));
         assert!(surface.allows("POST", "/api/v1/imports/canonical/commit"));
         assert!(surface.allows_request("POST", "/api/v1/imports/import-123/delete"));
+        assert!(surface.allows("GET", "/api/v1/backups/schedule"));
+        assert!(surface.allows("POST", "/api/v1/backups/schedule"));
         assert_eq!(
             surface.write_operations(),
             [
@@ -586,6 +597,7 @@ mod tests {
                 "data-maintenance",
                 "local-api-configuration",
                 "runtime-settings",
+                "scheduled-backup",
                 "service-lifecycle",
                 "tools",
                 "tracker-settings"

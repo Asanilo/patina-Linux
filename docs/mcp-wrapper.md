@@ -154,6 +154,8 @@ The HTTP API also advertises `data-maintenance` for the Desktop cleanup flow. Th
 
 The HTTP API advertises `activity-import` for the Desktop/daemon handoff. MCP intentionally does not expose canonical file import or batch deletion: import commit requires a one-time owner-only staging ticket created by the Desktop file picker, while deletion is destructive and requires explicit UI confirmation. Agents may use the read-only import batch list when it becomes useful, but must not be given an arbitrary local-file-to-import bridge.
 
+The HTTP API advertises `scheduled-backup` for the trusted Desktop client. MCP intentionally does not expose schedule writes: `targetDir` grants repeated local filesystem writes, configuration replacement requires explicit UI confirmation, and an agent must not turn a one-time backup request into a persistent schedule. Read-only schedule inspection may be added later as a narrow tool if an agent workflow demonstrates a concrete need.
+
 Local API changes require the `local-api-configuration` write scope and explicit user intent. After a successful port change, the wrapper updates its in-process base URL. After Token rotation, the running wrapper rereads the owner-only path returned by the daemon; clients that supplied a fixed `PATINA_API_TOKEN` should still update their external configuration before restarting. Neither response contains the Token value.
 
 Service lifecycle tools are available only when capabilities advertise `service-lifecycle`:

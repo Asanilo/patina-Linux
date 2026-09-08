@@ -23,6 +23,13 @@ impl<R: Runtime> RuntimeEventSink for TauriRuntimeEventSink<R> {
                     TrackingDataChangedPayload::new(reason, changed_at_ms),
                 )
                 .map_err(|error| error.to_string()),
+            RuntimeEvent::ScheduledBackupChanged { changed_at_ms } => self
+                .0
+                .emit(
+                    "scheduled-backup-changed",
+                    serde_json::json!({ "changed_at_ms": changed_at_ms }),
+                )
+                .map_err(|error| error.to_string()),
             RuntimeEvent::ToolsRuntimeChanged { changed_at_ms } => self
                 .0
                 .emit(

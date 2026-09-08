@@ -120,7 +120,7 @@ pub struct ScheduledBackupRun {
     pub updated_at_ms: i64,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ScheduledBackupSnapshot {
     pub config: ScheduledBackupConfig,

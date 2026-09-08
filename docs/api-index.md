@@ -34,7 +34,7 @@ Current caveats:
 - `/api/v1/openapi.json` exposes the machine-readable OpenAPI 3.1 schema with paths, query/path parameters, request bodies, response envelopes, auth, error envelopes, and field-level component schemas.
 - The OpenAPI server URL uses a configurable `{port}` variable whose default is `14840`.
 - This document remains the human-maintained reference for behavior notes and implementation caveats.
-- The desktop runtime exposes the shared JSON endpoints below. Default `patinad` mode exposes authenticated reads plus SSE and rejects all `POST` endpoints. Explicit `--track` mode is the current runtime owner and additionally exposes the bounded activity-import, app-mapping, app-settings, classification, data-maintenance, local-API, runtime, service, Tools, and tracker writes listed by `/api/v1/capabilities`.
+- The desktop runtime exposes the shared JSON endpoints below. Default `patinad` mode exposes authenticated reads plus SSE and rejects all `POST` endpoints. Explicit `--track` mode is the current runtime owner and additionally exposes the bounded activity-import, scheduled-backup, app-mapping, app-settings, classification, data-maintenance, local-API, runtime, service, Tools, and tracker writes listed by `/api/v1/capabilities`.
 - Default daemon mode remains historical/read-only: `GET /api/v1/current` returns `503` and live tracker/browser diagnostics are `null`.
 - Stage 2H.2 preview mode is explicit: run `patinad --profile dev --serve-api --track --port 0`. It owns tracking, Tools, and the local API listener for that profile, serves a live `/current`, observes Linux lock/suspend/resume/shutdown, runs audio/MPRIS participation sources, and owns the browser activity bridge configured for that profile. Never run desktop and daemon tracking against the same profile.
 - Stage 2F capability migration, Stage 2F.1 browser crash/heartbeat semantics, and Stage 2F.2 loopback transport migration are complete. API, SSE, and the independent browser extension bridge use Axum with 32/8/8 fail-fast concurrency budgets, bounded handlers, strict Host/origin policies, and task-coupled listener readiness. The extension protocol remains `POST /web-activity` with its separate Token; its CORS response only echoes Firefox/Zen or Chromium extension origins and never returns `Access-Control-Allow-Origin: *`.
@@ -70,6 +70,8 @@ Current caveats:
 | `/api/v1/imports` | `GET` | Implemented | List canonical activity import batches |
 | `/api/v1/imports/canonical/commit` | `POST` | Tracking daemon | Consume a Desktop-created owner-only staging ticket and commit the revalidated CSV |
 | `/api/v1/imports/{batch_id}/delete` | `POST` | Tracking daemon | Explicitly confirm deletion of one imported activity batch |
+| `/api/v1/backups/schedule` | `GET` | Tracking daemon | Read the local scheduled-backup configuration and latest run state |
+| `/api/v1/backups/schedule` | `POST` | Tracking daemon | Explicitly confirm and replace the daemon-owned local backup schedule |
 | `/api/v1/settings/tracker` | `GET` | Implemented | Tracker settings snapshot |
 | `/api/v1/settings/tracker/afk-threshold` | `POST` | Implemented | Update idle timeout threshold |
 | `/api/v1/settings/tracker/pause` | `POST` | Implemented | Set tracking pause state |
@@ -120,9 +122,9 @@ Current scope:
 - Auth model: bearer token through `components.securitySchemes.bearerAuth`
 - Paths: the exact endpoints enabled for the current desktop or daemon API surface
 - Parameters: query params for sessions, summary range, trend, web activity; path params for app management
-- Request bodies: classify, rename, exclude, AFK threshold, tracking pause, classification/app-settings batches, audio participation, complete browser runtime configuration, confirmed service restart, reminders, timers, software reminders, and pomodoro writes
+- Request bodies: classify, rename, exclude, AFK threshold, tracking pause, classification/app-settings batches, audio participation, complete browser runtime configuration, confirmed scheduled-backup configuration, confirmed service restart, reminders, timers, software reminders, and pomodoro writes
 - Responses: success envelopes and standard `400` / `401` / `403` / `404` / `409` / `413` / `500` / `503` error envelopes
-- Components: field-level schemas for health, capabilities, all runtime event variants, diagnostics, current window, sessions, active session, summaries, trend, web activity, apps, tracker/runtime settings, AI activity context, Tools snapshots, alerts, and Tools write requests
+- Components: field-level schemas for health, capabilities, all runtime event variants, diagnostics, current window, sessions, active session, summaries, trend, web activity, apps, imports, scheduled backups, tracker/runtime settings, AI activity context, Tools snapshots, alerts, and Tools write requests
 
 ### `GET /api/v1/health`
 
@@ -215,8 +217,11 @@ Other typed events use the same envelope:
 event: tools-runtime-changed
 data: {"sequence":2,"event":{"type":"tools-runtime-changed","changed_at_ms":1782000001000}}
 
+event: scheduled-backup-changed
+data: {"sequence":3,"event":{"type":"scheduled-backup-changed","changed_at_ms":1782000001500}}
+
 event: tool-alert
-data: {"sequence":3,"event":{"type":"tool-alert","alert":{"id":"reminder:1","kind":"reminder","title":"提醒","body":"Review","occurred_at":1782000002000}}}
+data: {"sequence":4,"event":{"type":"tool-alert","alert":{"id":"reminder:1","kind":"reminder","title":"提醒","body":"Review","occurred_at":1782000002000}}}
 ```
 
 Behavior:
@@ -227,7 +232,7 @@ Behavior:
 - Daemon restart resets the sequence. Clients should call `/api/v1/capabilities` and reload snapshots after reconnect.
 - Keepalive comments prevent idle local connections from being mistaken for a dead daemon.
 - At most eight SSE streams are active at once. Additional streams fail immediately with `503` instead of creating unbounded long-lived tasks.
-- Stage 2G `--track` publishes real session transition, metadata, status, watchdog, runtime-shutdown, lock, suspend, system-shutdown, browser activity, Tools snapshot-change, and Tools alert events. Audio and MPRIS participation affect tracking status through the same snapshots and events; default daemon mode still has no tracking or Tools producer.
+- Stage 2G/2H `--track` publishes real session transition, metadata, status, watchdog, runtime-shutdown, lock, suspend, system-shutdown, browser activity, scheduled-backup state-change, Tools snapshot-change, and Tools alert events. Audio and MPRIS participation affect tracking status through the same snapshots and events; default daemon mode still has no tracking, scheduled-backup, or Tools producer.
 
 ### `GET /api/v1/diagnostics`
 
@@ -935,6 +940,64 @@ Schema:
 ```
 
 Deletion is limited to one database-owned batch ID and requires `confirmed=true`.
+
+### `GET /api/v1/backups/schedule`
+
+This endpoint exists only when `patinad --track` owns the profile. It returns the persisted schedule and bounded run-state summary; it never starts a second scheduler in the Desktop process.
+
+Curl:
+
+```bash
+curl -s "$PATINA_API_BASE/api/v1/backups/schedule" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN"
+```
+
+Schema:
+
+```json
+{
+  "data": {
+    "config": {
+      "enabled": true,
+      "cadence": "daily",
+      "weekday": null,
+      "localTimeMinutes": 1260,
+      "targetDir": "/home/user/Backups/Patina",
+      "targetGeneration": "generation-id",
+      "scheduleAnchorAtMs": 1788840000000,
+      "updatedAtMs": 1788840000000
+    },
+    "nextExecutionAtMs": 1788926400000,
+    "recentSuccess": null,
+    "recentFailure": null,
+    "activeRun": null
+  }
+}
+```
+
+Run status is one of `running`, `retry_wait`, `succeeded`, or `failed`. Exact run fields are defined by `ScheduledBackupRun` in OpenAPI.
+
+### `POST /api/v1/backups/schedule`
+
+This is a complete replacement operation. It requires `confirmed=true`, validates daily/weekly scheduling rules, normalizes the target directory, and wakes the daemon scheduler after persistence.
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/backups/schedule" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "config": {
+      "enabled": true,
+      "cadence": "weekly",
+      "weekday": 7,
+      "localTimeMinutes": 1260,
+      "targetDir": "/home/user/Backups/Patina"
+    },
+    "confirmed": true
+  }'
+```
+
+`weekday` uses `1` through `7` for Monday through Sunday and must be `null` for a daily schedule. The directory is a local filesystem capability selected by the user; this endpoint is intended for the trusted Desktop client and is deliberately not exposed as a generic MCP tool. Backup publication uses non-overwriting files and retention only removes verified, database-owned snapshots.
 
 ### `GET /api/v1/settings/tracker`
 

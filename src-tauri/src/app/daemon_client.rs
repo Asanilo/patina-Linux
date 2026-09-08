@@ -462,6 +462,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn client_reads_and_updates_the_daemon_owned_backup_schedule() {
+        let runtime = TestApiRuntime::start_tracking().await;
+        let client = PatinadClient::new(runtime.port, TEST_TOKEN).unwrap();
+        let target_dir = runtime.root.join("scheduled-backups");
+        let input = crate::domain::backup_schedule::ScheduledBackupConfigInput {
+            enabled: true,
+            cadence: crate::domain::backup_schedule::ScheduledBackupCadence::Daily,
+            weekday: None,
+            local_time_minutes: 21 * 60,
+            target_dir: target_dir.to_string_lossy().to_string(),
+        };
+
+        let saved = client
+            .save_scheduled_backup_config(input.clone())
+            .await
+            .unwrap();
+        assert_eq!(saved.config.enabled, true);
+        assert_eq!(saved.config.target_dir, target_dir.to_string_lossy());
+
+        let loaded = client.scheduled_backup_snapshot().await.unwrap();
+        assert_eq!(loaded.config.enabled, true);
+        assert_eq!(loaded.config.cadence, input.cadence);
+        assert_eq!(loaded.config.local_time_minutes, input.local_time_minutes);
+
+        runtime.shutdown().await;
+    }
+
+    #[tokio::test]
     async fn runtime_adapter_reads_current_and_active_state_and_follows_sse() {
         let runtime = TestApiRuntime::start_tracking().await;
         let client = PatinadClient::new(runtime.port, TEST_TOKEN).unwrap();
@@ -737,7 +765,15 @@ mod tests {
                         root.join("activity-import-staging"),
                     ),
                 );
-                context.with_activity_import_owner(import_owner)
+                let context = context.with_activity_import_owner(import_owner);
+                let scheduled_backup_owner = std::sync::Arc::new(
+                    crate::app::daemon::scheduled_backup::DaemonScheduledBackupOwner::new(
+                        crate::engine::runtime_context::RuntimeContext::system(pool.clone()),
+                        root.join("backups"),
+                        event_hub.clone(),
+                    ),
+                );
+                context.with_scheduled_backup_owner(scheduled_backup_owner)
             } else {
                 crate::engine::api::context::ApiRuntimeContext::new(
                     crate::engine::runtime_context::RuntimeContext::system(pool.clone()),

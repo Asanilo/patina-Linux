@@ -100,6 +100,12 @@ pub async fn cmd_download_webdav_backup(
 pub async fn cmd_get_scheduled_backup_snapshot(
     app: AppHandle,
 ) -> Result<ScheduledBackupSnapshot, String> {
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        return client
+            .scheduled_backup_snapshot()
+            .await
+            .map_err(|error| error.to_string());
+    }
     app::scheduled_backup::get_snapshot(&app).await
 }
 
@@ -113,11 +119,11 @@ pub async fn cmd_save_scheduled_backup_config(
     input: ScheduledBackupConfigInput,
     app: AppHandle,
 ) -> Result<ScheduledBackupSnapshot, String> {
-    if crate::app::daemon_client::command_client(&app)?.is_some() {
-        return Err(
-            "scheduled backup configuration is not available in daemon client preview yet"
-                .to_string(),
-        );
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        return client
+            .save_scheduled_backup_config(input)
+            .await
+            .map_err(|error| error.to_string());
     }
     app::scheduled_backup::save_config(&app, input).await
 }
