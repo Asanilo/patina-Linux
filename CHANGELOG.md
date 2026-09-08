@@ -18,19 +18,15 @@ App note en: TBD.
 
 ### Added
 
-- `patinad --track` 接管提醒、软件使用提醒、计时器和番茄钟运行时，并通过 Linux 系统通知与 SSE 发布完成事件。
-- 本地 API 和 MCP wrapper 新增受 capability 限制的 Tools 创建与控制操作，OpenAPI 提供完整请求、响应和事件 schema。
-- Dashboard、History 与 Data 的应用聚合，以及 History、Data 的网页聚合新增共享活动详情入口，可按本地日期查看记录时长、可缩放时间轴、连续活动以及窗口标题或网页 URL 明细。
-- Data 新增应用/分类趋势切换；分类趋势支持搜索、组合比较、本地日期边界统计和分类语义色曲线。
-- 启用网页同步后，Data 可切换到网页趋势，按域名搜索、组合比较和查看详情；趋势统计遵循网页分类、排除与自定义颜色设置。
+- 暂无。
 
 ### Changed
 
-- Tools 业务运行时提取为桌面端与 daemon 共用的宿主无关 owner；成功写操作统一返回完整 snapshot。
+- 暂无。
 
 ### Fixed
 
-- Tools 启动恢复完成前拒绝写请求，并统一使用同一次时钟观测计算本地日期边界，避免启动竞态和跨日不一致。
+- 暂无。
 
 ### Removed
 
@@ -38,6 +34,39 @@ App note en: TBD.
 
 ### Internal
 
+- 暂无。
+
+## [1.9.0-beta.1] - 2026-09-09
+
+Release: 首个 patinad 后台服务测试版，支持关闭桌面窗口后持续追踪，并提供安全迁移与回滚。
+App note: 新增 patinad 后台追踪，以及安全迁移、诊断与回滚。
+App note en: Adds patinad background tracking with safe migration, diagnostics, and rollback.
+
+### Added
+
+- Debian 安装新增 `patinad` systemd user service；设置页提供接管状态、失败重试、后台登录启动和显式回滚，切换过程保证同一数据 profile 只有一个追踪 owner。
+- 本地 API 和 MCP wrapper 新增受 capability 限制的 Tools 创建与控制操作，OpenAPI 提供完整请求、响应和事件 schema。
+- Dashboard、History 与 Data 的应用聚合，以及 History、Data 的网页聚合新增共享活动详情入口，可按本地日期查看记录时长、可缩放时间轴、连续活动以及窗口标题或网页 URL 明细。
+- Data 新增应用、分类和网页趋势；支持搜索、组合比较、本地日期边界统计、分类语义色、域名隐私规则与详情查看。
+
+### Changed
+
+- 完成接管后，Patina Desktop 作为 `patinad` 客户端运行；关闭桌面窗口后继续记录，活动导入、定时备份、远程备份、数据维护、设置和 Tools 写操作由 daemon 统一持有。
+- 此测试版仅发布 Debian 安装包；AppImage 等版本化 daemon 解包与原子更新方案独立验证后再恢复发布。
+
+### Fixed
+
+- 修复暂停、锁屏、睡眠、采样恢复、watchdog、浏览器心跳和备份恢复边界可能造成活动时长增长、倒退、重复或跨停机区间延长的问题。
+
+### Removed
+
+- 暂无。
+
+### Internal
+
+- `patinad --track` 接管提醒、软件使用提醒、计时器和番茄钟运行时，并通过 Linux 系统通知与 SSE 发布完成事件。
+- Tools 业务运行时提取为桌面端与 daemon 共用的宿主无关 owner；成功写操作统一返回完整 snapshot。
+- Tools 启动恢复完成前拒绝写请求，并统一使用同一次时钟观测计算本地日期边界，避免启动竞态和跨日不一致。
 - 新增 Tools owner、daemon readiness、HTTP/MCP 路由、OpenAPI/文档契约和真实 loopback smoke 验证。
 - 新增应用与网站活动详情的共享只读领域模型，统一本地日期边界、连续活动、标题/URL 明细和 stale tracker 截断，为后续 Data、History 与 daemon 客户端共用详情能力建立 owner。
 - 新增详情日期状态、偏好持久化和可缩放时间轴视口，并提取 History 与详情共用的时间焦点算法，为详情弹窗接入建立可测试的交互基础。
@@ -48,6 +77,9 @@ App note en: TBD.
 - Bundle 门槛为微型 UI 共享 chunk 设置独立 `2 KiB gzip` 上限，网页趋势文案、域名颜色和分段控件不回流首屏入口。
 - Dashboard 应用排行抽为 feature-owned 懒加载面板并保留稳定首屏占位，详情依赖不回流主入口，应用排行、History 和 Data 继续共用同一个详情 launcher。
 - Data 父级保留总趋势、热力图、应用快照和 bootstrap 持久化，应用/分类/网页模式及其搜索、选择和图表交互收口到按需加载并随 Data 一同空闲预热的 feature-owned 目标趋势面板；该子 chunk 使用独立 `7 KiB gzip` 上限。
+- daemon API、SSE 和浏览器 bridge 统一迁移到 Axum/Tower，并保留有界请求、认证、重连、关闭和 capability 协议。
+- 运行时接管使用 owner-only reservation、文件锁 lease、旧 owner 释放屏障、受限 systemd 控制和 fail-closed 中断恢复；不通过 HTTP、MCP 或通用设置入口暴露服务管理。
+- Debian 发布新增最终成品静态校验、DEB-only 预发布契约和不泄露 Token/标题/URL 的已安装包验收采集器。
 
 ## [1.8.4] - 2026-08-30
 

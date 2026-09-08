@@ -4,6 +4,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -28,6 +29,8 @@ const execFileAsync = promisify(execFile);
 const currentPackageVersion = JSON.parse(
   await readFile("package.json", "utf8"),
 ).version;
+const stableFixtureVersion = "1.8.4";
+const releaseScriptPath = path.resolve("scripts/release.ts");
 
 const versionPolicyExcerpt = [
   "## 3. 当前仓库现实",
@@ -401,17 +404,32 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   );
 }
 
-async function testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest() {
+async function testPrepareStableLinuxReleaseAssetsCreatesBothPackageTargets() {
   const tempRoot = await mkdtemp(path.join(tmpdir(), "patina-linux-release-"));
   const bundleDir = path.join(tempRoot, "bundle");
   const outputDir = path.join(tempRoot, "output");
-  const appImageName = `Patina_${currentPackageVersion}_amd64.AppImage`;
+  const appImageName = `Patina_${stableFixtureVersion}_amd64.AppImage`;
   const appImagePath = path.join(bundleDir, "appimage", appImageName);
-  const debName = `Patina_${currentPackageVersion}_amd64.deb`;
+  const debName = `Patina_${stableFixtureVersion}_amd64.deb`;
 
   try {
     await mkdir(path.dirname(appImagePath), { recursive: true });
     await mkdir(path.join(bundleDir, "deb"), { recursive: true });
+    await mkdir(path.join(tempRoot, "docs"), { recursive: true });
+    await writeFile(path.join(tempRoot, "CHANGELOG.md"), [
+      "# Changelog",
+      "",
+      `## [${stableFixtureVersion}] - 2026-08-30`,
+      "",
+      "Release: Stable fixture.",
+      "App note: Stable fixture.",
+      "App note en: Stable fixture.",
+    ].join("\n"), "utf8");
+    await writeFile(
+      path.join(tempRoot, "docs", "versioning-and-release-policy.md"),
+      `- 代码版本为 \`${stableFixtureVersion}\`\n`,
+      "utf8",
+    );
     await writeFile(appImagePath, "appimage", "utf8");
     await writeFile(`${appImagePath}.sig`, "appimage-signature\n", "utf8");
     await writeFile(
@@ -427,13 +445,13 @@ async function testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest()
 
     await execFileAsync(process.execPath, [
       "--experimental-strip-types",
-      "scripts/release.ts",
+      releaseScriptPath,
       "prepare-linux-release-assets",
-      currentPackageVersion,
+      stableFixtureVersion,
       bundleDir,
       outputDir,
       "Asanilo/patina-Linux",
-    ]);
+    ], { cwd: tempRoot });
 
     assert.equal(
       await readFile(path.join(outputDir, appImageName), "utf8"),
@@ -448,9 +466,9 @@ async function testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest()
       await readFile(path.join(outputDir, "latest.json"), "utf8"),
     );
     const appImageUrl =
-      `https://github.com/Asanilo/patina-Linux/releases/download/v${currentPackageVersion}/Patina_${currentPackageVersion}_amd64.AppImage`;
+      `https://github.com/Asanilo/patina-Linux/releases/download/v${stableFixtureVersion}/Patina_${stableFixtureVersion}_amd64.AppImage`;
     const debUrl =
-      `https://github.com/Asanilo/patina-Linux/releases/download/v${currentPackageVersion}/Patina_${currentPackageVersion}_amd64.deb`;
+      `https://github.com/Asanilo/patina-Linux/releases/download/v${stableFixtureVersion}/Patina_${stableFixtureVersion}_amd64.deb`;
     assert.deepEqual(latest.platforms["linux-x86_64"], {
       signature: "appimage-signature",
       url: appImageUrl,
@@ -462,6 +480,44 @@ async function testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest()
     assert.deepEqual(latest.platforms["linux-x86_64-deb"], {
       signature: "deb-signature",
       url: debUrl,
+    });
+  } finally {
+    await rm(tempRoot, { force: true, recursive: true });
+  }
+}
+
+async function testPreparePrereleaseLinuxAssetsCreatesOnlyDebianTarget() {
+  const tempRoot = await mkdtemp(path.join(tmpdir(), "patina-linux-prerelease-"));
+  const bundleDir = path.join(tempRoot, "bundle");
+  const outputDir = path.join(tempRoot, "output");
+  const debName = `Patina_${currentPackageVersion}_amd64.deb`;
+  const debPath = path.join(bundleDir, "deb", debName);
+
+  try {
+    await mkdir(path.dirname(debPath), { recursive: true });
+    await writeFile(debPath, "debian-beta", "utf8");
+    await writeFile(`${debPath}.sig`, "deb-beta-signature\n", "utf8");
+
+    await execFileAsync(process.execPath, [
+      "--experimental-strip-types",
+      "scripts/release.ts",
+      "prepare-linux-release-assets",
+      currentPackageVersion,
+      bundleDir,
+      outputDir,
+      "Asanilo/patina-Linux",
+    ]);
+
+    assert.equal(await readFile(path.join(outputDir, debName), "utf8"), "debian-beta");
+    const outputEntries = await readdir(outputDir);
+    assert.deepEqual(outputEntries.sort(), [debName, "latest.json"].sort());
+
+    const latest = JSON.parse(await readFile(path.join(outputDir, "latest.json"), "utf8"));
+    assert.deepEqual(latest.platforms, {
+      "linux-x86_64-deb": {
+        signature: "deb-beta-signature",
+        url: `https://github.com/Asanilo/patina-Linux/releases/download/v${currentPackageVersion}/${debName}`,
+      },
     });
   } finally {
     await rm(tempRoot, { force: true, recursive: true });
@@ -564,6 +620,7 @@ testVersionFilesValidationRejectsInvalidVersion();
 await testLinuxReleaseWorkflowAndBundleContract();
 await testPrepareLinuxReleaseAssetsRejectsEmptyDebSignature();
 await testPrepareLinuxReleaseAssetsRejectsMissingDebSignature();
-await testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest();
+await testPrepareStableLinuxReleaseAssetsCreatesBothPackageTargets();
+await testPreparePrereleaseLinuxAssetsCreatesOnlyDebianTarget();
 
-console.log("Passed 23 release policy tests");
+console.log("Passed 24 release policy tests");
