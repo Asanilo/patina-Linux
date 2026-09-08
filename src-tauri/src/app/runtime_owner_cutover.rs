@@ -19,6 +19,8 @@ pub enum RuntimeOwnerCutoverStatus {
     Activating,
     Completed,
     Failed,
+    RollingBack,
+    RolledBack,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -119,6 +121,9 @@ pub fn decide_desktop_startup(
         Ok(None) => return RuntimeOwnerStartupDecision::Embedded,
         Err(reason) => return RuntimeOwnerStartupDecision::Blocked { reason },
     };
+    if reservation.status == RuntimeOwnerCutoverStatus::RolledBack {
+        return RuntimeOwnerStartupDecision::Embedded;
+    }
     let should_attempt_service_start = matches!(
         reservation.status,
         RuntimeOwnerCutoverStatus::Prepared
@@ -209,6 +214,9 @@ pub fn mark_activating(
             RuntimeOwnerCutoverStatus::Failed => {
                 return Err("failed runtime owner cutover requires explicit repair".to_string())
             }
+            RuntimeOwnerCutoverStatus::RollingBack | RuntimeOwnerCutoverStatus::RolledBack => {
+                return Err("runtime owner cutover is rolling back or rolled back".to_string())
+            }
         }
         Ok(())
     })
@@ -234,6 +242,9 @@ pub fn mark_completed(
             }
             RuntimeOwnerCutoverStatus::Failed => {
                 return Err("failed runtime owner cutover cannot be completed".to_string())
+            }
+            RuntimeOwnerCutoverStatus::RollingBack | RuntimeOwnerCutoverStatus::RolledBack => {
+                return Err("rolled back runtime owner cutover cannot be completed".to_string())
             }
         }
         Ok(())
@@ -261,6 +272,76 @@ pub fn update_completed_background_preference(
     })
 }
 
+pub fn prepare_explicit_rollback(
+    control_root: &Path,
+    profile: AppProfile,
+    desktop_launch_at_login: bool,
+    now_ms: u64,
+) -> Result<RuntimeOwnerCutoverSnapshot, String> {
+    let (replace_untrusted, existing) = match read_reservation(control_root, profile) {
+        Ok(Some(reservation))
+            if matches!(
+                reservation.status,
+                RuntimeOwnerCutoverStatus::Completed
+                    | RuntimeOwnerCutoverStatus::Failed
+                    | RuntimeOwnerCutoverStatus::RollingBack
+            ) =>
+        {
+            (false, Some(reservation))
+        }
+        Ok(Some(_)) => return Err("runtime owner cutover is not in a rollback state".to_string()),
+        Ok(None) => return Err("runtime owner cutover has not been requested".to_string()),
+        Err(_) => (true, None),
+    };
+    if let Some(mut reservation) = existing {
+        if reservation.status != RuntimeOwnerCutoverStatus::RollingBack {
+            reservation.status = RuntimeOwnerCutoverStatus::RollingBack;
+            reservation.updated_at_ms = reservation.updated_at_ms.max(now_ms);
+            reservation.background_tracking_at_login = false;
+            reservation.desktop_launch_at_login = desktop_launch_at_login;
+            reservation.failure_code = None;
+            reservation.failure_message = None;
+            write_reservation_atomic(control_root, &reservation, false)?;
+        }
+        return Ok(snapshot(&reservation));
+    }
+
+    let reservation = RuntimeOwnerCutoverReservation {
+        version: CUTOVER_VERSION,
+        request_id: random_request_id()?,
+        profile: profile.key().to_string(),
+        status: RuntimeOwnerCutoverStatus::RollingBack,
+        requested_at_ms: now_ms,
+        updated_at_ms: now_ms,
+        requested_desktop_pid: std::process::id(),
+        background_tracking_at_login: false,
+        desktop_launch_at_login,
+        failure_code: None,
+        failure_message: None,
+    };
+    write_reservation_atomic(control_root, &reservation, replace_untrusted)?;
+    Ok(snapshot(&reservation))
+}
+
+pub fn mark_rolled_back(
+    control_root: &Path,
+    profile: AppProfile,
+    request_id: &str,
+    now_ms: u64,
+) -> Result<RuntimeOwnerCutoverSnapshot, String> {
+    update_reservation(control_root, profile, request_id, |reservation| {
+        match reservation.status {
+            RuntimeOwnerCutoverStatus::RollingBack => {
+                reservation.status = RuntimeOwnerCutoverStatus::RolledBack;
+                reservation.updated_at_ms = reservation.updated_at_ms.max(now_ms);
+            }
+            RuntimeOwnerCutoverStatus::RolledBack => {}
+            _ => return Err("runtime owner cutover has not started rollback".to_string()),
+        }
+        Ok(())
+    })
+}
+
 pub fn mark_failed(
     control_root: &Path,
     profile: AppProfile,
@@ -282,6 +363,11 @@ pub fn mark_failed(
             RuntimeOwnerCutoverStatus::Failed => {}
             RuntimeOwnerCutoverStatus::Completed => {
                 return Err("completed runtime owner cutover cannot be failed".to_string())
+            }
+            RuntimeOwnerCutoverStatus::RollingBack | RuntimeOwnerCutoverStatus::RolledBack => {
+                return Err(
+                    "runtime owner rollback cannot be marked as activation failure".to_string(),
+                )
             }
         }
         Ok(())
@@ -412,6 +498,8 @@ const fn status_key(status: RuntimeOwnerCutoverStatus) -> &'static str {
         RuntimeOwnerCutoverStatus::Activating => "activating",
         RuntimeOwnerCutoverStatus::Completed => "completed",
         RuntimeOwnerCutoverStatus::Failed => "failed",
+        RuntimeOwnerCutoverStatus::RollingBack => "rolling-back",
+        RuntimeOwnerCutoverStatus::RolledBack => "rolled-back",
     }
 }
 
@@ -670,6 +758,72 @@ mod tests {
             diagnose(&root, AppProfile::Dev).background_tracking_at_login,
             Some(true)
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rollback_keeps_the_client_owner_until_all_external_work_is_complete() {
+        let root = root("rollback");
+        let prepared = prepare(&root, AppProfile::Production, true, true, 1_000).unwrap();
+        mark_activating(&root, AppProfile::Production, &prepared.request_id, 2_000).unwrap();
+        mark_completed(&root, AppProfile::Production, &prepared.request_id, 3_000).unwrap();
+
+        let rolling =
+            prepare_explicit_rollback(&root, AppProfile::Production, true, 4_000).unwrap();
+        assert_eq!(rolling.status, RuntimeOwnerCutoverStatus::RollingBack);
+        assert!(!rolling.background_tracking_at_login);
+        assert!(!decide_desktop_startup(&root, AppProfile::Production).owns_embedded_runtime());
+
+        let rolled =
+            mark_rolled_back(&root, AppProfile::Production, &rolling.request_id, 5_000).unwrap();
+        assert_eq!(rolled.status, RuntimeOwnerCutoverStatus::RolledBack);
+        assert!(decide_desktop_startup(&root, AppProfile::Production).owns_embedded_runtime());
+        assert_eq!(diagnose(&root, AppProfile::Production).state, "rolled-back");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rollback_from_failure_clears_failure_and_is_idempotent() {
+        let root = root("rollback-failed");
+        let prepared = prepare(&root, AppProfile::Dev, true, false, 1_000).unwrap();
+        mark_failed(
+            &root,
+            AppProfile::Dev,
+            &prepared.request_id,
+            "daemon-not-ready",
+            "timed out",
+            2_000,
+        )
+        .unwrap();
+
+        let rolling = prepare_explicit_rollback(&root, AppProfile::Dev, true, 3_000).unwrap();
+        let repeated = prepare_explicit_rollback(&root, AppProfile::Dev, false, 4_000).unwrap();
+
+        assert_eq!(rolling, repeated);
+        assert_eq!(rolling.failure_code, None);
+        assert!(rolling.desktop_launch_at_login);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rollback_replaces_an_invalid_symlink_without_touching_its_target() {
+        use std::os::unix::fs::symlink;
+
+        let root = root("rollback-symlink");
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("do-not-modify.json");
+        fs::write(&target, b"external content").unwrap();
+        symlink(&target, reservation_path(&root)).unwrap();
+
+        let rolling = prepare_explicit_rollback(&root, AppProfile::Dev, true, 1_000).unwrap();
+
+        assert_eq!(rolling.status, RuntimeOwnerCutoverStatus::RollingBack);
+        assert_eq!(fs::read(&target).unwrap(), b"external content");
+        assert!(!fs::symlink_metadata(reservation_path(&root))
+            .unwrap()
+            .file_type()
+            .is_symlink());
         fs::remove_dir_all(root).unwrap();
     }
 

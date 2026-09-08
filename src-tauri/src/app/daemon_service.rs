@@ -85,18 +85,26 @@ pub async fn inspect(
 #[cfg(target_os = "linux")]
 pub async fn stop_conflicting_service_before_embedded_startup(
     profile: crate::platform::app_paths::AppProfile,
+    control_root: &std::path::Path,
 ) -> Result<(), String> {
-    let snapshot = crate::platform::linux::systemd_user_service::inspect_patinad_service().await;
-    if !should_stop_conflicting_service(profile, &snapshot) {
-        return Ok(());
+    use crate::platform::linux::systemd_user_service::{
+        control_patinad_service, PatinadServiceControlAction,
+    };
+
+    let mut snapshot =
+        crate::platform::linux::systemd_user_service::inspect_patinad_service().await;
+    if should_stop_conflicting_service(profile, &snapshot) {
+        eprintln!(
+            "[patinad] stopping an active packaged daemon before the embedded desktop owner starts"
+        );
+        snapshot = control_patinad_service(PatinadServiceControlAction::Stop).await?;
     }
-    eprintln!(
-        "[patinad] stopping an active packaged daemon before the embedded desktop owner starts"
-    );
-    crate::platform::linux::systemd_user_service::control_patinad_service(
-        crate::platform::linux::systemd_user_service::PatinadServiceControlAction::Stop,
-    )
-    .await?;
+    let rolled_back =
+        crate::app::runtime_owner_cutover::diagnose(control_root, profile).state == "rolled-back";
+    if rolled_back && snapshot.enabled {
+        eprintln!("[patinad] disabling packaged daemon for the explicit embedded fallback");
+        control_patinad_service(PatinadServiceControlAction::Disable).await?;
+    }
     Ok(())
 }
 
@@ -109,6 +117,9 @@ pub async fn prepare_runtime_owner_cutover(
     use crate::platform::linux::systemd_user_service::inspect_patinad_service;
 
     if profile != crate::platform::app_paths::AppProfile::Production {
+        return Ok(EmbeddedCutoverPreparation::ContinueEmbedded);
+    }
+    if crate::app::runtime_owner_cutover::diagnose(control_root, profile).state == "rolled-back" {
         return Ok(EmbeddedCutoverPreparation::ContinueEmbedded);
     }
     let service = inspect_patinad_service().await;
@@ -277,6 +288,61 @@ pub async fn prepare_explicit_runtime_owner_retry(
 }
 
 #[cfg(target_os = "linux")]
+pub async fn prepare_explicit_runtime_owner_rollback(
+    profile: crate::platform::app_paths::AppProfile,
+    control_root: &std::path::Path,
+    settings: crate::domain::settings::DesktopBehaviorSettings,
+    pool: &sqlx::Pool<sqlx::Sqlite>,
+) -> Result<crate::app::runtime_owner_cutover::RuntimeOwnerCutoverSnapshot, String> {
+    use crate::platform::linux::systemd_user_service::{
+        control_patinad_service, inspect_patinad_service, PatinadServiceControlAction,
+    };
+
+    if profile != crate::platform::app_paths::AppProfile::Production {
+        return Err("runtime owner rollback is only available for Production".to_string());
+    }
+    let cutover = crate::app::runtime_owner_cutover::diagnose(control_root, profile);
+    if !explicit_rollback_allowed(&cutover) {
+        return Err("runtime owner cutover is not in a rollback-eligible state".to_string());
+    }
+    let service = inspect_patinad_service().await;
+    if !service.manager_available {
+        return Err(service
+            .error
+            .unwrap_or_else(|| "systemd user manager is unavailable".to_string()));
+    }
+    if !service.unit_installed {
+        return Err("patinad.service is not installed".to_string());
+    }
+    if let Some(error) = service.error {
+        return Err(error);
+    }
+
+    let rolling_back = crate::app::runtime_owner_cutover::prepare_explicit_rollback(
+        control_root,
+        profile,
+        settings.launch_at_login,
+        crate::app::runtime::now_ms(),
+    )?;
+    control_patinad_service(PatinadServiceControlAction::Stop).await?;
+    crate::app::runtime_lease::wait_for_runtime_lease_release(
+        control_root,
+        std::time::Duration::from_secs(5),
+    )
+    .await?;
+    control_patinad_service(PatinadServiceControlAction::Disable).await?;
+    crate::app::autostart::apply_linux_autostart(settings.launch_at_login)?;
+    crate::data::repositories::app_settings::save_background_tracking_login_preference(pool, false)
+        .await?;
+    crate::app::runtime_owner_cutover::mark_rolled_back(
+        control_root,
+        profile,
+        &rolling_back.request_id,
+        crate::app::runtime::now_ms(),
+    )
+}
+
+#[cfg(target_os = "linux")]
 pub async fn set_background_tracking_login_preference(
     profile: crate::platform::app_paths::AppProfile,
     control_root: &std::path::Path,
@@ -340,6 +406,16 @@ fn explicit_retry_allowed(
     cutover: &crate::app::runtime_owner_cutover::RuntimeOwnerCutoverDiagnosticsSnapshot,
 ) -> bool {
     matches!(cutover.state.as_str(), "failed" | "blocked")
+}
+
+#[cfg(target_os = "linux")]
+fn explicit_rollback_allowed(
+    cutover: &crate::app::runtime_owner_cutover::RuntimeOwnerCutoverDiagnosticsSnapshot,
+) -> bool {
+    matches!(
+        cutover.state.as_str(),
+        "completed" | "failed" | "blocked" | "rolling-back"
+    )
 }
 
 #[cfg(target_os = "linux")]
@@ -491,6 +567,11 @@ fn build_diagnostics(
                 "cutover-pending",
                 "runtime owner cutover is waiting for restart or daemon readiness",
             )
+        } else if cutover.state == "rolling-back" {
+            (
+                "rollback-pending",
+                "runtime owner rollback is waiting for service shutdown or desktop restart",
+            )
         } else if !service.manager_available {
             (
                 "blocked",
@@ -505,6 +586,11 @@ fn build_diagnostics(
             (
                 "owner-conflict",
                 "patinad.service is enabled or active while Patina Desktop still owns tracking",
+            )
+        } else if desktop_owns_embedded_runtime && cutover.state == "rolled-back" {
+            (
+                "embedded-rollback",
+                "Patina Desktop is using the explicit embedded runtime fallback",
             )
         } else if !desktop_owns_embedded_runtime && !service.active {
             (
@@ -565,7 +651,10 @@ fn build_diagnostics(
             && service.manager_available
             && service.unit_installed
             && service.error.is_none()
-            && matches!(cutover.state.as_str(), "completed" | "failed" | "blocked"),
+            && matches!(
+                cutover.state.as_str(),
+                "completed" | "failed" | "blocked" | "rolling-back"
+            ),
         error: service.error,
         cutover,
     }
@@ -574,8 +663,8 @@ fn build_diagnostics(
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::{
-        build_diagnostics, explicit_retry_allowed, permanent_negotiation_failure,
-        should_stop_conflicting_service,
+        build_diagnostics, explicit_retry_allowed, explicit_rollback_allowed,
+        permanent_negotiation_failure, should_stop_conflicting_service,
     };
     use crate::platform::app_paths::AppProfile;
     use crate::platform::linux::systemd_user_service::SystemdUserServiceSnapshot;
@@ -715,6 +804,32 @@ mod tests {
         assert!(!explicit_retry_allowed(&cutover("completed")));
         assert!(!explicit_retry_allowed(&cutover("activating")));
         assert!(!explicit_retry_allowed(&cutover("not-requested")));
+    }
+
+    #[test]
+    fn explicit_rollback_only_accepts_managed_or_interrupted_states() {
+        assert!(explicit_rollback_allowed(&cutover("completed")));
+        assert!(explicit_rollback_allowed(&cutover("failed")));
+        assert!(explicit_rollback_allowed(&cutover("blocked")));
+        assert!(explicit_rollback_allowed(&cutover("rolling-back")));
+        assert!(!explicit_rollback_allowed(&cutover("prepared")));
+        assert!(!explicit_rollback_allowed(&cutover("rolled-back")));
+        assert!(!explicit_rollback_allowed(&cutover("not-requested")));
+    }
+
+    #[test]
+    fn completed_rollback_is_a_healthy_embedded_fallback_when_service_is_disabled() {
+        let snapshot = build_diagnostics(
+            service_snapshot("disabled", false),
+            cutover("rolled-back"),
+            false,
+            true,
+            true,
+            true,
+        );
+
+        assert_eq!(snapshot.migration_state, "embedded-rollback");
+        assert!(!snapshot.active);
     }
 
     #[test]

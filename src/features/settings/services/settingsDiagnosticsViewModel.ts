@@ -95,6 +95,8 @@ function resolveDaemonServiceValue(
   if (daemonService.migrationState === "cutover-failed") return "接管失败";
   if (daemonService.migrationState === "cutover-pending") return "接管中";
   if (daemonService.migrationState === "preference-mismatch") return "设置待对账";
+  if (daemonService.migrationState === "rollback-pending") return "回退中";
+  if (daemonService.migrationState === "embedded-rollback") return "桌面内置追踪";
   if (daemonService.active) return "运行中";
   return "已安装 / 未启用";
 }
@@ -125,6 +127,12 @@ function resolveDaemonServiceDetail(
   if (daemonService.migrationState === "preference-mismatch") {
     return "后台登录偏好尚未与 patinad.service 状态一致；请重试该设置或重新启动 Patina 完成对账。";
   }
+  if (daemonService.migrationState === "rollback-pending") {
+    return "正在安全停止后台服务并恢复桌面内置追踪；完成前不会同时启动两个追踪进程。";
+  }
+  if (daemonService.migrationState === "embedded-rollback") {
+    return "当前使用显式回退的桌面内置追踪；关闭 Patina Desktop 会停止记录。";
+  }
   if (daemonService.migrationState === "ready") {
     return "服务按计划保持禁用；现有桌面自启动满足后续安全迁移条件。";
   }
@@ -145,6 +153,8 @@ function resolveDaemonServiceTone(
   if (daemonService.migrationState === "managed") return "ok";
   if (daemonService.migrationState === "managed-blocked") return "danger";
   if (daemonService.migrationState === "preference-mismatch") return "warning";
+  if (daemonService.migrationState === "rollback-pending") return "warning";
+  if (daemonService.migrationState === "embedded-rollback") return "warning";
   if (!daemonService.unitInstalled) return "warning";
   if (daemonService.migrationState === "blocked") return "warning";
   return "ok";

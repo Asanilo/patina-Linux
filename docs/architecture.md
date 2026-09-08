@@ -211,13 +211,15 @@ domain ─────────┘          │
 
 首个 daemon-backed Linux 安装使用一个产品包原子交付 Patina Desktop、`patinad` 与 systemd user unit，不先拆分独立 daemon 包。包安装阶段只放置 unit；首次桌面迁移在当前用户会话中通过 owner-only reservation 分两次进程完成：embedded owner 只准备 unit 与重启意图，释放 RuntimeLease 后的新进程才启动 daemon 并进入 client 模式，避免 `postinst` 对多用户环境做全局选择，也避免交接窗口出现双 owner。“后台追踪随登录启动”由 host-owned `background_tracking_at_login` 表达，“桌面客户端随登录打开”继续由 `launch_at_login` 表达；新键缺失时只继承一次旧值，此后独立持久化，启动时最小化只属于桌面客户端。两个偏好都不能由普通 app-settings API 直接驱动系统资源。
 
-owner 交接 reservation 位于 profile 的稳定 control root，不跟随可迁移数据目录。状态只允许 `prepared → activating → completed` 或 `prepared/activating → failed`；缺少 reservation 才允许旧 embedded owner。有效、失败、损坏、不可信或 profile 错配的 reservation 都不能触发隐式 embedded 回退，恢复必须经过显式 service 修复或后续回滚入口。reservation 只记录交接意图、偏好快照、时间和有界错误，不记录 API Token 或其他凭据。
+owner 交接 reservation 位于 profile 的稳定 control root，不跟随可迁移数据目录。接管状态允许 `prepared → activating → completed` 或 `prepared/activating → failed`；显式回滚允许 `completed/failed/blocked → rolling_back → rolled_back`。缺少 reservation 或已提交 `rolled_back` 才允许 embedded owner；`rolling_back`、失败、损坏、不可信或 profile 错配状态都不能触发隐式 embedded 回退。reservation 只记录交接/回滚意图、偏好快照、时间和有界错误，不记录 API Token 或其他凭据。
 
 Tauri 受控重启可能短暂拉起新进程后旧进程才完全退出，因此 managed client 在启动 unit 前必须以只读锁探测等待旧 `RuntimeLease` 释放，不得用 Desktop 临时取得 lease 再转交。daemon 启动后，Desktop 只有在 capability 确认 daemon runtime host、协议兼容、tracking owner 和 `tracking.ready` 后才能提交 completed；暂时不可达在有界窗口内重试，永久协商错误或超时写入 failed。显式 preview、Dev 和 Local profile 不执行该持久交接。
 
 failed 或损坏的交接只能从本机 Tauri 专用入口显式重试，且必须先验证状态，再停止可能残留的 daemon 并等待 lease 释放，最后以新 request ID 重建 reservation 和重启。健康、进行中或未请求的交接不得触发 systemd 变更；HTTP、MCP、browser UI 与普通 app-settings patch 不拥有该恢复动作。
 
 交接完成后，`background_tracking_at_login` 属于主机集成意图而不是普通业务设置。completed reservation 先原子记录新意图，Tauri 专用命令再串行应用固定 unit 的 enable/disable 和 SQLite 镜像；managed Desktop 每次启动按 reservation 重新对账外部状态与 host-owned 数据。这样中断可恢复，同时不让 daemon 当前运行状态与“下次登录启动”混为一个开关。
+
+显式回滚必须先写入 `rolling_back`，再通过 systemd 停止 daemon，使 tracking 与网页 session 走正常 shutdown 封口，等待 daemon lease 释放，禁用 unit、恢复独立 Desktop autostart 并保存后台登录偏好后，最后提交 `rolled_back` 和受控重启。Embedded 启动仍会复核并停用意外残留的 unit；任何中断都停留在 client/暂停方向，不允许产生双 owner。
 
 共享运行内核至少需要以下窄边界：
 

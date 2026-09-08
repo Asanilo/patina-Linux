@@ -3,16 +3,19 @@ import { invoke } from "@tauri-apps/api/core";
 const GET_DAEMON_SERVICE_DIAGNOSTICS_COMMAND = "cmd_get_daemon_service_diagnostics";
 const RETRY_RUNTIME_OWNER_CUTOVER_COMMAND = "cmd_retry_runtime_owner_cutover";
 const SET_BACKGROUND_TRACKING_AT_LOGIN_COMMAND = "cmd_set_background_tracking_at_login";
+const ROLLBACK_RUNTIME_OWNER_COMMAND = "cmd_rollback_runtime_owner_to_embedded";
 
 export type DaemonServiceMigrationState =
   | "blocked"
   | "cutover-failed"
   | "cutover-pending"
+  | "embedded-rollback"
   | "not-installed"
   | "owner-conflict"
   | "managed"
   | "managed-blocked"
   | "preference-mismatch"
+  | "rollback-pending"
   | "ready"
   | "not-requested"
   | "unsupported";
@@ -23,6 +26,8 @@ export type RuntimeOwnerCutoverState =
   | "activating"
   | "completed"
   | "failed"
+  | "rolling-back"
+  | "rolled-back"
   | "blocked"
   | "unsupported";
 
@@ -80,11 +85,13 @@ const MIGRATION_STATES = new Set<DaemonServiceMigrationState>([
   "blocked",
   "cutover-failed",
   "cutover-pending",
+  "embedded-rollback",
   "not-installed",
   "owner-conflict",
   "managed",
   "managed-blocked",
   "preference-mismatch",
+  "rollback-pending",
   "ready",
   "not-requested",
   "unsupported",
@@ -96,6 +103,8 @@ const CUTOVER_STATES = new Set<RuntimeOwnerCutoverState>([
   "activating",
   "completed",
   "failed",
+  "rolling-back",
+  "rolled-back",
   "blocked",
   "unsupported",
 ]);
@@ -190,4 +199,8 @@ export async function setBackgroundTrackingAtLogin(
     throw new Error("Invalid daemon service diagnostics payload");
   }
   return mapRawDaemonServiceDiagnostics(payload);
+}
+
+export async function rollbackRuntimeOwnerToEmbedded(): Promise<void> {
+  await invoke(ROLLBACK_RUNTIME_OWNER_COMMAND, { confirmed: true });
 }

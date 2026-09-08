@@ -391,4 +391,41 @@ await runTest("settings diagnostics surface a daemon login preference mismatch",
   assert.match(service?.detail ?? "", /尚未与 patinad.service 状态一致/);
 });
 
+await runTest("settings diagnostics show an explicit embedded rollback", () => {
+  const items = buildSettingsDiagnosticsViewModel({
+    trackerHealth: HEALTHY_GNOME,
+    webActivityEnabled: false,
+    webActivityPort: 18080,
+    webActivityToken: "",
+    webActivityBridge: null,
+    daemonService: {
+      serviceName: "patinad.service",
+      managerAvailable: true,
+      unitInstalled: true,
+      unitFileState: "disabled",
+      enabled: false,
+      activeState: "inactive",
+      subState: "dead",
+      active: false,
+      migrationState: "embedded-rollback",
+      migrationReason: "explicit embedded runtime fallback",
+      controlAvailable: false,
+      error: null,
+      cutover: {
+        state: "rolled-back",
+        requestId: "cutover_test",
+        updatedAtMs: 1000,
+        failureCode: null,
+        failureMessage: null,
+        backgroundTrackingAtLogin: false,
+      },
+    },
+  });
+
+  const service = items.find((item) => item.id === "daemon-service");
+  assert.equal(service?.value, "桌面内置追踪");
+  assert.equal(service?.tone, "warning");
+  assert.match(service?.detail ?? "", /关闭 Patina Desktop 会停止记录/);
+});
+
 console.log(`Passed ${passed} settings diagnostics view model tests`);

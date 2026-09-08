@@ -1,6 +1,6 @@
 # `patinad` 后台运行时设计
 
-> 状态：Stage 0 至 Stage 2H.2、Stage 2H.3a systemd 诊断、Stage 2H.3b typed daemon client、Stage 2H.3c 写侧 owner 收口，以及 Stage 2H.3d.1/2 和 2H.3d.3a-c 默认 owner 交接代码均已完成自动验证；Stage 2H.3d.4a-c 已补齐交接诊断、显式重试和登录偏好应用后端，当前进入安全回滚、Quiet Pro 控件和 DEB 实机验证。
+> 状态：Stage 0 至 Stage 2H.2、Stage 2H.3a systemd 诊断、Stage 2H.3b typed daemon client、Stage 2H.3c 写侧 owner 收口，以及 Stage 2H.3d.1/2 和 2H.3d.3a-c 默认 owner 交接代码均已完成自动验证；Stage 2H.3d.4a-d 已补齐交接诊断、显式重试、登录偏好应用和安全回滚后端，当前进入 Quiet Pro 控件、中断自动化和 DEB 实机验证。
 > 生命周期：本设计是当前 `patinad` 实施依据；后台接管稳定完成后移入 `docs/archive/`。
 
 ## 1. 目标
@@ -159,7 +159,7 @@ Stage 2H.3d 不做一次性切换，按下面五个可回滚批次推进：
 1. **2H.3d.1 systemd 控制基础（已实现，待安装包实机 mutation 验收）**：`platform/linux` 已补齐固定 `patinad.service` 的 enable/disable/start/stop、8 秒超时、幂等短路与操作后复核；`app` 层在 Production embedded 启动前会停止提前运行的 packaged daemon，Dev/Local 不受影响。当前不开放通用 unit 名称、shell 命令、HTTP、MCP 或 UI 开关；已通过状态机测试和只读 user manager 实机检查，当前系统尚未安装该 unit，因此真实启停并入 2H.3d.5 的 DEB 验收。
 2. **2H.3d.2 登录偏好拆分（数据语义已实现）**：已新增 host-owned `background_tracking_at_login`，并保留 `launch_at_login` 作为“桌面客户端随登录打开”；旧数据库首次打开时，新键只在缺失时继承旧值，此后不再被旧键覆盖，新安装保持现有默认行为。`start_minimized` 仍只依赖桌面客户端偏好；备份 Replace/Merge 保留当前机器的后台登录偏好。普通 UI patch、HTTP 和 MCP 仍不能直接写入后台服务偏好；首次 owner 交接已按该值应用固定 unit，日常设置与失败对账留给 2H.3d.4 专用入口。
 3. **2H.3d.3 两阶段 owner 交接（进行中）**：第一进程只写入 owner-only cutover reservation、启用 unit 并安排受控重启，不在 embedded tracker 存活时启动 daemon；新 Desktop 进程读 reservation 后进入 daemon-client 模式，启动并协商 daemon，成功后才提交完成状态。daemon 不可用或版本不兼容时显示暂停与修复诊断，不自动回退 embedded。
-   - **2H.3d.3a reservation 基础（已实现）**：`app/runtime_owner_cutover` 已提供 `prepared → activating → completed/failed` 持久状态机、请求 ID 约束、profile 校验、32 KiB 读取上限、owner-only `0600` 原子文件和幂等转换。文件缺失时才允许 embedded；任何有效 reservation 都选择 daemon-client 方向，failed 状态不隐式重试，损坏、不可信或 profile 错配文件直接 fail closed。本批不启用或启动 unit。
+   - **2H.3d.3a reservation 基础（已实现）**：`app/runtime_owner_cutover` 已提供 `prepared → activating → completed/failed` 持久状态机、请求 ID 约束、profile 校验、32 KiB 读取上限、owner-only `0600` 原子文件和幂等转换。文件缺失时允许 embedded；除后续显式完成的 `rolled-back` 外，任何 reservation 都选择 daemon-client 或 fail-closed 方向，failed 状态不隐式重试，损坏、不可信或 profile 错配文件直接 fail closed。本批不启用或启动 unit。
    - **2H.3d.3b embedded 准备与重启（已实现，待 DEB 实机验收）**：仅 Production 且 user manager、固定 unit 和状态检查可用时触发；先持久化 reservation，再按后台登录偏好 enable/disable 固定 unit 并校准独立 Desktop autostart，随后请求 Tauri 受控重启且不启动 embedded runtime。Dev/Local、unit 缺失和 systemd 不可用时继续旧 embedded 路径；写入 reservation 后的失败会持久化为 failed。
    - **2H.3d.3c daemon-client 激活与确认（已实现，待 DEB 实机验收）**：新进程由 reservation 自动选择 managed client，先把状态推进到 activating，并等待旧 Desktop `RuntimeLease` 释放后才启动固定 unit；client 在 15 秒内轮询 capability，只有 runtime host、协议、tracking owner 与 `tracking.ready` 全部成立才标记 completed。永久协商错误立即失败，暂时不可达可重试；failed、损坏和不可信 reservation 均不回退 embedded。显式 preview 不参与该状态机。
    - **2H.3d.3d 中断恢复验收（待实施）**：覆盖每个持久化边界的崩溃、重复启动、错误 request ID、service failed、API 未就绪、版本不兼容和旧 Desktop 尚未释放 lease。
@@ -167,7 +167,7 @@ Stage 2H.3d 不做一次性切换，按下面五个可回滚批次推进：
    - **2H.3d.4a 交接诊断（已实现）**：Tauri 专属诊断同时返回固定 unit 与 owner cutover 状态，区分未请求、准备、激活、完成、失败及 reservation 损坏；Settings 对接管中、接管失败、managed 正常和 managed 服务停止使用不同状态与提示，并展示有界失败原因，不暴露 Token。
    - **2H.3d.4b 显式重试（后端已实现，待 UI 与 DEB 实机验收）**：仅允许本机 Tauri command 在确认后重试 failed/blocked 交接；资格检查发生在任何 systemd 变更之前，随后停止可能残留的 daemon、等待 lease 释放、以当前登录偏好和新 request ID 原子重建 owner-only reservation，再受控重启。损坏 reservation 的显式替换不跟随 symlink，也不修改其目标；重试未开放给 HTTP、MCP、browser UI 或普通 app-settings patch。
    - **2H.3d.4c 登录偏好应用（后端已实现，待 UI 与 DEB 实机验收）**：后台追踪开关只修改 `background_tracking_at_login` 并对账固定 unit 的 enable/disable，不把“当前运行”与“下次登录启动”混成同一语义；Desktop 登录和启动最小化继续走独立 XDG autostart 偏好。专用 Tauri command 以 completed reservation 记录持久意图，再应用 unit 并同步 SQLite 镜像；managed Desktop 启动时按 reservation 重新对账 unit 和 host-owned 数据，因此任一步中断都能在后续启动继续收敛。systemd 状态与意图不一致时诊断显示 `preference-mismatch`，普通 settings patch 不能绕过专用入口。
-   - **2H.3d.4d 显式回滚（待实施）**：从 managed owner 回滚时先让 systemd 停止 daemon 并完成 tracking/web session 封口，确认 lease 释放后写入持久 embedded 选择，再受控重启 Desktop。回滚中断保持 fail closed，不能先删除 marker 再停服务。
+   - **2H.3d.4d 显式回滚（后端已实现，待 UI 与 DEB 实机验收）**：本机确认式 Tauri command 先持久化 `rolling-back`，再让 systemd 停止 daemon，使 tracking/web session 通过正常 shutdown 封口；确认 lease 释放后禁用 unit、对账 Desktop autostart、保存后台登录偏好，最后提交 `rolled-back` 并受控重启。`rolling-back` 中断仍保持 client/fail-closed，可重复恢复；只有 `rolled-back` 才允许 embedded，且 embedded 启动会再次停用意外残留的 unit。损坏 reservation 可被原子替换，不跟随或修改 symlink 目标。
    - **2H.3d.4e Quiet Pro 控件（待实施）**：只在上述后端状态机完成后开放重试、登录启动和回滚控件；危险操作要求确认，操作期间禁用重复提交，并在同一诊断区刷新最终状态。
 5. **2H.3d.5 自动化与 DEB 实机验收**：覆盖首次迁移中断、重复执行、unit 缺失、systemd 不可用、服务崩溃、Token/端口不一致、旧 XDG autostart、pending storage migration 和自定义挂载目录。最后在已安装 DEB 上验证登录启动、关闭 UI 后持续记录、重开 UI、锁屏/睡眠、浏览器活动、升级、卸载与数据保留。
 
@@ -340,7 +340,8 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 - 已完成 Stage 2H.3d.4a：交接 reservation 与 fixed unit 状态合并为 Tauri 专属诊断，Settings 能明确显示 pending、failed、managed 和 managed-blocked
 - 已完成 Stage 2H.3d.4b 后端：本机确认式重试先验证状态、停止 daemon 并等待 lease，再以新 reservation 受控重启；当前尚未开放 UI
 - 已完成 Stage 2H.3d.4c 后端：completed reservation 持有后台登录意图，专用 Tauri command 串行应用 systemd 与 SQLite 镜像，启动路径负责中断后对账
-- 待实施 Stage 2H.3d.3d、2H.3d.4d/e 和 2H.3d.5：中断恢复自动化、安全回滚、Quiet Pro 控件和 DEB 实机验收
+- 已完成 Stage 2H.3d.4d 后端：`rolling-back → rolled-back` 保证 daemon 正常封口、lease 释放和 unit 禁用发生在 embedded 恢复之前，中断不会产生双 owner
+- 待实施 Stage 2H.3d.3d、2H.3d.4e 和 2H.3d.5：中断恢复自动化、Quiet Pro 控件和 DEB 实机验收
 - Tauri 改为 daemon desktop client，并保留 tray、通知、文件选择和 updater
 - 默认切换后 desktop 不启动或自动回退 embedded tracker；daemon 不可用时明确暂停、诊断和重启
 - 一个 `patina` 产品包同时交付 Patina Desktop、`patinad` 和 systemd user unit

@@ -170,6 +170,7 @@ fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Build
         commands::backup::cmd_get_scheduled_backup_snapshot,
         commands::backup::cmd_pick_scheduled_backup_directory,
         commands::backup::cmd_save_scheduled_backup_config,
+        commands::daemon_service::cmd_rollback_runtime_owner_to_embedded,
         commands::daemon_service::cmd_retry_runtime_owner_cutover,
         commands::daemon_service::cmd_set_background_tracking_at_login,
         commands::persistence::cmd_reopen_sqlite_pool,
@@ -199,16 +200,17 @@ fn register_runtime_hooks(
         .setup(move |app| {
             if runtime_mode.owns_embedded_runtime() {
                 let profile = crate::platform::app_paths::app_profile(app.handle());
+                let control_root =
+                    crate::platform::storage_paths::default_storage_paths(app.handle())?
+                        .control_root;
                 #[cfg(target_os = "linux")]
                 tauri::async_runtime::block_on(
                     crate::app::daemon_service::stop_conflicting_service_before_embedded_startup(
                         profile,
+                        &control_root,
                     ),
                 )
                 .map_err(std::io::Error::other)?;
-                let control_root =
-                    crate::platform::storage_paths::default_storage_paths(app.handle())?
-                        .control_root;
                 let runtime_lease = crate::app::runtime_lease::acquire_runtime_lease(
                     &control_root,
                     profile,
