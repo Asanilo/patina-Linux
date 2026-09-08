@@ -150,7 +150,39 @@ pub fn prepare(
         failure_code: None,
         failure_message: None,
     };
-    write_reservation_atomic(control_root, &reservation)?;
+    write_reservation_atomic(control_root, &reservation, false)?;
+    Ok(snapshot(&reservation))
+}
+
+pub fn prepare_explicit_retry(
+    control_root: &Path,
+    profile: AppProfile,
+    background_tracking_at_login: bool,
+    desktop_launch_at_login: bool,
+    now_ms: u64,
+) -> Result<RuntimeOwnerCutoverSnapshot, String> {
+    let replace_untrusted = match read_reservation(control_root, profile) {
+        Ok(Some(reservation)) if reservation.status == RuntimeOwnerCutoverStatus::Failed => false,
+        Ok(Some(_)) => {
+            return Err("only a failed runtime owner cutover can be retried explicitly".to_string())
+        }
+        Ok(None) => return Err("runtime owner cutover has not been requested".to_string()),
+        Err(_) => true,
+    };
+    let reservation = RuntimeOwnerCutoverReservation {
+        version: CUTOVER_VERSION,
+        request_id: random_request_id()?,
+        profile: profile.key().to_string(),
+        status: RuntimeOwnerCutoverStatus::Prepared,
+        requested_at_ms: now_ms,
+        updated_at_ms: now_ms,
+        requested_desktop_pid: std::process::id(),
+        background_tracking_at_login,
+        desktop_launch_at_login,
+        failure_code: None,
+        failure_message: None,
+    };
+    write_reservation_atomic(control_root, &reservation, replace_untrusted)?;
     Ok(snapshot(&reservation))
 }
 
@@ -246,7 +278,7 @@ fn update_reservation(
     update(&mut reservation)?;
     validate_reservation(&reservation, profile)?;
     if reservation != before {
-        write_reservation_atomic(control_root, &reservation)?;
+        write_reservation_atomic(control_root, &reservation, false)?;
     }
     Ok(snapshot(&reservation))
 }
@@ -398,6 +430,7 @@ fn reservation_path(control_root: &Path) -> PathBuf {
 fn write_reservation_atomic(
     control_root: &Path,
     reservation: &RuntimeOwnerCutoverReservation,
+    replace_untrusted: bool,
 ) -> Result<(), String> {
     fs::create_dir_all(control_root)
         .map_err(|error| format!("failed to create runtime control directory: {error}"))?;
@@ -413,6 +446,10 @@ fn write_reservation_atomic(
     )?;
     let path = reservation_path(control_root);
     match fs::symlink_metadata(&path) {
+        Ok(metadata) if replace_untrusted && metadata.is_dir() => {
+            return Err("runtime owner cutover path must not be a directory".to_string())
+        }
+        Ok(_) if replace_untrusted => {}
         Ok(_) => require_owner_only_file(&path)?,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => {
@@ -599,6 +636,63 @@ mod tests {
             }
         ));
         assert!(!decide_desktop_startup(&root, AppProfile::Production).owns_embedded_runtime());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn explicit_retry_replaces_a_failed_request_with_current_preferences() {
+        let root = root("retry-failed");
+        let prepared = prepare(&root, AppProfile::Production, true, true, 1_000).unwrap();
+        mark_failed(
+            &root,
+            AppProfile::Production,
+            &prepared.request_id,
+            "daemon-not-ready",
+            "timed out",
+            2_000,
+        )
+        .unwrap();
+
+        let retried =
+            prepare_explicit_retry(&root, AppProfile::Production, false, true, 3_000).unwrap();
+
+        assert_eq!(retried.status, RuntimeOwnerCutoverStatus::Prepared);
+        assert_ne!(retried.request_id, prepared.request_id);
+        assert!(!retried.background_tracking_at_login);
+        assert!(retried.desktop_launch_at_login);
+        assert_eq!(retried.failure_code, None);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn explicit_retry_rejects_absent_or_non_failed_requests() {
+        let root = root("retry-rejected");
+        assert!(prepare_explicit_retry(&root, AppProfile::Dev, true, true, 1_000).is_err());
+
+        prepare(&root, AppProfile::Dev, true, true, 2_000).unwrap();
+        assert!(prepare_explicit_retry(&root, AppProfile::Dev, true, true, 3_000).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn explicit_retry_replaces_an_invalid_symlink_without_touching_its_target() {
+        use std::os::unix::fs::symlink;
+
+        let root = root("retry-symlink");
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("do-not-modify.json");
+        fs::write(&target, b"external content").unwrap();
+        symlink(&target, reservation_path(&root)).unwrap();
+
+        let retried = prepare_explicit_retry(&root, AppProfile::Dev, true, false, 1_000).unwrap();
+
+        assert_eq!(retried.status, RuntimeOwnerCutoverStatus::Prepared);
+        assert_eq!(fs::read(&target).unwrap(), b"external content");
+        assert!(!fs::symlink_metadata(reservation_path(&root))
+            .unwrap()
+            .file_type()
+            .is_symlink());
         fs::remove_dir_all(root).unwrap();
     }
 

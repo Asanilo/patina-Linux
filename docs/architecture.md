@@ -215,6 +215,8 @@ owner 交接 reservation 位于 profile 的稳定 control root，不跟随可迁
 
 Tauri 受控重启可能短暂拉起新进程后旧进程才完全退出，因此 managed client 在启动 unit 前必须以只读锁探测等待旧 `RuntimeLease` 释放，不得用 Desktop 临时取得 lease 再转交。daemon 启动后，Desktop 只有在 capability 确认 daemon runtime host、协议兼容、tracking owner 和 `tracking.ready` 后才能提交 completed；暂时不可达在有界窗口内重试，永久协商错误或超时写入 failed。显式 preview、Dev 和 Local profile 不执行该持久交接。
 
+failed 或损坏的交接只能从本机 Tauri 专用入口显式重试，且必须先验证状态，再停止可能残留的 daemon 并等待 lease 释放，最后以新 request ID 重建 reservation 和重启。健康、进行中或未请求的交接不得触发 systemd 变更；HTTP、MCP、browser UI 与普通 app-settings patch 不拥有该恢复动作。
+
 共享运行内核至少需要以下窄边界：
 
 - `RuntimeContext`：数据库、设置、clock 与运行状态

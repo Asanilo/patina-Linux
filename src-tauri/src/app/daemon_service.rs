@@ -228,6 +228,58 @@ pub async fn activate_runtime_owner_cutover(
 }
 
 #[cfg(target_os = "linux")]
+pub async fn prepare_explicit_runtime_owner_retry(
+    profile: crate::platform::app_paths::AppProfile,
+    control_root: &std::path::Path,
+    settings: crate::domain::settings::DesktopBehaviorSettings,
+) -> Result<crate::app::runtime_owner_cutover::RuntimeOwnerCutoverSnapshot, String> {
+    use crate::platform::linux::systemd_user_service::{
+        control_patinad_service, inspect_patinad_service, PatinadServiceControlAction,
+    };
+
+    if profile != crate::platform::app_paths::AppProfile::Production {
+        return Err("runtime owner cutover retry is only available for Production".to_string());
+    }
+    let cutover = crate::app::runtime_owner_cutover::diagnose(control_root, profile);
+    if !explicit_retry_allowed(&cutover) {
+        return Err("runtime owner cutover is not in a retryable state".to_string());
+    }
+    let service = inspect_patinad_service().await;
+    if !service.manager_available {
+        return Err(service
+            .error
+            .unwrap_or_else(|| "systemd user manager is unavailable".to_string()));
+    }
+    if !service.unit_installed {
+        return Err("patinad.service is not installed".to_string());
+    }
+    if let Some(error) = service.error {
+        return Err(error);
+    }
+
+    control_patinad_service(PatinadServiceControlAction::Stop).await?;
+    crate::app::runtime_lease::wait_for_runtime_lease_release(
+        control_root,
+        std::time::Duration::from_secs(5),
+    )
+    .await?;
+    crate::app::runtime_owner_cutover::prepare_explicit_retry(
+        control_root,
+        profile,
+        settings.background_tracking_at_login,
+        settings.launch_at_login,
+        crate::app::runtime::now_ms(),
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn explicit_retry_allowed(
+    cutover: &crate::app::runtime_owner_cutover::RuntimeOwnerCutoverDiagnosticsSnapshot,
+) -> bool {
+    matches!(cutover.state.as_str(), "failed" | "blocked")
+}
+
+#[cfg(target_os = "linux")]
 pub async fn confirm_runtime_owner_cutover(
     profile: crate::platform::app_paths::AppProfile,
     control_root: std::path::PathBuf,
@@ -436,7 +488,11 @@ fn build_diagnostics(
         active: service.active,
         migration_state: migration_state.to_string(),
         migration_reason: migration_reason.to_string(),
-        control_available: false,
+        control_available: !desktop_owns_embedded_runtime
+            && service.manager_available
+            && service.unit_installed
+            && service.error.is_none()
+            && matches!(cutover.state.as_str(), "completed" | "failed" | "blocked"),
         error: service.error,
         cutover,
     }
@@ -445,7 +501,8 @@ fn build_diagnostics(
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::{
-        build_diagnostics, permanent_negotiation_failure, should_stop_conflicting_service,
+        build_diagnostics, explicit_retry_allowed, permanent_negotiation_failure,
+        should_stop_conflicting_service,
     };
     use crate::platform::app_paths::AppProfile;
     use crate::platform::linux::systemd_user_service::SystemdUserServiceSnapshot;
@@ -558,6 +615,15 @@ mod tests {
             snapshot.cutover.failure_message.as_deref(),
             Some("timed out")
         );
+    }
+
+    #[test]
+    fn explicit_retry_never_interrupts_a_healthy_or_pending_cutover() {
+        assert!(explicit_retry_allowed(&cutover("failed")));
+        assert!(explicit_retry_allowed(&cutover("blocked")));
+        assert!(!explicit_retry_allowed(&cutover("completed")));
+        assert!(!explicit_retry_allowed(&cutover("activating")));
+        assert!(!explicit_retry_allowed(&cutover("not-requested")));
     }
 
     #[test]

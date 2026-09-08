@@ -169,6 +169,7 @@ fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Build
         commands::backup::cmd_get_scheduled_backup_snapshot,
         commands::backup::cmd_pick_scheduled_backup_directory,
         commands::backup::cmd_save_scheduled_backup_config,
+        commands::daemon_service::cmd_retry_runtime_owner_cutover,
         commands::persistence::cmd_reopen_sqlite_pool,
         commands::persistence::cmd_delete_tracking_data_before,
         commands::persistence::cmd_clear_all_window_titles,

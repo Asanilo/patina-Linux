@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 const GET_DAEMON_SERVICE_DIAGNOSTICS_COMMAND = "cmd_get_daemon_service_diagnostics";
+const RETRY_RUNTIME_OWNER_CUTOVER_COMMAND = "cmd_retry_runtime_owner_cutover";
 
 export type DaemonServiceMigrationState =
   | "blocked"
@@ -167,4 +168,8 @@ export async function getDaemonServiceDiagnostics(): Promise<DaemonServiceDiagno
   }
 
   return mapRawDaemonServiceDiagnostics(payload);
+}
+
+export async function retryRuntimeOwnerCutover(): Promise<void> {
+  await invoke(RETRY_RUNTIME_OWNER_CUTOVER_COMMAND, { confirmed: true });
 }

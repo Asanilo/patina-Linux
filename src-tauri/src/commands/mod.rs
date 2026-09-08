@@ -1,6 +1,7 @@
 pub mod activity_import;
 pub mod apps;
 pub mod backup;
+pub mod daemon_service;
 pub mod diagnostics;
 pub mod persistence;
 pub mod settings;
