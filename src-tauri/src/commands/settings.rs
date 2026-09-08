@@ -207,7 +207,28 @@ pub async fn cmd_commit_app_settings(
     }
 
     if !mutations.is_empty() {
+        let changes_tracking_policy = mutations.iter().any(|mutation| {
+            matches!(
+                mutation.key.as_str(),
+                "tracking_paused"
+                    | "web_activity_enabled"
+                    | "web_activity_token"
+                    | "web_activity_port"
+            )
+        });
+        let runtime_state = app
+            .state::<crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState>()
+            .inner()
+            .clone();
+        let _transition_guard = if changes_tracking_policy {
+            Some(runtime_state.lock_transition().await)
+        } else {
+            None
+        };
         commit_app_setting_mutations_with_recovery(&app, &mutations).await?;
+        if changes_tracking_policy {
+            runtime_state.note_tracking_policy_change();
+        }
     }
     app.emit("app-settings-changed", json!({}))
         .map_err(|error| format!("failed to emit settings refresh event: {error}"))?;

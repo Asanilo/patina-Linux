@@ -34,8 +34,15 @@ pub async fn save_tracking_paused_setting(
     pool: &Pool<Sqlite>,
     tracking_paused: bool,
 ) -> Result<(), sqlx::Error> {
-    let value = if tracking_paused { "1" } else { "0" };
-    save_setting_value(pool, TRACKING_PAUSED_KEY, value).await
+    super::app_settings::commit_app_setting_mutations(
+        pool,
+        &[super::app_settings::AppSettingMutation {
+            key: TRACKING_PAUSED_KEY.to_string(),
+            value: if tracking_paused { "1" } else { "0" }.to_string(),
+        }],
+    )
+    .await
+    .map_err(sqlx::Error::Protocol)
 }
 
 pub async fn load_capture_window_title_setting_for_app(

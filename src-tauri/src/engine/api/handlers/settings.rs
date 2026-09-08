@@ -117,16 +117,29 @@ pub async fn set_tracking_paused(context: &ApiRuntimeContext, body: &[u8]) -> Ro
             }
         }
     };
-    if let Err(error) = crate::data::repositories::tracker_settings::save_tracking_paused_setting(
+    let runtime_state = context.tracking_runtime_state();
+    let _transition_guard = match runtime_state.as_ref() {
+        Some(state) => Some(state.lock_transition().await),
+        None => None,
+    };
+    let mutation = crate::data::repositories::app_settings::AppSettingMutation {
+        key: "tracking_paused".to_string(),
+        value: if request.paused { "1" } else { "0" }.to_string(),
+    };
+    if let Err(error) = crate::data::repositories::app_settings::commit_app_setting_mutations_at(
         context.pool(),
-        request.paused,
+        &[mutation],
+        context.now_ms(),
     )
     .await
     {
         return RouteResponse {
             status: 500,
-            body: serde_json::to_value(ApiError::internal(&error.to_string())).unwrap_or_default(),
+            body: serde_json::to_value(ApiError::internal(&error)).unwrap_or_default(),
         };
+    }
+    if let Some(state) = runtime_state.as_ref() {
+        state.note_tracking_policy_change();
     }
     context.emit_tracking_data_changed(if request.paused {
         "tracking-paused"

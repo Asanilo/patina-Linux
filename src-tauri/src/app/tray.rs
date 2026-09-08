@@ -48,9 +48,15 @@ pub(crate) async fn toggle_tracking_paused<R: Runtime>(app: AppHandle<R>) -> Res
             .map_err(|error| error.to_string());
     }
     let pool = wait_for_sqlite_pool(&app).await?;
+    let runtime_state = app
+        .state::<crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState>()
+        .inner()
+        .clone();
+    let _transition_guard = runtime_state.lock_transition().await;
     let reason = toggle_tracking_paused_in_pool(&pool)
         .await
         .map_err(|error| format!("failed to toggle tracking pause setting: {error}"))?;
+    runtime_state.note_tracking_policy_change();
 
     tracking_runtime::emit_tracking_data_changed(&app, reason, now_ms())
         .map_err(|error| format!("failed to emit tracking pause event: {error}"))?;

@@ -94,6 +94,16 @@ impl TrackingRuntimeSnapshotState {
             && lifecycle.pending_stop.is_none()
     }
 
+    pub(crate) fn note_tracking_policy_change(&self) {
+        let mut lifecycle = self
+            .lifecycle
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        lifecycle.generation = lifecycle.generation.wrapping_add(1);
+        drop(lifecycle);
+        self.invalidate_activity();
+    }
+
     pub(crate) fn note_power_event(&self, event: &str, timestamp_ms: i64) {
         let mut lifecycle = self
             .lifecycle
@@ -256,6 +266,12 @@ mod tests {
             probe_diagnostics: TrackingRuntimeProbeDiagnostics::default(),
         };
         state.replace(snapshot.clone());
+
+        state.note_tracking_policy_change();
+        assert!(!state.snapshot().unwrap().status.is_tracking_active);
+        snapshot.generation = state.lifecycle_generation();
+        state.replace(snapshot.clone());
+        assert!(state.snapshot().unwrap().status.is_tracking_active);
 
         state.note_power_event("lock", 5_000);
         assert!(!state.snapshot().unwrap().status.is_tracking_active);

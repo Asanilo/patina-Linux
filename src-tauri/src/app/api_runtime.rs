@@ -20,6 +20,12 @@ impl ApiRuntimeStateProvider for DesktopApiRuntimeState {
             .and_then(|state| state.snapshot())
     }
 
+    fn tracking_runtime_state(&self) -> Option<TrackingRuntimeSnapshotState> {
+        self.app
+            .try_state::<TrackingRuntimeSnapshotState>()
+            .map(|state| state.inner().clone())
+    }
+
     fn web_activity_snapshot(
         &self,
         settings: &WebActivitySettings,

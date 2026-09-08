@@ -19,6 +19,10 @@ impl ApiRuntimeStateProvider for DaemonApiRuntimeState {
         self.tracking.as_ref().and_then(|state| state.snapshot())
     }
 
+    fn tracking_runtime_state(&self) -> Option<TrackingRuntimeSnapshotState> {
+        self.tracking.as_deref().cloned()
+    }
+
     fn web_activity_snapshot(
         &self,
         settings: &WebActivitySettings,

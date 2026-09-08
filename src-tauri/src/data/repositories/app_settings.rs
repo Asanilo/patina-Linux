@@ -82,6 +82,14 @@ pub async fn commit_app_setting_mutations(
     pool: &Pool<Sqlite>,
     mutations: &[AppSettingMutation],
 ) -> Result<(), String> {
+    commit_app_setting_mutations_at(pool, mutations, current_timestamp_ms()).await
+}
+
+pub async fn commit_app_setting_mutations_at(
+    pool: &Pool<Sqlite>,
+    mutations: &[AppSettingMutation],
+    timestamp_ms: i64,
+) -> Result<(), String> {
     if mutations.is_empty() {
         return Ok(());
     }
@@ -102,6 +110,14 @@ pub async fn commit_app_setting_mutations(
         .execute(&mut *tx)
         .await
         .map_err(|error| format!("failed to save app setting: {error}"))?;
+
+        if mutation.key == "tracking_paused"
+            && crate::domain::settings::parse_boolean_setting(&mutation.value, false)
+        {
+            super::sessions::end_active_sessions_tx(&mut tx, timestamp_ms, None)
+                .await
+                .map_err(|error| format!("failed to seal paused tracking: {error}"))?;
+        }
     }
 
     tx.commit()
@@ -109,6 +125,13 @@ pub async fn commit_app_setting_mutations(
         .map_err(|error| format!("failed to commit app settings transaction: {error}"))?;
 
     Ok(())
+}
+
+fn current_timestamp_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
+        .unwrap_or(0)
 }
 
 pub fn validate_app_setting_mutations(mutations: &[AppSettingMutation]) -> Result<(), String> {
@@ -727,6 +750,55 @@ mod tests {
 
             assert!(result.is_err());
             assert_eq!(load_setting(&pool, LOCAL_API_TOKEN_KEY).await, None);
+        });
+    }
+
+    #[test]
+    fn pausing_tracking_seals_the_active_session_in_the_same_transaction() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            super::super::sessions::start_session(&pool, "Editor", "code", "A", 1_000, 1_000)
+                .await
+                .unwrap();
+            let pause = AppSettingMutation {
+                key: "tracking_paused".to_string(),
+                value: "1".to_string(),
+            };
+
+            pool.execute(
+                "CREATE TRIGGER reject_pause_seal
+                 BEFORE UPDATE OF end_time ON sessions
+                 BEGIN SELECT RAISE(ABORT, 'injected failure'); END",
+            )
+            .await
+            .unwrap();
+            assert!(
+                commit_app_setting_mutations_at(&pool, &[pause.clone()], 5_000)
+                    .await
+                    .is_err()
+            );
+            assert_eq!(load_setting(&pool, "tracking_paused").await, None);
+            assert!(super::super::sessions::load_active_session(&pool)
+                .await
+                .unwrap()
+                .is_some());
+
+            pool.execute("DROP TRIGGER reject_pause_seal")
+                .await
+                .unwrap();
+            commit_app_setting_mutations_at(&pool, &[pause], 5_000)
+                .await
+                .unwrap();
+            let session: (i64, i64) =
+                sqlx::query_as("SELECT end_time, duration FROM sessions WHERE id = 1")
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            assert_eq!(session, (5_000, 4_000));
+            assert_eq!(
+                load_setting(&pool, "tracking_paused").await.as_deref(),
+                Some("1")
+            );
         });
     }
 }

@@ -6,6 +6,12 @@ use std::sync::Arc;
 pub trait ApiRuntimeStateProvider: Send + Sync {
     fn tracking_snapshot(&self) -> Option<TrackingRuntimeSnapshot>;
 
+    fn tracking_runtime_state(
+        &self,
+    ) -> Option<crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState> {
+        None
+    }
+
     fn web_activity_snapshot(
         &self,
         settings: &WebActivitySettings,
@@ -122,6 +128,12 @@ impl ApiRuntimeContext {
 
     pub fn tracking_snapshot(&self) -> Option<TrackingRuntimeSnapshot> {
         self.state.tracking_snapshot()
+    }
+
+    pub fn tracking_runtime_state(
+        &self,
+    ) -> Option<crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState> {
+        self.state.tracking_runtime_state()
     }
 
     pub fn web_activity_snapshot(

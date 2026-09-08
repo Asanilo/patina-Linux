@@ -212,7 +212,7 @@ pub async fn end_active_sessions_started_at_or_before(
     Ok(did_end)
 }
 
-async fn end_active_sessions_tx(
+pub(crate) async fn end_active_sessions_tx(
     tx: &mut Transaction<'_, Sqlite>,
     raw_end_time: i64,
     latest_start_time: Option<i64>,
