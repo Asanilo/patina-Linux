@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 pub const CURRENT_BACKUP_VERSION: u32 = 1;
-pub const CURRENT_BACKUP_SCHEMA_VERSION: u32 = 9;
+pub const CURRENT_BACKUP_SCHEMA_VERSION: u32 = 10;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BackupMeta {
@@ -62,6 +62,8 @@ pub struct BackupWebActivitySegment {
     pub source: String,
     pub created_at: i64,
     pub updated_at: i64,
+    #[serde(default)]
+    pub native_session_id: Option<i64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -306,7 +308,8 @@ impl BackupPayload {
 mod tests {
     use super::{
         BackupIconCache, BackupMeta, BackupPayload, BackupSession, BackupSetting,
-        BackupTitleSample, CURRENT_BACKUP_SCHEMA_VERSION, CURRENT_BACKUP_VERSION,
+        BackupTitleSample, BackupWebActivitySegment, CURRENT_BACKUP_SCHEMA_VERSION,
+        CURRENT_BACKUP_VERSION,
     };
 
     fn sample_payload(version: u32, schema_version: u32) -> BackupPayload {
@@ -405,5 +408,31 @@ mod tests {
         assert_eq!(preview.icon_cache_count, 1);
         assert_eq!(preview.tool_reminder_count, 0);
         assert_eq!(preview.tool_timer_count, 0);
+    }
+
+    #[test]
+    fn legacy_web_activity_without_native_session_relation_still_decodes() {
+        let segment: BackupWebActivitySegment = serde_json::from_str(
+            r#"{
+                "id": 1,
+                "browser_client_id": "legacy",
+                "browser_kind": "firefox",
+                "browser_exe_name": "zen",
+                "domain": "example.com",
+                "normalized_domain": "example.com",
+                "url": null,
+                "title": null,
+                "favicon_url": null,
+                "start_time": 10,
+                "end_time": 20,
+                "duration": 10,
+                "source": "browser-extension",
+                "created_at": 10,
+                "updated_at": 20
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(segment.native_session_id, None);
     }
 }

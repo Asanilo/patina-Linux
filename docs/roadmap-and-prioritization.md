@@ -174,7 +174,7 @@ Windows runtime、installer、updater、ARM/UWP 等平台专属实现不移植�
 5. 完成首次启动迁移、systemd 服务控制、默认 owner 切换和双 owner 验收。
 6. 发布 daemon-backed DEB beta 并完成登录启动、关闭 UI 后持续记录、崩溃恢复、升级、卸载和数据保留验证。
 
-当前执行位置：第 1 步已完成单向合流；第 2 步已完成 owner 审计和 fail-closed 防护，活动导入已通过 owner-only 暂存票据收口，定时备份也已由 daemon 持有唯一调度任务、配置 API、运行状态与 SSE 失效通知，按应用删除已通过受确认的事务 API 和 typed client 收口。第 3 步已移植启动恢复、采样恢复、watchdog 竞态、browser bridge 重试、网页趋势区间去重、power lifecycle generation、暂停原子边界，以及网页段与活动原生浏览器 session 的持久化事务绑定。下一写侧是受控恢复；其正确性工作集中在 active timing 和网页关系重建，不应在 Desktop 热恢复路径上另建协议。详细状态以 [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md) 为准。
+当前执行位置：第 1 步已完成单向合流；第 2 步已完成 owner 审计和 fail-closed 防护，活动导入已通过 owner-only 暂存票据收口，定时备份也已由 daemon 持有唯一调度任务、配置 API、运行状态与 SSE 失效通知，按应用删除已通过受确认的事务 API 和 typed client 收口。第 3 步已移植启动恢复、采样恢复、watchdog 竞态、browser bridge 重试、网页趋势区间去重、power lifecycle generation、暂停原子边界，以及网页段与活动原生浏览器 session 的持久化事务绑定。下一写侧是受控恢复，按“备份关系完整性 -> 暂存和预约 -> 启动维护恢复 -> Desktop typed client 与重连状态”四个小批次推进；不在 Desktop 热恢复路径上另建协议。详细状态以 [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md) 为准。
 
 在第 6 步完成前，不再把新的上游大型功能只加入 Linux `main` 而不进入 patinad 架构线。
 

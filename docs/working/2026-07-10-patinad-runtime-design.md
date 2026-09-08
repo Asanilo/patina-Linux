@@ -18,7 +18,7 @@
 - 不扩大 KDE、wlroots 或移动端支持
 - 不为 MCP 提供任意文件操作能力
 
-## 3. 当前 Stage 2H.3c.2 状态
+## 3. 当前 Stage 2H.3 状态
 
 当前分支已经提供并验证：
 
@@ -116,7 +116,7 @@
 | Data 网页趋势重叠区间 | 已移植 | 按浏览器来源和规范域名求区间并集，不重复计算重叠心跳或重复数据，也不填补真实空白。 |
 | lock / suspend 与 in-flight probe | 已移植，待实机验收 | Desktop 与 daemon 共用 lifecycle generation、pending stop 和 transition gate；旧窗口探测不能在 lock/suspend 后恢复 active 状态，自动化已覆盖 lock/unlock 跨代封口，默认 owner 切换前仍需真实 GNOME 验收。 |
 | 暂停与 in-flight probe | 已移植 | `tracking_paused=true` 与 active session 封口在同一 SQLite 事务提交，托盘、Desktop 设置与 daemon API 通过 transition gate 更新 lifecycle generation，旧采样不能在暂停后续写。 |
-| 网页活动与原生浏览器 session 绑定 | 运行时已移植，restore 映射待实施 | 网页写入必须匹配当前活动的同名浏览器 session，并持久化 relation；原生 session 结束时 SQLite trigger 在同一事务内截断网页段。完整备份恢复和合并恢复仍需重建 relation，不能把无映射的恢复数据写成已完成。 |
+| 网页活动与原生浏览器 session 绑定 | 运行时已移植，backup/restore 映射正在实施 | 网页写入必须匹配当前活动的同名浏览器 session，并持久化 relation；原生 session 结束时 SQLite trigger 在同一事务内截断网页段。备份格式需向后兼容保存 relation，Replace/Merge 恢复都必须使用恢复后的 session ID 重建关系。 |
 | restore 的 active timing 边界 | 待实施 | 与 daemon maintenance restore 一并处理，避免在仍由 Desktop 执行的热恢复路径上增加第二套恢复协议。 |
 
 ### 3.3 合入功能的写侧边界
@@ -129,6 +129,17 @@
 - 备份恢复在 `--daemon-client-preview` 下暂时明确拒绝，不允许回退为 Desktop 直接写库。
 - remote backup 设置仍是待迁移写侧；不得在默认 daemon owner 切换前继续保留 Desktop SQLite mutation。
 - 下一写侧批次按“受控恢复 -> remote backup”推进。文件和目录选择保留为 Desktop 能力，数据库提交、调度状态与恢复事务属于 daemon。
+
+### 3.4 Stage 2H.3c.6 受控恢复实施顺序
+
+受控恢复拆为四个可独立验证的小批次，避免一次同时修改备份格式、文件边界、daemon 启动顺序和 Desktop 交互：
+
+1. **备份关系完整性**：在现有 `web_activity_segments` 备份条目中加入向后兼容的 `native_session_id`，Replace/Merge 使用恢复后的 session ID 映射重建 `web_activity_native_sessions`，并覆盖旧备份无该字段的兼容测试。
+2. **owner-only 暂存与预约**：复用活动导入的随机 ticket 思路，但使用独立恢复目录和持久 reservation。Desktop 只暂存已预览且指纹一致的归档；daemon API 只接受 ticket、SHA-256、大小、Replace/Merge、`confirmed: true`，并在请求 systemd restart 前再次验证归档。
+3. **启动维护恢复**：新 daemon 在 SQLite migrations 之后、API credential/settings 加载和所有后台 task 之前执行 reservation。恢复事务先把归档中的 active timing 封口到备份产生时的可信上限，再恢复 sessions、title samples、网页关系、settings、Tools 和导入数据；成功/失败都持久化可查询终态，失败不覆盖为成功也不循环重启。
+4. **Desktop typed client 与重连状态**：恢复命令在 daemon client 模式下创建预约并进入重连等待，按 ticket 查询 completed/failed；embedded 模式暂时保留现有兼容实现。文件选择和预览仍留在 Desktop，不把任意路径、归档正文或 restore 能力暴露给 browser UI、MCP、CLI/Agent。
+
+安全与删除约束：暂存根目录必须是当前 profile control root 下的真实 `0700` 目录，文件必须是新建 `0600` 普通文件；拒绝 symlink、hard-link 替换、超限文件、内容/指纹变化和跨 profile ticket。成功后只删除 reservation 精确绑定的暂存文件；失败文件保持 owner-only 供显式重试或取消，不做模糊路径清理。任何阶段失败都必须保持原 SQLite 数据可继续启动。
 
 ## 4. 目标结构
 

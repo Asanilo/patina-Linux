@@ -4,6 +4,7 @@ use crate::domain::web_activity::{
     WEB_ACTIVITY_SOURCE_BROWSER_EXTENSION, WEB_DOMAIN_OVERRIDE_KEY_PREFIX,
 };
 use sqlx::{Pool, QueryBuilder, Row, Sqlite, Transaction};
+use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WebActivitySegmentInput {
@@ -345,11 +346,14 @@ where
     E: sqlx::Executor<'e, Database = Sqlite>,
 {
     let rows = sqlx::query(
-        "SELECT id, browser_client_id, browser_kind, browser_exe_name, domain,
-                normalized_domain, url, title, favicon_url, start_time, end_time,
-                duration, source, created_at, updated_at
+        "SELECT web_activity_segments.id, browser_client_id, browser_kind,
+                browser_exe_name, domain, normalized_domain, url, title,
+                favicon_url, start_time, end_time, duration, source, created_at,
+                updated_at, web_activity_native_sessions.session_id AS native_session_id
          FROM web_activity_segments
-         ORDER BY id ASC",
+         LEFT JOIN web_activity_native_sessions
+           ON web_activity_native_sessions.segment_id = web_activity_segments.id
+         ORDER BY web_activity_segments.id ASC",
     )
     .fetch_all(executor)
     .await
@@ -373,6 +377,7 @@ where
             source: row.get("source"),
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),
+            native_session_id: row.get("native_session_id"),
         })
         .collect())
 }
@@ -470,6 +475,81 @@ pub async fn insert_missing_for_restore(
         .execute(&mut **tx)
         .await
         .map_err(|error| format!("failed to merge restore web activity: {error}"))?;
+    }
+
+    Ok(())
+}
+
+pub async fn resolve_restore_segment_id_map(
+    tx: &mut Transaction<'_, Sqlite>,
+    segments: &[BackupWebActivitySegment],
+) -> Result<HashMap<i64, i64>, String> {
+    let mut segment_id_map = HashMap::new();
+
+    for segment in segments {
+        let restored_id: Option<i64> = sqlx::query_scalar(
+            "SELECT id
+             FROM web_activity_segments
+             WHERE browser_client_id = ?
+               AND browser_kind = ?
+               AND browser_exe_name = ?
+               AND normalized_domain = ?
+               AND COALESCE(url, '') = COALESCE(?, '')
+               AND COALESCE(title, '') = COALESCE(?, '')
+               AND start_time = ?
+               AND COALESCE(end_time, -1) = COALESCE(?, -1)
+             ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, id ASC
+             LIMIT 1",
+        )
+        .bind(&segment.browser_client_id)
+        .bind(&segment.browser_kind)
+        .bind(&segment.browser_exe_name)
+        .bind(&segment.normalized_domain)
+        .bind(&segment.url)
+        .bind(&segment.title)
+        .bind(segment.start_time)
+        .bind(segment.end_time)
+        .bind(segment.id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|error| format!("failed to resolve restored web activity id: {error}"))?;
+
+        if let Some(restored_id) = restored_id {
+            segment_id_map.insert(segment.id, restored_id);
+        }
+    }
+
+    Ok(segment_id_map)
+}
+
+pub async fn insert_native_session_links_for_restore(
+    tx: &mut Transaction<'_, Sqlite>,
+    segments: &[BackupWebActivitySegment],
+    segment_id_map: &HashMap<i64, i64>,
+    session_id_map: &HashMap<i64, i64>,
+) -> Result<(), String> {
+    for segment in segments {
+        let (Some(source_session_id), Some(&restored_segment_id)) =
+            (segment.native_session_id, segment_id_map.get(&segment.id))
+        else {
+            continue;
+        };
+        let Some(&restored_session_id) = session_id_map.get(&source_session_id) else {
+            continue;
+        };
+
+        sqlx::query(
+            "INSERT INTO web_activity_native_sessions (segment_id, session_id)
+             VALUES (?, ?)
+             ON CONFLICT(segment_id) DO NOTHING",
+        )
+        .bind(restored_segment_id)
+        .bind(restored_session_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|error| {
+            format!("failed to restore web activity native session relation: {error}")
+        })?;
     }
 
     Ok(())

@@ -243,7 +243,17 @@ Local API 端口和 Token 属于 typed client 自身的连接配置。daemon 成
 
 数据清理属于数据库 owner，而不是 WebView persistence。Desktop 负责展示确认对话和计算用户选择的时间边界，Rust data owner 负责参数校验、关联表事务与 refresh event；daemon-client 模式必须通过 authenticated typed client 执行。批量删除和窗口标题清除即使已经通过 Bearer Token 认证，也必须显式提交 `confirmed: true`，且默认不暴露为 MCP tool。
 
-备份文件的选择、预览与本地目标写入属于 Desktop 文件能力，数据库恢复属于 runtime/database owner。导出必须在一个 SQLite 只读 snapshot transaction 中读取所有表，并以同目录临时文件、owner-only 权限、`fsync` 和原子 rename 发布；读取必须拒绝符号链接、超限 archive、超限解压总量与重复 ZIP entry。daemon 默认接管前，恢复路径必须升级为“Desktop 受控暂存 + daemon 重启前预约 + daemon 启动时恢复”，不能在追踪任务运行时热改数据库，也不能通过 HTTP 接受任意本机路径。
+备份文件的选择、预览与本地目标写入属于 Desktop 文件能力，数据库恢复属于 runtime/database owner。导出必须在一个 SQLite 只读 snapshot transaction 中读取所有表，并以同目录临时文件、owner-only 权限、`fsync` 和原子 rename 发布；读取必须拒绝符号链接、超限 archive、超限解压总量与重复 ZIP entry。备份格式必须保留网页活动与原生浏览器 session 的关系；Replace 和 Merge 恢复都要在同一事务内重建关系，不能把失去 session 边界约束的网页段视为完整恢复。
+
+daemon 默认接管前，恢复路径必须升级为“Desktop 受控暂存 + daemon 重启前预约 + daemon 启动时恢复”，不能在追踪任务运行时热改数据库，也不能通过 HTTP 接受任意本机路径。该流程遵循以下固定状态机：
+
+1. Desktop 在本地选择并预览归档，把未变化的字节复制到当前 profile 的 owner-only 暂存目录；HTTP 只携带随机 ticket、策略、预览指纹和显式确认，不携带路径或归档正文。
+2. daemon 重新打开暂存文件，复核普通文件、权限、大小、SHA-256、ZIP 安全边界和 restore compatibility；验证成功后把归档固定为该请求的不可变输入，并原子持久化 restore reservation，再申请已有的 systemd controlled restart。
+3. 当前实例只执行有序封口和关闭；新实例获取 runtime lease、解析 storage 并打开 SQLite 后，在启动 API、tracking、browser、Tools 和其他后台任务之前消费 reservation。
+4. restore 在单个 SQLite 事务内提交。归档中的 active native session、title sample 和网页段必须封口到备份产生时的可信边界，不能从备份时间增长到恢复启动时间；成功后才原子记录 completed 并删除该请求自己的暂存文件。
+5. 验证或事务失败时保持原数据库可用，原子记录 failed 和可诊断错误，不自动重试、不启动第二个 owner，也不删除不属于该 ticket 的文件。用户明确重试或取消前，失败归档保持 owner-only。
+
+restore status 可以在重连后按 ticket 查询；长期 Bearer API 不暴露任意文件读取、任意路径恢复或无确认恢复，MCP 不提供该破坏性工具。手工 preview daemon 因无法证明 systemd restart handoff，必须拒绝创建 reservation。
 
 浏览器 UI 不是公开 Web 部署面。daemon 默认只监听 loopback，并校验 loopback Host 与严格 Origin；浏览器 UI 使用 same-origin、HttpOnly、SameSite session，不获得长期 API Token。owner-only Bearer Token 只供 MCP、CLI 和 Agent 使用；浏览器扩展继续使用独立 bridge credential。浏览器写侧开放前，必须增加 CSRF 防护和操作确认，并验证跨站请求、DNS rebinding 与日志泄漏边界。
 

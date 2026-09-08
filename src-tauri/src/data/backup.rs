@@ -1046,6 +1046,18 @@ async fn restore_backup_payload(
             repositories::icon_cache::insert_for_restore(&mut tx, &payload.icon_cache).await?;
             repositories::web_activity::insert_for_restore(&mut tx, &payload.web_activity_segments)
                 .await?;
+            let web_activity_id_map = repositories::web_activity::resolve_restore_segment_id_map(
+                &mut tx,
+                &payload.web_activity_segments,
+            )
+            .await?;
+            repositories::web_activity::insert_native_session_links_for_restore(
+                &mut tx,
+                &payload.web_activity_segments,
+                &web_activity_id_map,
+                &session_id_map,
+            )
+            .await?;
             repositories::tools::insert_for_restore(
                 &mut tx,
                 &payload.tool_reminders,
@@ -1080,6 +1092,18 @@ async fn restore_backup_payload(
             repositories::web_activity::insert_missing_for_restore(
                 &mut tx,
                 &payload.web_activity_segments,
+            )
+            .await?;
+            let web_activity_id_map = repositories::web_activity::resolve_restore_segment_id_map(
+                &mut tx,
+                &payload.web_activity_segments,
+            )
+            .await?;
+            repositories::web_activity::insert_native_session_links_for_restore(
+                &mut tx,
+                &payload.web_activity_segments,
+                &web_activity_id_map,
+                &session_id_map,
             )
             .await?;
             repositories::tools::insert_missing_for_restore(
@@ -1643,10 +1667,150 @@ mod tests {
         pool.execute(db_schema::WEB_ACTIVITY_SCHEMA_SQL)
             .await
             .unwrap();
+        pool.execute(db_schema::WEB_ACTIVITY_SESSION_SCHEMA_SQL)
+            .await
+            .unwrap();
         pool.execute(db_schema::ACTIVITY_IMPORT_SCHEMA_SQL)
             .await
             .unwrap();
         pool
+    }
+
+    fn payload_with_bound_web_activity() -> BackupPayload {
+        BackupPayload {
+            version: CURRENT_BACKUP_VERSION,
+            meta: BackupMeta {
+                exported_at_ms: 5_000,
+                schema_version: CURRENT_BACKUP_SCHEMA_VERSION,
+                app_version: "test".to_string(),
+            },
+            sessions: vec![BackupSession {
+                id: 10,
+                app_name: "Zen".to_string(),
+                exe_name: "zen".to_string(),
+                window_title: Some("Example".to_string()),
+                start_time: 1_000,
+                end_time: Some(5_000),
+                duration: Some(4_000),
+                continuity_group_start_time: Some(1_000),
+            }],
+            title_samples: Vec::new(),
+            settings: Vec::new(),
+            icon_cache: Vec::new(),
+            web_activity_segments: vec![BackupWebActivitySegment {
+                id: 20,
+                browser_client_id: "firefox-client".to_string(),
+                browser_kind: "firefox".to_string(),
+                browser_exe_name: "zen".to_string(),
+                domain: "example.com".to_string(),
+                normalized_domain: "example.com".to_string(),
+                url: Some("https://example.com/".to_string()),
+                title: Some("Example".to_string()),
+                favicon_url: None,
+                start_time: 2_000,
+                end_time: Some(4_000),
+                duration: Some(2_000),
+                source: "browser-extension".to_string(),
+                created_at: 2_000,
+                updated_at: 4_000,
+                native_session_id: Some(10),
+            }],
+            tool_reminders: Vec::new(),
+            tool_timers: Vec::new(),
+            tool_timer_laps: Vec::new(),
+            tool_pomodoro_runs: Vec::new(),
+            tool_daily_stats: Vec::new(),
+            import_batches: Vec::new(),
+            import_exact_sessions: Vec::new(),
+            import_time_buckets: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn replace_restore_rebuilds_web_activity_native_session_relation() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+
+            restore_backup_payload(
+                &pool,
+                &payload_with_bound_web_activity(),
+                RestoreStrategy::Replace,
+            )
+            .await
+            .unwrap();
+
+            let relation: (i64, i64, String) = sqlx::query_as(
+                "SELECT relation.segment_id, relation.session_id, sessions.exe_name
+                 FROM web_activity_native_sessions relation
+                 JOIN sessions ON sessions.id = relation.session_id
+                 LIMIT 1",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(relation, (20, 10, "zen".to_string()));
+        });
+    }
+
+    #[test]
+    fn merge_restore_remaps_web_activity_relation_around_id_collisions() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            sqlx::query(
+                "INSERT INTO sessions (
+                    id, app_name, exe_name, window_title, start_time, end_time, duration,
+                    continuity_group_start_time
+                 ) VALUES (10, 'Existing', 'existing', 'Existing', 10, 20, 10, 10)",
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO web_activity_segments (
+                    id, browser_client_id, browser_kind, browser_exe_name, domain,
+                    normalized_domain, start_time, end_time, duration, source,
+                    created_at, updated_at
+                 ) VALUES (20, 'existing', 'firefox', 'existing', 'existing.test',
+                           'existing.test', 10, 20, 10, 'browser-extension', 10, 20)",
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+
+            let payload = payload_with_bound_web_activity();
+            restore_backup_payload(&pool, &payload, RestoreStrategy::Merge)
+                .await
+                .unwrap();
+            restore_backup_payload(&pool, &payload, RestoreStrategy::Merge)
+                .await
+                .unwrap();
+
+            let relation: (i64, i64, String, String) = sqlx::query_as(
+                "SELECT relation.segment_id, relation.session_id,
+                        segments.normalized_domain, sessions.exe_name
+                 FROM web_activity_native_sessions relation
+                 JOIN web_activity_segments segments ON segments.id = relation.segment_id
+                 JOIN sessions ON sessions.id = relation.session_id
+                 WHERE segments.normalized_domain = 'example.com'
+                 LIMIT 1",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_ne!(relation.0, 20);
+            assert_ne!(relation.1, 10);
+            assert_eq!(relation.2, "example.com");
+            assert_eq!(relation.3, "zen");
+
+            let restored_segment_count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM web_activity_segments
+                 WHERE normalized_domain = 'example.com'",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(restored_segment_count, 1);
+        });
     }
 
     #[test]
