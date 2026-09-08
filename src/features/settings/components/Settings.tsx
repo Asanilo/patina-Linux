@@ -40,6 +40,7 @@ export default function Settings({
     localApiActionStatus,
     handleApplyLocalApiPort,
     handleRotateLocalApiToken,
+    applyBackgroundTrackingAtLogin,
     cleanupRange,
     setCleanupRange,
     restoreStrategy,
@@ -254,6 +255,8 @@ export default function Settings({
             startMinimizedChecked={draftSettings.startMinimized}
             startMinimizedDisabled={!draftSettings.launchAtLogin}
             onStartMinimizedChange={(nextChecked) => handleChange("startMinimized", nextChecked)}
+            onBackgroundTrackingAtLoginApplied={applyBackgroundTrackingAtLogin}
+            onToast={onToast}
           />
 
           <SettingsDataSafetyPanel

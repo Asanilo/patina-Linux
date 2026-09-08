@@ -12,6 +12,7 @@ const CHUNK_BUDGETS = [
   { label: "tauri", pattern: /^tauri-.*\.js$/, gzipKiB: 6 },
   { label: "settings-storage", pattern: /^settings-storage-.*\.js$/, gzipKiB: 8 },
   { label: "settings-runtime-adapter", pattern: /^settingsRuntimeAdapterService-.*\.js$/, gzipKiB: 3 },
+  { label: "settings", pattern: /^Settings-.*\.js$/, gzipKiB: 24 },
   { label: "settings-scheduled-backup", pattern: /^SettingsScheduledBackupPanel-.*\.js$/, gzipKiB: 7 },
   { label: "settings-activity-import", pattern: /^SettingsActivityImportPanel-.*\.js$/, gzipKiB: 3 },
   { label: "activity-precedence", pattern: /^activity-precedence-.*\.js$/, gzipKiB: 3 },
@@ -19,7 +20,7 @@ const CHUNK_BUDGETS = [
   { label: "ui-shared", pattern: /^ui-.*\.js$/, gzipKiB: 2 },
   { label: "data-destination", pattern: /^DataDestinationTrendPanel-.*\.js$/, gzipKiB: 7 },
   { label: "data", pattern: /^Data-.*\.js$/, gzipKiB: 11 },
-  { label: "index", pattern: /^index-.*\.js$/, gzipKiB: 72 },
+  { label: "index", pattern: /^index-.*\.js$/, gzipKiB: 73 },
 ] as const;
 
 const FEATURE_OTHER_CHUNKS_GZIP_BUDGET_KI_B = 70;

@@ -1,8 +1,20 @@
-import { Activity, Clipboard, Globe2, MonitorCheck, Power, Server, Wrench } from "lucide-react";
+import {
+  Activity,
+  Clipboard,
+  Globe2,
+  MonitorCheck,
+  Power,
+  RefreshCw,
+  Server,
+  Undo2,
+  Wrench,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import QuietSwitch from "../../../shared/components/QuietSwitch";
+import type { QuietToastTone } from "../../../shared/components/QuietToast.tsx";
 import { UI_TEXT } from "../../../shared/copy/uiText.ts";
+import { useQuietDialogs } from "../../../shared/hooks/useQuietDialogs.tsx";
 import type { TrackerHealthSnapshot } from "../../../shared/types/tracking.ts";
 import {
   getWebActivityBridgeSnapshot,
@@ -19,12 +31,16 @@ import {
 } from "../../../platform/runtime/desktopIntegrationDiagnosticsGateway.ts";
 import {
   getDaemonServiceDiagnostics,
+  retryRuntimeOwnerCutover,
+  rollbackRuntimeOwnerToEmbedded,
+  setBackgroundTrackingAtLogin,
   type DaemonServiceDiagnosticsSnapshot,
 } from "../../../platform/runtime/daemonServiceDiagnosticsGateway.ts";
 import {
   buildSettingsDiagnosticsViewModel,
   type SettingsDiagnosticItem,
 } from "../services/settingsDiagnosticsViewModel.ts";
+import { resolveDaemonServiceControlAvailability } from "../services/settingsDaemonServiceControls.ts";
 
 type SettingsDiagnosticsPanelProps = {
   trackerHealth: TrackerHealthSnapshot;
@@ -36,7 +52,11 @@ type SettingsDiagnosticsPanelProps = {
   startMinimizedChecked: boolean;
   startMinimizedDisabled: boolean;
   onStartMinimizedChange: (nextChecked: boolean) => void;
+  onBackgroundTrackingAtLoginApplied: (enabled: boolean) => void;
+  onToast?: (message: string, tone?: QuietToastTone) => void;
 };
+
+type DaemonServiceAction = "idle" | "retrying" | "updating-login" | "rolling-back";
 
 const LIVE_DIAGNOSTICS_REFRESH_MS = 5_000;
 const DAEMON_SERVICE_DIAGNOSTICS_REFRESH_MS = 30_000;
@@ -59,7 +79,10 @@ export default function SettingsDiagnosticsPanel({
   startMinimizedChecked,
   startMinimizedDisabled,
   onStartMinimizedChange,
+  onBackgroundTrackingAtLoginApplied,
+  onToast,
 }: SettingsDiagnosticsPanelProps) {
+  const { confirm, dialogs } = useQuietDialogs();
   const [bridgeSnapshot, setBridgeSnapshot] = useState<WebActivityBridgeSnapshot | null>(null);
   const [localApiSnapshot, setLocalApiSnapshot] = useState<LocalApiDiagnosticsSnapshot | null>(null);
   const [desktopIntegrationSnapshot, setDesktopIntegrationSnapshot] =
@@ -67,6 +90,7 @@ export default function SettingsDiagnosticsPanel({
   const [daemonServiceSnapshot, setDaemonServiceSnapshot] =
     useState<DaemonServiceDiagnosticsSnapshot | null>(null);
   const [isRepairingAutostart, setIsRepairingAutostart] = useState(false);
+  const [daemonServiceAction, setDaemonServiceAction] = useState<DaemonServiceAction>("idle");
 
   useEffect(() => {
     let disposed = false;
@@ -193,65 +217,182 @@ export default function SettingsDiagnosticsPanel({
     }
   };
 
-  return (
-    <section className="qp-panel p-5 md:p-6">
-      <div className="mb-5 flex items-center gap-2.5 border-b border-[var(--qp-border-subtle)] pb-2">
-        <Activity size={16} className="text-[var(--qp-accent-default)]" />
-        <h2 className="text-sm font-semibold text-[var(--qp-text-primary)]">
-          {UI_TEXT.settings.diagnosticsTitle}
-        </h2>
-      </div>
+  const daemonControls = resolveDaemonServiceControlAvailability(daemonServiceSnapshot);
+  const daemonActionBusy = daemonServiceAction !== "idle";
+  const backgroundTrackingAtLogin = daemonServiceSnapshot?.cutover.backgroundTrackingAtLogin
+    ?? desktopIntegrationSnapshot?.backgroundTrackingAtLogin
+    ?? false;
 
-      <div className="divide-y divide-[var(--qp-border-subtle)]">
-        {diagnostics.map((item) => (
-          <DiagnosticItem
-            key={item.id}
-            item={item}
-            actions={item.id === "desktop-integration" ? (
-              <div className="grid min-w-[220px] gap-3">
-                {canRepairAutostart ? (
-                  <button
-                    type="button"
-                    className="qp-button-secondary inline-flex h-8 items-center justify-center gap-2 px-3 text-xs font-semibold"
-                    onClick={() => void handleRepairAutostart()}
-                    disabled={isRepairingAutostart}
-                    aria-label={UI_TEXT.accessibility.settings.repairAutostart}
-                  >
-                    <Wrench size={13} />
-                    <span>{isRepairingAutostart ? UI_TEXT.settings.repairingAutostartLabel : UI_TEXT.settings.repairAutostartLabel}</span>
-                  </button>
-                ) : null}
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-                  <DiagnosticSwitch
-                    label={UI_TEXT.settings.launchAtLoginLabel}
-                    checked={launchAtLoginChecked}
-                    onChange={onLaunchAtLoginChange}
-                    ariaLabel={UI_TEXT.accessibility.settings.toggleLaunchAtLogin}
-                  />
-                  <DiagnosticSwitch
-                    label={UI_TEXT.settings.startMinimizedLabel}
-                    checked={startMinimizedChecked}
-                    disabled={startMinimizedDisabled}
-                    onChange={onStartMinimizedChange}
-                    ariaLabel={UI_TEXT.accessibility.settings.toggleStartMinimized}
-                  />
-                </div>
-              </div>
-            ) : item.id === "local-api" ? (
+  const handleSetBackgroundTrackingAtLogin = async (enabled: boolean) => {
+    if (daemonActionBusy) return;
+    setDaemonServiceAction("updating-login");
+    try {
+      const snapshot = await setBackgroundTrackingAtLogin(enabled);
+      setDaemonServiceSnapshot(snapshot);
+      setDesktopIntegrationSnapshot((current) => current ? {
+        ...current,
+        backgroundTrackingAtLogin: enabled,
+      } : current);
+      onBackgroundTrackingAtLoginApplied(enabled);
+      onToast?.(UI_TEXT.settings.daemonLoginPreferenceApplied, "success");
+    } catch (error) {
+      console.warn("set background tracking login preference failed", error);
+      onToast?.(UI_TEXT.settings.daemonLoginPreferenceFailed, "warning");
+    } finally {
+      setDaemonServiceAction("idle");
+    }
+  };
+
+  const handleRetryDaemonCutover = async () => {
+    if (daemonActionBusy || !daemonControls.retry) return;
+    const confirmed = await confirm({
+      title: UI_TEXT.settings.daemonCutoverRetryTitle,
+      description: UI_TEXT.settings.daemonCutoverRetryDetail,
+      confirmLabel: UI_TEXT.settings.daemonCutoverRetryLabel,
+    });
+    if (!confirmed) return;
+
+    setDaemonServiceAction("retrying");
+    try {
+      await retryRuntimeOwnerCutover();
+    } catch (error) {
+      console.warn("retry runtime owner cutover failed", error);
+      onToast?.(UI_TEXT.settings.daemonCutoverRetryFailed, "warning");
+      setDaemonServiceAction("idle");
+    }
+  };
+
+  const handleRollbackDaemonOwner = async () => {
+    if (daemonActionBusy || !daemonControls.rollback) return;
+    const confirmed = await confirm({
+      title: UI_TEXT.settings.daemonOwnerRollbackTitle,
+      description: UI_TEXT.settings.daemonOwnerRollbackDetail,
+      confirmLabel: UI_TEXT.settings.daemonOwnerRollbackLabel,
+      danger: true,
+    });
+    if (!confirmed) return;
+
+    setDaemonServiceAction("rolling-back");
+    try {
+      await rollbackRuntimeOwnerToEmbedded();
+    } catch (error) {
+      console.warn("rollback runtime owner to embedded failed", error);
+      onToast?.(UI_TEXT.settings.daemonOwnerRollbackFailed, "warning");
+      setDaemonServiceAction("idle");
+    }
+  };
+
+  const daemonServiceActions = daemonControls.backgroundLogin
+    || daemonControls.retry
+    || daemonControls.rollback
+    ? (
+      <div className="grid min-w-[220px] gap-3">
+        {daemonControls.backgroundLogin ? (
+          <DiagnosticSwitch
+            label={UI_TEXT.settings.backgroundTrackingAtLoginLabel}
+            checked={backgroundTrackingAtLogin}
+            disabled={daemonActionBusy}
+            onChange={(enabled) => void handleSetBackgroundTrackingAtLogin(enabled)}
+            ariaLabel={UI_TEXT.accessibility.settings.toggleBackgroundTrackingAtLogin}
+          />
+        ) : null}
+        {daemonControls.retry || daemonControls.rollback ? (
+          <div className="flex flex-wrap justify-start gap-2 lg:justify-end">
+            {daemonControls.retry ? (
               <button
                 type="button"
-                className="qp-button-secondary inline-flex h-8 items-center gap-2 px-3 text-xs font-semibold"
-                onClick={() => void handleCopyApiCurl()}
-                aria-label={UI_TEXT.accessibility.settings.copyApiCurl}
+                className="qp-button-secondary inline-flex h-8 items-center justify-center gap-2 px-3 text-xs font-semibold"
+                onClick={() => void handleRetryDaemonCutover()}
+                disabled={daemonActionBusy}
+                aria-label={UI_TEXT.accessibility.settings.retryDaemonCutover}
               >
-                <Clipboard size={13} />
-                <span>{UI_TEXT.settings.copyApiCurlLabel}</span>
+                <RefreshCw
+                  size={13}
+                  className={daemonServiceAction === "retrying" ? "animate-spin" : undefined}
+                />
+                <span>{UI_TEXT.settings.daemonCutoverRetryLabel}</span>
               </button>
             ) : null}
-          />
-        ))}
+            {daemonControls.rollback ? (
+              <button
+                type="button"
+                className="qp-button-danger inline-flex h-8 items-center justify-center gap-2 px-3 text-xs font-semibold"
+                onClick={() => void handleRollbackDaemonOwner()}
+                disabled={daemonActionBusy}
+                aria-label={UI_TEXT.accessibility.settings.rollbackDaemonOwner}
+              >
+                <Undo2 size={13} />
+                <span>{UI_TEXT.settings.daemonOwnerRollbackLabel}</span>
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
-    </section>
+    )
+    : null;
+
+  return (
+    <>
+      {dialogs}
+      <section className="qp-panel p-5 md:p-6">
+        <div className="mb-5 flex items-center gap-2.5 border-b border-[var(--qp-border-subtle)] pb-2">
+          <Activity size={16} className="text-[var(--qp-accent-default)]" />
+          <h2 className="text-sm font-semibold text-[var(--qp-text-primary)]">
+            {UI_TEXT.settings.diagnosticsTitle}
+          </h2>
+        </div>
+
+        <div className="divide-y divide-[var(--qp-border-subtle)]">
+          {diagnostics.map((item) => (
+            <DiagnosticItem
+              key={item.id}
+              item={item}
+              actions={item.id === "daemon-service" ? daemonServiceActions : item.id === "desktop-integration" ? (
+                <div className="grid min-w-[220px] gap-3">
+                  {canRepairAutostart ? (
+                    <button
+                      type="button"
+                      className="qp-button-secondary inline-flex h-8 items-center justify-center gap-2 px-3 text-xs font-semibold"
+                      onClick={() => void handleRepairAutostart()}
+                      disabled={isRepairingAutostart}
+                      aria-label={UI_TEXT.accessibility.settings.repairAutostart}
+                    >
+                      <Wrench size={13} />
+                      <span>{isRepairingAutostart ? UI_TEXT.settings.repairingAutostartLabel : UI_TEXT.settings.repairAutostartLabel}</span>
+                    </button>
+                  ) : null}
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                    <DiagnosticSwitch
+                      label={UI_TEXT.settings.launchAtLoginLabel}
+                      checked={launchAtLoginChecked}
+                      onChange={onLaunchAtLoginChange}
+                      ariaLabel={UI_TEXT.accessibility.settings.toggleLaunchAtLogin}
+                    />
+                    <DiagnosticSwitch
+                      label={UI_TEXT.settings.startMinimizedLabel}
+                      checked={startMinimizedChecked}
+                      disabled={startMinimizedDisabled}
+                      onChange={onStartMinimizedChange}
+                      ariaLabel={UI_TEXT.accessibility.settings.toggleStartMinimized}
+                    />
+                  </div>
+                </div>
+              ) : item.id === "local-api" ? (
+                <button
+                  type="button"
+                  className="qp-button-secondary inline-flex h-8 items-center gap-2 px-3 text-xs font-semibold"
+                  onClick={() => void handleCopyApiCurl()}
+                  aria-label={UI_TEXT.accessibility.settings.copyApiCurl}
+                >
+                  <Clipboard size={13} />
+                  <span>{UI_TEXT.settings.copyApiCurlLabel}</span>
+                </button>
+              ) : null}
+            />
+          ))}
+        </div>
+      </section>
+    </>
   );
 }
 

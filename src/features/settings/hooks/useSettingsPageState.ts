@@ -175,6 +175,21 @@ export function useSettingsPageState({
     onSettingsChanged(nextSavedSettings);
   }, [appVersion, onSettingsChanged, savedSettings]);
 
+  const applyBackgroundTrackingAtLogin = useCallback((enabled: boolean) => {
+    if (!savedSettings) return;
+    const nextSavedSettings: AppSettings = {
+      ...savedSettings,
+      backgroundTrackingAtLogin: enabled,
+    };
+    setSavedSettings(nextSavedSettings);
+    setDraftSettings((current) => current ? {
+      ...current,
+      backgroundTrackingAtLogin: enabled,
+    } : current);
+    setSettingsBootstrapCache({ settings: nextSavedSettings, appVersion });
+    onSettingsChanged(nextSavedSettings);
+  }, [appVersion, onSettingsChanged, savedSettings]);
+
   const handleApplyLocalApiPort = useCallback(async (port: number): Promise<boolean> => {
     if (!savedSettings || localApiActionStatus !== "idle") return false;
     setLocalApiActionStatus("applying-port");
@@ -455,6 +470,7 @@ export function useSettingsPageState({
     localApiActionStatus,
     handleApplyLocalApiPort,
     handleRotateLocalApiToken,
+    applyBackgroundTrackingAtLogin,
     cleanupRange,
     setCleanupRange,
     restoreStrategy,
