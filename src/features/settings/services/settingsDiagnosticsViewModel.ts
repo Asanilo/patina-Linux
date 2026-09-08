@@ -92,6 +92,8 @@ function resolveDaemonServiceValue(
   if (!daemonService.managerAvailable) return "systemd 不可用";
   if (!daemonService.unitInstalled) return "未安装";
   if (daemonService.migrationState === "owner-conflict") return "运行冲突";
+  if (daemonService.migrationState === "cutover-failed") return "接管失败";
+  if (daemonService.migrationState === "cutover-pending") return "接管中";
   if (daemonService.active) return "运行中";
   return "已安装 / 未启用";
 }
@@ -105,6 +107,13 @@ function resolveDaemonServiceDetail(
   if (!daemonService.unitInstalled) return "当前安装未包含 patinad.service；daemon-backed DEB 才会安装该 unit。";
   if (daemonService.migrationState === "owner-conflict") {
     return "服务已启用或运行，但当前版本仍由 Patina Desktop 追踪。请先停用 patinad.service，避免两个追踪进程竞争。";
+  }
+  if (daemonService.migrationState === "cutover-failed") {
+    const failure = daemonService.cutover.failureMessage ?? "未提供具体错误";
+    return `后台接管未完成：${failure}。Patina 已暂停自动回退，避免同时启动两个追踪进程。`;
+  }
+  if (daemonService.migrationState === "cutover-pending") {
+    return "正在等待桌面端重启或后台服务完成追踪就绪确认。";
   }
   if (daemonService.migrationState === "managed") {
     return "后台追踪由 patinad.service 持续运行，关闭桌面窗口不会停止记录。";
@@ -127,6 +136,8 @@ function resolveDaemonServiceTone(
   if (!daemonService) return "muted";
   if (daemonService.error || !daemonService.managerAvailable) return "danger";
   if (daemonService.migrationState === "owner-conflict") return "danger";
+  if (daemonService.migrationState === "cutover-failed") return "danger";
+  if (daemonService.migrationState === "cutover-pending") return "warning";
   if (daemonService.migrationState === "managed") return "ok";
   if (daemonService.migrationState === "managed-blocked") return "danger";
   if (!daemonService.unitInstalled) return "warning";
@@ -139,7 +150,7 @@ function resolveDaemonServiceMetadata(
 ): SettingsDiagnosticMetadata[] {
   if (!daemonService) return [];
 
-  return [
+  const metadata = [
     { label: "Unit", value: daemonService.serviceName },
     { label: "Unit file", value: daemonService.unitFileState ?? "未找到" },
     {
@@ -147,6 +158,13 @@ function resolveDaemonServiceMetadata(
       value: [daemonService.activeState, daemonService.subState].filter(Boolean).join(" / ") || "未加载",
     },
   ];
+  if (daemonService.cutover.state !== "not-requested" && daemonService.cutover.state !== "unsupported") {
+    metadata.push({ label: "Cutover", value: daemonService.cutover.state });
+  }
+  if (daemonService.cutover.failureCode) {
+    metadata.push({ label: "Failure", value: daemonService.cutover.failureCode });
+  }
+  return metadata;
 }
 
 function resolveLocalApiMetadata(

@@ -50,6 +50,15 @@ pub struct RuntimeOwnerCutoverSnapshot {
     pub failure_message: Option<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RuntimeOwnerCutoverDiagnosticsSnapshot {
+    pub state: String,
+    pub request_id: Option<String>,
+    pub updated_at_ms: Option<u64>,
+    pub failure_code: Option<String>,
+    pub failure_message: Option<String>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeOwnerStartupDecision {
     Embedded,
@@ -65,6 +74,35 @@ pub enum RuntimeOwnerStartupDecision {
 impl RuntimeOwnerStartupDecision {
     pub const fn owns_embedded_runtime(&self) -> bool {
         matches!(self, Self::Embedded)
+    }
+}
+
+pub fn diagnose(
+    control_root: &Path,
+    profile: AppProfile,
+) -> RuntimeOwnerCutoverDiagnosticsSnapshot {
+    match read_reservation(control_root, profile) {
+        Ok(Some(reservation)) => RuntimeOwnerCutoverDiagnosticsSnapshot {
+            state: status_key(reservation.status).to_string(),
+            request_id: Some(reservation.request_id),
+            updated_at_ms: Some(reservation.updated_at_ms),
+            failure_code: reservation.failure_code,
+            failure_message: reservation.failure_message,
+        },
+        Ok(None) => RuntimeOwnerCutoverDiagnosticsSnapshot {
+            state: "not-requested".to_string(),
+            request_id: None,
+            updated_at_ms: None,
+            failure_code: None,
+            failure_message: None,
+        },
+        Err(reason) => RuntimeOwnerCutoverDiagnosticsSnapshot {
+            state: "blocked".to_string(),
+            request_id: None,
+            updated_at_ms: None,
+            failure_code: Some("invalid-reservation".to_string()),
+            failure_message: Some(reason),
+        },
     }
 }
 
@@ -309,6 +347,15 @@ fn bounded_failure_message(message: &str) -> String {
         end -= 1;
     }
     message[..end].to_string()
+}
+
+const fn status_key(status: RuntimeOwnerCutoverStatus) -> &'static str {
+    match status {
+        RuntimeOwnerCutoverStatus::Prepared => "prepared",
+        RuntimeOwnerCutoverStatus::Activating => "activating",
+        RuntimeOwnerCutoverStatus::Completed => "completed",
+        RuntimeOwnerCutoverStatus::Failed => "failed",
+    }
 }
 
 fn valid_request_id(request_id: &str) -> bool {
@@ -623,6 +670,39 @@ mod tests {
         let stored = failed.failure_message.unwrap();
         assert!(stored.len() <= MAX_FAILURE_MESSAGE_BYTES);
         assert!(message.starts_with(&stored));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn diagnostics_distinguish_absent_failed_and_invalid_reservations() {
+        let root = root("diagnostics");
+        assert_eq!(diagnose(&root, AppProfile::Dev).state, "not-requested");
+
+        let prepared = prepare(&root, AppProfile::Dev, true, false, 1_000).unwrap();
+        let failed = mark_failed(
+            &root,
+            AppProfile::Dev,
+            &prepared.request_id,
+            "activation-failed",
+            "service unavailable",
+            2_000,
+        )
+        .unwrap();
+        let diagnostics = diagnose(&root, AppProfile::Dev);
+        assert_eq!(diagnostics.state, "failed");
+        assert_eq!(diagnostics.request_id.as_deref(), Some(&*failed.request_id));
+        assert_eq!(
+            diagnostics.failure_message.as_deref(),
+            Some("service unavailable")
+        );
+
+        fs::write(reservation_path(&root), b"not-json").unwrap();
+        let diagnostics = diagnose(&root, AppProfile::Dev);
+        assert_eq!(diagnostics.state, "blocked");
+        assert_eq!(
+            diagnostics.failure_code.as_deref(),
+            Some("invalid-reservation")
+        );
         fs::remove_dir_all(root).unwrap();
     }
 

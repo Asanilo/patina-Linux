@@ -4,6 +4,8 @@ const GET_DAEMON_SERVICE_DIAGNOSTICS_COMMAND = "cmd_get_daemon_service_diagnosti
 
 export type DaemonServiceMigrationState =
   | "blocked"
+  | "cutover-failed"
+  | "cutover-pending"
   | "not-installed"
   | "owner-conflict"
   | "managed"
@@ -11,6 +13,31 @@ export type DaemonServiceMigrationState =
   | "ready"
   | "not-requested"
   | "unsupported";
+
+export type RuntimeOwnerCutoverState =
+  | "not-requested"
+  | "prepared"
+  | "activating"
+  | "completed"
+  | "failed"
+  | "blocked"
+  | "unsupported";
+
+interface RawRuntimeOwnerCutoverDiagnosticsSnapshot {
+  state: RuntimeOwnerCutoverState;
+  request_id: string | null;
+  updated_at_ms: number | null;
+  failure_code: string | null;
+  failure_message: string | null;
+}
+
+export interface RuntimeOwnerCutoverDiagnosticsSnapshot {
+  state: RuntimeOwnerCutoverState;
+  requestId: string | null;
+  updatedAtMs: number | null;
+  failureCode: string | null;
+  failureMessage: string | null;
+}
 
 interface RawDaemonServiceDiagnosticsSnapshot {
   service_name: string;
@@ -25,6 +52,7 @@ interface RawDaemonServiceDiagnosticsSnapshot {
   migration_reason: string;
   control_available: boolean;
   error: string | null;
+  cutover: RawRuntimeOwnerCutoverDiagnosticsSnapshot;
 }
 
 export interface DaemonServiceDiagnosticsSnapshot {
@@ -40,10 +68,13 @@ export interface DaemonServiceDiagnosticsSnapshot {
   migrationReason: string;
   controlAvailable: boolean;
   error: string | null;
+  cutover: RuntimeOwnerCutoverDiagnosticsSnapshot;
 }
 
 const MIGRATION_STATES = new Set<DaemonServiceMigrationState>([
   "blocked",
+  "cutover-failed",
+  "cutover-pending",
   "not-installed",
   "owner-conflict",
   "managed",
@@ -53,8 +84,32 @@ const MIGRATION_STATES = new Set<DaemonServiceMigrationState>([
   "unsupported",
 ]);
 
+const CUTOVER_STATES = new Set<RuntimeOwnerCutoverState>([
+  "not-requested",
+  "prepared",
+  "activating",
+  "completed",
+  "failed",
+  "blocked",
+  "unsupported",
+]);
+
 function isNullableString(value: unknown): value is string | null {
   return typeof value === "string" || value === null;
+}
+
+function isRawRuntimeOwnerCutoverDiagnostics(
+  value: unknown,
+): value is RawRuntimeOwnerCutoverDiagnosticsSnapshot {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+
+  return typeof record.state === "string"
+    && CUTOVER_STATES.has(record.state as RuntimeOwnerCutoverState)
+    && isNullableString(record.request_id)
+    && (record.updated_at_ms === null || typeof record.updated_at_ms === "number")
+    && isNullableString(record.failure_code)
+    && isNullableString(record.failure_message);
 }
 
 function isRawDaemonServiceDiagnostics(
@@ -75,7 +130,8 @@ function isRawDaemonServiceDiagnostics(
     && MIGRATION_STATES.has(record.migration_state as DaemonServiceMigrationState)
     && typeof record.migration_reason === "string"
     && typeof record.control_available === "boolean"
-    && isNullableString(record.error);
+    && isNullableString(record.error)
+    && isRawRuntimeOwnerCutoverDiagnostics(record.cutover);
 }
 
 function mapRawDaemonServiceDiagnostics(
@@ -94,6 +150,13 @@ function mapRawDaemonServiceDiagnostics(
     migrationReason: raw.migration_reason,
     controlAvailable: raw.control_available,
     error: raw.error,
+    cutover: {
+      state: raw.cutover.state,
+      requestId: raw.cutover.request_id,
+      updatedAtMs: raw.cutover.updated_at_ms,
+      failureCode: raw.cutover.failure_code,
+      failureMessage: raw.cutover.failure_message,
+    },
   };
 }
 

@@ -164,8 +164,12 @@ pub async fn cmd_get_daemon_service_diagnostics(
         .state::<crate::app::state::DesktopBehaviorState>()
         .snapshot();
     let autostart = crate::app::autostart::inspect_autostart_desktop_file();
+    let profile = crate::platform::app_paths::app_profile(&app);
+    let control_root = crate::platform::storage_paths::default_storage_paths(&app)?.control_root;
 
     Ok(crate::app::daemon_service::inspect(
+        profile,
+        &control_root,
         desktop_settings.background_tracking_at_login,
         desktop_settings.launch_at_login,
         autostart.valid(),

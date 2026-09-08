@@ -188,6 +188,13 @@ await runTest("settings diagnostics treat the installed disabled daemon unit as 
       migrationReason: "desktop autostart can be migrated later",
       controlAvailable: false,
       error: null,
+      cutover: {
+        state: "not-requested",
+        requestId: null,
+        updatedAtMs: null,
+        failureCode: null,
+        failureMessage: null,
+      },
     },
   });
 
@@ -217,6 +224,13 @@ await runTest("settings diagnostics expose an early daemon activation as an owne
       migrationReason: "desktop still owns tracking",
       controlAvailable: false,
       error: null,
+      cutover: {
+        state: "not-requested",
+        requestId: null,
+        updatedAtMs: null,
+        failureCode: null,
+        failureMessage: null,
+      },
     },
   });
 
@@ -246,6 +260,13 @@ await runTest("settings diagnostics report a managed daemon as healthy", () => {
       migrationReason: "patinad.service is the active tracking owner for Patina Desktop",
       controlAvailable: false,
       error: null,
+      cutover: {
+        state: "completed",
+        requestId: "cutover_test",
+        updatedAtMs: 1000,
+        failureCode: null,
+        failureMessage: null,
+      },
     },
   });
 
@@ -275,6 +296,13 @@ await runTest("settings diagnostics report an inactive managed daemon as blocked
       migrationReason: "Patina Desktop is a daemon client but patinad.service is not active",
       controlAvailable: false,
       error: null,
+      cutover: {
+        state: "completed",
+        requestId: "cutover_test",
+        updatedAtMs: 1000,
+        failureCode: null,
+        failureMessage: null,
+      },
     },
   });
 
@@ -282,6 +310,43 @@ await runTest("settings diagnostics report an inactive managed daemon as blocked
   assert.equal(service?.value, "已安装 / 未启用");
   assert.equal(service?.tone, "danger");
   assert.match(service?.detail ?? "", /追踪当前处于暂停状态/);
+});
+
+await runTest("settings diagnostics surface a failed runtime owner cutover", () => {
+  const items = buildSettingsDiagnosticsViewModel({
+    trackerHealth: HEALTHY_GNOME,
+    webActivityEnabled: false,
+    webActivityPort: 18080,
+    webActivityToken: "",
+    webActivityBridge: null,
+    daemonService: {
+      serviceName: "patinad.service",
+      managerAvailable: true,
+      unitInstalled: true,
+      unitFileState: "enabled",
+      enabled: true,
+      activeState: "failed",
+      subState: "failed",
+      active: false,
+      migrationState: "cutover-failed",
+      migrationReason: "runtime owner cutover requires explicit repair",
+      controlAvailable: false,
+      error: null,
+      cutover: {
+        state: "failed",
+        requestId: "cutover_test",
+        updatedAtMs: 1000,
+        failureCode: "daemon-not-ready",
+        failureMessage: "timed out waiting for tracking readiness",
+      },
+    },
+  });
+
+  const service = items.find((item) => item.id === "daemon-service");
+  assert.equal(service?.value, "接管失败");
+  assert.equal(service?.tone, "danger");
+  assert.match(service?.detail ?? "", /timed out waiting for tracking readiness/);
+  assert.equal(service?.metadata?.find((entry) => entry.label === "Failure")?.value, "daemon-not-ready");
 });
 
 console.log(`Passed ${passed} settings diagnostics view model tests`);

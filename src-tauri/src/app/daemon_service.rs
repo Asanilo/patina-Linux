@@ -21,9 +21,12 @@ pub struct DaemonServiceDiagnosticsSnapshot {
     pub migration_reason: String,
     pub control_available: bool,
     pub error: Option<String>,
+    pub cutover: crate::app::runtime_owner_cutover::RuntimeOwnerCutoverDiagnosticsSnapshot,
 }
 
 pub async fn inspect(
+    profile: crate::platform::app_paths::AppProfile,
+    control_root: &std::path::Path,
     background_tracking_at_login: bool,
     desktop_launch_at_login: bool,
     desktop_autostart_valid: bool,
@@ -32,8 +35,10 @@ pub async fn inspect(
     #[cfg(target_os = "linux")]
     {
         let service = crate::platform::linux::systemd_user_service::inspect_patinad_service().await;
+        let cutover = crate::app::runtime_owner_cutover::diagnose(control_root, profile);
         build_diagnostics(
             service,
+            cutover,
             background_tracking_at_login,
             desktop_launch_at_login,
             desktop_autostart_valid,
@@ -55,6 +60,13 @@ pub async fn inspect(
         migration_reason: "patinad systemd integration is only available on Linux".to_string(),
         control_available: false,
         error: None,
+        cutover: crate::app::runtime_owner_cutover::RuntimeOwnerCutoverDiagnosticsSnapshot {
+            state: "unsupported".to_string(),
+            request_id: None,
+            updated_at_ms: None,
+            failure_code: None,
+            failure_message: None,
+        },
     }
 }
 
@@ -347,57 +359,70 @@ fn should_stop_conflicting_service(
 #[cfg(target_os = "linux")]
 fn build_diagnostics(
     service: crate::platform::linux::systemd_user_service::SystemdUserServiceSnapshot,
+    cutover: crate::app::runtime_owner_cutover::RuntimeOwnerCutoverDiagnosticsSnapshot,
     background_tracking_at_login: bool,
     desktop_launch_at_login: bool,
     desktop_autostart_valid: bool,
     desktop_owns_embedded_runtime: bool,
 ) -> DaemonServiceDiagnosticsSnapshot {
-    let (migration_state, migration_reason) = if !service.manager_available {
-        (
-            "blocked",
-            "systemd user manager is unavailable; service migration cannot be evaluated",
-        )
-    } else if !service.unit_installed {
-        (
-            "not-installed",
-            "patinad.service is not installed; install the daemon-backed DEB before migration",
-        )
-    } else if desktop_owns_embedded_runtime && (service.enabled || service.active) {
-        (
-            "owner-conflict",
-            "patinad.service is enabled or active while Patina Desktop still owns tracking",
-        )
-    } else if !desktop_owns_embedded_runtime && service.active {
-        (
-            "managed",
-            "patinad.service is the active tracking owner for Patina Desktop",
-        )
-    } else if !desktop_owns_embedded_runtime {
-        (
-            "managed-blocked",
-            "Patina Desktop is a daemon client but patinad.service is not active",
-        )
-    } else if background_tracking_at_login && (!desktop_launch_at_login || desktop_autostart_valid)
-    {
-        (
-            "ready",
-            if desktop_launch_at_login {
-                "desktop autostart can be migrated after the desktop becomes a daemon client"
-            } else {
-                "background tracking can be enabled without desktop autostart"
-            },
-        )
-    } else if background_tracking_at_login {
-        (
-            "blocked",
-            "desktop launch-at-login is enabled but its autostart entry is not valid",
-        )
-    } else {
-        (
-            "not-requested",
-            "background login startup has not been requested; the service remains disabled",
-        )
-    };
+    let (migration_state, migration_reason) =
+        if matches!(cutover.state.as_str(), "failed" | "blocked") {
+            (
+                "cutover-failed",
+                "runtime owner cutover requires explicit repair",
+            )
+        } else if matches!(cutover.state.as_str(), "prepared" | "activating") {
+            (
+                "cutover-pending",
+                "runtime owner cutover is waiting for restart or daemon readiness",
+            )
+        } else if !service.manager_available {
+            (
+                "blocked",
+                "systemd user manager is unavailable; service migration cannot be evaluated",
+            )
+        } else if !service.unit_installed {
+            (
+                "not-installed",
+                "patinad.service is not installed; install the daemon-backed DEB before migration",
+            )
+        } else if desktop_owns_embedded_runtime && (service.enabled || service.active) {
+            (
+                "owner-conflict",
+                "patinad.service is enabled or active while Patina Desktop still owns tracking",
+            )
+        } else if !desktop_owns_embedded_runtime && service.active {
+            (
+                "managed",
+                "patinad.service is the active tracking owner for Patina Desktop",
+            )
+        } else if !desktop_owns_embedded_runtime {
+            (
+                "managed-blocked",
+                "Patina Desktop is a daemon client but patinad.service is not active",
+            )
+        } else if background_tracking_at_login
+            && (!desktop_launch_at_login || desktop_autostart_valid)
+        {
+            (
+                "ready",
+                if desktop_launch_at_login {
+                    "desktop autostart can be migrated after the desktop becomes a daemon client"
+                } else {
+                    "background tracking can be enabled without desktop autostart"
+                },
+            )
+        } else if background_tracking_at_login {
+            (
+                "blocked",
+                "desktop launch-at-login is enabled but its autostart entry is not valid",
+            )
+        } else {
+            (
+                "not-requested",
+                "background login startup has not been requested; the service remains disabled",
+            )
+        };
 
     DaemonServiceDiagnosticsSnapshot {
         service_name: crate::platform::linux::systemd_user_service::PATINAD_SERVICE_NAME
@@ -413,6 +438,7 @@ fn build_diagnostics(
         migration_reason: migration_reason.to_string(),
         control_available: false,
         error: service.error,
+        cutover,
     }
 }
 
@@ -424,10 +450,28 @@ mod tests {
     use crate::platform::app_paths::AppProfile;
     use crate::platform::linux::systemd_user_service::SystemdUserServiceSnapshot;
 
+    fn cutover(
+        state: &str,
+    ) -> crate::app::runtime_owner_cutover::RuntimeOwnerCutoverDiagnosticsSnapshot {
+        crate::app::runtime_owner_cutover::RuntimeOwnerCutoverDiagnosticsSnapshot {
+            state: state.to_string(),
+            request_id: None,
+            updated_at_ms: None,
+            failure_code: None,
+            failure_message: None,
+        }
+    }
+
     #[test]
     fn disabled_installed_service_is_ready_for_a_future_autostart_migration() {
-        let snapshot =
-            build_diagnostics(service_snapshot("disabled", false), true, true, true, true);
+        let snapshot = build_diagnostics(
+            service_snapshot("disabled", false),
+            cutover("not-requested"),
+            true,
+            true,
+            true,
+            true,
+        );
 
         assert_eq!(snapshot.migration_state, "ready");
         assert!(!snapshot.control_available);
@@ -437,6 +481,7 @@ mod tests {
     fn background_login_does_not_require_desktop_autostart_when_desktop_login_is_disabled() {
         let snapshot = build_diagnostics(
             service_snapshot("disabled", false),
+            cutover("not-requested"),
             true,
             false,
             false,
@@ -452,7 +497,14 @@ mod tests {
 
     #[test]
     fn enabled_service_is_a_conflict_before_desktop_owner_cutover() {
-        let snapshot = build_diagnostics(service_snapshot("enabled", true), true, true, true, true);
+        let snapshot = build_diagnostics(
+            service_snapshot("enabled", true),
+            cutover("not-requested"),
+            true,
+            true,
+            true,
+            true,
+        );
 
         assert_eq!(snapshot.migration_state, "owner-conflict");
         assert!(!snapshot.control_available);
@@ -465,7 +517,7 @@ mod tests {
         service.active_state = Some("active".to_string());
         service.sub_state = Some("running".to_string());
 
-        let snapshot = build_diagnostics(service, true, true, true, false);
+        let snapshot = build_diagnostics(service, cutover("completed"), true, true, true, false);
 
         assert_eq!(snapshot.migration_state, "managed");
         assert!(snapshot.active);
@@ -473,11 +525,39 @@ mod tests {
 
     #[test]
     fn inactive_service_is_blocked_after_desktop_becomes_a_managed_client() {
-        let snapshot =
-            build_diagnostics(service_snapshot("disabled", false), true, true, true, false);
+        let snapshot = build_diagnostics(
+            service_snapshot("disabled", false),
+            cutover("completed"),
+            true,
+            true,
+            true,
+            false,
+        );
 
         assert_eq!(snapshot.migration_state, "managed-blocked");
         assert!(!snapshot.active);
+    }
+
+    #[test]
+    fn failed_cutover_takes_priority_over_service_state() {
+        let mut failed = cutover("failed");
+        failed.failure_code = Some("daemon-not-ready".to_string());
+        failed.failure_message = Some("timed out".to_string());
+
+        let snapshot = build_diagnostics(
+            service_snapshot("enabled", true),
+            failed,
+            true,
+            true,
+            true,
+            false,
+        );
+
+        assert_eq!(snapshot.migration_state, "cutover-failed");
+        assert_eq!(
+            snapshot.cutover.failure_message.as_deref(),
+            Some("timed out")
+        );
     }
 
     #[test]
