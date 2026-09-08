@@ -299,6 +299,14 @@ const DAEMON_TRACKING_ENDPOINTS: &[ApiEndpoint] = &[
         path: "/api/v1/settings/local-api/token/rotate",
     },
     ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/data/cleanup",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/data/window-titles/clear",
+    },
+    ApiEndpoint {
         method: "GET",
         path: "/api/v1/system/service",
     },
@@ -373,6 +381,7 @@ const DAEMON_TRACKING_WRITE_OPERATIONS: &[&str] = &[
     "app-mapping",
     "app-settings",
     "classification",
+    "data-maintenance",
     "local-api-configuration",
     "runtime-settings",
     "service-lifecycle",
@@ -542,12 +551,15 @@ mod tests {
         assert!(surface.allows("POST", "/api/v1/settings/classification"));
         assert!(surface.allows("POST", "/api/v1/settings/tracker/pause"));
         assert!(surface.allows("POST", "/api/v1/settings/runtime/browser-activity"));
+        assert!(surface.allows("POST", "/api/v1/data/cleanup"));
+        assert!(surface.allows("POST", "/api/v1/data/window-titles/clear"));
         assert_eq!(
             surface.write_operations(),
             [
                 "app-mapping",
                 "app-settings",
                 "classification",
+                "data-maintenance",
                 "local-api-configuration",
                 "runtime-settings",
                 "service-lifecycle",

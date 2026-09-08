@@ -149,6 +149,8 @@ All Tools write tools require the tracking-owner daemon and the `tools` write sc
 
 The HTTP API advertises an `app-settings` write scope for Patina Desktop's validated batch persistence. The MCP wrapper intentionally does not expose a generic key/value settings tool: agents should use the narrower tracker, runtime, app-mapping, and local API tools above. Add a dedicated typed MCP tool when a new setting needs agent control instead of forwarding arbitrary setting keys.
 
+The HTTP API also advertises `data-maintenance` for the Desktop cleanup flow. The MCP wrapper intentionally omits session deletion and bulk title redaction because these operations are destructive; possessing the API Token alone is not treated as user intent, and the HTTP request still requires `confirmed: true`.
+
 Local API changes require the `local-api-configuration` write scope and explicit user intent. After a successful port change, the wrapper updates its in-process base URL. After Token rotation, the running wrapper rereads the owner-only path returned by the daemon; clients that supplied a fixed `PATINA_API_TOKEN` should still update their external configuration before restarting. Neither response contains the Token value.
 
 Service lifecycle tools are available only when capabilities advertise `service-lifecycle`:

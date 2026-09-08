@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { executeWrite, getDB } from "./sqlite.ts";
 
 export interface SettingRow {
@@ -33,17 +34,9 @@ export async function loadAllSettingRows(): Promise<SettingRow[]> {
 }
 
 export async function deleteSessionsBefore(cutoffTime: number): Promise<void> {
-  await executeWrite(
-    "DELETE FROM session_title_samples WHERE session_id IN (SELECT id FROM sessions WHERE start_time < ?)",
-    [cutoffTime],
-  );
-  await executeWrite("DELETE FROM sessions WHERE start_time < ?", [cutoffTime]);
-  await executeWrite("DELETE FROM web_activity_segments WHERE start_time < ?", [cutoffTime]);
+  await invoke("cmd_delete_tracking_data_before", { cutoffTimeMs: cutoffTime });
 }
 
 export async function clearAllSessionWindowTitles(): Promise<void> {
-  await executeWrite("DELETE FROM session_title_samples");
-  await executeWrite(
-    "UPDATE sessions SET window_title = '' WHERE COALESCE(window_title, '') <> ''",
-  );
+  await invoke("cmd_clear_all_window_titles");
 }

@@ -81,6 +81,12 @@ pub(crate) async fn route_request(
         ("POST", "/api/v1/settings/local-api/token/rotate") => {
             handlers::local_api::rotate_token(context).await
         }
+        ("POST", "/api/v1/data/cleanup") => {
+            handlers::data_maintenance::delete_tracking_data_before(context, body).await
+        }
+        ("POST", "/api/v1/data/window-titles/clear") => {
+            handlers::data_maintenance::clear_window_titles(context, body).await
+        }
         ("GET", "/api/v1/system/service") => handlers::service::get_service(context).await,
         ("POST", "/api/v1/system/service/restart") => {
             handlers::service::restart_service(context, body).await
@@ -841,6 +847,110 @@ mod tests {
         assert!(!serde_json::to_string(&runtime_settings.body)
             .unwrap()
             .contains("stored-browser-token"));
+
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn daemon_data_maintenance_is_bounded_transactional_and_emits_refresh_events() {
+        let (pool, context, sink, _control) = test_context().await;
+        pool.execute(crate::data::schema::WEB_ACTIVITY_SCHEMA_SQL)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO sessions (id, app_name, exe_name, window_title, start_time, end_time, duration)
+             VALUES (1, 'Old', 'old', 'Old title', 1000, 2000, 1000),
+                    (2, 'New', 'new', 'New title', 3000, 4000, 1000)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO session_title_samples (session_id, title, start_time, end_time)
+             VALUES (1, 'Old title', 1000, 2000), (2, 'New title', 3000, 4000)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let surface = crate::engine::api::surface::ApiSurface::DaemonTracking;
+        assert_eq!(
+            route(
+                &context,
+                crate::engine::api::surface::ApiSurface::DaemonReadOnly,
+                "POST",
+                "/api/v1/data/cleanup",
+                serde_json::json!({"cutoff_time_ms": 2500, "confirmed": true}),
+            )
+            .await
+            .status,
+            404
+        );
+        assert_eq!(
+            route(
+                &context,
+                surface,
+                "POST",
+                "/api/v1/data/cleanup",
+                serde_json::json!({"cutoff_time_ms": 2500, "confirmed": false}),
+            )
+            .await
+            .status,
+            400
+        );
+        assert_eq!(
+            route(
+                &context,
+                surface,
+                "POST",
+                "/api/v1/data/cleanup",
+                serde_json::json!({"cutoff_time_ms": -1, "confirmed": true}),
+            )
+            .await
+            .status,
+            400
+        );
+
+        let cleanup = route(
+            &context,
+            surface,
+            "POST",
+            "/api/v1/data/cleanup",
+            serde_json::json!({"cutoff_time_ms": 2500, "confirmed": true}),
+        )
+        .await;
+        assert_eq!(cleanup.status, 200);
+        assert_eq!(cleanup.body["data"]["sessions_deleted"], 1);
+        assert_eq!(cleanup.body["data"]["title_samples_deleted"], 1);
+
+        let redaction = route(
+            &context,
+            surface,
+            "POST",
+            "/api/v1/data/window-titles/clear",
+            serde_json::json!({"confirmed": true}),
+        )
+        .await;
+        assert_eq!(redaction.status, 200);
+        assert_eq!(redaction.body["data"]["sessions_redacted"], 1);
+        assert_eq!(redaction.body["data"]["title_samples_deleted"], 1);
+        assert_eq!(sink.events().len(), 2);
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM sessions")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM sessions WHERE COALESCE(window_title, '') <> ''",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            0
+        );
 
         pool.close().await;
     }

@@ -78,6 +78,8 @@ Current caveats:
 | `/api/v1/settings/local-api` | `GET` | Tracking daemon | Read sanitized local API listener and credential-file state |
 | `/api/v1/settings/local-api/port` | `POST` | Tracking daemon | Atomically move the local API listener |
 | `/api/v1/settings/local-api/token/rotate` | `POST` | Tracking daemon | Rotate the owner-only API Token and revoke old clients |
+| `/api/v1/data/cleanup` | `POST` | Tracking daemon | Delete tracking rows starting before an explicitly confirmed cutoff |
+| `/api/v1/data/window-titles/clear` | `POST` | Tracking daemon | Explicitly confirm deletion and redaction of stored window titles |
 | `/api/v1/system/service` | `GET` | Managed tracking daemon | Read systemd service identity and latest restart ticket |
 | `/api/v1/system/service/restart` | `POST` | Managed tracking daemon | Persist a restart ticket and gracefully return control to systemd |
 | `/api/v1/tools/snapshot` | `GET` | Implemented | Current Tools runtime snapshot |
@@ -952,6 +954,41 @@ Schema:
 ```
 
 Only non-resource preferences such as appearance, language, timeline display, desktop behavior, startup preferences, and remote-status configuration are accepted. Tracker pause/AFK, audio, browser bridge, and local API settings are rejected here and must use their dedicated endpoints so live resources and persistence cannot diverge.
+
+### `POST /api/v1/data/cleanup`
+
+Deletes session title samples, sessions, and browser activity segments whose owning row starts before `cutoff_time_ms`. The related deletes commit in one SQLite transaction. A session crossing the cutoff is deleted according to its start time, matching the Settings cleanup policy.
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/data/cleanup" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"cutoff_time_ms":1786118400000,"confirmed":true}'
+```
+
+Schema:
+
+```json
+{
+  "cutoff_time_ms": 1786118400000,
+  "confirmed": true
+}
+```
+
+The response reports `title_samples_deleted`, `sessions_deleted`, and `web_activity_segments_deleted`. A negative cutoff or missing/false confirmation returns `400` without writing.
+
+### `POST /api/v1/data/window-titles/clear`
+
+Deletes all title samples and replaces every non-empty legacy `sessions.window_title` value with an empty string in one transaction.
+
+```bash
+curl -s -X POST "$PATINA_API_BASE/api/v1/data/window-titles/clear" \
+  -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"confirmed":true}'
+```
+
+The response reports `title_samples_deleted` and `sessions_redacted`. This clears existing data; it does not disable future title capture. Use per-app title recording controls for that policy. The endpoint is intentionally absent from the MCP wrapper.
 
 ### `GET /api/v1/settings/runtime`
 

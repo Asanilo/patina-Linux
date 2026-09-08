@@ -384,6 +384,22 @@ mod tests {
             rejected,
             PatinadClientError::Http { status: 400, .. }
         ));
+        assert_eq!(
+            client
+                .delete_tracking_data_before(1)
+                .await
+                .unwrap()
+                .sessions_deleted,
+            0
+        );
+        assert_eq!(
+            client
+                .clear_window_titles()
+                .await
+                .unwrap()
+                .sessions_redacted,
+            1
+        );
 
         let tools = client
             .start_timer(crate::engine::api::types::StartTimerRequest {

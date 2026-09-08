@@ -2,6 +2,7 @@ pub mod app_settings_service;
 pub mod backup;
 pub mod classification_service;
 pub mod icon_cache_service;
+pub mod maintenance;
 pub mod remote_backup;
 pub mod repositories;
 pub mod schema;

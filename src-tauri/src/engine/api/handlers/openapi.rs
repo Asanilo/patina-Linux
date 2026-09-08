@@ -310,6 +310,28 @@ fn paths(surface: ApiSurface) -> Value {
         }),
     );
     object.insert(
+        "/api/v1/data/cleanup".to_string(),
+        json!({
+            "post": post_operation(
+                "Delete sessions, title samples, and browser activity starting before a cutoff.",
+                vec![],
+                "TrackingDataCleanupRequest",
+                "TrackingDataCleanupResponse",
+            )
+        }),
+    );
+    object.insert(
+        "/api/v1/data/window-titles/clear".to_string(),
+        json!({
+            "post": post_operation(
+                "Delete all stored title samples and redact session window titles.",
+                vec![],
+                "ConfirmedActionRequest",
+                "WindowTitleCleanupResponse",
+            )
+        }),
+    );
+    object.insert(
         "/api/v1/system/service".to_string(),
         json!({
             "get": get_operation(
@@ -389,7 +411,9 @@ fn schemas() -> Value {
                 "operations",
                 array_schema(enum_schema(vec![
                     "app-mapping",
+                    "app-settings",
                     "classification",
+                    "data-maintenance",
                     "local-api-configuration",
                     "runtime-settings",
                     "service-lifecycle",
@@ -1213,6 +1237,31 @@ fn schemas() -> Value {
             bounded_array_schema(schema_ref("AppSettingMutationRequest"), 256),
         )]),
     );
+    schemas.insert(
+        "TrackingDataCleanupRequest".to_string(),
+        object_schema(vec![
+            ("cutoff_time_ms", bounded_integer_schema(0, i64::MAX)),
+            ("confirmed", bool_schema()),
+        ]),
+    );
+    schemas.insert(
+        "TrackingDataCleanupResponse".to_string(),
+        envelope(object_schema(vec![
+            ("title_samples_deleted", bounded_integer_schema(0, i64::MAX)),
+            ("sessions_deleted", bounded_integer_schema(0, i64::MAX)),
+            (
+                "web_activity_segments_deleted",
+                bounded_integer_schema(0, i64::MAX),
+            ),
+        ])),
+    );
+    schemas.insert(
+        "WindowTitleCleanupResponse".to_string(),
+        envelope(object_schema(vec![
+            ("title_samples_deleted", bounded_integer_schema(0, i64::MAX)),
+            ("sessions_redacted", bounded_integer_schema(0, i64::MAX)),
+        ])),
+    );
 
     Value::Object(schemas)
 }
@@ -1630,6 +1679,10 @@ mod tests {
         assert!(schemas.contains_key("DaemonServiceRestartResponse"));
         assert!(schemas.contains_key("ConfirmedActionRequest"));
         assert!(schemas.contains_key("ClassificationMutationsRequest"));
+        assert!(schemas.contains_key("AppSettingsMutationsRequest"));
+        assert!(schemas.contains_key("TrackingDataCleanupRequest"));
+        assert!(schemas.contains_key("TrackingDataCleanupResponse"));
+        assert!(schemas.contains_key("WindowTitleCleanupResponse"));
         assert!(response
             .body
             .pointer("/components/schemas/BrowserActivitySettings/properties/token")

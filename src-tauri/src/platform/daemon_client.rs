@@ -14,7 +14,8 @@ use crate::engine::api::types::{
     AppSettingsMutationsRequest, AudioParticipationRequest, CapabilitiesResponse,
     ClassificationMutationRequest, ClassificationMutationsRequest, CreateReminderRequest,
     CreateSoftwareReminderRuleRequest, CurrentWindowResponse, DiagnosticsResponse,
-    StartPomodoroRequest, StartTimerRequest, TrackerSettingsResponse, TrackingPausedRequest,
+    StartPomodoroRequest, StartTimerRequest, TrackerSettingsResponse, TrackingDataCleanupRequest,
+    TrackingPausedRequest,
 };
 use crate::engine::runtime_event::RuntimeEventEnvelope;
 
@@ -336,6 +337,33 @@ impl PatinadClient {
             "/api/v1/settings/app",
             &AppSettingsMutationsRequest { mutations },
             "app settings update",
+        )
+        .await
+    }
+
+    pub async fn delete_tracking_data_before(
+        &self,
+        cutoff_time_ms: i64,
+    ) -> Result<crate::domain::data_maintenance::TrackingDataCleanupResult, PatinadClientError>
+    {
+        self.post_json(
+            "/api/v1/data/cleanup",
+            &TrackingDataCleanupRequest {
+                cutoff_time_ms,
+                confirmed: true,
+            },
+            "tracking data cleanup",
+        )
+        .await
+    }
+
+    pub async fn clear_window_titles(
+        &self,
+    ) -> Result<crate::domain::data_maintenance::WindowTitleCleanupResult, PatinadClientError> {
+        self.post_json(
+            "/api/v1/data/window-titles/clear",
+            &crate::engine::api::types::ConfirmedActionRequest { confirmed: true },
+            "window title cleanup",
         )
         .await
     }

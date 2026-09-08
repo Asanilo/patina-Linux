@@ -3,6 +3,7 @@ pub mod app_settings;
 pub mod apps;
 pub mod capabilities;
 pub mod classification;
+pub mod data_maintenance;
 pub mod diagnostics;
 pub mod health;
 pub mod local_api;

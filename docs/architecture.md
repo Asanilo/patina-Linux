@@ -240,6 +240,8 @@ Desktop command 的 owner 分流统一依赖受管的 typed daemon client state�
 
 Local API 端口和 Token 属于 typed client 自身的连接配置。daemon 成功切换 listener 或凭据后，Desktop Rust host 必须从 owner-only 文件重载 Token、原子替换共享 client，并通过 revision 通知主动重建 SSE；不能等待旧连接偶然超时。daemon HTTP 响应不得返回新 Token；当前 Desktop 仅通过既有的特权 Tauri command 把轮换结果交给设置页显示和复制。普通 app settings 通过白名单批量 endpoint 由 daemon 事务写入；会重建运行资源的字段在该 endpoint 明确拒绝，继续使用各自专用接口。
 
+数据清理属于数据库 owner，而不是 WebView persistence。Desktop 负责展示确认对话和计算用户选择的时间边界，Rust data owner 负责参数校验、关联表事务与 refresh event；daemon-client 模式必须通过 authenticated typed client 执行。批量删除和窗口标题清除即使已经通过 Bearer Token 认证，也必须显式提交 `confirmed: true`，且默认不暴露为 MCP tool。
+
 浏览器 UI 不是公开 Web 部署面。daemon 默认只监听 loopback，并校验 loopback Host 与严格 Origin；浏览器 UI 使用 same-origin、HttpOnly、SameSite session，不获得长期 API Token。owner-only Bearer Token 只供 MCP、CLI 和 Agent 使用；浏览器扩展继续使用独立 bridge credential。浏览器写侧开放前，必须增加 CSRF 防护和操作确认，并验证跨站请求、DNS rebinding 与日志泄漏边界。
 
 Tauri 是当前桌面客户端实现，不是长期协议 owner。未来可以在不改变 daemon、数据库、浏览器 UI、TUI 和 MCP 契约的前提下评估 GPUI 或其他 Linux 桌面 UI 框架；框架替换必须作为独立项目，以实测内存、启动速度、桌面集成完整性和维护成本决定。

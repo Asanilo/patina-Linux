@@ -227,7 +227,7 @@ pub struct LocalApiPortRequest {
     pub port: u16,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ConfirmedActionRequest {
     pub confirmed: bool,
 }
@@ -281,6 +281,12 @@ pub struct AppSettingMutationRequest {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct AppSettingsMutationsRequest {
     pub mutations: Vec<AppSettingMutationRequest>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct TrackingDataCleanupRequest {
+    pub cutoff_time_ms: i64,
+    pub confirmed: bool,
 }
 
 #[derive(Debug, Serialize)]

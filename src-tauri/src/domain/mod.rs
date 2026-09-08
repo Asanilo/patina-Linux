@@ -1,4 +1,5 @@
 pub mod backup;
+pub mod data_maintenance;
 pub mod settings;
 pub mod storage;
 pub mod tools;
