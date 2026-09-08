@@ -726,6 +726,104 @@ mod tests {
     }
 
     #[test]
+    fn every_persisted_boundary_keeps_one_safe_startup_owner() {
+        let boundary_root = root("restart-boundaries");
+        let prepared = prepare(&boundary_root, AppProfile::Production, true, true, 1_000).unwrap();
+
+        for expected_status in [
+            RuntimeOwnerCutoverStatus::Prepared,
+            RuntimeOwnerCutoverStatus::Activating,
+            RuntimeOwnerCutoverStatus::Completed,
+        ] {
+            let RuntimeOwnerStartupDecision::DaemonClient {
+                reservation,
+                should_attempt_service_start,
+            } = decide_desktop_startup(&boundary_root, AppProfile::Production)
+            else {
+                panic!("cutover boundary must remain daemon-owned");
+            };
+            assert_eq!(reservation.status, expected_status);
+            assert!(should_attempt_service_start);
+            match expected_status {
+                RuntimeOwnerCutoverStatus::Prepared => {
+                    mark_activating(
+                        &boundary_root,
+                        AppProfile::Production,
+                        &prepared.request_id,
+                        2_000,
+                    )
+                    .unwrap();
+                }
+                RuntimeOwnerCutoverStatus::Activating => {
+                    mark_completed(
+                        &boundary_root,
+                        AppProfile::Production,
+                        &prepared.request_id,
+                        3_000,
+                    )
+                    .unwrap();
+                }
+                RuntimeOwnerCutoverStatus::Completed => {}
+                _ => unreachable!(),
+            }
+        }
+
+        let rolling =
+            prepare_explicit_rollback(&boundary_root, AppProfile::Production, true, 4_000).unwrap();
+        let RuntimeOwnerStartupDecision::DaemonClient {
+            reservation,
+            should_attempt_service_start,
+        } = decide_desktop_startup(&boundary_root, AppProfile::Production)
+        else {
+            panic!("interrupted rollback must remain daemon-client owned");
+        };
+        assert_eq!(reservation.status, RuntimeOwnerCutoverStatus::RollingBack);
+        assert!(!should_attempt_service_start);
+
+        mark_rolled_back(
+            &boundary_root,
+            AppProfile::Production,
+            &rolling.request_id,
+            5_000,
+        )
+        .unwrap();
+        assert_eq!(
+            decide_desktop_startup(&boundary_root, AppProfile::Production),
+            RuntimeOwnerStartupDecision::Embedded
+        );
+        fs::remove_dir_all(boundary_root).unwrap();
+
+        let failed_root = root("failed-restart-boundary");
+        let failed = prepare(&failed_root, AppProfile::Production, true, true, 1_000).unwrap();
+        mark_activating(
+            &failed_root,
+            AppProfile::Production,
+            &failed.request_id,
+            2_000,
+        )
+        .unwrap();
+        mark_failed(
+            &failed_root,
+            AppProfile::Production,
+            &failed.request_id,
+            "service-start-failed",
+            "patinad.service entered failed state",
+            3_000,
+        )
+        .unwrap();
+        let RuntimeOwnerStartupDecision::DaemonClient {
+            reservation,
+            should_attempt_service_start,
+        } = decide_desktop_startup(&failed_root, AppProfile::Production)
+        else {
+            panic!("failed activation must remain daemon-client owned");
+        };
+        assert_eq!(reservation.status, RuntimeOwnerCutoverStatus::Failed);
+        assert!(!should_attempt_service_start);
+        fs::remove_dir_all(failed_root).unwrap();
+    }
+
+    #[test]
     fn completed_cutover_owns_the_background_login_preference() {
         let root = root("completed-preference");
         let prepared = prepare(&root, AppProfile::Production, true, true, 1_000).unwrap();
@@ -935,6 +1033,27 @@ mod tests {
             prepared.request_id,
             "cutover_00000000000000000000000000000000"
         );
+
+        mark_activating(&root, AppProfile::Dev, &prepared.request_id, 4_000).unwrap();
+        assert!(mark_completed(
+            &root,
+            AppProfile::Dev,
+            "cutover_00000000000000000000000000000000",
+            5_000,
+        )
+        .unwrap_err()
+        .contains("does not match"));
+        assert!(mark_failed(
+            &root,
+            AppProfile::Dev,
+            "cutover_00000000000000000000000000000000",
+            "stale-client",
+            "stale client attempted to fail a newer request",
+            5_000,
+        )
+        .unwrap_err()
+        .contains("does not match"));
+        assert_eq!(diagnose(&root, AppProfile::Dev).state, "activating");
         fs::remove_dir_all(root).unwrap();
     }
 

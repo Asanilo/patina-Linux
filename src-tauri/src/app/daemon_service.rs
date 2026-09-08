@@ -445,35 +445,31 @@ pub async fn confirm_runtime_owner_cutover(
         if *shutdown.borrow() {
             return;
         }
-        let attempt_error = match client_state.require() {
-            Ok(client) => match client.negotiate_tracking_owner().await {
-                Ok(negotiation) if negotiation.tracking_ready => {
-                    match crate::app::runtime_owner_cutover::mark_completed(
-                        &control_root,
-                        profile,
-                        &reservation.request_id,
-                        crate::app::runtime::now_ms(),
-                    ) {
-                        Ok(_) => println!(
-                            "[patinad] runtime owner cutover {} completed",
-                            reservation.request_id
-                        ),
-                        Err(error) => eprintln!(
-                            "[patinad] failed to confirm runtime owner cutover {}: {error}",
-                            reservation.request_id
-                        ),
-                    }
-                    return;
+        let confirmation = match client_state.require() {
+            Ok(client) => classify_cutover_confirmation(client.negotiate_tracking_owner().await),
+            Err(error) => CutoverConfirmation::Retry(error),
+        };
+        let attempt_error = match confirmation {
+            CutoverConfirmation::Ready => {
+                match crate::app::runtime_owner_cutover::mark_completed(
+                    &control_root,
+                    profile,
+                    &reservation.request_id,
+                    crate::app::runtime::now_ms(),
+                ) {
+                    Ok(_) => println!(
+                        "[patinad] runtime owner cutover {} completed",
+                        reservation.request_id
+                    ),
+                    Err(error) => eprintln!(
+                        "[patinad] failed to confirm runtime owner cutover {}: {error}",
+                        reservation.request_id
+                    ),
                 }
-                Ok(_) => "patinad owns tracking but is not ready".to_string(),
-                Err(error) => {
-                    if permanent_negotiation_failure(&error) {
-                        break error.to_string();
-                    }
-                    error.to_string()
-                }
-            },
-            Err(error) => error,
+                return;
+            }
+            CutoverConfirmation::Retry(error) => error,
+            CutoverConfirmation::Fail(error) => break error,
         };
         if Instant::now() >= deadline {
             break attempt_error;
@@ -498,6 +494,31 @@ pub async fn confirm_runtime_owner_cutover(
         "[patinad] runtime owner cutover {} failed: {error}",
         reservation.request_id
     );
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug, Eq, PartialEq)]
+enum CutoverConfirmation {
+    Ready,
+    Retry(String),
+    Fail(String),
+}
+
+#[cfg(target_os = "linux")]
+fn classify_cutover_confirmation(
+    result: Result<
+        crate::platform::daemon_client::PatinadNegotiation,
+        crate::platform::daemon_client::PatinadClientError,
+    >,
+) -> CutoverConfirmation {
+    match result {
+        Ok(negotiation) if negotiation.tracking_ready => CutoverConfirmation::Ready,
+        Ok(_) => CutoverConfirmation::Retry("patinad owns tracking but is not ready".to_string()),
+        Err(error) if permanent_negotiation_failure(&error) => {
+            CutoverConfirmation::Fail(error.to_string())
+        }
+        Err(error) => CutoverConfirmation::Retry(error.to_string()),
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -663,8 +684,9 @@ fn build_diagnostics(
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::{
-        build_diagnostics, explicit_retry_allowed, explicit_rollback_allowed,
-        permanent_negotiation_failure, should_stop_conflicting_service,
+        build_diagnostics, classify_cutover_confirmation, explicit_retry_allowed,
+        explicit_rollback_allowed, permanent_negotiation_failure, should_stop_conflicting_service,
+        CutoverConfirmation,
     };
     use crate::platform::app_paths::AppProfile;
     use crate::platform::linux::systemd_user_service::SystemdUserServiceSnapshot;
@@ -878,6 +900,48 @@ mod tests {
             code: Some("starting".to_string()),
             message: "not ready".to_string(),
         }));
+    }
+
+    #[test]
+    fn cutover_confirmation_retries_startup_and_fails_fast_on_protocol_errors() {
+        use crate::platform::daemon_client::{PatinadClientError, PatinadNegotiation};
+
+        let starting = PatinadNegotiation {
+            server_version: env!("CARGO_PKG_VERSION").to_string(),
+            protocol_version: crate::engine::api::protocol::CURRENT_PROTOCOL_VERSION,
+            tracking_ready: false,
+            event_stream_available: true,
+        };
+        assert_eq!(
+            classify_cutover_confirmation(Ok(starting)),
+            CutoverConfirmation::Retry("patinad owns tracking but is not ready".to_string())
+        );
+        assert!(matches!(
+            classify_cutover_confirmation(Err(PatinadClientError::Unreachable(
+                "service is starting".to_string()
+            ))),
+            CutoverConfirmation::Retry(_)
+        ));
+        assert!(matches!(
+            classify_cutover_confirmation(Err(PatinadClientError::IncompatibleProtocol {
+                client: 2,
+                server: 3,
+                min_supported_client: 3,
+                max_supported_client: 3,
+            })),
+            CutoverConfirmation::Fail(_)
+        ));
+
+        let ready = PatinadNegotiation {
+            server_version: env!("CARGO_PKG_VERSION").to_string(),
+            protocol_version: crate::engine::api::protocol::CURRENT_PROTOCOL_VERSION,
+            tracking_ready: true,
+            event_stream_available: true,
+        };
+        assert_eq!(
+            classify_cutover_confirmation(Ok(ready)),
+            CutoverConfirmation::Ready
+        );
     }
 
     fn service_snapshot(unit_file_state: &str, enabled: bool) -> SystemdUserServiceSnapshot {
