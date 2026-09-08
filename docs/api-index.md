@@ -160,11 +160,11 @@ Default daemon schema:
 {
   "data": {
     "server_version": "1.8.3",
-    "protocol_version": 1,
+    "protocol_version": 2,
     "protocol": {
-      "current": 1,
+      "current": 2,
       "min_supported_client": 1,
-      "max_supported_client": 1
+      "max_supported_client": 2
     },
     "runtime_host": "daemon",
     "event_stream": { "available": true },
@@ -178,6 +178,8 @@ Default daemon schema:
 ```
 
 `owned` means that host is responsible for running the capability. `ready` is never true when `owned` is false. This prevents clients from confusing a readable historical API with a live tracking owner.
+
+Protocol 2 adds the complete `runtime_snapshot` contract to `/api/v1/current`. Protocol 1 HTTP clients remain compatible with the existing flat fields, but desktop daemon clients require protocol 2 so they never reconstruct live state from incomplete data.
 
 Clients compare their supported protocol against `protocol.min_supported_client` and `protocol.max_supported_client` before using the daemon. `protocol_version` remains as the compatibility alias for `protocol.current`.
 
@@ -296,6 +298,7 @@ Returns the latest tracking runtime foreground window snapshot:
 - `idle_time_ms`
 - `process_path`
 - `sampled_at_ms`: daemon 采集该窗口快照的时间；客户端可用它跳过更早的 SSE replay 事件
+- `runtime_snapshot`: protocol 2 的完整 tracking runtime 状态，包括稳定窗口身份、追踪参与状态、probe 降级状态和恢复诊断；桌面 daemon client 应使用该对象，不应根据上面的兼容字段自行猜测状态
 
 Schema:
 
@@ -308,10 +311,75 @@ Schema:
     "is_afk": false,
     "idle_time_ms": 2400,
     "process_path": "/usr/bin/ghostty",
-    "sampled_at_ms": 1782000000000
+    "sampled_at_ms": 1782000000000,
+    "runtime_snapshot": {
+      "window": {
+        "hwnd": "0x100",
+        "root_owner_hwnd": "0x100",
+        "process_id": 12345,
+        "window_class": "com.mitchellh.ghostty",
+        "title": "patina",
+        "exe_name": "ghostty",
+        "process_path": "/usr/bin/ghostty",
+        "is_afk": false,
+        "idle_time_ms": 2400
+      },
+      "status": {
+        "is_tracking_active": true,
+        "sustained_participation_eligible": false,
+        "sustained_participation_active": false,
+        "sustained_participation_kind": null,
+        "sustained_participation_state": "inactive",
+        "sustained_participation_signal_source": null,
+        "sustained_participation_reason": "not-eligible",
+        "sustained_participation_diagnostics": {
+          "state": "inactive",
+          "reason": "not-eligible",
+          "window_identity": null,
+          "effective_signal_source": null,
+          "last_match_at_ms": null,
+          "grace_deadline_ms": null,
+          "system_media": {
+            "signal": {
+              "is_available": false,
+              "is_active": false,
+              "signal_source": null,
+              "source_app_id": null,
+              "source_app_identity": null,
+              "playback_type": null
+            },
+            "match_result": "unavailable"
+          },
+          "audio_session": {
+            "signal": {
+              "is_available": false,
+              "is_active": false,
+              "signal_source": null,
+              "source_app_id": null,
+              "source_app_identity": null,
+              "playback_type": null
+            },
+            "match_result": "unavailable"
+          }
+        }
+      },
+      "sampled_at_ms": 1782000000000,
+      "probe_status": "ok",
+      "degraded_reason": null,
+      "probe_diagnostics": {
+        "last_successful_sample_at_ms": 1782000000000,
+        "fallback_started_at_ms": null,
+        "fallback_count": 0,
+        "consecutive_fallback_count": 0,
+        "recovery_attempt_count": 0,
+        "last_recovery_attempt_at_ms": null
+      }
+    }
   }
 }
 ```
+
+字段级定义以 `/api/v1/openapi.json` 中的 `CurrentWindowResponse`、`TrackingRuntimeSnapshot`、`TrackingStatusSnapshot` 和相关 nested schema 为准。
 
 ### `GET /api/v1/sessions`
 

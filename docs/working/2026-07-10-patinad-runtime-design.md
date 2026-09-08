@@ -1,6 +1,6 @@
 # `patinad` 后台运行时设计
 
-> 状态：Stage 0 至 Stage 2H.2、Stage 2H.3a systemd 诊断和 Stage 2H.3b.1/2 typed daemon client 与只读 runtime adapter 已完成并验证；Stage 2H.3b.3 显式 desktop client 模式和 Stage 2H.3c 默认 owner 切换待实施。
+> 状态：Stage 0 至 Stage 2H.2、Stage 2H.3a systemd 诊断、Stage 2H.3b.1/2 typed daemon client 与只读 runtime adapter，以及 Stage 2H.3b.3 显式 desktop client 模式均已完成并验证；Stage 2H.3c 默认 owner 切换待实施。
 > 生命周期：本设计是当前 `patinad` 实施依据；后台接管稳定完成后移入 `docs/archive/`。
 
 ## 1. 目标
@@ -18,7 +18,7 @@
 - 不扩大 KDE、wlroots 或移动端支持
 - 不为 MCP 提供任意文件操作能力
 
-## 3. 当前 Stage 2H.3b.2 状态
+## 3. 当前 Stage 2H.3b.3 状态
 
 当前分支已经提供并验证：
 
@@ -76,7 +76,14 @@
 - JSON、SSE、认证失败、错误 runtime host、replay gap、窗口切换刷新和 watch shutdown 已使用真实 Axum loopback server 验证
 - DEB 尚未自动启用 systemd user service，desktop 也尚未切换为 daemon client
 - daemon 尚无浏览器 UI
-- Tauri desktop 尚未改为 daemon client
+- Tauri desktop 默认启动尚未切换为 daemon client
+- 默认启动仍使用 embedded owner；只有显式传入 `--daemon-client-preview` 才进入 daemon client 模式
+- preview 模式不获取 desktop runtime lease，不执行启动存储迁移，不启动 embedded tracker、watchdog、API、browser bridge、Tools、audio/media/power 或 remote status owner
+- preview 模式只打开已存在且具有当前 schema 的 SQLite 数据库，保留窗口、tray、desktop behavior 和 updater
+- daemon `/current` 已通过 protocol 2 返回完整 `runtime_snapshot`；客户端把它镜像到原有 Tauri tracking state，并转发现有 `active-window-changed` / `tracking-data-changed` 事件
+- daemon 连接断开时清除 live snapshot，不把旧窗口继续显示为当前状态；daemon 本身不随 desktop 退出
+- Token 不存在或 daemon 暂不可达时 preview desktop 仍可打开，并在 client runtime state 中保留明确错误
+- 真实 GNOME 会话验收确认 desktop 与 daemon 可使用同一 production profile 共存，runtime lease 始终属于 daemon，desktop 退出后 daemon API 和 tracking snapshot 继续更新
 
 ## 4. 目标结构
 
@@ -223,7 +230,7 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 - 已完成 Stage 2H.3a：通过用户会话 D-Bus 查询 systemd user service 真实状态，识别旧 desktop autostart 的迁移条件，并在默认 owner 切换前保持服务启用动作关闭
 - 已完成 Stage 2H.3b.1：typed loopback client、Bearer 认证、runtime host 与协议协商，以及真实 API transport 回归测试
 - 已完成 Stage 2H.3b.2：`/current`、active session 与标准 SSE parser 已接入只读 runtime adapter，具有 subscribe-before-read、cursor replay、resync 全量重读、有限重连和显式 shutdown
-- 待实施 Stage 2H.3b.3：在不运行 embedded tracker/API/browser/Tools 的显式 desktop client 模式下完成只读 UI 验收，同时保留桌面专属能力
+- 已完成 Stage 2H.3b.3：显式 preview 模式不运行 embedded tracker/API/browser/Tools，并复用现有 tracking commands 和前端事件；自动化与真实 GNOME 会话已验证唯一 daemon lease、完整状态读取，以及 desktop 退出后 daemon 持续追踪
 - 待实施 Stage 2H.3c：写侧切换、首次启动迁移、服务启停设置、默认 owner 切换和双 owner 验收
 - Tauri 改为 daemon desktop client，并保留 tray、通知、文件选择和 updater
 - 默认切换后 desktop 不启动或自动回退 embedded tracker；daemon 不可用时明确暂停、诊断和重启

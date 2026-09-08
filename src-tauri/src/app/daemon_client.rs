@@ -93,7 +93,10 @@ mod tests {
 
         let negotiated = client.negotiate_tracking_owner().await.unwrap();
 
-        assert_eq!(negotiated.protocol_version, 1);
+        assert_eq!(
+            negotiated.protocol_version,
+            crate::engine::api::protocol::CURRENT_PROTOCOL_VERSION
+        );
         assert!(!negotiated.tracking_ready);
         assert!(negotiated.event_stream_available);
         runtime.shutdown().await;
@@ -133,6 +136,18 @@ mod tests {
         let initial = state.snapshot();
         let initial_runtime = initial.runtime.unwrap();
         assert_eq!(initial_runtime.current_window.sampled_at_ms, 1_000);
+        assert_eq!(
+            initial_runtime
+                .current_window
+                .runtime_snapshot
+                .window
+                .exe_name,
+            "ghostty"
+        );
+        assert_eq!(
+            initial_runtime.current_window.runtime_snapshot.probe_status,
+            crate::engine::tracking::runtime_snapshot::TrackingRuntimeProbeStatus::Ok
+        );
         assert_eq!(initial_runtime.active_session.unwrap().exe_name, "ghostty");
         assert!(initial_runtime.coherent);
 

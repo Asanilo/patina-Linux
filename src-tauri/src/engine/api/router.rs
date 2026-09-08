@@ -604,7 +604,7 @@ mod tests {
         )
         .await;
         assert_eq!(capabilities.body["data"]["server_version"], "1.8.3");
-        assert_eq!(capabilities.body["data"]["protocol"]["current"], 1);
+        assert_eq!(capabilities.body["data"]["protocol"]["current"], 2);
         assert_eq!(capabilities.body["data"]["write_api"]["available"], true);
 
         assert_eq!(

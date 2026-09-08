@@ -484,25 +484,25 @@ mod tests {
     #[test]
     fn negotiation_rejects_incompatible_protocols_before_runtime_use() {
         let error =
-            negotiate_tracking_capabilities(capabilities("daemon", 2, true, true)).unwrap_err();
+            negotiate_tracking_capabilities(capabilities("daemon", 1, true, true)).unwrap_err();
 
         assert_eq!(error.code(), "incompatible-protocol");
     }
 
     #[test]
     fn negotiation_accepts_a_newer_server_that_explicitly_supports_this_client() {
-        let mut response = capabilities("daemon", 2, true, true);
-        response.protocol.min_supported_client = 1;
+        let mut response = capabilities("daemon", 3, true, true);
+        response.protocol.min_supported_client = 2;
 
         let negotiated = negotiate_tracking_capabilities(response).unwrap();
 
-        assert_eq!(negotiated.protocol_version, 2);
+        assert_eq!(negotiated.protocol_version, 3);
     }
 
     #[test]
     fn negotiation_accepts_a_starting_tracking_owner() {
         let negotiated =
-            negotiate_tracking_capabilities(capabilities("daemon", 1, false, true)).unwrap();
+            negotiate_tracking_capabilities(capabilities("daemon", 2, false, true)).unwrap();
 
         assert!(!negotiated.tracking_ready);
         assert!(negotiated.event_stream_available);

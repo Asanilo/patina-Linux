@@ -31,11 +31,13 @@ pub fn run() {
     };
     let runtime_health = Arc::new(engine::tracking::watchdog::RuntimeHealthState::default());
     let launched_by_autostart = app::runtime::was_launched_by_autostart();
+    let runtime_mode = app::runtime::desktop_runtime_mode();
     let app_version = context.package_info().version.to_string();
 
     app::bootstrap::build(app::bootstrap::BootstrapInput {
         runtime_health,
         launched_by_autostart,
+        runtime_mode,
         app_version,
     })
     .build(context)

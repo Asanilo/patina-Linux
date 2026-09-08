@@ -94,8 +94,8 @@ mod tests {
             build_capabilities("1.8.3", ApiSurface::DaemonReadOnly, true, true, true, false);
 
         assert_eq!(capabilities.server_version, "1.8.3");
-        assert_eq!(capabilities.protocol_version, 1);
-        assert_eq!(capabilities.protocol.current, 1);
+        assert_eq!(capabilities.protocol_version, 2);
+        assert_eq!(capabilities.protocol.current, 2);
         assert_eq!(capabilities.runtime_host, "daemon");
         assert!(capabilities.event_stream.available);
         assert!(!capabilities.tracking.owned);

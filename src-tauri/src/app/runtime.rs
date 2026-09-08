@@ -15,9 +15,38 @@ use std::sync::Arc;
 use tauri::Manager;
 
 pub const AUTOSTART_ARG: &str = "--autostart";
+pub const DAEMON_CLIENT_PREVIEW_ARG: &str = "--daemon-client-preview";
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DesktopRuntimeMode {
+    #[default]
+    Embedded,
+    DaemonClientPreview,
+}
+
+impl DesktopRuntimeMode {
+    pub fn from_args(args: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
+        if args
+            .into_iter()
+            .any(|arg| arg.as_ref() == DAEMON_CLIENT_PREVIEW_ARG)
+        {
+            Self::DaemonClientPreview
+        } else {
+            Self::Embedded
+        }
+    }
+
+    pub const fn owns_embedded_runtime(self) -> bool {
+        matches!(self, Self::Embedded)
+    }
+}
 
 pub fn was_launched_by_autostart() -> bool {
     std::env::args().any(|arg| arg == AUTOSTART_ARG)
+}
+
+pub fn desktop_runtime_mode() -> DesktopRuntimeMode {
+    DesktopRuntimeMode::from_args(std::env::args())
 }
 
 #[cfg(any(test, all(not(debug_assertions), not(patina_local_build))))]
@@ -54,39 +83,14 @@ pub fn setup(
     app: &mut tauri::App,
     runtime_health: Arc<RuntimeHealthState>,
     launched_by_autostart: bool,
+    runtime_mode: DesktopRuntimeMode,
 ) -> tauri::Result<()> {
-    tauri::async_runtime::block_on(crate::engine::remote_status_bridge::ensure_machine_id(
-        &app.handle().clone(),
-    ))
-    .map_err(std::io::Error::other)?;
-    power::start(app.handle().clone());
-    audio::start_signal_source(load_audio_participation_enabled(app.handle().clone()));
-    media::start_signal_source();
-    crate::app::web_activity_bridge::start(app.handle().clone());
-    crate::engine::remote_status_bridge::start(app.handle().clone());
-    crate::app::web_activity::spawn_startup_repair(app.handle().clone());
-    crate::app::web_activity::spawn_stale_watchdog(app.handle().clone());
-
-    // Start HTTP API server for AI agent integration
-    let api_server = crate::engine::api::server::ApiServerState::new();
-    let api_credentials = crate::engine::api::auth::ApiCredentialStore::new();
-    let api_token_path = crate::platform::storage_paths::resolve_storage_paths(app.handle())
-        .map_err(std::io::Error::other)?
-        .api_token_path;
-    let local_api_settings = load_local_api_settings(app.handle().clone());
-    if let Err(error) =
-        tauri::async_runtime::block_on(crate::engine::api::configuration::initialize(
-            &app.handle().clone(),
-            &api_server,
-            &api_credentials,
-            &api_token_path,
-            local_api_settings,
-        ))
-    {
-        eprintln!("[api] failed to initialize local API: {error}");
+    match runtime_mode {
+        DesktopRuntimeMode::Embedded => setup_embedded_runtime(app, runtime_health.clone())?,
+        DesktopRuntimeMode::DaemonClientPreview => {
+            setup_daemon_client_runtime(app, runtime_health.clone())?
+        }
     }
-    app.manage(api_credentials);
-    app.manage(api_server);
 
     let app_handle = app.handle().clone();
     main_window::ensure_main_window_with_initial_visibility(&app_handle, !launched_by_autostart)
@@ -103,14 +107,100 @@ pub fn setup(
 
     desktop_behavior::spawn_sync_from_storage(app.handle().clone(), launched_by_autostart);
     runtime_tasks::spawn_updater_startup_auto_check(app.handle().clone());
+
+    Ok(())
+}
+
+fn setup_embedded_runtime(
+    app: &mut tauri::App,
+    runtime_health: Arc<RuntimeHealthState>,
+) -> tauri::Result<()> {
+    tauri::async_runtime::block_on(crate::engine::remote_status_bridge::ensure_machine_id(
+        &app.handle().clone(),
+    ))
+    .map_err(std::io::Error::other)?;
+    power::start(app.handle().clone());
+    audio::start_signal_source(load_audio_participation_enabled(app.handle().clone()));
+    media::start_signal_source();
+    crate::app::web_activity_bridge::start(app.handle().clone());
+    crate::engine::remote_status_bridge::start(app.handle().clone());
+    crate::app::web_activity::spawn_startup_repair(app.handle().clone());
+    crate::app::web_activity::spawn_stale_watchdog(app.handle().clone());
+
+    let api_token_path = crate::platform::storage_paths::resolve_storage_paths(app.handle())
+        .map_err(std::io::Error::other)?
+        .api_token_path;
+    let local_api_settings = load_local_api_settings(app.handle().clone());
+    let api_server = app.state::<crate::engine::api::server::ApiServerState>();
+    let api_credentials = app.state::<crate::engine::api::auth::ApiCredentialStore>();
+    if let Err(error) =
+        tauri::async_runtime::block_on(crate::engine::api::configuration::initialize(
+            &app.handle().clone(),
+            &api_server,
+            &api_credentials,
+            &api_token_path,
+            local_api_settings,
+        ))
+    {
+        eprintln!("[api] failed to initialize local API: {error}");
+    }
+
     runtime_tasks::spawn_tracking_runtime_restart_loop(
         app.handle().clone(),
         runtime_health.clone(),
     );
     runtime_tasks::spawn_tracking_watchdog_restart_loop(app.handle().clone(), runtime_health);
     runtime_tasks::spawn_tools_runtime_restart_loop(app.handle().clone());
-
     Ok(())
+}
+
+fn setup_daemon_client_runtime(
+    app: &mut tauri::App,
+    runtime_health: Arc<RuntimeHealthState>,
+) -> tauri::Result<()> {
+    let api_token_path = crate::platform::storage_paths::resolve_storage_paths(app.handle())
+        .map_err(std::io::Error::other)?
+        .api_token_path;
+    let local_api_settings = load_local_api_settings(app.handle().clone());
+    let api_credentials = app.state::<crate::engine::api::auth::ApiCredentialStore>();
+    let token = match api_credentials.load_existing_at(&api_token_path) {
+        Ok(token) => token,
+        Err(error) => {
+            report_daemon_client_configuration_error(app, error);
+            return Ok(());
+        }
+    };
+    let client =
+        match crate::platform::daemon_client::PatinadClient::new(local_api_settings.port, token) {
+            Ok(client) => client,
+            Err(error) => {
+                report_daemon_client_error(app, error);
+                return Ok(());
+            }
+        };
+    let handle = crate::app::daemon_client::runtime::PatinadDesktopRuntimeHandle::start(
+        app.handle().clone(),
+        client,
+        runtime_health,
+    );
+    app.manage(handle);
+    Ok(())
+}
+
+fn report_daemon_client_configuration_error(app: &tauri::App, message: String) {
+    report_daemon_client_error(
+        app,
+        crate::platform::daemon_client::PatinadClientError::InvalidConfiguration(message),
+    );
+}
+
+fn report_daemon_client_error(
+    app: &tauri::App,
+    error: crate::platform::daemon_client::PatinadClientError,
+) {
+    eprintln!("[patinad-client] preview unavailable: {error}");
+    app.state::<crate::app::daemon_client::runtime::PatinadRuntimeState>()
+        .report_connection_error(&error);
 }
 
 fn load_local_api_settings(app: tauri::AppHandle) -> crate::domain::settings::LocalApiSettings {
@@ -141,7 +231,7 @@ fn load_audio_participation_enabled(app: tauri::AppHandle) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::is_workspace_target_binary;
+    use super::{is_workspace_target_binary, DesktopRuntimeMode, DAEMON_CLIENT_PREVIEW_ARG};
     use std::path::Path;
 
     #[test]
@@ -163,5 +253,18 @@ mod tests {
         assert!(!is_workspace_target_binary(Path::new(
             r"C:\Users\SYBao\AppData\Local\Patina\patina.exe"
         )));
+    }
+
+    #[test]
+    fn daemon_client_preview_requires_an_explicit_argument() {
+        assert_eq!(
+            DesktopRuntimeMode::from_args(["patina"]),
+            DesktopRuntimeMode::Embedded
+        );
+        assert_eq!(
+            DesktopRuntimeMode::from_args(["patina", DAEMON_CLIENT_PREVIEW_ARG]),
+            DesktopRuntimeMode::DaemonClientPreview
+        );
+        assert!(!DesktopRuntimeMode::DaemonClientPreview.owns_embedded_runtime());
     }
 }

@@ -19,6 +19,7 @@ use tauri::Manager;
 pub struct BootstrapInput {
     pub runtime_health: Arc<RuntimeHealthState>,
     pub launched_by_autostart: bool,
+    pub runtime_mode: runtime::DesktopRuntimeMode,
     pub app_version: String,
 }
 
@@ -28,9 +29,15 @@ pub fn build(input: BootstrapInput) -> tauri::Builder<tauri::Wry> {
         builder,
         &input.app_version,
         input.runtime_health.clone(),
+        input.runtime_mode,
     );
     let builder = register_invoke_handlers(builder);
-    register_runtime_hooks(builder, input.runtime_health, input.launched_by_autostart)
+    register_runtime_hooks(
+        builder,
+        input.runtime_health,
+        input.launched_by_autostart,
+        input.runtime_mode,
+    )
 }
 
 fn register_single_instance_plugin(
@@ -51,6 +58,7 @@ fn register_managed_state_and_plugins(
     builder: tauri::Builder<tauri::Wry>,
     app_version: &str,
     runtime_health: Arc<RuntimeHealthState>,
+    runtime_mode: runtime::DesktopRuntimeMode,
 ) -> tauri::Builder<tauri::Wry> {
     builder
         .manage(DesktopBehaviorState::default())
@@ -59,6 +67,10 @@ fn register_managed_state_and_plugins(
         .manage(WidgetWindowLifecycleState::default())
         .manage(TrackingRuntimeSnapshotState::default())
         .manage(runtime_health)
+        .manage(runtime_mode)
+        .manage(crate::app::daemon_client::runtime::PatinadRuntimeState::default())
+        .manage(crate::engine::api::auth::ApiCredentialStore::new())
+        .manage(crate::engine::api::server::ApiServerState::new())
         .manage(ToolsRuntimeState::default())
         .manage(crate::platform::web_activity_bridge::WebActivityBridgeRuntimeState::default())
         .manage(crate::engine::remote_status_bridge::RemoteStatusBridgeRuntimeState::default())
@@ -162,42 +174,54 @@ fn register_runtime_hooks(
     builder: tauri::Builder<tauri::Wry>,
     runtime_health: Arc<RuntimeHealthState>,
     launched_by_autostart: bool,
+    runtime_mode: runtime::DesktopRuntimeMode,
 ) -> tauri::Builder<tauri::Wry> {
     builder
         .on_menu_event(tray::handle_menu_event)
         .on_tray_icon_event(tray::handle_tray_icon_event)
         .on_window_event(tray::handle_window_event)
         .setup(move |app| {
-            let profile = crate::platform::app_paths::app_profile(app.handle());
-            let control_root = crate::platform::storage_paths::default_storage_paths(app.handle())?
-                .control_root;
-            let runtime_lease = crate::app::runtime_lease::acquire_runtime_lease(
-                &control_root,
-                profile,
-                crate::app::runtime_lease::RuntimeRole::Desktop,
-            )
-            .map_err(|error| std::io::Error::other(error.to_string()))?;
-            app.manage(runtime_lease);
-            if let Err(error) = tauri::async_runtime::block_on(
-                data::storage_migration::run_startup_storage_maintenance(app.handle()),
-            ) {
-                eprintln!("[storage] startup storage maintenance failed: {error}");
-                rfd::MessageDialog::new()
-                    .set_level(rfd::MessageLevel::Error)
-                    .set_title("Patina storage unavailable")
-                    .set_description(format!(
-                        "Patina could not open its configured storage. Restore the configured mount or directory, then start Patina again.\n\n{error}"
-                    ))
-                    .set_buttons(rfd::MessageButtons::Ok)
-                    .show();
-                return Err(std::io::Error::other(error).into());
-            }
-            tauri::async_runtime::block_on(data::sqlite_pool::initialize_app_sqlite(app.handle()))
+            if runtime_mode.owns_embedded_runtime() {
+                let profile = crate::platform::app_paths::app_profile(app.handle());
+                let control_root =
+                    crate::platform::storage_paths::default_storage_paths(app.handle())?
+                        .control_root;
+                let runtime_lease = crate::app::runtime_lease::acquire_runtime_lease(
+                    &control_root,
+                    profile,
+                    crate::app::runtime_lease::RuntimeRole::Desktop,
+                )
+                .map_err(|error| std::io::Error::other(error.to_string()))?;
+                app.manage(runtime_lease);
+                if let Err(error) = tauri::async_runtime::block_on(
+                    data::storage_migration::run_startup_storage_maintenance(app.handle()),
+                ) {
+                    eprintln!("[storage] startup storage maintenance failed: {error}");
+                    rfd::MessageDialog::new()
+                        .set_level(rfd::MessageLevel::Error)
+                        .set_title("Patina storage unavailable")
+                        .set_description(format!(
+                            "Patina could not open its configured storage. Restore the configured mount or directory, then start Patina again.\n\n{error}"
+                        ))
+                        .set_buttons(rfd::MessageButtons::Ok)
+                        .show();
+                    return Err(std::io::Error::other(error).into());
+                }
+                tauri::async_runtime::block_on(data::sqlite_pool::initialize_app_sqlite(
+                    app.handle(),
+                ))
                 .map_err(std::io::Error::other)?;
+            } else {
+                tauri::async_runtime::block_on(
+                    data::sqlite_pool::initialize_existing_app_sqlite(app.handle()),
+                )
+                .map_err(std::io::Error::other)?;
+            }
             Ok(runtime::setup(
                 app,
                 runtime_health.clone(),
                 launched_by_autostart,
+                runtime_mode,
             )?)
         })
 }
@@ -213,6 +237,11 @@ pub(crate) fn handle_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
         if keep_tray_visible && !exit_requested {
             api.prevent_exit();
         } else {
+            if let Some(runtime) =
+                app.try_state::<crate::app::daemon_client::runtime::PatinadDesktopRuntimeHandle>()
+            {
+                tauri::async_runtime::block_on(runtime.shutdown());
+            }
             tauri::async_runtime::block_on(
                 app.state::<crate::platform::web_activity_bridge::WebActivityBridgeRuntimeState>()
                     .shutdown(),
@@ -244,5 +273,23 @@ mod tests {
 
         assert!(lease < storage);
         assert!(storage < sqlite);
+    }
+
+    #[test]
+    fn daemon_client_startup_does_not_enter_the_embedded_owner_branch() {
+        let source = include_str!("bootstrap.rs");
+        let setup = source
+            .split(".setup(move |app|")
+            .nth(1)
+            .expect("runtime setup hook");
+        let owner_branch = setup
+            .find("if runtime_mode.owns_embedded_runtime()")
+            .expect("explicit embedded owner branch");
+        let existing_database = setup
+            .find("initialize_existing_app_sqlite")
+            .expect("daemon client database initialization");
+
+        assert!(owner_branch < existing_database);
+        assert!(setup.contains("initialize_app_sqlite"));
     }
 }

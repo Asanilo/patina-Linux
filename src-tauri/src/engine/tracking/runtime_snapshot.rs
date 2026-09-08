@@ -3,10 +3,10 @@ use crate::domain::tracking::TrackingStatusSnapshot;
 use crate::platform::linux::foreground::WindowInfo;
 #[cfg(target_os = "windows")]
 use crate::platform::windows::foreground::WindowInfo;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum TrackingRuntimeProbeStatus {
     Ok,
@@ -22,7 +22,7 @@ pub enum TrackingRuntimeProbeStatus {
     TaskFailedInactive,
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct TrackingRuntimeProbeDiagnostics {
     pub last_successful_sample_at_ms: Option<i64>,
     pub fallback_started_at_ms: Option<i64>,
@@ -32,7 +32,7 @@ pub struct TrackingRuntimeProbeDiagnostics {
     pub last_recovery_attempt_at_ms: Option<i64>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct TrackingRuntimeSnapshot {
     pub window: WindowInfo,
     pub status: TrackingStatusSnapshot,
@@ -64,6 +64,17 @@ impl TrackingRuntimeSnapshotState {
         match self.inner.lock() {
             Ok(guard) => guard.clone(),
             Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+
+    pub fn clear(&self) {
+        match self.inner.lock() {
+            Ok(mut guard) => {
+                *guard = None;
+            }
+            Err(poisoned) => {
+                *poisoned.into_inner() = None;
+            }
         }
     }
 }
@@ -104,5 +115,22 @@ mod tests {
         assert_eq!(loaded.sampled_at_ms, 123);
         assert_eq!(loaded.probe_status, TrackingRuntimeProbeStatus::Ok);
         assert_eq!(loaded.window.exe_name, snapshot.window.exe_name);
+    }
+
+    #[test]
+    fn clearing_snapshot_removes_stale_live_state() {
+        let state = TrackingRuntimeSnapshotState::default();
+        state.replace(TrackingRuntimeSnapshot {
+            window: make_window(),
+            status: TrackingStatusSnapshot::default(),
+            sampled_at_ms: 123,
+            probe_status: TrackingRuntimeProbeStatus::Ok,
+            degraded_reason: None,
+            probe_diagnostics: TrackingRuntimeProbeDiagnostics::default(),
+        });
+
+        state.clear();
+
+        assert!(state.snapshot().is_none());
     }
 }

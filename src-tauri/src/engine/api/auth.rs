@@ -53,6 +53,21 @@ impl ApiCredentialStore {
         Ok(token)
     }
 
+    pub fn load_existing_at(&self, path: &Path) -> Result<String, String> {
+        let _mutation = match self.mutation.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let token = load_token_file(path)?
+            .ok_or_else(|| format!("patinad API credential is missing at `{}`", path.display()))?;
+        self.replace_state(ApiCredentialState {
+            token: token.clone(),
+            path: path.to_path_buf(),
+            revision: self.next_revision(),
+        });
+        Ok(token)
+    }
+
     pub fn token(&self) -> Result<String, String> {
         self.with_state(|state| state.token.clone())
     }
@@ -375,6 +390,30 @@ mod tests {
         let token = initialize_token_file(&path, Some("legacy-token")).unwrap();
 
         assert_eq!(token, "file-token");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn loading_existing_credentials_never_creates_a_missing_token() {
+        let path = unique_test_path("read-only-missing");
+        let credentials = ApiCredentialStore::new();
+
+        let error = credentials.load_existing_at(&path).unwrap_err();
+
+        assert!(error.contains("credential is missing"));
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn loading_existing_credentials_populates_the_read_only_client_store() {
+        let path = unique_test_path("read-only-existing");
+        write_token_file_atomic(&path, "patina_api_existing").unwrap();
+        let credentials = ApiCredentialStore::new();
+
+        let token = credentials.load_existing_at(&path).unwrap();
+
+        assert_eq!(token, "patina_api_existing");
+        assert_eq!(credentials.token_path().unwrap(), path);
         let _ = std::fs::remove_file(path);
     }
 

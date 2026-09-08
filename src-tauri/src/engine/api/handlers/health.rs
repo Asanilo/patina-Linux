@@ -47,6 +47,7 @@ pub fn get_current(context: &ApiRuntimeContext) -> RouteResponse {
                 idle_time_ms: window.idle_time_ms,
                 process_path: window.process_path.clone(),
                 sampled_at_ms: snapshot.sampled_at_ms,
+                runtime_snapshot: snapshot.clone(),
             },
         })
         .unwrap_or_default(),

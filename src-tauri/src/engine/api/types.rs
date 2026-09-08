@@ -141,6 +141,7 @@ pub struct CurrentWindowResponse {
     pub idle_time_ms: u32,
     pub process_path: String,
     pub sampled_at_ms: i64,
+    pub runtime_snapshot: crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshot,
 }
 
 #[derive(Debug, Serialize)]

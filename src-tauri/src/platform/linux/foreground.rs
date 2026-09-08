@@ -8,7 +8,7 @@ use std::sync::{
 
 use crate::platform::tracking_diagnostics::WindowTrackingDiagnostics;
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct WindowInfo {
     pub hwnd: String,
     pub root_owner_hwnd: String,

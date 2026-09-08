@@ -166,6 +166,19 @@ pub async fn initialize_app_sqlite<R: Runtime>(app: &AppHandle<R>) -> Result<(),
     Ok(())
 }
 
+pub async fn initialize_existing_app_sqlite<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    let db_path = resolve_product_db_path(app)?;
+    let pool = open_single_connection_sqlite_pool(&db_path, false).await?;
+    if !has_current_baseline_schema(&pool).await? {
+        pool.close().await;
+        return Err(format!(
+            "existing sqlite database `{}` is not ready for daemon client mode",
+            db_path.display()
+        ));
+    }
+    register_sqlite_pool(app, pool).await
+}
+
 async fn prepare_current_schema_for_pool(pool: &Pool<Sqlite>) -> Result<(), String> {
     if repair_legacy_schema_before_baseline_normalization(pool).await? {
         eprintln!("[sql] repaired legacy sqlite schema before baseline normalization");

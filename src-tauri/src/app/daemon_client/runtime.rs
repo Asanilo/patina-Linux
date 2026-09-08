@@ -2,10 +2,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::Serialize;
+use tauri::async_runtime::JoinHandle;
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tokio::sync::watch;
 
 use crate::engine::api::types::{ActiveSessionResponse, CurrentWindowResponse};
-use crate::engine::runtime_event::{RuntimeEvent, RuntimeEventEnvelope};
+use crate::engine::runtime_event::{RuntimeEvent, RuntimeEventEnvelope, RuntimeEventSink};
+use crate::engine::tracking::watchdog::RuntimeHealthState;
 use crate::platform::daemon_client::{PatinadClient, PatinadClientError, PatinadStreamEvent};
 
 const INITIAL_REPLAY_CURSOR: u64 = 0;
@@ -82,6 +85,10 @@ impl PatinadRuntimeState {
             Err(poisoned) => update(&mut poisoned.into_inner()),
         }
     }
+
+    pub fn report_connection_error(&self, error: &PatinadClientError) {
+        self.connection_changed(PatinadRuntimeConnectionStatus::Reconnecting, Some(error));
+    }
 }
 
 impl PatinadRuntimeOutput for PatinadRuntimeState {
@@ -94,6 +101,9 @@ impl PatinadRuntimeOutput for PatinadRuntimeState {
             snapshot.connection_status = status;
             snapshot.error_code = error.map(|error| error.code().to_string());
             snapshot.error_message = error.map(ToString::to_string);
+            if error.is_some() || status == PatinadRuntimeConnectionStatus::Stopped {
+                snapshot.runtime = None;
+            }
         });
     }
 
@@ -113,6 +123,132 @@ impl PatinadRuntimeOutput for PatinadRuntimeState {
 pub struct PatinadRuntimeAdapter {
     client: PatinadClient,
     output: Arc<dyn PatinadRuntimeOutput>,
+}
+
+pub struct PatinadDesktopRuntimeHandle {
+    shutdown_tx: watch::Sender<bool>,
+    task: std::sync::Mutex<Option<JoinHandle<()>>>,
+}
+
+impl PatinadDesktopRuntimeHandle {
+    pub fn start<R: Runtime + 'static>(
+        app: AppHandle<R>,
+        client: PatinadClient,
+        runtime_health: Arc<RuntimeHealthState>,
+    ) -> Self {
+        let output = Arc::new(TauriPatinadRuntimeOutput {
+            app,
+            runtime_health,
+        });
+        let adapter = PatinadRuntimeAdapter::new(client, output);
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let task = tauri::async_runtime::spawn(async move {
+            adapter.run(shutdown_rx).await;
+        });
+        Self {
+            shutdown_tx,
+            task: std::sync::Mutex::new(Some(task)),
+        }
+    }
+
+    pub async fn shutdown(&self) {
+        let _ = self.shutdown_tx.send(true);
+        let task = match self.task.lock() {
+            Ok(mut task) => task.take(),
+            Err(poisoned) => poisoned.into_inner().take(),
+        };
+        let Some(mut task) = task else {
+            return;
+        };
+        if tokio::time::timeout(Duration::from_secs(2), &mut task)
+            .await
+            .is_err()
+        {
+            task.abort();
+            let _ = task.await;
+        }
+    }
+}
+
+struct TauriPatinadRuntimeOutput<R: Runtime> {
+    app: AppHandle<R>,
+    runtime_health: Arc<RuntimeHealthState>,
+}
+
+impl<R: Runtime> PatinadRuntimeOutput for TauriPatinadRuntimeOutput<R> {
+    fn connection_changed(
+        &self,
+        status: PatinadRuntimeConnectionStatus,
+        error: Option<&PatinadClientError>,
+    ) {
+        if let Some(state) = self.app.try_state::<PatinadRuntimeState>() {
+            state.connection_changed(status, error);
+        }
+        if error.is_some() || status == PatinadRuntimeConnectionStatus::Stopped {
+            if let Some(state) = self.app.try_state::<
+                crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState,
+            >() {
+                state.clear();
+            }
+            if error.is_some() {
+                let sink =
+                    crate::engine::tracking::runtime::TauriRuntimeEventSink::new(self.app.clone());
+                let _ = sink.emit(RuntimeEvent::TrackingDataChanged {
+                    reason: "daemon-client-disconnected".to_string(),
+                    changed_at_ms: crate::app::runtime::now_ms(),
+                });
+            }
+        }
+    }
+
+    fn snapshot_changed(&self, snapshot: PatinadRuntimeReadSnapshot) {
+        let tracking_snapshot = snapshot.current_window.runtime_snapshot.clone();
+        if let Some(state) = self.app.try_state::<PatinadRuntimeState>() {
+            state.snapshot_changed(snapshot);
+        }
+        let mut window_changed = true;
+        if let Some(state) = self
+            .app
+            .try_state::<crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState>(
+        ) {
+            window_changed = state
+                .snapshot()
+                .is_none_or(|previous| previous.window != tracking_snapshot.window);
+            state.replace(tracking_snapshot.clone());
+        }
+        self.runtime_health
+            .note_heartbeat(tracking_snapshot.sampled_at_ms);
+        if let Some(last_successful_sample_at_ms) = tracking_snapshot
+            .probe_diagnostics
+            .last_successful_sample_at_ms
+            .or_else(|| {
+                (tracking_snapshot.probe_status
+                    == crate::engine::tracking::runtime_snapshot::TrackingRuntimeProbeStatus::Ok)
+                    .then_some(tracking_snapshot.sampled_at_ms)
+            })
+        {
+            self.runtime_health
+                .note_successful_sample(last_successful_sample_at_ms);
+        }
+        if window_changed {
+            let _ = self
+                .app
+                .emit("active-window-changed", &tracking_snapshot.window);
+        }
+    }
+
+    fn tracking_data_changed(&self, event: &RuntimeEventEnvelope) {
+        let sink = crate::engine::tracking::runtime::TauriRuntimeEventSink::new(self.app.clone());
+        if let Err(error) = sink.emit(event.event.clone()) {
+            eprintln!("[patinad-client] failed to forward runtime event: {error}");
+        }
+    }
+
+    fn resync_required(&self, reason: &str, missed: Option<u64>) {
+        eprintln!(
+            "[patinad-client] event stream resync required: reason={reason}, missed={missed:?}"
+        );
+    }
 }
 
 impl PatinadRuntimeAdapter {
@@ -312,6 +448,21 @@ mod tests {
     }
 
     #[test]
+    fn runtime_state_drops_stale_live_data_after_disconnect() {
+        let state = PatinadRuntimeState::default();
+        state.snapshot_changed(snapshot("ghostty", Some("ghostty"), 1_000, Some(4)));
+
+        state.connection_changed(
+            PatinadRuntimeConnectionStatus::Reconnecting,
+            Some(&PatinadClientError::Unreachable("offline".to_string())),
+        );
+
+        let current = state.snapshot();
+        assert!(current.runtime.is_none());
+        assert_eq!(current.error_code.as_deref(), Some("unreachable"));
+    }
+
+    #[test]
     fn snapshot_marks_cross_request_window_transition_as_incoherent() {
         let snapshot = snapshot("ghostty", Some("obsidian"), 1_000, None);
 
@@ -335,6 +486,26 @@ mod tests {
         sampled_at_ms: i64,
         last_event_sequence: Option<u64>,
     ) -> PatinadRuntimeReadSnapshot {
+        let runtime_snapshot = crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshot {
+            window: crate::platform::linux::foreground::WindowInfo {
+                hwnd: "0x100".to_string(),
+                root_owner_hwnd: "0x100".to_string(),
+                process_id: 42,
+                window_class: current_exe.to_string(),
+                title: "Window".to_string(),
+                exe_name: current_exe.to_string(),
+                process_path: format!("/usr/bin/{current_exe}"),
+                is_afk: false,
+                idle_time_ms: 0,
+            },
+            status: crate::domain::tracking::TrackingStatusSnapshot::default(),
+            sampled_at_ms,
+            probe_status: crate::engine::tracking::runtime_snapshot::TrackingRuntimeProbeStatus::Ok,
+            degraded_reason: None,
+            probe_diagnostics:
+                crate::engine::tracking::runtime_snapshot::TrackingRuntimeProbeDiagnostics::default(
+                ),
+        };
         PatinadRuntimeReadSnapshot {
             current_window: CurrentWindowResponse {
                 exe_name: current_exe.to_string(),
@@ -344,6 +515,7 @@ mod tests {
                 idle_time_ms: 0,
                 process_path: format!("/usr/bin/{current_exe}"),
                 sampled_at_ms,
+                runtime_snapshot,
             },
             active_session: active_exe.map(|exe_name| ActiveSessionResponse {
                 id: 1,

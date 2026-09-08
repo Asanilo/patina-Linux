@@ -23,7 +23,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::platform::windows::handles::OwnedHandle;
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct WindowInfo {
     pub hwnd: String,
     pub root_owner_hwnd: String,

@@ -455,6 +455,182 @@ fn schemas() -> Value {
         ]),
     );
     schemas.insert(
+        "WindowInfo".to_string(),
+        object_schema(vec![
+            ("hwnd", string_schema()),
+            ("root_owner_hwnd", string_schema()),
+            ("process_id", integer_schema()),
+            ("window_class", string_schema()),
+            ("title", string_schema()),
+            ("exe_name", string_schema()),
+            ("process_path", string_schema()),
+            ("is_afk", bool_schema()),
+            ("idle_time_ms", integer_schema()),
+        ]),
+    );
+    schemas.insert(
+        "SustainedParticipationSignalSnapshot".to_string(),
+        object_schema(vec![
+            ("is_available", bool_schema()),
+            ("is_active", bool_schema()),
+            (
+                "signal_source",
+                nullable_enum_schema(vec!["system-media", "audio-session"]),
+            ),
+            ("source_app_id", nullable_string_schema()),
+            (
+                "source_app_identity",
+                nullable_enum_schema(vec![
+                    "chrome", "edge", "firefox", "brave", "zoom", "teams", "vlc", "bilibili",
+                    "douyin", "we-meet",
+                ]),
+            ),
+            (
+                "playback_type",
+                nullable_enum_schema(vec!["unknown", "audio", "video", "image"]),
+            ),
+        ]),
+    );
+    schemas.insert(
+        "SustainedParticipationSignalEvaluationSnapshot".to_string(),
+        object_schema(vec![
+            ("signal", schema_ref("SustainedParticipationSignalSnapshot")),
+            (
+                "match_result",
+                enum_schema(vec![
+                    "unavailable",
+                    "inactive",
+                    "identity-mismatch",
+                    "matched",
+                ]),
+            ),
+        ]),
+    );
+    schemas.insert(
+        "SustainedParticipationDiagnosticsSnapshot".to_string(),
+        object_schema(vec![
+            (
+                "state",
+                enum_schema(vec!["inactive", "candidate", "active", "grace", "expired"]),
+            ),
+            (
+                "reason",
+                enum_schema(vec![
+                    "no-signal",
+                    "tracking-paused",
+                    "empty-window",
+                    "not-eligible",
+                    "signal-inactive",
+                    "identity-mismatch",
+                    "signal-matched",
+                    "grace-window",
+                    "grace-expired",
+                    "sustained-window-expired",
+                ]),
+            ),
+            (
+                "window_identity",
+                nullable_enum_schema(vec![
+                    "chrome", "edge", "firefox", "brave", "zoom", "teams", "vlc", "bilibili",
+                    "douyin", "we-meet",
+                ]),
+            ),
+            (
+                "effective_signal_source",
+                nullable_enum_schema(vec!["system-media", "audio-session"]),
+            ),
+            ("last_match_at_ms", nullable_integer_schema()),
+            ("grace_deadline_ms", nullable_integer_schema()),
+            (
+                "system_media",
+                schema_ref("SustainedParticipationSignalEvaluationSnapshot"),
+            ),
+            (
+                "audio_session",
+                schema_ref("SustainedParticipationSignalEvaluationSnapshot"),
+            ),
+        ]),
+    );
+    schemas.insert(
+        "TrackingStatusSnapshot".to_string(),
+        object_schema(vec![
+            ("is_tracking_active", bool_schema()),
+            ("sustained_participation_eligible", bool_schema()),
+            ("sustained_participation_active", bool_schema()),
+            (
+                "sustained_participation_kind",
+                nullable_enum_schema(vec!["audio"]),
+            ),
+            (
+                "sustained_participation_state",
+                enum_schema(vec!["inactive", "candidate", "active", "grace", "expired"]),
+            ),
+            (
+                "sustained_participation_signal_source",
+                nullable_enum_schema(vec!["system-media", "audio-session"]),
+            ),
+            (
+                "sustained_participation_reason",
+                enum_schema(vec![
+                    "no-signal",
+                    "tracking-paused",
+                    "empty-window",
+                    "not-eligible",
+                    "signal-inactive",
+                    "identity-mismatch",
+                    "signal-matched",
+                    "grace-window",
+                    "grace-expired",
+                    "sustained-window-expired",
+                ]),
+            ),
+            (
+                "sustained_participation_diagnostics",
+                schema_ref("SustainedParticipationDiagnosticsSnapshot"),
+            ),
+        ]),
+    );
+    schemas.insert(
+        "TrackingRuntimeProbeDiagnostics".to_string(),
+        object_schema(vec![
+            ("last_successful_sample_at_ms", nullable_integer_schema()),
+            ("fallback_started_at_ms", nullable_integer_schema()),
+            ("fallback_count", integer_schema()),
+            ("consecutive_fallback_count", integer_schema()),
+            ("recovery_attempt_count", integer_schema()),
+            ("last_recovery_attempt_at_ms", nullable_integer_schema()),
+        ]),
+    );
+    schemas.insert(
+        "TrackingRuntimeSnapshot".to_string(),
+        object_schema(vec![
+            ("window", schema_ref("WindowInfo")),
+            ("status", schema_ref("TrackingStatusSnapshot")),
+            ("sampled_at_ms", integer_schema()),
+            (
+                "probe_status",
+                enum_schema(vec![
+                    "ok",
+                    "timeout-fallback",
+                    "timeout-inactive",
+                    "backing-off-fallback",
+                    "backing-off-inactive",
+                    "recovery-attempted-fallback",
+                    "recovery-attempted-inactive",
+                    "hard-degraded-fallback",
+                    "hard-degraded-inactive",
+                    "task-failed-fallback",
+                    "task-failed-inactive",
+                ]),
+            ),
+            ("degraded_reason", nullable_string_schema()),
+            (
+                "probe_diagnostics",
+                schema_ref("TrackingRuntimeProbeDiagnostics"),
+            ),
+        ]),
+    );
+    schemas.insert(
         "CurrentWindowResponse".to_string(),
         envelope(object_schema(vec![
             ("exe_name", string_schema()),
@@ -464,6 +640,7 @@ fn schemas() -> Value {
             ("idle_time_ms", integer_schema()),
             ("process_path", string_schema()),
             ("sampled_at_ms", integer_schema()),
+            ("runtime_snapshot", schema_ref("TrackingRuntimeSnapshot")),
         ])),
     );
     schemas.insert(
@@ -1301,6 +1478,15 @@ fn nullable_ref_schema(name: &str) -> Value {
     })
 }
 
+fn nullable_enum_schema(values: Vec<&str>) -> Value {
+    json!({
+        "oneOf": [
+            enum_schema(values),
+            { "type": "null" }
+        ]
+    })
+}
+
 fn fallible_ref_schema(name: &str) -> Value {
     json!({
         "oneOf": [
@@ -1393,6 +1579,8 @@ mod tests {
         assert!(schemas.contains_key("HealthResponse"));
         assert!(schemas.contains_key("CapabilitiesResponse"));
         assert!(schemas.contains_key("RuntimeEventEnvelope"));
+        assert!(schemas.contains_key("TrackingRuntimeSnapshot"));
+        assert!(schemas.contains_key("TrackingStatusSnapshot"));
         assert!(schemas.contains_key("SessionEntry"));
         assert!(schemas.contains_key("WebActivityEntry"));
         assert!(schemas.contains_key("ActivityContextResponse"));
@@ -1435,6 +1623,24 @@ mod tests {
             .pointer("/components/schemas/LocalApiConfiguration/properties/token")
             .is_none());
 
+        assert_eq!(
+            response
+                .body
+                .pointer(
+                    "/components/schemas/CurrentWindowResponse/properties/data/properties/runtime_snapshot/$ref"
+                )
+                .and_then(|value| value.as_str()),
+            Some("#/components/schemas/TrackingRuntimeSnapshot")
+        );
+        assert_eq!(
+            response
+                .body
+                .pointer(
+                    "/components/schemas/TrackingRuntimeSnapshot/properties/status/$ref"
+                )
+                .and_then(|value| value.as_str()),
+            Some("#/components/schemas/TrackingStatusSnapshot")
+        );
         assert_eq!(
             response
                 .body
