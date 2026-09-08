@@ -53,6 +53,7 @@ struct ActiveWebActivitySegment {
     title: Option<String>,
     start_time: i64,
     updated_at: i64,
+    native_session_id: Option<i64>,
 }
 
 impl WebActivitySegmentInput {
@@ -92,10 +93,35 @@ pub async fn upsert_active_segment(
     timestamp_ms: i64,
 ) -> Result<bool, sqlx::Error> {
     let mut tx = pool.begin().await?;
+    let native_session_id: Option<i64> = sqlx::query_scalar(
+        "SELECT id
+         FROM sessions
+         WHERE end_time IS NULL
+           AND LOWER(exe_name) = LOWER(?)
+           AND start_time <= ?
+         ORDER BY start_time DESC, id DESC
+         LIMIT 1",
+    )
+    .bind(&input.browser_exe_name)
+    .bind(timestamp_ms)
+    .fetch_optional(&mut *tx)
+    .await?;
     let active = load_active_segment_tx(&mut tx).await?;
+    let Some(native_session_id) = native_session_id else {
+        let did_finish = if let Some(active) = active {
+            finish_segment_tx(&mut tx, active.id, active.start_time, timestamp_ms).await?;
+            true
+        } else {
+            false
+        };
+        tx.commit().await?;
+        return Ok(did_finish);
+    };
 
     if let Some(active) = active {
-        if is_same_segment_identity(&active, input) {
+        if active.native_session_id == Some(native_session_id)
+            && is_same_segment_identity(&active, input)
+        {
             sqlx::query(
                 "UPDATE web_activity_segments
                  SET domain = ?,
@@ -118,7 +144,7 @@ pub async fn upsert_active_segment(
         finish_segment_tx(&mut tx, active.id, active.start_time, timestamp_ms).await?;
     }
 
-    sqlx::query(
+    let inserted = sqlx::query(
         "INSERT INTO web_activity_segments (
              browser_client_id,
              browser_kind,
@@ -146,6 +172,14 @@ pub async fn upsert_active_segment(
     .bind(WEB_ACTIVITY_SOURCE_BROWSER_EXTENSION)
     .bind(timestamp_ms)
     .bind(timestamp_ms)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO web_activity_native_sessions (segment_id, session_id)
+         VALUES (?, ?)",
+    )
+    .bind(inserted.last_insert_rowid())
+    .bind(native_session_id)
     .execute(&mut *tx)
     .await?;
 
@@ -446,7 +480,9 @@ async fn load_active_segment_tx(
 ) -> Result<Option<ActiveWebActivitySegment>, sqlx::Error> {
     let row = sqlx::query(
         "SELECT id, browser_client_id, browser_kind, browser_exe_name, normalized_domain,
-                url, title, start_time, updated_at
+                url, title, start_time, updated_at,
+                (SELECT session_id FROM web_activity_native_sessions
+                 WHERE segment_id = web_activity_segments.id) AS native_session_id
          FROM web_activity_segments
          WHERE end_time IS NULL
          ORDER BY start_time DESC, id DESC
@@ -465,6 +501,7 @@ async fn load_active_segment_tx(
         title: row.get("title"),
         start_time: row.get("start_time"),
         updated_at: row.get("updated_at"),
+        native_session_id: row.get("native_session_id"),
     }))
 }
 
@@ -524,6 +561,12 @@ mod tests {
         pool.execute(db_schema::WEB_ACTIVITY_SCHEMA_SQL)
             .await
             .unwrap();
+        pool.execute(db_schema::WEB_ACTIVITY_SESSION_SCHEMA_SQL)
+            .await
+            .unwrap();
+        super::super::sessions::start_session(&pool, "Chrome", "chrome.exe", "", 0, 0)
+            .await
+            .unwrap();
         pool
     }
 
@@ -576,6 +619,137 @@ mod tests {
             assert_eq!(rows[0].get::<Option<i64>, _>("duration"), Some(2_000));
             assert_eq!(rows[1].get::<String, _>("normalized_domain"), "docs.rs");
             assert_eq!(rows[1].get::<Option<i64>, _>("end_time"), None);
+        });
+    }
+
+    #[test]
+    fn active_segment_requires_a_matching_native_browser_session() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            super::super::sessions::end_active_sessions(&pool, 500)
+                .await
+                .unwrap();
+            super::super::sessions::start_session(&pool, "Editor", "code", "File", 600, 600)
+                .await
+                .unwrap();
+
+            assert!(
+                !upsert_active_segment(&pool, &input("github.com", "Issue"), 1_000)
+                    .await
+                    .unwrap()
+            );
+            let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM web_activity_segments")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(count, 0);
+        });
+    }
+
+    #[test]
+    fn missing_native_browser_session_seals_an_unbound_active_segment() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            super::super::sessions::end_active_sessions(&pool, 500)
+                .await
+                .unwrap();
+            sqlx::query(
+                "INSERT INTO web_activity_segments (
+                    browser_client_id, browser_kind, browser_exe_name, domain,
+                    normalized_domain, start_time, source, created_at, updated_at
+                 ) VALUES ('legacy', 'chrome', 'chrome.exe', 'github.com', 'github.com',
+                           600, 'browser-extension', 600, 700)",
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+
+            assert!(
+                upsert_active_segment(&pool, &input("github.com", "Issue"), 1_000)
+                    .await
+                    .unwrap()
+            );
+            let row = sqlx::query(
+                "SELECT end_time, duration
+                 FROM web_activity_segments
+                 LIMIT 1",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(row.get::<Option<i64>, _>("end_time"), Some(1_000));
+            assert_eq!(row.get::<Option<i64>, _>("duration"), Some(400));
+        });
+    }
+
+    #[test]
+    fn ending_native_session_clips_bound_web_segment_in_same_transaction() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            assert!(
+                upsert_active_segment(&pool, &input("github.com", "Issue"), 1_000)
+                    .await
+                    .unwrap()
+            );
+            assert!(super::super::sessions::end_active_sessions(&pool, 5_000)
+                .await
+                .unwrap());
+
+            let row = sqlx::query(
+                "SELECT end_time, duration, updated_at
+                 FROM web_activity_segments
+                 LIMIT 1",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(row.get::<Option<i64>, _>("end_time"), Some(5_000));
+            assert_eq!(row.get::<Option<i64>, _>("duration"), Some(4_000));
+            assert_eq!(row.get::<i64, _>("updated_at"), 5_000);
+        });
+    }
+
+    #[test]
+    fn same_page_in_a_new_native_session_creates_a_new_web_segment() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            assert!(
+                upsert_active_segment(&pool, &input("github.com", "Issue"), 1_000)
+                    .await
+                    .unwrap()
+            );
+            super::super::sessions::end_active_sessions(&pool, 2_000)
+                .await
+                .unwrap();
+            super::super::sessions::start_session(
+                &pool,
+                "Chrome",
+                "chrome.exe",
+                "Issue",
+                3_000,
+                3_000,
+            )
+            .await
+            .unwrap();
+
+            assert!(
+                upsert_active_segment(&pool, &input("github.com", "Issue"), 3_000)
+                    .await
+                    .unwrap()
+            );
+            let rows = sqlx::query(
+                "SELECT segment_id, session_id
+                 FROM web_activity_native_sessions
+                 ORDER BY segment_id ASC",
+            )
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+            assert_eq!(rows.len(), 2);
+            assert_ne!(
+                rows[0].get::<i64, _>("session_id"),
+                rows[1].get::<i64, _>("session_id")
+            );
         });
     }
 

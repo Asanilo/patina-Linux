@@ -12,6 +12,8 @@ pub const SCHEDULED_BACKUP_MIGRATION_VERSION: i64 = 5;
 pub const SCHEDULED_BACKUP_MIGRATION_DESCRIPTION: &str = "create_scheduled_backup_tables";
 pub const ACTIVITY_IMPORT_MIGRATION_VERSION: i64 = 6;
 pub const ACTIVITY_IMPORT_MIGRATION_DESCRIPTION: &str = "create_activity_import_tables";
+pub const WEB_ACTIVITY_SESSION_MIGRATION_VERSION: i64 = 7;
+pub const WEB_ACTIVITY_SESSION_MIGRATION_DESCRIPTION: &str = "bind_web_activity_to_native_sessions";
 
 pub const CURRENT_BASELINE_SCHEMA_SQL: &str = "
     CREATE TABLE IF NOT EXISTS sessions (
@@ -201,6 +203,33 @@ pub const WEB_ACTIVITY_SCHEMA_SQL: &str = "
     WHERE end_time IS NULL;
 ";
 
+pub const WEB_ACTIVITY_SESSION_SCHEMA_SQL: &str = "
+    CREATE TABLE IF NOT EXISTS web_activity_native_sessions (
+        segment_id INTEGER PRIMARY KEY REFERENCES web_activity_segments(id) ON DELETE CASCADE,
+        session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_web_activity_native_session
+    ON web_activity_native_sessions(session_id);
+
+    DROP TRIGGER IF EXISTS trg_native_session_web_boundary;
+    CREATE TRIGGER trg_native_session_web_boundary
+    AFTER UPDATE OF end_time ON sessions
+    WHEN NEW.end_time IS NOT NULL
+    BEGIN
+        UPDATE web_activity_segments
+        SET end_time = MAX(start_time, MIN(COALESCE(end_time, NEW.end_time), NEW.end_time)),
+            duration = MAX(0, MIN(COALESCE(end_time, NEW.end_time), NEW.end_time) - start_time),
+            updated_at = MAX(start_time, MIN(COALESCE(end_time, NEW.end_time), NEW.end_time))
+        WHERE id IN (
+            SELECT segment_id
+            FROM web_activity_native_sessions
+            WHERE session_id = NEW.id
+        )
+          AND (end_time IS NULL OR end_time > MAX(start_time, NEW.end_time));
+    END;
+";
+
 pub const SCHEDULED_BACKUP_SCHEMA_SQL: &str = "
     CREATE TABLE IF NOT EXISTS scheduled_backup_config (
         id INTEGER PRIMARY KEY CHECK(id = 1),
@@ -349,6 +378,12 @@ pub fn tracker_migrations() -> Vec<Migration> {
             version: ACTIVITY_IMPORT_MIGRATION_VERSION,
             description: ACTIVITY_IMPORT_MIGRATION_DESCRIPTION,
             sql: ACTIVITY_IMPORT_SCHEMA_SQL,
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: WEB_ACTIVITY_SESSION_MIGRATION_VERSION,
+            description: WEB_ACTIVITY_SESSION_MIGRATION_DESCRIPTION,
+            sql: WEB_ACTIVITY_SESSION_SCHEMA_SQL,
             kind: MigrationKind::Up,
         },
     ]

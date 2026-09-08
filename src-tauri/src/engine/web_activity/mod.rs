@@ -349,7 +349,18 @@ mod tests {
         pool.execute(db_schema::WEB_ACTIVITY_SCHEMA_SQL)
             .await
             .unwrap();
+        pool.execute(db_schema::WEB_ACTIVITY_SESSION_SCHEMA_SQL)
+            .await
+            .unwrap();
         pool
+    }
+
+    async fn start_browser_session(pool: &SqlitePool, exe_name: &str, start_time: i64) {
+        crate::data::repositories::sessions::start_session(
+            pool, exe_name, exe_name, "Browser", start_time, start_time,
+        )
+        .await
+        .unwrap();
     }
 
     struct FixedClock(i64);
@@ -405,6 +416,7 @@ mod tests {
     #[tokio::test]
     async fn host_neutral_http_handler_authenticates_and_records_browser_activity() {
         let pool = setup_test_db().await;
+        start_browser_session(&pool, "zen", 1_000).await;
         commit_app_setting_mutations(
             &pool,
             &[
@@ -460,6 +472,7 @@ mod tests {
     fn inactive_settings_seal_existing_web_segment() {
         tauri::async_runtime::block_on(async {
             let pool = setup_test_db().await;
+            start_browser_session(&pool, "chrome.exe", 0).await;
             let input = WebActivitySegmentInput {
                 browser_client_id: "client".into(),
                 browser_kind: "chrome".into(),
@@ -540,6 +553,7 @@ mod tests {
     fn stale_watchdog_seals_at_the_last_browser_observation() {
         tauri::async_runtime::block_on(async {
             let pool = setup_test_db().await;
+            start_browser_session(&pool, "chrome.exe", 0).await;
             let input = WebActivitySegmentInput {
                 browser_client_id: "client".into(),
                 browser_kind: "chrome".into(),

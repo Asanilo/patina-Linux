@@ -251,6 +251,7 @@ async fn table_has_columns(
         "tool_daily_stats" => "PRAGMA table_info(tool_daily_stats)",
         "tool_software_reminder_rules" => "PRAGMA table_info(tool_software_reminder_rules)",
         "web_activity_segments" => "PRAGMA table_info(web_activity_segments)",
+        "web_activity_native_sessions" => "PRAGMA table_info(web_activity_native_sessions)",
         "scheduled_backup_config" => "PRAGMA table_info(scheduled_backup_config)",
         "scheduled_backup_runs" => "PRAGMA table_info(scheduled_backup_runs)",
         "import_batches" => "PRAGMA table_info(import_batches)",
@@ -299,6 +300,7 @@ async fn table_has_index(
         "tool_daily_stats" => "PRAGMA index_list(tool_daily_stats)",
         "tool_software_reminder_rules" => "PRAGMA index_list(tool_software_reminder_rules)",
         "web_activity_segments" => "PRAGMA index_list(web_activity_segments)",
+        "web_activity_native_sessions" => "PRAGMA index_list(web_activity_native_sessions)",
         "scheduled_backup_runs" => "PRAGMA index_list(scheduled_backup_runs)",
         "import_batches" => "PRAGMA index_list(import_batches)",
         "import_exact_sessions" => "PRAGMA index_list(import_exact_sessions)",
@@ -767,6 +769,35 @@ async fn has_web_activity_schema(pool: &Pool<Sqlite>) -> Result<bool, String> {
     Ok(segments_ready && time_index_ready && domain_time_index_ready && single_active_index_ready)
 }
 
+async fn has_web_activity_session_schema(pool: &Pool<Sqlite>) -> Result<bool, String> {
+    if !table_exists(pool, "web_activity_native_sessions").await? {
+        return Ok(false);
+    }
+    let columns_ready = table_has_columns(
+        pool,
+        "web_activity_native_sessions",
+        &["segment_id", "session_id"],
+    )
+    .await?;
+    let index_ready = table_has_index(
+        pool,
+        "web_activity_native_sessions",
+        "idx_web_activity_native_session",
+    )
+    .await?;
+    let trigger_ready = sqlx::query(
+        "SELECT 1 FROM sqlite_master
+         WHERE type = 'trigger' AND name = 'trg_native_session_web_boundary'
+         LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await
+    .map_err(|error| format!("failed to inspect native web boundary trigger: {error}"))?
+    .is_some();
+
+    Ok(columns_ready && index_ready && trigger_ready)
+}
+
 async fn has_scheduled_backup_schema(pool: &Pool<Sqlite>) -> Result<bool, String> {
     if !table_exists(pool, "scheduled_backup_config").await?
         || !table_exists(pool, "scheduled_backup_runs").await?
@@ -924,7 +955,8 @@ async fn has_current_schema(pool: &Pool<Sqlite>) -> Result<bool, String> {
         && has_software_reminder_rules_schema(pool).await?
         && has_web_activity_schema(pool).await?
         && has_scheduled_backup_schema(pool).await?
-        && has_activity_import_schema(pool).await?)
+        && has_activity_import_schema(pool).await?
+        && has_web_activity_session_schema(pool).await?)
 }
 
 async fn normalize_current_baseline_migration_history_for_pool(
@@ -949,6 +981,8 @@ async fn normalize_current_baseline_migration_history_for_pool(
         expected.truncate(4);
     } else if !has_activity_import_schema(pool).await? {
         expected.truncate(5);
+    } else if !has_web_activity_session_schema(pool).await? {
+        expected.truncate(6);
     }
     if expected.is_empty() {
         return Ok(false);
@@ -1062,6 +1096,7 @@ pub(crate) async fn validate_migrated_database_copy(
             "settings",
             "icon_cache",
             "web_activity_segments",
+            "web_activity_native_sessions",
             "tool_reminders",
             "tool_timers",
             "tool_timer_laps",
@@ -1199,6 +1234,22 @@ mod tests {
     }
 
     #[test]
+    fn web_activity_session_schema_creates_relation_and_boundary_trigger() {
+        tauri::async_runtime::block_on(async {
+            let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+            pool.execute(schema::CURRENT_BASELINE_SCHEMA_SQL)
+                .await
+                .unwrap();
+            pool.execute(schema::WEB_ACTIVITY_SCHEMA_SQL).await.unwrap();
+            pool.execute(schema::WEB_ACTIVITY_SESSION_SCHEMA_SQL)
+                .await
+                .unwrap();
+
+            assert!(has_web_activity_session_schema(&pool).await.unwrap());
+        });
+    }
+
+    #[test]
     fn scheduled_backup_schema_creates_complete_tables() {
         tauri::async_runtime::block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
@@ -1265,6 +1316,56 @@ mod tests {
 
             run_current_migrations(&pool).await.unwrap();
             assert!(has_activity_import_schema(&pool).await.unwrap());
+        });
+    }
+
+    #[test]
+    fn current_schema_history_does_not_mark_missing_web_session_binding_as_applied() {
+        tauri::async_runtime::block_on(async {
+            let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+            pool.execute(schema::CURRENT_BASELINE_SCHEMA_SQL)
+                .await
+                .unwrap();
+            pool.execute(schema::TOOLS_TABLES_SCHEMA_SQL).await.unwrap();
+            pool.execute(schema::SOFTWARE_REMINDER_RULES_SCHEMA_SQL)
+                .await
+                .unwrap();
+            pool.execute(schema::WEB_ACTIVITY_SCHEMA_SQL).await.unwrap();
+            pool.execute(schema::SCHEDULED_BACKUP_SCHEMA_SQL)
+                .await
+                .unwrap();
+            pool.execute(schema::ACTIVITY_IMPORT_SCHEMA_SQL)
+                .await
+                .unwrap();
+            create_sqlx_migrations_table(&pool).await;
+            pool.execute(
+                "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time)
+                 VALUES (1, 'old_v1', 1, x'01', 0),
+                        (2, 'old_v2', 1, x'02', 0),
+                        (3, 'old_v3', 1, x'03', 0),
+                        (4, 'old_v4', 1, x'04', 0),
+                        (5, 'old_v5', 1, x'05', 0),
+                        (6, 'old_v6', 1, x'06', 0),
+                        (7, 'old_v7_without_tables', 1, x'07', 0)",
+            )
+            .await
+            .unwrap();
+
+            let normalized = normalize_current_baseline_migration_history_for_pool(&pool)
+                .await
+                .unwrap();
+
+            assert!(normalized);
+            assert!(!has_web_activity_session_schema(&pool).await.unwrap());
+            let versions: Vec<i64> =
+                sqlx::query_scalar("SELECT version FROM _sqlx_migrations ORDER BY version")
+                    .fetch_all(&pool)
+                    .await
+                    .unwrap();
+            assert_eq!(versions, vec![1, 2, 3, 4, 5, 6]);
+
+            run_current_migrations(&pool).await.unwrap();
+            assert!(has_web_activity_session_schema(&pool).await.unwrap());
         });
     }
 

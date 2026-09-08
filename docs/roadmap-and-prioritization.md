@@ -174,7 +174,7 @@ Windows runtime、installer、updater、ARM/UWP 等平台专属实现不移植�
 5. 完成首次启动迁移、systemd 服务控制、默认 owner 切换和双 owner 验收。
 6. 发布 daemon-backed DEB beta 并完成登录启动、关闭 UI 后持续记录、崩溃恢复、升级、卸载和数据保留验证。
 
-当前执行位置：第 1 步已完成单向合流；第 2 步已完成 owner 审计和 fail-closed 防护，但活动导入、定时备份、按应用删除、恢复与 remote backup 的 daemon 写侧尚待补齐；第 3 步已移植启动恢复、采样恢复、watchdog 竞态、browser bridge 重试、网页趋势区间去重、power lifecycle generation 和暂停原子边界，仍需处理网页段与原生 session 的事务边界及恢复时序。详细状态以 [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md) 为准。
+当前执行位置：第 1 步已完成单向合流；第 2 步已完成 owner 审计和 fail-closed 防护，但活动导入、定时备份、按应用删除、恢复与 remote backup 的 daemon 写侧尚待补齐；第 3 步已移植启动恢复、采样恢复、watchdog 竞态、browser bridge 重试、网页趋势区间去重、power lifecycle generation、暂停原子边界，以及网页段与活动原生浏览器 session 的持久化事务绑定。剩余正确性工作集中在 restore 的 active timing 和网页关系重建，不应在 Desktop 热恢复路径上另建协议。详细状态以 [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md) 为准。
 
 在第 6 步完成前，不再把新的上游大型功能只加入 Linux `main` 而不进入 patinad 架构线。
 
@@ -189,6 +189,7 @@ Windows runtime、installer、updater、ARM/UWP 等平台专属实现不移植�
 7. Stage 2E MPRIS preview 已完成：Linux media source 可由 daemon 显式拥有和取消，多播放器按当前窗口身份优先匹配，D-Bus 查询不依赖 Tauri 全局运行时。
 8. Stage 2F browser bridge preview 已完成：显式 tracking 模式由 daemon 在 loopback 接收浏览器扩展上报，共用宿主无关的鉴权、隐私、记录和封口逻辑，并提供受限请求生命周期与可等待关闭。
 9. Stage 2F.1 数据语义已完成：网页异常退出按最后可信观测时间恢复；浏览器心跳使用 75 秒宽限并由 watchdog 在过期时按最后上报封口；跨夜崩溃、心跳抖动、扩展消失和并发更新保护已有回归测试。
+   网页写入还必须匹配当前活动的原生浏览器 session；两者通过持久化关系表绑定，原生 session 结束时由 SQLite 在同一事务内截断网页段。备份恢复后的关系重建仍属于 Stage 2H.3c 的受控恢复工作。
 10. Stage 2F.2 transport 已完成：desktop 与 daemon 共用的 API/SSE、独立浏览器 bridge 均已迁移到 Axum + Tower，不再保留自写 HTTP parser/server loop/SSE writer；普通 API、SSE、browser bridge 分别使用 32/8/8 的 fail-fast 并发预算。API 只允许 loopback Host/origin，bridge 只允许 loopback Host 与 Firefox/Chromium 扩展 Origin；listener readiness 跟随真实 task 生命周期，daemon API 意外退出会触发受控停机，bridge 意外退出会立即降级诊断状态。
 11. daemon owner 拆分已完成：tracking、power、audio、media 与 web activity 的任务状态、重试、取消和退出封口已回到 `app/daemon/runtime/*` 对应 owner 模块；`app/daemon/runtime.rs` 只保留依赖装配、启动顺序和有序关闭，且未混入 Cargo workspace 重排。
 12. Stage 2G Tools runtime preview 已完成：服务版本、协议上下限、write scope 协商、app mapping、classification、AFK threshold、tracking pause、运行中 browser/audio 配置，以及 Tools runtime owner、系统通知、SSE 与写侧 HTTP/MCP 已完成。

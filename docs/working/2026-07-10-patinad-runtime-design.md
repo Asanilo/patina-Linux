@@ -116,7 +116,7 @@
 | Data 网页趋势重叠区间 | 已移植 | 按浏览器来源和规范域名求区间并集，不重复计算重叠心跳或重复数据，也不填补真实空白。 |
 | lock / suspend 与 in-flight probe | 已移植，待实机验收 | Desktop 与 daemon 共用 lifecycle generation、pending stop 和 transition gate；旧窗口探测不能在 lock/suspend 后恢复 active 状态，自动化已覆盖 lock/unlock 跨代封口，默认 owner 切换前仍需真实 GNOME 验收。 |
 | 暂停与 in-flight probe | 已移植 | `tracking_paused=true` 与 active session 封口在同一 SQLite 事务提交，托盘、Desktop 设置与 daemon API 通过 transition gate 更新 lifecycle generation，旧采样不能在暂停后续写。 |
-| 网页活动与原生浏览器 session 绑定 | 待实施 | 当前依赖 tracking event 触发封口，尚未把网页段和原生 session 边界持久化为同一事务契约。 |
+| 网页活动与原生浏览器 session 绑定 | 运行时已移植，restore 映射待实施 | 网页写入必须匹配当前活动的同名浏览器 session，并持久化 relation；原生 session 结束时 SQLite trigger 在同一事务内截断网页段。完整备份恢复和合并恢复仍需重建 relation，不能把无映射的恢复数据写成已完成。 |
 | restore 的 active timing 边界 | 待实施 | 与 daemon maintenance restore 一并处理，避免在仍由 Desktop 执行的热恢复路径上增加第二套恢复协议。 |
 
 ### 3.3 合入功能的写侧边界
