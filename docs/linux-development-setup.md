@@ -161,7 +161,7 @@ A manual preview exposes service state but rejects controlled restart because no
 
 ## Linux Release Bundles
 
-Tagged releases build on Ubuntu 22.04 and publish:
+Stable tagged releases build on Ubuntu 22.04 and publish:
 
 - x86_64 AppImage for portable execution and package-aware Tauri updates
 - amd64 Debian package for Ubuntu / Debian installation and package-aware Tauri updates
@@ -187,7 +187,9 @@ gnome-extensions install --force patina-gnome-shell-extension-v<version>.zip
 gnome-extensions enable patina-window-tracker@patina
 ```
 
-The release workflow publishes a Linux-only `latest.json` with `linux-x86_64-appimage` and `linux-x86_64-deb` package-specific targets. It also keeps an AppImage-based `linux-x86_64` fallback for older clients. AppImage installations download the signed AppImage; Debian installations download the signed `.deb` and may request system authorization before installation.
+For stable tags, the release workflow publishes a Linux-only `latest.json` with `linux-x86_64-appimage` and `linux-x86_64-deb` package-specific targets. It also keeps an AppImage-based `linux-x86_64` fallback for older clients. AppImage installations download the signed AppImage; Debian installations download the signed `.deb` and may request system authorization before installation.
+
+Daemon-backed prerelease tags use the narrow DEB-only beta contract. Their workflow builds only `--bundles deb`, uploads no AppImage, and writes `latest.json` with only `linux-x86_64-deb`. This manifest remains attached to the prerelease; it does not replace the stable `/releases/latest/download/latest.json` endpoint. Beta installation and later beta upgrades therefore remain an explicit acceptance flow until a dedicated prerelease updater channel is designed.
 
 Before publishing a Linux tag, run the release-focused local checks:
 
@@ -202,7 +204,7 @@ npm run extension:chromium:check
 npm run extension:firefox:check
 ```
 
-`npm run test:release` covers the Linux package release contract: the GitHub Actions workflow must request `--bundles appimage,deb`, `prepare-linux-release-assets` must reject missing or empty signatures, and `latest.json` must route AppImage and Debian installations to their matching signed artifacts.
+`npm run test:release` covers both Linux package release contracts. Stable tags request `--bundles appimage,deb`, require both signatures, and route each installation type to its matching artifact. Daemon-backed prerelease tags request `--bundles deb`, reject missing or empty DEB signatures, omit AppImage assets, and expose only the DEB updater target.
 
 When debugging Debian packaging locally, run a focused Tauri release build:
 

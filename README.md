@@ -179,7 +179,7 @@ npm run extension:chromium:check
 npm run extension:firefox:check
 ```
 
-`npm run test:release` verifies that the release workflow builds Linux-only bundles, that both AppImage and `.deb` artifacts have matching signatures, and that `latest.json` routes each installation to its signed package type.
+`npm run test:release` verifies both release contracts: stable tags build signed AppImage and `.deb` artifacts with package-aware updater targets, while daemon-backed prerelease tags build and publish only the signed Debian package and its DEB updater target.
 
 The first daemon-backed beta is a documented release-contract exception: it publishes only the DEB containing Patina Desktop, `patinad`, and the systemd user unit. AppImage returns to that release line only after versioned daemon extraction and atomic updater switching have separate validation.
 

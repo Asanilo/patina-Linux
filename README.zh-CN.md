@@ -178,7 +178,9 @@ npm run extension:chromium:check
 npm run extension:firefox:check
 ```
 
-`npm run test:release` 会验证发布工作流只构建 Linux 包、AppImage 与 `.deb` 都有匹配签名，并确认 `latest.json` 会按当前安装包类型路由到对应的签名软件包。
+`npm run test:release` 会同时验证两套发布契约：稳定 tag 构建带签名的 AppImage 与 `.deb`，并按安装包类型生成 updater target；daemon-backed 预发布 tag 只构建和发布带签名的 Debian 包及其 DEB updater target。
+
+首个 daemon-backed beta 是上述稳定发布契约的明确例外：它只发布同时包含 Patina Desktop、`patinad` 和 systemd user unit 的 DEB。等版本化 daemon 解包与原子更新方案得到独立验证后，AppImage 才重新进入这条发布线。
 
 ## 浏览器网页同步
 

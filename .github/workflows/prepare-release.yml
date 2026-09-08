@@ -52,6 +52,13 @@ jobs:
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-* ]]; then
+            echo "bundle_targets=deb" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "bundle_targets=appimage,deb" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Checkout release tag
         shell: bash
@@ -120,7 +127,7 @@ jobs:
           test -s "$signing_key_path"
           echo "TAURI_SIGNING_PRIVATE_KEY_PATH=$signing_key_path" >> "$GITHUB_ENV"
 
-      - name: Build AppImage and Debian bundles
+      - name: Build Linux bundles
         shell: bash
         run: |
           set -euo pipefail
@@ -132,7 +139,7 @@ jobs:
           }
 
           export TAURI_SIGNING_PRIVATE_KEY="$(base64 -d "$signing_key_path" | base64 -w0)"
-          npm run tauri build -- --bundles appimage,deb
+          npm run tauri build -- --bundles "${{ steps.release.outputs.bundle_targets }}"
         env:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
@@ -186,17 +193,35 @@ jobs:
           cp extensions/firefox/dist/patina-web-sync.xpi "dist-release/${extension_asset}"
           echo "FIREFOX_EXTENSION_ASSET=$extension_asset" >> "$GITHUB_ENV"
 
-      - name: Publish Linux release
+      - name: Publish stable Linux release
+        if: steps.release.outputs.prerelease != 'true'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.release.outputs.tag }}
           name: Patina v${{ steps.release.outputs.version }}
           body_path: dist-release/release-notes.md
           draft: false
-          prerelease: ${{ contains(steps.release.outputs.version, '-') }}
+          prerelease: false
           overwrite_files: true
           files: |
             dist-release/Patina_${{ steps.release.outputs.version }}_amd64.AppImage
+            dist-release/Patina_${{ steps.release.outputs.version }}_amd64.deb
+            dist-release/${{ env.GNOME_EXTENSION_ASSET }}
+            dist-release/${{ env.CHROMIUM_EXTENSION_ASSET }}
+            dist-release/${{ env.FIREFOX_EXTENSION_ASSET }}
+            dist-release/latest.json
+
+      - name: Publish daemon-backed Linux prerelease
+        if: steps.release.outputs.prerelease == 'true'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          name: Patina v${{ steps.release.outputs.version }}
+          body_path: dist-release/release-notes.md
+          draft: false
+          prerelease: true
+          overwrite_files: true
+          files: |
             dist-release/Patina_${{ steps.release.outputs.version }}_amd64.deb
             dist-release/${{ env.GNOME_EXTENSION_ASSET }}
             dist-release/${{ env.CHROMIUM_EXTENSION_ASSET }}

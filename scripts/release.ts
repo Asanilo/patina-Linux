@@ -95,6 +95,56 @@ export function releaseAssetNames(version, target) {
   throw new Error(`unsupported release target: ${target}`);
 }
 
+export function isDaemonBackedPrerelease(version) {
+  return typeof version === "string"
+    && VERSION_PATTERN.test(version)
+    && version.includes("-");
+}
+
+export function buildLinuxUpdaterPlatforms({
+  version,
+  repository,
+  appImageSignature = "",
+  debSignature,
+}) {
+  assertVersion(version);
+
+  if (!repository) {
+    throw new Error("missing repository slug");
+  }
+  if (!debSignature) {
+    throw new Error("missing Debian updater signature");
+  }
+
+  const names = releaseAssetNames(version, "linux-x86_64");
+  const tagName = `v${version}`;
+  const debTarget = {
+    signature: debSignature,
+    url: `https://github.com/${repository}/releases/download/${tagName}/${encodeURIComponent(names.installer)}`,
+  };
+
+  if (isDaemonBackedPrerelease(version)) {
+    return {
+      "linux-x86_64-deb": debTarget,
+    };
+  }
+
+  if (!appImageSignature) {
+    throw new Error("missing AppImage updater signature for stable release");
+  }
+
+  const appImageTarget = {
+    signature: appImageSignature,
+    url: `https://github.com/${repository}/releases/download/${tagName}/${encodeURIComponent(names.updater)}`,
+  };
+
+  return {
+    "linux-x86_64": appImageTarget,
+    "linux-x86_64-appimage": appImageTarget,
+    "linux-x86_64-deb": debTarget,
+  };
+}
+
 function withUpdaterDefaults(config) {
   return {
     ...config,
@@ -494,13 +544,20 @@ export function renderReleaseNotes(parsed) {
     lines.push("### 主要变化", "", ...visibleBullets, "");
   }
 
-  lines.push(
-    "### 下载",
-    "",
-    "- Linux AppImage：下载 `.AppImage`，添加执行权限后直接运行。",
-    "- Linux Debian：Debian / Ubuntu 用户可安装 `.deb` 包。",
-    "",
-  );
+  lines.push("### 下载", "");
+
+  if (isDaemonBackedPrerelease(parsed.version)) {
+    lines.push(
+      "- Linux Debian beta：Debian / Ubuntu 用户可安装 `.deb` 包。此预发布版本用于验证 `patinad` 后台服务切换。",
+      "",
+    );
+  } else {
+    lines.push(
+      "- Linux AppImage：下载 `.AppImage`，添加执行权限后直接运行。",
+      "- Linux Debian：Debian / Ubuntu 用户可安装 `.deb` 包。",
+      "",
+    );
+  }
 
   return lines.join("\n");
 }
@@ -538,28 +595,33 @@ async function writeLatestJson(version, platforms, outputPath) {
   await writeJson(outputPath, latest);
 }
 
-async function findLinuxBundles(bundleDir) {
+async function findLinuxBundles(bundleDir, version, debOnly) {
   const entries = await readDirRecursive(bundleDir);
-  const appImageSignatureFilePath = entries.find((entry) =>
-    entry.endsWith(".AppImage.sig")
-  );
+  const names = releaseAssetNames(version, "linux-x86_64");
+  const appImageSignatureFilePath = debOnly
+    ? undefined
+    : entries.find((entry) =>
+      path.basename(entry) === `${names.updater}.sig`
+    );
   const debSignatureFilePath = entries.find((entry) =>
-    entry.endsWith(".deb.sig")
+    path.basename(entry) === `${names.installer}.sig`
   );
 
-  if (!appImageSignatureFilePath) {
-    fail(`Could not find updater .AppImage.sig artifact under ${bundleDir}.`);
+  if (!debOnly && !appImageSignatureFilePath) {
+    fail(`Could not find updater ${names.updater}.sig artifact under ${bundleDir}.`);
   }
   if (!debSignatureFilePath) {
-    fail(`Could not find updater .deb.sig artifact under ${bundleDir}.`);
+    fail(`Could not find updater ${names.installer}.sig artifact under ${bundleDir}.`);
   }
 
-  const appImageFilePath = appImageSignatureFilePath.replace(/\.sig$/i, "");
+  const appImageFilePath = appImageSignatureFilePath?.replace(/\.sig$/i, "");
   const debFilePath = debSignatureFilePath.replace(/\.sig$/i, "");
-  try {
-    await readFile(appImageFilePath);
-  } catch {
-    fail(`Could not find AppImage matching ${appImageSignatureFilePath}.`);
+  if (appImageFilePath) {
+    try {
+      await readFile(appImageFilePath);
+    } catch {
+      fail(`Could not find AppImage matching ${appImageSignatureFilePath}.`);
+    }
   }
   try {
     await readFile(debFilePath);
@@ -591,6 +653,7 @@ async function readDirRecursive(rootDir) {
 async function prepareLinuxReleaseAssets(version, bundleDir, outputDir, repository) {
   const resolvedVersion = await resolveTargetVersion(version);
   await validateChangelog(resolvedVersion);
+  const debOnly = isDaemonBackedPrerelease(resolvedVersion);
 
   if (!bundleDir) {
     fail("missing bundle directory");
@@ -607,9 +670,11 @@ async function prepareLinuxReleaseAssets(version, bundleDir, outputDir, reposito
     appImageSignatureFilePath,
     debFilePath,
     debSignatureFilePath,
-  } = await findLinuxBundles(bundleDir);
-  const appImageSignature = (await readText(appImageSignatureFilePath)).trim();
-  if (!appImageSignature) {
+  } = await findLinuxBundles(bundleDir, resolvedVersion, debOnly);
+  const appImageSignature = appImageSignatureFilePath
+    ? (await readText(appImageSignatureFilePath)).trim()
+    : "";
+  if (!debOnly && !appImageSignature) {
     fail(`updater signature file is empty: ${appImageSignatureFilePath}`);
   }
   const debSignature = (await readText(debSignatureFilePath)).trim();
@@ -618,31 +683,20 @@ async function prepareLinuxReleaseAssets(version, bundleDir, outputDir, reposito
   }
 
   const names = releaseAssetNames(resolvedVersion, "linux-x86_64");
-  const tagName = `v${resolvedVersion}`;
-  const appImageUrl =
-    `https://github.com/${repository}/releases/download/${tagName}/${encodeURIComponent(names.updater)}`;
-  const debUrl =
-    `https://github.com/${repository}/releases/download/${tagName}/${encodeURIComponent(names.installer)}`;
 
   await mkdir(outputDir, { recursive: true });
-  await copyFile(appImageFilePath, path.join(outputDir, names.updater));
+  if (appImageFilePath) {
+    await copyFile(appImageFilePath, path.join(outputDir, names.updater));
+  }
   await copyFile(debFilePath, path.join(outputDir, names.installer));
   await writeLatestJson(
     resolvedVersion,
-    {
-      "linux-x86_64": {
-        signature: appImageSignature,
-        url: appImageUrl,
-      },
-      "linux-x86_64-appimage": {
-        signature: appImageSignature,
-        url: appImageUrl,
-      },
-      "linux-x86_64-deb": {
-        signature: debSignature,
-        url: debUrl,
-      },
-    },
+    buildLinuxUpdaterPlatforms({
+      version: resolvedVersion,
+      repository,
+      appImageSignature,
+      debSignature,
+    }),
     path.join(outputDir, "latest.json"),
   );
 }

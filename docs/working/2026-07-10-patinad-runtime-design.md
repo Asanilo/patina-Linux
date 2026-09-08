@@ -171,7 +171,7 @@ Stage 2H.3d 不做一次性切换，按下面五个可回滚批次推进：
    - **2H.3d.4e Quiet Pro 控件（已实现，待 DEB 实机验收）**：Settings 的后台服务诊断区按后端能力和 reservation 状态显示登录启动、重试和回滚控件；重试与回滚必须经过确认，单一 action 状态会在操作期间禁用重复提交。`prepared/activating` 等进行中状态不开放变更，`rolling-back` 只允许幂等继续回滚，服务管理仍不开放给 HTTP、MCP、browser UI 或普通设置 patch。
 5. **2H.3d.5 DEB 成品与实机验收（进行中）**：覆盖首次迁移中断、重复执行、unit 缺失、systemd 不可用、服务崩溃、Token/端口不一致、旧 XDG autostart、pending storage migration 和自定义挂载目录。最后在已安装 DEB 上验证登录启动、关闭 UI 后持续记录、重开 UI、锁屏/睡眠、浏览器活动、升级、卸载与数据保留。
    - **2H.3d.5a 成品静态验证（已实现）**：发布工作流在上传前解包最终 `.deb`，核对 `patina` 包名、版本、`amd64` 架构、Patina Desktop 与 `patinad` 可执行文件、固定 user unit、安全选项、GNOME 扩展 UUID，并拒绝通过维护脚本提前 enable/start `patinad.service`。该检查不安装软件，也不替代真实用户会话验收。
-   - **2H.3d.5b DEB-only beta 发布契约（待实施）**：按版本策略让首个 daemon-backed prerelease 只构建和上传 `.deb`、对应签名、DEB updater 元数据及扩展资产；不能沿用稳定线的 AppImage 必选逻辑。
+   - **2H.3d.5b DEB-only beta 发布契约（已实现）**：带预发布后缀的 daemon-backed 版本只构建和上传 `.deb`、对应签名、DEB updater 元数据及扩展资产；稳定 tag 仍保留 AppImage、DEB 和通用 AppImage fallback。发布说明、bundle target、资产复制、GitHub Release 附件和 `latest.json` 平台项由同一版本策略决定，并有自动化防止 beta 混入 AppImage。预发布 manifest 只挂在对应 prerelease，不替换稳定 `/releases/latest/`；专用 beta 自动更新通道不属于首次实机验收前置条件。
    - **2H.3d.5c 已安装包实机验收（待实施）**：在可回退的数据备份和当前用户会话中执行完整检查表，保留每一步的 unit、reservation、lease、API capability 和数据库边界证据。
 
 2H.3d.3d 的自动化证据矩阵：
@@ -359,7 +359,7 @@ Tauri 当前继续作为桌面客户端。未来如果实测证明 GPUI 更适�
 - 已完成 Stage 2H.3d.4c 后端：completed reservation 持有后台登录意图，专用 Tauri command 串行应用 systemd 与 SQLite 镜像，启动路径负责中断后对账
 - 已完成 Stage 2H.3d.4d 后端：`rolling-back → rolled-back` 保证 daemon 正常封口、lease 释放和 unit 禁用发生在 embedded 恢复之前，中断不会产生双 owner
 - 已完成 Stage 2H.3d.4e：Quiet Pro 诊断区按状态开放后台登录偏好、显式重试和安全回滚，危险操作确认且执行期间禁止重复提交
-- Stage 2H.3d.5a 成品静态验证已完成；待实施 2H.3d.5b DEB-only beta 发布契约和 2H.3d.5c 已安装包实机验收
+- Stage 2H.3d.5a 成品静态验证和 2H.3d.5b DEB-only beta 发布契约已完成；当前只剩 2H.3d.5c 已安装包实机验收
 - Tauri 改为 daemon desktop client，并保留 tray、通知、文件选择和 updater
 - 默认切换后 desktop 不启动或自动回退 embedded tracker；daemon 不可用时明确暂停、诊断和重启
 - 一个 `patina` 产品包同时交付 Patina Desktop、`patinad` 和 systemd user unit

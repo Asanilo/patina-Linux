@@ -11,9 +11,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import {
+  buildLinuxUpdaterPlatforms,
   buildUpdaterEndpoints,
   releaseAssetNames,
   fieldValue,
+  isDaemonBackedPrerelease,
   renderReleaseNotes,
   readVersionPolicyCurrentCodeVersion,
   renderUpdaterNotes,
@@ -156,6 +158,7 @@ function testUpdaterEndpointsKeepGithubFirstAndPreserveMirrors() {
 
 function testReleaseNotesIncludeAllVisibleBullets() {
   const notes = renderReleaseNotes({
+    version: "1.8.4",
     release: "Ready.",
     bullets: Array.from({ length: 8 }, (_, index) => `- Change ${index + 1}`),
   });
@@ -165,6 +168,45 @@ function testReleaseNotesIncludeAllVisibleBullets() {
   assert.match(notes, /Linux AppImage/);
   assert.match(notes, /Linux Debian/);
   assert.doesNotMatch(notes, /Windows 安装包/);
+}
+
+function testDaemonBackedPrereleaseNotesOnlyOfferDebian() {
+  const notes = renderReleaseNotes({
+    version: "1.9.0-beta.1",
+    release: "Ready for daemon validation.",
+    bullets: [],
+  });
+
+  assert.equal(isDaemonBackedPrerelease("1.9.0-beta.1"), true);
+  assert.equal(isDaemonBackedPrerelease("1.9.0"), false);
+  assert.match(notes, /Linux Debian beta/);
+  assert.doesNotMatch(notes, /Linux AppImage/);
+}
+
+function testUpdaterPlatformsKeepStableAndPrereleaseContractsSeparate() {
+  const stablePlatforms = buildLinuxUpdaterPlatforms({
+    version: "1.8.4",
+    repository: "Asanilo/patina-Linux",
+    appImageSignature: "appimage-signature",
+    debSignature: "deb-signature",
+  });
+  const prereleasePlatforms = buildLinuxUpdaterPlatforms({
+    version: "1.9.0-beta.1",
+    repository: "Asanilo/patina-Linux",
+    debSignature: "deb-signature",
+  });
+
+  assert.deepEqual(Object.keys(stablePlatforms), [
+    "linux-x86_64",
+    "linux-x86_64-appimage",
+    "linux-x86_64-deb",
+  ]);
+  assert.deepEqual(prereleasePlatforms, {
+    "linux-x86_64-deb": {
+      signature: "deb-signature",
+      url: "https://github.com/Asanilo/patina-Linux/releases/download/v1.9.0-beta.1/Patina_1.9.0-beta.1_amd64.deb",
+    },
+  });
 }
 
 function testReleaseAssetNamesCoverLinuxBundles() {
@@ -273,7 +315,9 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   ]);
 
   assert.match(workflow, /runs-on: ubuntu-22\.04/);
-  assert.match(workflow, /--bundles appimage,deb/);
+  assert.match(workflow, /bundle_targets=appimage,deb/);
+  assert.match(workflow, /bundle_targets=deb/);
+  assert.match(workflow, /--bundles "\$\{\{ steps\.release\.outputs\.bundle_targets \}\}"/);
   assert.match(workflow, /prepare-linux-release-assets/);
   assert.match(workflow, /Prepare updater signing key/);
   assert.match(workflow, /TAURI_SIGNING_PRIVATE_KEY_PATH=/);
@@ -285,10 +329,17 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   assert.match(workflow, /npm run extension:firefox:verify-signed/);
   assert.match(workflow, /Verify daemon-backed Debian package/);
   assert.match(workflow, /npm run release:verify-daemon-deb/);
-  assert.match(workflow, /Publish Linux release/);
+  assert.match(workflow, /Publish stable Linux release/);
+  assert.match(workflow, /Publish daemon-backed Linux prerelease/);
+  const prereleasePublishBlock = workflow.slice(
+    workflow.indexOf("- name: Publish daemon-backed Linux prerelease"),
+  );
+  assert.doesNotMatch(prereleasePublishBlock, /\.amd64\.AppImage/);
+  assert.match(prereleasePublishBlock, /_amd64\.deb/);
+  assert.match(prereleasePublishBlock, /prerelease: true/);
   assert.doesNotMatch(
     workflow,
-    /Build AppImage and Debian bundles[\s\S]*TAURI_SIGNING_PRIVATE_KEY:\s*\$\{\{\s*secrets\.TAURI_SIGNING_PRIVATE_KEY\s*\}\}/,
+    /Build Linux bundles[\s\S]*TAURI_SIGNING_PRIVATE_KEY:\s*\$\{\{\s*secrets\.TAURI_SIGNING_PRIVATE_KEY\s*\}\}/,
   );
   assert.doesNotMatch(workflow, /windows-latest/);
   assert.doesNotMatch(workflow, /--bundles nsis/);
@@ -495,6 +546,8 @@ testUpdaterNotesKeepLocalizedVariants();
 testUpdaterNotesFallsBackToAppNote();
 testUpdaterEndpointsKeepGithubFirstAndPreserveMirrors();
 testReleaseNotesIncludeAllVisibleBullets();
+testDaemonBackedPrereleaseNotesOnlyOfferDebian();
+testUpdaterPlatformsKeepStableAndPrereleaseContractsSeparate();
 testReleaseAssetNamesCoverLinuxBundles();
 testVersionFilesValidationPassesWhenAllVersionsMatch();
 testVersionFilesValidationCatchesPackageJsonMismatch();
@@ -509,4 +562,4 @@ await testPrepareLinuxReleaseAssetsRejectsEmptyDebSignature();
 await testPrepareLinuxReleaseAssetsRejectsMissingDebSignature();
 await testPrepareLinuxReleaseAssetsCreatesInstallerAndUpdaterManifest();
 
-console.log("Passed 21 release policy tests");
+console.log("Passed 23 release policy tests");
