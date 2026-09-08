@@ -53,6 +53,23 @@ impl DesktopBehaviorState {
         }
     }
 
+    pub(crate) fn update_background_tracking_at_login(
+        &self,
+        background_tracking_at_login: bool,
+    ) -> DesktopBehaviorSettings {
+        match self.inner.lock() {
+            Ok(mut guard) => {
+                *guard = guard.with_background_tracking_at_login(background_tracking_at_login);
+                *guard
+            }
+            Err(poisoned) => {
+                let mut guard = poisoned.into_inner();
+                *guard = guard.with_background_tracking_at_login(background_tracking_at_login);
+                *guard
+            }
+        }
+    }
+
     pub(crate) fn update_background_optimization(
         &self,
         background_optimization: bool,

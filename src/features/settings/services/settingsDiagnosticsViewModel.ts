@@ -94,6 +94,7 @@ function resolveDaemonServiceValue(
   if (daemonService.migrationState === "owner-conflict") return "运行冲突";
   if (daemonService.migrationState === "cutover-failed") return "接管失败";
   if (daemonService.migrationState === "cutover-pending") return "接管中";
+  if (daemonService.migrationState === "preference-mismatch") return "设置待对账";
   if (daemonService.active) return "运行中";
   return "已安装 / 未启用";
 }
@@ -121,6 +122,9 @@ function resolveDaemonServiceDetail(
   if (daemonService.migrationState === "managed-blocked") {
     return "桌面端已切换为后台服务客户端，但 patinad.service 未运行；追踪当前处于暂停状态，需要修复或重试后台服务。";
   }
+  if (daemonService.migrationState === "preference-mismatch") {
+    return "后台登录偏好尚未与 patinad.service 状态一致；请重试该设置或重新启动 Patina 完成对账。";
+  }
   if (daemonService.migrationState === "ready") {
     return "服务按计划保持禁用；现有桌面自启动满足后续安全迁移条件。";
   }
@@ -140,6 +144,7 @@ function resolveDaemonServiceTone(
   if (daemonService.migrationState === "cutover-pending") return "warning";
   if (daemonService.migrationState === "managed") return "ok";
   if (daemonService.migrationState === "managed-blocked") return "danger";
+  if (daemonService.migrationState === "preference-mismatch") return "warning";
   if (!daemonService.unitInstalled) return "warning";
   if (daemonService.migrationState === "blocked") return "warning";
   return "ok";

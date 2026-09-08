@@ -217,6 +217,8 @@ Tauri 受控重启可能短暂拉起新进程后旧进程才完全退出，因�
 
 failed 或损坏的交接只能从本机 Tauri 专用入口显式重试，且必须先验证状态，再停止可能残留的 daemon 并等待 lease 释放，最后以新 request ID 重建 reservation 和重启。健康、进行中或未请求的交接不得触发 systemd 变更；HTTP、MCP、browser UI 与普通 app-settings patch 不拥有该恢复动作。
 
+交接完成后，`background_tracking_at_login` 属于主机集成意图而不是普通业务设置。completed reservation 先原子记录新意图，Tauri 专用命令再串行应用固定 unit 的 enable/disable 和 SQLite 镜像；managed Desktop 每次启动按 reservation 重新对账外部状态与 host-owned 数据。这样中断可恢复，同时不让 daemon 当前运行状态与“下次登录启动”混为一个开关。
+
 共享运行内核至少需要以下窄边界：
 
 - `RuntimeContext`：数据库、设置、clock 与运行状态

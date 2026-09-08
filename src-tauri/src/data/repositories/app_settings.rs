@@ -122,6 +122,20 @@ pub async fn ensure_background_tracking_login_preference(
     Ok(())
 }
 
+pub async fn save_background_tracking_login_preference(
+    pool: &Pool<Sqlite>,
+    enabled: bool,
+) -> Result<(), String> {
+    commit_app_setting_mutations(
+        pool,
+        &[AppSettingMutation {
+            key: BACKGROUND_TRACKING_AT_LOGIN_KEY.to_string(),
+            value: if enabled { "1" } else { "0" }.to_string(),
+        }],
+    )
+    .await
+}
+
 pub async fn commit_app_setting_mutations(
     pool: &Pool<Sqlite>,
     mutations: &[AppSettingMutation],
@@ -642,6 +656,33 @@ mod tests {
                 .await
                 .unwrap();
 
+            assert_eq!(
+                load_setting(&pool, BACKGROUND_TRACKING_AT_LOGIN_KEY)
+                    .await
+                    .as_deref(),
+                Some("1")
+            );
+        });
+    }
+
+    #[test]
+    fn dedicated_background_tracking_login_preference_save_is_boolean() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+
+            save_background_tracking_login_preference(&pool, false)
+                .await
+                .unwrap();
+            assert_eq!(
+                load_setting(&pool, BACKGROUND_TRACKING_AT_LOGIN_KEY)
+                    .await
+                    .as_deref(),
+                Some("0")
+            );
+
+            save_background_tracking_login_preference(&pool, true)
+                .await
+                .unwrap();
             assert_eq!(
                 load_setting(&pool, BACKGROUND_TRACKING_AT_LOGIN_KEY)
                     .await

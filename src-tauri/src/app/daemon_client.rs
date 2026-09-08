@@ -84,6 +84,15 @@ pub async fn route_owned_app_settings<R: Runtime>(
     {
         return Err("local API settings require the dedicated configuration commands".to_string());
     }
+    if mutations
+        .iter()
+        .any(|mutation| mutation.key == "background_tracking_at_login")
+    {
+        return Err(
+            "background tracking login preference requires the dedicated service command"
+                .to_string(),
+        );
+    }
 
     let has_browser_settings = mutations
         .iter()

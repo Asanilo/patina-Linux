@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 const GET_DAEMON_SERVICE_DIAGNOSTICS_COMMAND = "cmd_get_daemon_service_diagnostics";
 const RETRY_RUNTIME_OWNER_CUTOVER_COMMAND = "cmd_retry_runtime_owner_cutover";
+const SET_BACKGROUND_TRACKING_AT_LOGIN_COMMAND = "cmd_set_background_tracking_at_login";
 
 export type DaemonServiceMigrationState =
   | "blocked"
@@ -11,6 +12,7 @@ export type DaemonServiceMigrationState =
   | "owner-conflict"
   | "managed"
   | "managed-blocked"
+  | "preference-mismatch"
   | "ready"
   | "not-requested"
   | "unsupported";
@@ -30,6 +32,7 @@ interface RawRuntimeOwnerCutoverDiagnosticsSnapshot {
   updated_at_ms: number | null;
   failure_code: string | null;
   failure_message: string | null;
+  background_tracking_at_login: boolean | null;
 }
 
 export interface RuntimeOwnerCutoverDiagnosticsSnapshot {
@@ -38,6 +41,7 @@ export interface RuntimeOwnerCutoverDiagnosticsSnapshot {
   updatedAtMs: number | null;
   failureCode: string | null;
   failureMessage: string | null;
+  backgroundTrackingAtLogin: boolean | null;
 }
 
 interface RawDaemonServiceDiagnosticsSnapshot {
@@ -80,6 +84,7 @@ const MIGRATION_STATES = new Set<DaemonServiceMigrationState>([
   "owner-conflict",
   "managed",
   "managed-blocked",
+  "preference-mismatch",
   "ready",
   "not-requested",
   "unsupported",
@@ -110,7 +115,9 @@ function isRawRuntimeOwnerCutoverDiagnostics(
     && isNullableString(record.request_id)
     && (record.updated_at_ms === null || typeof record.updated_at_ms === "number")
     && isNullableString(record.failure_code)
-    && isNullableString(record.failure_message);
+    && isNullableString(record.failure_message)
+    && (record.background_tracking_at_login === null
+      || typeof record.background_tracking_at_login === "boolean");
 }
 
 function isRawDaemonServiceDiagnostics(
@@ -157,6 +164,7 @@ function mapRawDaemonServiceDiagnostics(
       updatedAtMs: raw.cutover.updated_at_ms,
       failureCode: raw.cutover.failure_code,
       failureMessage: raw.cutover.failure_message,
+      backgroundTrackingAtLogin: raw.cutover.background_tracking_at_login,
     },
   };
 }
@@ -172,4 +180,14 @@ export async function getDaemonServiceDiagnostics(): Promise<DaemonServiceDiagno
 
 export async function retryRuntimeOwnerCutover(): Promise<void> {
   await invoke(RETRY_RUNTIME_OWNER_CUTOVER_COMMAND, { confirmed: true });
+}
+
+export async function setBackgroundTrackingAtLogin(
+  enabled: boolean,
+): Promise<DaemonServiceDiagnosticsSnapshot> {
+  const payload = await invoke<unknown>(SET_BACKGROUND_TRACKING_AT_LOGIN_COMMAND, { enabled });
+  if (!isRawDaemonServiceDiagnostics(payload)) {
+    throw new Error("Invalid daemon service diagnostics payload");
+  }
+  return mapRawDaemonServiceDiagnostics(payload);
 }

@@ -1,5 +1,16 @@
 use serde::Serialize;
 
+#[derive(Debug, Default)]
+pub struct DaemonServiceMutationState {
+    gate: tokio::sync::Mutex<()>,
+}
+
+impl DaemonServiceMutationState {
+    pub async fn lock(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.gate.lock().await
+    }
+}
+
 #[cfg(target_os = "linux")]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EmbeddedCutoverPreparation {
@@ -66,6 +77,7 @@ pub async fn inspect(
             updated_at_ms: None,
             failure_code: None,
             failure_message: None,
+            background_tracking_at_login: None,
         },
     }
 }
@@ -94,9 +106,7 @@ pub async fn prepare_runtime_owner_cutover(
     control_root: &std::path::Path,
     settings: crate::domain::settings::DesktopBehaviorSettings,
 ) -> Result<EmbeddedCutoverPreparation, String> {
-    use crate::platform::linux::systemd_user_service::{
-        control_patinad_service, inspect_patinad_service, PatinadServiceControlAction,
-    };
+    use crate::platform::linux::systemd_user_service::inspect_patinad_service;
 
     if profile != crate::platform::app_paths::AppProfile::Production {
         return Ok(EmbeddedCutoverPreparation::ContinueEmbedded);
@@ -126,12 +136,9 @@ pub async fn prepare_runtime_owner_cutover(
 
     let prepare_result = async {
         crate::app::autostart::apply_linux_autostart(settings.launch_at_login)?;
-        let action = if settings.background_tracking_at_login {
-            PatinadServiceControlAction::Enable
-        } else {
-            PatinadServiceControlAction::Disable
-        };
-        let service = control_patinad_service(action).await?;
+        let service =
+            apply_background_tracking_login_preference(settings.background_tracking_at_login)
+                .await?;
         if service.active {
             return Err("patinad.service started before the embedded owner exited".to_string());
         }
@@ -184,6 +191,8 @@ pub async fn activate_runtime_owner_cutover(
             .unwrap_or_else(|| "runtime owner cutover requires explicit repair".to_string()));
     }
     if reservation.status == RuntimeOwnerCutoverStatus::Completed {
+        apply_background_tracking_login_preference(reservation.background_tracking_at_login)
+            .await?;
         crate::app::runtime_lease::wait_for_runtime_lease_release(
             control_root,
             std::time::Duration::from_secs(5),
@@ -201,12 +210,7 @@ pub async fn activate_runtime_owner_cutover(
     )?;
     let activation_result = async {
         crate::app::autostart::apply_linux_autostart(activating.desktop_launch_at_login)?;
-        control_patinad_service(if activating.background_tracking_at_login {
-            PatinadServiceControlAction::Enable
-        } else {
-            PatinadServiceControlAction::Disable
-        })
-        .await?;
+        apply_background_tracking_login_preference(activating.background_tracking_at_login).await?;
         crate::app::runtime_lease::wait_for_runtime_lease_release(
             control_root,
             std::time::Duration::from_secs(5),
@@ -270,6 +274,65 @@ pub async fn prepare_explicit_runtime_owner_retry(
         settings.launch_at_login,
         crate::app::runtime::now_ms(),
     )
+}
+
+#[cfg(target_os = "linux")]
+pub async fn set_background_tracking_login_preference(
+    profile: crate::platform::app_paths::AppProfile,
+    control_root: &std::path::Path,
+    enabled: bool,
+) -> Result<crate::app::runtime_owner_cutover::RuntimeOwnerCutoverSnapshot, String> {
+    if profile != crate::platform::app_paths::AppProfile::Production {
+        return Err(
+            "background tracking login preference is only available for Production".to_string(),
+        );
+    }
+    let reservation = crate::app::runtime_owner_cutover::update_completed_background_preference(
+        control_root,
+        profile,
+        enabled,
+        crate::app::runtime::now_ms(),
+    )?;
+    apply_background_tracking_login_preference(enabled).await?;
+    Ok(reservation)
+}
+
+#[cfg(target_os = "linux")]
+pub async fn reconcile_completed_background_login_preference(
+    profile: crate::platform::app_paths::AppProfile,
+    control_root: &std::path::Path,
+    pool: &sqlx::Pool<sqlx::Sqlite>,
+) -> Result<Option<bool>, String> {
+    let decision = crate::app::runtime_owner_cutover::decide_desktop_startup(control_root, profile);
+    let crate::app::runtime_owner_cutover::RuntimeOwnerStartupDecision::DaemonClient {
+        reservation,
+        ..
+    } = decision
+    else {
+        return Ok(None);
+    };
+    if reservation.status != crate::app::runtime_owner_cutover::RuntimeOwnerCutoverStatus::Completed
+    {
+        return Ok(None);
+    }
+    crate::data::repositories::app_settings::save_background_tracking_login_preference(
+        pool,
+        reservation.background_tracking_at_login,
+    )
+    .await?;
+    Ok(Some(reservation.background_tracking_at_login))
+}
+
+#[cfg(target_os = "linux")]
+async fn apply_background_tracking_login_preference(
+    enabled: bool,
+) -> Result<crate::platform::linux::systemd_user_service::SystemdUserServiceSnapshot, String> {
+    crate::platform::linux::systemd_user_service::control_patinad_service(if enabled {
+        crate::platform::linux::systemd_user_service::PatinadServiceControlAction::Enable
+    } else {
+        crate::platform::linux::systemd_user_service::PatinadServiceControlAction::Disable
+    })
+    .await
 }
 
 #[cfg(target_os = "linux")]
@@ -443,15 +506,25 @@ fn build_diagnostics(
                 "owner-conflict",
                 "patinad.service is enabled or active while Patina Desktop still owns tracking",
             )
+        } else if !desktop_owns_embedded_runtime && !service.active {
+            (
+                "managed-blocked",
+                "Patina Desktop is a daemon client but patinad.service is not active",
+            )
+        } else if !desktop_owns_embedded_runtime
+            && cutover.state == "completed"
+            && cutover
+                .background_tracking_at_login
+                .is_some_and(|enabled| enabled != service.enabled)
+        {
+            (
+            "preference-mismatch",
+            "patinad.service login state does not match the saved background tracking preference",
+        )
         } else if !desktop_owns_embedded_runtime && service.active {
             (
                 "managed",
                 "patinad.service is the active tracking owner for Patina Desktop",
-            )
-        } else if !desktop_owns_embedded_runtime {
-            (
-                "managed-blocked",
-                "Patina Desktop is a daemon client but patinad.service is not active",
             )
         } else if background_tracking_at_login
             && (!desktop_launch_at_login || desktop_autostart_valid)
@@ -516,6 +589,7 @@ mod tests {
             updated_at_ms: None,
             failure_code: None,
             failure_message: None,
+            background_tracking_at_login: None,
         }
     }
 
@@ -578,6 +652,7 @@ mod tests {
 
         assert_eq!(snapshot.migration_state, "managed");
         assert!(snapshot.active);
+        assert!(snapshot.control_available);
     }
 
     #[test]
@@ -615,6 +690,22 @@ mod tests {
             snapshot.cutover.failure_message.as_deref(),
             Some("timed out")
         );
+        assert!(snapshot.control_available);
+    }
+
+    #[test]
+    fn completed_cutover_reports_a_login_preference_mismatch() {
+        let mut service = service_snapshot("disabled", false);
+        service.active = true;
+        service.active_state = Some("active".to_string());
+        service.sub_state = Some("running".to_string());
+        let mut completed = cutover("completed");
+        completed.background_tracking_at_login = Some(true);
+
+        let snapshot = build_diagnostics(service, completed, true, true, true, false);
+
+        assert_eq!(snapshot.migration_state, "preference-mismatch");
+        assert!(snapshot.control_available);
     }
 
     #[test]

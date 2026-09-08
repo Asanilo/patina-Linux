@@ -182,6 +182,15 @@ pub async fn cmd_commit_app_settings(
         .into_iter()
         .map(AppSettingMutation::from)
         .collect::<Vec<_>>();
+    if mutations
+        .iter()
+        .any(|mutation| mutation.key == "background_tracking_at_login")
+    {
+        return Err(
+            "background tracking login preference requires the dedicated service command"
+                .to_string(),
+        );
+    }
 
     if let Some(client) = crate::app::daemon_client::command_client(&app)? {
         mutations =

@@ -194,6 +194,7 @@ await runTest("settings diagnostics treat the installed disabled daemon unit as 
         updatedAtMs: null,
         failureCode: null,
         failureMessage: null,
+        backgroundTrackingAtLogin: null,
       },
     },
   });
@@ -230,6 +231,7 @@ await runTest("settings diagnostics expose an early daemon activation as an owne
         updatedAtMs: null,
         failureCode: null,
         failureMessage: null,
+        backgroundTrackingAtLogin: null,
       },
     },
   });
@@ -266,6 +268,7 @@ await runTest("settings diagnostics report a managed daemon as healthy", () => {
         updatedAtMs: 1000,
         failureCode: null,
         failureMessage: null,
+        backgroundTrackingAtLogin: true,
       },
     },
   });
@@ -302,6 +305,7 @@ await runTest("settings diagnostics report an inactive managed daemon as blocked
         updatedAtMs: 1000,
         failureCode: null,
         failureMessage: null,
+        backgroundTrackingAtLogin: false,
       },
     },
   });
@@ -338,6 +342,7 @@ await runTest("settings diagnostics surface a failed runtime owner cutover", () 
         updatedAtMs: 1000,
         failureCode: "daemon-not-ready",
         failureMessage: "timed out waiting for tracking readiness",
+        backgroundTrackingAtLogin: true,
       },
     },
   });
@@ -347,6 +352,43 @@ await runTest("settings diagnostics surface a failed runtime owner cutover", () 
   assert.equal(service?.tone, "danger");
   assert.match(service?.detail ?? "", /timed out waiting for tracking readiness/);
   assert.equal(service?.metadata?.find((entry) => entry.label === "Failure")?.value, "daemon-not-ready");
+});
+
+await runTest("settings diagnostics surface a daemon login preference mismatch", () => {
+  const items = buildSettingsDiagnosticsViewModel({
+    trackerHealth: HEALTHY_GNOME,
+    webActivityEnabled: false,
+    webActivityPort: 18080,
+    webActivityToken: "",
+    webActivityBridge: null,
+    daemonService: {
+      serviceName: "patinad.service",
+      managerAvailable: true,
+      unitInstalled: true,
+      unitFileState: "disabled",
+      enabled: false,
+      activeState: "active",
+      subState: "running",
+      active: true,
+      migrationState: "preference-mismatch",
+      migrationReason: "saved preference does not match unit state",
+      controlAvailable: true,
+      error: null,
+      cutover: {
+        state: "completed",
+        requestId: "cutover_test",
+        updatedAtMs: 1000,
+        failureCode: null,
+        failureMessage: null,
+        backgroundTrackingAtLogin: true,
+      },
+    },
+  });
+
+  const service = items.find((item) => item.id === "daemon-service");
+  assert.equal(service?.value, "设置待对账");
+  assert.equal(service?.tone, "warning");
+  assert.match(service?.detail ?? "", /尚未与 patinad.service 状态一致/);
 });
 
 console.log(`Passed ${passed} settings diagnostics view model tests`);

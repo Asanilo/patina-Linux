@@ -70,6 +70,7 @@ fn register_managed_state_and_plugins(
         .manage(runtime_mode)
         .manage(crate::app::daemon_client::PatinadClientState::default())
         .manage(crate::app::daemon_client::runtime::PatinadRuntimeState::default())
+        .manage(crate::app::daemon_service::DaemonServiceMutationState::default())
         .manage(crate::engine::api::auth::ApiCredentialStore::new())
         .manage(crate::engine::api::server::ApiServerState::new())
         .manage(ToolsRuntimeState::default())
@@ -170,6 +171,7 @@ fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Build
         commands::backup::cmd_pick_scheduled_backup_directory,
         commands::backup::cmd_save_scheduled_backup_config,
         commands::daemon_service::cmd_retry_runtime_owner_cutover,
+        commands::daemon_service::cmd_set_background_tracking_at_login,
         commands::persistence::cmd_reopen_sqlite_pool,
         commands::persistence::cmd_delete_tracking_data_before,
         commands::persistence::cmd_clear_all_window_titles,
@@ -280,6 +282,28 @@ fn register_runtime_hooks(
                     data::sqlite_pool::initialize_existing_app_sqlite(app.handle()),
                 )
                 .map_err(std::io::Error::other)?;
+                #[cfg(target_os = "linux")]
+                if runtime_mode.is_managed_daemon_client() {
+                    let profile = crate::platform::app_paths::app_profile(app.handle());
+                    let control_root =
+                        crate::platform::storage_paths::default_storage_paths(app.handle())?
+                            .control_root;
+                    let pool = tauri::async_runtime::block_on(
+                        data::sqlite_pool::wait_for_sqlite_pool(app.handle()),
+                    )
+                    .map_err(std::io::Error::other)?;
+                    if let Err(error) = tauri::async_runtime::block_on(
+                        crate::app::daemon_service::reconcile_completed_background_login_preference(
+                            profile,
+                            &control_root,
+                            &pool,
+                        ),
+                    ) {
+                        eprintln!(
+                            "[patinad] failed to reconcile background login preference: {error}"
+                        );
+                    }
+                }
             }
             Ok(runtime::setup(
                 app,
@@ -376,9 +400,13 @@ mod tests {
         let managed_activation = setup
             .find("activate_runtime_owner_cutover")
             .expect("managed daemon activation");
+        let preference_reconciliation = setup
+            .find("reconcile_completed_background_login_preference")
+            .expect("managed background preference reconciliation");
 
         assert!(owner_branch < existing_database);
         assert!(managed_activation < existing_database);
+        assert!(existing_database < preference_reconciliation);
         assert!(setup.contains("initialize_app_sqlite"));
     }
 }

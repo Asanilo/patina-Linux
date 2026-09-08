@@ -57,6 +57,7 @@ pub struct RuntimeOwnerCutoverDiagnosticsSnapshot {
     pub updated_at_ms: Option<u64>,
     pub failure_code: Option<String>,
     pub failure_message: Option<String>,
+    pub background_tracking_at_login: Option<bool>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -88,6 +89,7 @@ pub fn diagnose(
             updated_at_ms: Some(reservation.updated_at_ms),
             failure_code: reservation.failure_code,
             failure_message: reservation.failure_message,
+            background_tracking_at_login: Some(reservation.background_tracking_at_login),
         },
         Ok(None) => RuntimeOwnerCutoverDiagnosticsSnapshot {
             state: "not-requested".to_string(),
@@ -95,6 +97,7 @@ pub fn diagnose(
             updated_at_ms: None,
             failure_code: None,
             failure_message: None,
+            background_tracking_at_login: None,
         },
         Err(reason) => RuntimeOwnerCutoverDiagnosticsSnapshot {
             state: "blocked".to_string(),
@@ -102,6 +105,7 @@ pub fn diagnose(
             updated_at_ms: None,
             failure_code: Some("invalid-reservation".to_string()),
             failure_message: Some(reason),
+            background_tracking_at_login: None,
         },
     }
 }
@@ -232,6 +236,27 @@ pub fn mark_completed(
                 return Err("failed runtime owner cutover cannot be completed".to_string())
             }
         }
+        Ok(())
+    })
+}
+
+pub fn update_completed_background_preference(
+    control_root: &Path,
+    profile: AppProfile,
+    background_tracking_at_login: bool,
+    now_ms: u64,
+) -> Result<RuntimeOwnerCutoverSnapshot, String> {
+    let reservation = read_reservation(control_root, profile)?
+        .ok_or_else(|| "runtime owner cutover reservation does not exist".to_string())?;
+    let request_id = reservation.request_id.clone();
+    update_reservation(control_root, profile, &request_id, |reservation| {
+        if reservation.status != RuntimeOwnerCutoverStatus::Completed {
+            return Err(
+                "background tracking preference requires a completed owner cutover".to_string(),
+            );
+        }
+        reservation.background_tracking_at_login = background_tracking_at_login;
+        reservation.updated_at_ms = reservation.updated_at_ms.max(now_ms);
         Ok(())
     })
 }
@@ -609,6 +634,42 @@ mod tests {
                 ..
             }
         ));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn completed_cutover_owns_the_background_login_preference() {
+        let root = root("completed-preference");
+        let prepared = prepare(&root, AppProfile::Production, true, true, 1_000).unwrap();
+        mark_activating(&root, AppProfile::Production, &prepared.request_id, 2_000).unwrap();
+        mark_completed(&root, AppProfile::Production, &prepared.request_id, 3_000).unwrap();
+
+        let updated =
+            update_completed_background_preference(&root, AppProfile::Production, false, 4_000)
+                .unwrap();
+
+        assert!(!updated.background_tracking_at_login);
+        assert_eq!(updated.updated_at_ms, 4_000);
+        assert_eq!(
+            diagnose(&root, AppProfile::Production).background_tracking_at_login,
+            Some(false)
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn background_login_preference_rejects_incomplete_cutovers() {
+        let root = root("incomplete-preference");
+        prepare(&root, AppProfile::Dev, true, true, 1_000).unwrap();
+
+        let error = update_completed_background_preference(&root, AppProfile::Dev, false, 2_000)
+            .unwrap_err();
+
+        assert!(error.contains("completed owner cutover"));
+        assert_eq!(
+            diagnose(&root, AppProfile::Dev).background_tracking_at_login,
+            Some(true)
+        );
         fs::remove_dir_all(root).unwrap();
     }
 

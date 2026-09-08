@@ -174,7 +174,7 @@ Windows runtime、installer、updater、ARM/UWP 等平台专属实现不移植�
 5. 完成首次启动迁移、systemd 服务控制、默认 owner 切换和双 owner 验收。
 6. 发布 daemon-backed DEB beta 并完成登录启动、关闭 UI 后持续记录、崩溃恢复、升级、卸载和数据保留验证。
 
-当前执行位置：第 1 步已完成单向合流；第 2 步已完成 owner 审计和 fail-closed 防护，活动导入已通过 owner-only 暂存票据收口，定时备份也已由 daemon 持有唯一调度任务、配置 API、运行状态与 SSE 失效通知，按应用删除已通过受确认的事务 API 和 typed client 收口。第 3 步已移植启动恢复、采样恢复、watchdog 竞态、browser bridge 重试、网页趋势区间去重、power lifecycle generation、暂停原子边界，以及网页段与活动原生浏览器 session 的持久化事务绑定。第 4 步已完成受控恢复及 remote backup owner 收口：非密钥配置、Linux 系统凭据、上传、列表、有界下载和启动恢复衔接均已落地。第 5 步 Stage 2H.3d 已完成受限 systemd 控制基础、登录偏好的持久化语义拆分、两阶段 owner 交接代码路径、交接失败诊断及本机显式重试后端；当前按“登录偏好应用 → 安全回滚 → Quiet Pro 控件 → 中断及 DEB 实机验收”推进。真实 user service mutation 最后随 DEB 实机验收执行。详细安全顺序以 [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md) 为准。
+当前执行位置：第 1 步已完成单向合流；第 2 步已完成 owner 审计和 fail-closed 防护，活动导入已通过 owner-only 暂存票据收口，定时备份也已由 daemon 持有唯一调度任务、配置 API、运行状态与 SSE 失效通知，按应用删除已通过受确认的事务 API 和 typed client 收口。第 3 步已移植启动恢复、采样恢复、watchdog 竞态、browser bridge 重试、网页趋势区间去重、power lifecycle generation、暂停原子边界，以及网页段与活动原生浏览器 session 的持久化事务绑定。第 4 步已完成受控恢复及 remote backup owner 收口：非密钥配置、Linux 系统凭据、上传、列表、有界下载和启动恢复衔接均已落地。第 5 步 Stage 2H.3d 已完成受限 systemd 控制基础、登录偏好的持久化语义拆分、两阶段 owner 交接代码路径、交接失败诊断、本机显式重试及后台登录偏好对账后端；当前按“安全回滚 → Quiet Pro 控件 → 中断及 DEB 实机验收”推进。真实 user service mutation 最后随 DEB 实机验收执行。详细安全顺序以 [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md) 为准。
 
 在第 6 步完成前，不再把新的上游大型功能只加入 Linux `main` 而不进入 patinad 架构线。
 
