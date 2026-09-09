@@ -14,6 +14,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 const RESERVATION_FILE_NAME: &str = "backup-restore-reservation.json";
+
+#[cfg(all(test, target_os = "linux"))]
+mod systemd_tests;
 const RESERVATION_VERSION: u32 = 1;
 const MAX_RESERVATION_BYTES: u64 = 64 * 1024;
 static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -559,6 +562,175 @@ mod tests {
         )
         .await
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn isolated_restore_survives_reopen_and_receipt_replay_for_both_strategies() {
+        use crate::data::repositories::backup_restore::test_support as fixture;
+        for (label, strategy, expected_count) in [
+            ("replace-reopen", RestoreStrategy::Replace, 1),
+            ("merge-reopen", RestoreStrategy::Merge, 2),
+        ] {
+            let root = temp_root(label);
+            let control = root.join("control");
+            let staging = control.join("staging");
+            let source = root.join("synthetic.zip");
+            let pool = prepared_pool(&root).await;
+            fixture::seed_session(&pool, 1, "synthetic", 1000).await;
+            crate::data::backup::export_scheduled_backup_create_new(&pool, &source)
+                .await
+                .unwrap();
+            let source_bytes = fs::read(&source).unwrap();
+            crate::data::maintenance::delete_tracking_data_before(&pool, 3000)
+                .await
+                .unwrap();
+            fixture::seed_session(&pool, 2, "existing", 3000).await;
+            let staged =
+                crate::platform::backup_restore_staging::stage_file(&staging, &source).unwrap();
+            let sentinel = staging.join("unrelated.txt");
+            fs::write(&sentinel, b"keep").unwrap();
+            let lifecycle =
+                Arc::new(DaemonServiceLifecycleOwner::new(&control, true, 5000).unwrap());
+            let owner =
+                DaemonBackupRestoreOwner::new(control.clone(), staging.clone(), lifecycle.clone());
+            let scheduled = owner
+                .schedule(BackupRestoreScheduleInput {
+                    ticket: staged.ticket.clone(),
+                    expected_sha256: staged.sha256.clone(),
+                    expected_size_bytes: staged.size_bytes,
+                    strategy,
+                })
+                .await
+                .unwrap();
+            assert_eq!(scheduled.restore.status, "pending_restart");
+            tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                lifecycle.wait_for_restart_request(),
+            )
+            .await
+            .unwrap();
+            let mut pending = read_reservation(&control).unwrap().unwrap();
+            pool.close().await;
+            drop(owner);
+            drop(lifecycle);
+
+            // Reopen a real SQLite file at the runtime boundary, without touching systemd.
+            let pool = prepared_pool(&root).await;
+            assert_eq!(
+                run_startup_restore(&control, &staging, &pool, 6000)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .status,
+                "completed"
+            );
+            let names = fixture::session_names(&pool).await;
+            assert_eq!(names.len(), expected_count);
+            assert!(names.iter().any(|name| name == "synthetic"));
+            if matches!(strategy, RestoreStrategy::Merge) {
+                assert!(names.iter().any(|name| name == "existing"));
+            }
+            assert_eq!(fs::read(&sentinel).unwrap(), b"keep");
+            assert_eq!(fs::read(&source).unwrap(), source_bytes);
+            assert!(!staging.join(format!("{}.zip", staged.ticket)).exists());
+
+            // Simulate losing the reservation update after the transaction receipt committed.
+            fixture::seed_session(&pool, 99, "later", 7000).await;
+            pending.status = ReservationStatus::Running;
+            write_reservation_atomic(&control, &pending).unwrap();
+            pool.close().await;
+            let pool = prepared_pool(&root).await;
+            assert_eq!(
+                run_startup_restore(&control, &staging, &pool, 9000)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .status,
+                "completed"
+            );
+            let replayed_names = fixture::session_names(&pool).await;
+            assert_eq!(replayed_names.len(), expected_count + 1);
+            assert!(replayed_names.iter().any(|name| name == "later"));
+            assert_eq!(fixture::receipt_count(&pool).await, 1);
+            fixture::assert_integrity(&pool).await;
+            assert_eq!(fs::read(&sentinel).unwrap(), b"keep");
+            pool.close().await;
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn isolated_replace_failure_rolls_back_deletes_and_records_no_receipt() {
+        use crate::data::repositories::backup_restore::test_support as fixture;
+        let root = temp_root("transaction-failure");
+        let control = root.join("control");
+        let staging = control.join("staging");
+        let source = root.join("synthetic.zip");
+        let pool = prepared_pool(&root).await;
+        fixture::seed_session(&pool, 1, "source", 1000).await;
+        crate::data::backup::export_scheduled_backup_create_new(&pool, &source)
+            .await
+            .unwrap();
+        crate::data::maintenance::delete_tracking_data_before(&pool, 3000)
+            .await
+            .unwrap();
+        fixture::seed_session(&pool, 2, "keep", 3000).await;
+        fixture::inject_source_insert_failure(&pool).await;
+        let staged =
+            crate::platform::backup_restore_staging::stage_file(&staging, &source).unwrap();
+        let sentinel = staging.join("unrelated.txt");
+        fs::write(&sentinel, b"keep").unwrap();
+        let reservation = RestoreReservation {
+            version: RESERVATION_VERSION,
+            request_id: "restore_transaction_failure".to_string(),
+            ticket: staged.ticket.clone(),
+            strategy: RestoreStrategy::Replace,
+            archive_sha256: staged.sha256,
+            size_bytes: staged.size_bytes,
+            status: ReservationStatus::PendingRestart,
+            requested_at_ms: 3000,
+            started_at_ms: None,
+            completed_at_ms: None,
+            restart_request_id: None,
+            error: None,
+            cleanup_warning: None,
+        };
+        write_reservation_atomic(&control, &reservation).unwrap();
+        assert_eq!(
+            run_startup_restore(&control, &staging, &pool, 4000)
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            "failed"
+        );
+        pool.close().await;
+        let pool = prepared_pool(&root).await;
+        assert_eq!(fixture::session_names(&pool).await, vec!["keep"]);
+        assert_eq!(fixture::receipt_count(&pool).await, 0);
+        assert_eq!(
+            run_startup_restore(&control, &staging, &pool, 5000)
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            "failed"
+        );
+        assert!(staging.join(format!("{}.zip", staged.ticket)).is_file());
+        let lifecycle = Arc::new(DaemonServiceLifecycleOwner::new(&control, true, 6000).unwrap());
+        let owner = DaemonBackupRestoreOwner::new(control, staging.clone(), lifecycle);
+        assert!(owner.cancel("wrong-request".to_string()).await.is_err());
+        assert!(staging.join(format!("{}.zip", staged.ticket)).is_file());
+        assert_eq!(
+            owner.cancel(reservation.request_id).await.unwrap().status,
+            "cancelled"
+        );
+        assert!(!staging.join(format!("{}.zip", staged.ticket)).exists());
+        assert_eq!(fs::read(&sentinel).unwrap(), b"keep");
+        assert!(source.is_file());
+        fixture::assert_integrity(&pool).await;
+        pool.close().await;
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[tokio::test]

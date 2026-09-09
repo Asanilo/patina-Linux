@@ -167,7 +167,7 @@ pub async fn cmd_get_daemon_service_diagnostics(
     let profile = crate::platform::app_paths::app_profile(&app);
     let control_root = crate::platform::storage_paths::default_storage_paths(&app)?.control_root;
 
-    Ok(crate::app::daemon_service::inspect(
+    let mut snapshot = crate::app::daemon_service::inspect(
         profile,
         &control_root,
         desktop_settings.background_tracking_at_login,
@@ -176,7 +176,18 @@ pub async fn cmd_get_daemon_service_diagnostics(
         app.state::<crate::app::runtime::DesktopRuntimeMode>()
             .owns_embedded_runtime(),
     )
-    .await)
+    .await;
+    if let Ok(Some(client)) = crate::app::daemon_client::command_client(&app) {
+        let managed = app
+            .state::<crate::app::runtime::DesktopRuntimeMode>()
+            .is_managed_daemon_client()
+            && profile == crate::platform::app_paths::AppProfile::Production
+            && snapshot.control_available
+            && snapshot.cutover.state == "completed";
+        snapshot.version =
+            Some(crate::app::daemon_service::upgrade::inspect(&client, managed).await);
+    }
+    Ok(snapshot)
 }
 
 #[tauri::command]

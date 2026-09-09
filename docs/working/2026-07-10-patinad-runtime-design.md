@@ -176,28 +176,107 @@ Stage 2H.3d 不做一次性切换，按下面五个可回滚批次推进：
 
 2H.3d.5c 使用同一 working 文档收口，不再新建一次性顶层文档。仓库提供 `npm run release:inspect-installed-patinad -- ...` 作为只读证据采集器；它只检查固定包路径、systemd 状态、owner 文件、SQLite `quick_check` 和裁剪后的 capability，不输出 API Token、窗口标题或 URL，不安装软件、不控制服务、不覆盖已有证据文件。输出文件使用 `create_new` 和 `0600`。
 
-#### 当前验收结论（2026-09-09，beta.7）
+#### 当前验收结论（2026-09-09，beta.9 候选）
 
 | 场景 | 状态与边界 |
 | --- | --- |
 | 单 owner、关闭/重开 Desktop、服务崩溃恢复 | 已通过，见 beta.1 至 beta.3 证据 |
+| Desktop 健康状态刷新、版本对齐 | beta.9 只读 managed 验收通过；用户确认不再出现间歇“追踪运行时未就绪”。不扩大为所有异常场景均已验证 |
 | 回滚自动重启、再次接管 | beta.6 已通过 |
 | 备份选择/取消、导出、产品内解析 | beta.7 已通过；未执行恢复写入 |
 | remove 卸载、数据/Token/备份保留、重装、追踪恢复 | beta.7 已通过；不覆盖 purge |
 | Zen 重连、切走封口、真实 suspend/resume | beta.7 已通过；挂起前无活动网页，不代表活动网页跨挂起已验证 |
-| 登录偏好开关 | 已验证配置与 unit 对账；真实注销/登录启动尚未验证 |
+| 登录偏好与独立后台启动 | 配置/unit 对账及 Linger=yes 下重启登录自启已通过，Desktop 未启动也能记录；不覆盖 Linger=no 或仅注销再登录 |
 | 故障与维护路径 | failed/blocked 重试、Token/端口不一致、缺失 unit、自定义挂载目录/pending migration 等已有自动化或实现，未全部做真实安装故障注入 |
-| 受控备份恢复、远端恢复 | 跨 systemd 的真实恢复验收待补，应在隔离 profile/测试会话中进行，不能直接覆盖当前生产数据 |
-| 发布 | beta.7 仅本地未签名 DEB；未推 tag/发布。稳定版前仍需 AppImage 兼容或退役迁移方案 |
+| 受控备份恢复、远端恢复 | 合成数据的磁盘恢复/重开、receipt 幂等、失败保留和清理回滚已通过；真实临时 systemd 服务的跨进程 Replace/Merge 及失败回滚通过；WebDAV 下载校验/暂存的隔离 HTTP 回归通过，真实凭据、远端到重启恢复完整链路与任意崩溃时刻仍待验证 |
+| 发布 | beta.9 本地未签名 DEB 已安装，用户确认 Desktop/Daemon 均为 beta.9，只读 managed 验收通过；未推 tag/发布。稳定版前仍需 AppImage 兼容或退役迁移方案 |
 
-下一步顺序：保存本轮修复与证据；真实重新登录验证独立后台启动；补活动网页跨挂起及隔离维护/恢复场景；再决定 DEB beta 发布。不得因为正常路径通过就将 Stage 2H.3d 整体标为完成。恢复策略按钮文案/摘要位置改进属于后续 UX 项，不阻塞已通过的只读归档校验。
+下一步顺序：健康状态与版本对齐的实机正常路径已收口，准备分支推送及明确限制的 DEB beta 发布评审；继续补活动网页跨挂起、独立凭据下的完整远端恢复与尚未覆盖的安装故障矩阵。独立后台自启已通过当前 Linger=yes 的重启登录场景，不为扩展矩阵擅自修改用户登录配置。不得因为正常路径通过就将 Stage 2H.3d 或稳定版整体标为完成。恢复策略按钮文案/摘要位置改进属于后续 UX 项，不阻塞已通过的只读归档校验。
+
+2026-09-09 健康状态修复：Desktop 原本只在 SSE 数据变化或 resync 时刷新快照，与前端 8 秒心跳过期判断不匹配。隔离 HTTP 回归测试已在修复前复现后台采样推进、客户端仍持有旧时间的问题。runtime adapter 增加 2 秒周期重读，使用后台采样时间，不以客户端请求成功时间续命；读取失败仍清除实时快照并进入重连。测试覆盖无事件刷新、冻结采样时间不被改写、追踪不可用时清除旧数据，同时保留既有 SSE、配置切换与退出测试。随后已打入 beta.8 并由用户安装，真实故障发生时刻的关联与新包复测仍待完成。
+
+周期刷新还必须保留晚到的 SSE 数据失效通知：即使事件时间早于最新快照，也仍通知客户端刷新统计，不因快照较新而丢弃事件。隔离回归已覆盖该顺序。健康修复的 `npm run check:full` 已通过；补充晚到事件保护后再次执行 Rust 全量校验（565 项通过、3 项忽略）。前端包含 30 项真实浏览器测试；测试退出时出现临时 Chromium profile 清理 `ENOTEMPTY` 警告，测试与构建结果通过，未改动正式用户目录。安装包复测、真实 systemd 跨进程恢复及 WebDAV 恢复不包含在这些自动化结论中。
 
 验收脚本已加强：managed 同时检查运行中的 serverVersion 与期望版本、service PID 与 lease PID 一致；无法查询 systemd 不再视为停服；uninstalled 必须保留 owner-only Token。PID 与 capability 校验仍不能替代动作前后对比或证明所有潜在进程不存在。旧证据文件不改写，后续用新文件重新采集。
 
 本轮收口验证：`test:release` 通过（24 项发布策略、3 项 DEB 静态验证、11 项已安装验收测试），版本/Changelog 校验、架构检查和 `git diff --check` 通过。加强后的 `/tmp/patina-beta7-closeout-strict.json` managed 复查通过。此前 beta.7 的完整 release:check 与成品构建证据仍适用于未再改动的运行时代码；本轮只新增验收脚本检查和文档，不重打同版本安装包。
 
+#### beta.8 候选与构建存储（2026-09-09）
+
+- 健康状态修复已形成 `1.9.0-beta.8` 本地未签名 DEB，用户已安装，未推 tag 或发布。`npm run release:check`、版本一致性检查与成品 `release:verify-daemon-deb` 全部通过；Rust 565 项通过、3 项忽略，Clippy 通过。候选包含匹配的 Desktop、daemon、unit 与 GNOME 扩展。
+- 成品：`src-tauri/target/release/bundle/deb/Patina_1.9.0-beta.8_amd64.deb`，约 25 MiB；SHA-256：`89b59b129966676ffb67b89de563c278c3051b482f72f1e4bb7876a531ee79dd`。
+- 安装前证据 `/tmp/patina-before-beta8-storage-check.json` 的 quick_check 未在采集时限内取得结果，不标为通过；随后单独只读检查返回 `ok`，完整重采集 `/tmp/patina-before-beta8-recheck.json` 全部通过，运行版本仍为 beta.7、daemon PID 1473，未控制正式服务。
+- 初始构建存储调查：target 约 61 GiB，其中 debug 约 56 GiB、增量缓存约 36 GiB、debug/deps 约 18 GiB；release 约 4.4 GiB。node_modules 约 234 MiB，上游源码副本约 35 MiB。主要占用是可重建 Rust 调试产物，不是 Windows 源码或正式数据库。
+- dev/test 改为有限调试信息并关闭增量编译，Release 参数不变；清理边界、复原完整调试信息与编译时间代价见 `docs/linux-development-setup.md`。首次新配置验证后新旧缓存并存，target 暂约 63 GiB。用户随后授权清理：确认无 Cargo/rustc 构建进程且目录为非符号链接的规范路径后，仅删除 `src-tauri/target/debug/incremental`；target 降至约 28 GiB，文件系统可用空间从约 81 GiB 增至 116 GiB。保留 debug 依赖、所有 Release 产物、应用数据与密钥，beta.7/beta.8 DEB 清理前后 SHA-256 一致。
+- 安装后证据 `/tmp/patina-beta8-after-install-cache-cleanup-baseline.json`：软件包为 beta.8，数据库 quick_check 为 `ok`，service/lease PID 1473 一致，但运行中 daemon 仍报告 beta.7，版本匹配检查未通过。采集时无 Desktop 进程，尚不能标为升级完成；未擅自重启正式服务。
+- 用户打开 Desktop 后重采集 `/tmp/patina-beta8-after-open.json`，后台仍为 beta.7、PID 1473，数据库完整，版本匹配检查仍未通过。代码检查确认客户端按协议兼容协商，并没有仅因服务版本变化而自动重启的实现；此前“打开新版 Desktop 会自动完成后台升级”的描述不成立。版本差异提示与确认式受控升级需要纳入后续收口，不能擅自重启正式服务或宣称安装验收完成。健康刷新修复位于 Desktop，是否仍跳动待用户反馈。
+- 下一步完成正式后台的显式受控升级与健康状态复测，同时继续独立的 WebDAV 恢复验证。旧 DEB 保留供回退，生产数据库和签名私钥未改动。
+
+#### 后台版本诊断与确认式重新加载（2026-09-09，未打包）
+
+- 在现有设置诊断中显示 Desktop 与运行中 daemon 的版本。版本差异为警告，不等同于协议不兼容；仅对已完成接管、可控且提供 service-lifecycle scope 的 Production managed client 显示重新加载入口。
+- 编排落在 `app/daemon_service/upgrade.rs`，复用 typed client 的 `/api/v1/system/service` 与 `/api/v1/system/service/restart`，不增加 HTTP endpoint、不直接执行 systemctl restart。命令再次检查确认、owner 状态和用户确认时的运行版本，并使用既有 mutation gate。
+- POST 只发一次，45 秒内有界等待同一 ticket completed、新 instance、Desktop/daemon 版本一致及 tracking ready；拒绝、旧确认、错误票据、仍为旧版本或超时不报成功，也不自动重试。仅重新加载已安装程序，不下载更新，不改变登录偏好。
+- 隔离 HTTP 测试覆盖确认过期不写入、成功、拒绝、错误版本、错误票据和单次 POST；真实 Chromium 的 mock-Tauri 测试覆盖提示颜色、取消、确认、防重复、完成前不报成功以及 1280/620 宽度布局。截图位于 `/tmp/patina-daemon-reload-ui-review/`，未连接生产后台。
+- 最终 `npm run check:full` 通过：Rust 567 passed / 4 ignored，31 项浏览器 smoke、前端回归、构建、bundle budget 和 Clippy 通过；Changelog 与 diff 空白检查通过。首次全量检查暴露旧源码扫描测试包含自身的问题，已恢复测试模块顺序而未放宽断言；Clippy 的布尔表达式建议已修正。浏览器临时 profile 清理仍有非致命 `ENOTEMPTY` 警告。只读确认正式 service 仍为 PID 1473、active/running、NRestarts=0。
+- 本轮尚未更新版本、重打 DEB、提交或推送。已安装 beta.8 不包含新控件；生产后台没有因本轮开发而重启。下一候选需另行打包并在用户确认后实机核验，健康跳动反馈、WebDAV 恢复及剩余安装矩阵仍未完成。
+
+#### beta.9 本地安装候选（2026-09-09）
+
+- 版本文件、Cargo.lock 和发布规范同步为 `1.9.0-beta.9`；重新执行完整 `npm run release:check` 通过，Rust 567 passed / 4 ignored、31 项浏览器 smoke、Clippy、扩展校验及版本一致性通过。
+- 仅构建 DEB，命令行临时设置 `bundle.createUpdaterArtifacts=false`，未修改正式 updater 配置，也未读取签名私钥。成品验证确认 Desktop、daemon、固定 user unit 和 GNOME 扩展齐全，包不自动启用或启动服务。
+- 成品：`src-tauri/target/release/bundle/deb/Patina_1.9.0-beta.9_amd64.deb`，约 25 MiB，SHA-256 `704aa6033bff3a42375106316732b7d21bff859b8a92111cf2c4ddd75af4ea5b`。包内 daemon 与本次 Release 构建逐字节一致；Desktop 仅存在 Tauri 的 3 字节 `UNK` 到 `DEB` 包类型标记差异。旧 beta.8 包保留，SHA-256 未变。
+- 安装前 `/tmp/patina-before-beta9-baseline.json` 通过：包 beta.8、后台 beta.7，service/lease PID 1473 一致，quick_check=ok，Token 普通文件且 0600；未安装、未控制正式服务。
+- 人工验收顺序：正常退出 Desktop（不是只关闭窗口），覆盖安装 beta.9 后重新打开；核对设置诊断 Desktop 为 beta.9、Daemon 为现有旧版，再显式确认“重新加载后台”。等待成功后检查两者为 beta.9、tracking ready、service/lease 为同一个新 PID，并观察健康状态是否仍跳动。不要以新包已安装替代后台已切换，不使用强制退出代替受控重启；失败或超时先核对状态，不连续重试。
+- 构建交付时仅完成本地构建与静态验收，未提交、推送、打 tag 或发布；后续实机结果如下，不以构建通过代替运行版本核验。
+
+#### beta.9 版本切换与远端下载回归（2026-09-09）
+
+- 用户确认 Desktop 和 Daemon 均显示 beta.9。只读 `/tmp/patina-beta9-after-reload.json` managed 检查全部通过：包和 API 版本 beta.9，service/lease 新 PID 583229 一致，active/running、NRestarts=1、tracking/browser/Tools ready，quick_check=ok，Token 普通文件且 0600。相对安装前 PID 1473 已完成实例交接；本轮核验没有控制生产服务。长期健康状态是否仍跳动仍待用户反馈。
+- 新增 `data/remote_backup/transfer_tests.rs`，由临时 loopback HTTP 服务返回合成导出的真实 ZIP 和索引。只提取同一 data owner 内的私有客户端下载/暂存函数，生产入口的 profile-scoped 系统凭据读取不变；测试不使用用户的 WebDAV 配置、密码、备份或数据库。
+- 一项集成测试覆盖 8 个场景：成功下载、非法索引路径、重复 ID、缺失索引、401、损坏 ZIP、索引元数据不符、归档 404。校验失败不产生暂存票据，成功票据通过 SHA-256/大小/0600 校验；临时下载被清除，无关文件及合成数据库保持原样，恢复 receipt 为零。
+- 目标测试和完整 `npm run check:rust` 通过：568 passed / 4 ignored，Rust 边界检查与 Clippy 通过；本轮未改 UI，未重复运行前端全量检查，沿用 beta.9 构建前的前端验收证据。
+- 这仅覆盖 HTTP 下载、归档校验和暂存，不覆盖上传、真实 WebDAV 服务兼容、Secret Service、远端恢复预约与 systemd 重启完整链路。下一步在独立凭据会话中串联这些边界，不能仅将既有本地恢复测试与本轮下载测试相加就宣称端到端验收完成。
+- 不重打或覆盖已有 beta.9 DEB；本轮源码回归改动未安装、未提交或推送。
+
+#### 发布评审（2026-09-09）
+
+- 用户确认 beta.9 健康状态不再跳动，正常路径问题收口。远端 Release 只读核对显示最近公开版本为 1.8.4，beta.1 至 beta.9 仍是本地候选；不能把本机安装或已有提交当作远端发布成功。
+- 当前适合评估带明确限制的 DEB prerelease，不适合发布 1.9.0 stable。稳定版前仍需独立凭据与 systemd 的完整远端恢复、活动网页跨挂起、剩余安装故障矩阵，以及 AppImage 兼容或明确退役方案。恢复预览 UX、TUI、本机浏览器 UI 和大规模平台删除不阻塞本轮 beta，也不在发布前顺带扩张。
+- 发布前修正中英文 README 的旧默认 owner 描述，并说明 stable/main 与 daemon 分支、DEB-only、备份前置和显式版本重新加载。新 WebDAV 回归只提取私有客户端函数并补测试，没有引入新的凭据入口或 HTTP 协议；它在源码中但不在此前用户安装的 beta.9 二进制中。
+- 本轮最终 `release:check` 通过：568 项 Rust 测试通过、4 项按约定忽略，31 项真实浏览器 smoke、构建、bundle budget、Clippy 和扩展验证通过。Chromium 临时 profile 清理仍有非致命 `ENOTEMPTY` 警告，不影响通过结论，也不作为测试基础设施已完全收口的证明。
+- 准备提交并推送 `feature/patinad-daemon`，不合并 `main`；公开 beta/tag 动作等待用户确认，不能将本次分支推送称为已发布。
+
+#### 真实 systemd 跨进程恢复（2026-09-09）
+
+新增显式 opt-in 测试 `app/daemon/backup_restore/systemd_tests.rs`，使用已安装的 `/usr/bin/patinad` beta.8；常规 `cargo test` 默认忽略，运行方式见开发文档。每个场景创建随机临时 user unit 和独立 `0700` HOME/XDG 根，固定使用其内部 Dev profile、随机端口和私有凭据，源归档通过既有 Rust exporter 从合成记录生成。追踪暂停、音频/网页/远端状态禁用，子进程断开桌面 D-Bus。没有读取用户备份或调用正式 `patinad.service` 的写操作。
+
+| 场景 | PID 交接 | 证据目录（内含 `0600` evidence.json） |
+| --- | --- | --- |
+| Replace | 443222 → 443245 | `/tmp/patina-systemd_test_d6ab3fd68f409ac4b56495df3e9ac305` |
+| Merge | 443277 → 443301 | `/tmp/patina-systemd_test_94df64afdebacc416d69664bcde3eed2` |
+| Replace INSERT 失败 | 443405 → 443432 | `/tmp/patina-systemd_test_8d25bdbaca2acbe8b9890dc06c2d8000` |
+
+三条路径均从真实 HTTP `202` 预约，经 daemon 受控退出与 systemd 新进程消费，到终态查询和数据库复核。Replace 仅保留源记录，Merge 保留源与原有记录，成功各一条 receipt 且只清理所属 staging；失败事务保留原有记录、无 receipt、保留失败归档。源 ZIP 与无关文件不变，quick_check/foreign_key_check 通过。完整 Rust 校验为 565 passed / 4 ignored，Clippy 与边界检查通过；显式运行该 ignored 测试通过（内部三场景）。第一次运行出现的清理提示来自显式 stop 后 Drop 再次停止已卸载单元，已修正并完整重跑；最终无残留测试单元。正式服务仍 active，PID 1473、NRestarts=0。
+
+范围限制：使用当前用户 manager 的隔离临时服务，不是新账号或完整隔离登录会话；复用固定服务环境标记以协商协议，实际 unit 名与产品服务不同，不代替包内所有 sandbox 配置验证。已证明正常受控进程交接及恢复事务失败，不包括任意断电/进程被杀时刻、真实 WebDAV 服务或远端凭据生命周期。小型合成证据保留在临时目录，不自动递归清理目录。
+
+#### 隔离维护与恢复验证（2026-09-09）
+
+复用现有 restore owner 和 data 测试，新增三项测试，全部使用合成数据、临时磁盘数据库或内存数据库。未读取用户导出备份，不调用 systemctl，不操作 Production/Local/Dev 的现有目录；SQL 造数和故障注入只在 data 层 cfg(test) 辅助模块内，生产恢复代码不变。
+
+- `isolated_restore_survives_reopen_and_receipt_replay_for_both_strategies`：分别验证 Replace/Merge，真实导出 ZIP、创建 staging、调用 schedule、等待内部 restart 通知，关闭并重新打开 SQLite 后执行 startup restore；替换只保留备份记录，合并保留现有记录。模拟数据库已提交但 reservation 仍为 running，再次打开数据库时根据 receipt 收敛，不重复恢复或删除后续新记录。原备份及无关 staging 文件保留，只移除本次票据。
+- `isolated_replace_failure_rolls_back_deletes_and_records_no_receipt`：合成 ZIP 通过校验后，在恢复 INSERT 阶段用 SQLite trigger 注入失败，确认先前 DELETE 随事务回滚；重新打开数据库仍保留旧数据、无成功 receipt、failed 不自动重试。错误 request ID 不清理票据，显式取消只清理所属 staging 文件。quick_check 和 foreign_key_check 通过。
+- `isolated_cleanup_failure_rolls_back_earlier_table_deletions`：清理在后续网页表 DELETE 失败时，之前的原生会话/标题删除全部回滚，数据库完整。
+
+执行结果：目标测试 3/3 通过；完整 `npm run check:rust` 最终为 564 passed / 3 ignored，Clippy 与边界检查通过。首次受沙箱 loopback 绑定限制，30 项已有网络测试报 EPERM；获得测试执行权限后完整重跑通过，不忽略失败项。本次不修改版本、不重打 DEB。上述是进程内集成测试和真实磁盘重开，不等同于 OS 进程崩溃、真正 systemd restart、真实远端服务或任意断电时刻；这些门槛继续保留。
+
 <details>
 <summary>beta.5 至 beta.7 实机证据时间线（当时的待办不代表当前状态）</summary>
+
+重启登录后台自启验收通过（beta.7，2026-09-09）：用户重启后登录，未打开 Desktop。boot ID 从 `1db84155-debf-4dae-b8f8-a118e6f52eb4` 变为 `a47013be-b2a0-4ea1-8f3d-a1674e47cdae`；本次 boot 的 systemd 日志记录 15:10:45 +0800 自动启动 patinad。`/tmp/patina-beta7-after-reboot-login.json` 严格 managed 检查通过：API serverVersion=1.9.0-beta.7、unit enabled/active、PID 与 lease 均为 1473、NRestarts=0、quick_check=ok。进程检查仅有 patinad、无 Patina。新 daemon 启动后已有 sessions=5、web=20 条新增记录，旧 session 跨新 daemon 启动边界计数为 0；settings 保持 background_tracking_at_login=1、launch_at_login=0。证明当前 Linger=yes 下重启登录后无需 Desktop 即可恢复追踪；不宣称已验证 Linger=no、仅注销/登录或登录前隐私行为。
+
+登录启动待验基线（beta.7）：用户已开启后台登录启动并关闭 Desktop 登录启动。`/tmp/patina-beta7-before-relogin.json` managed 检查通过，service enabled/active、PID 686373；SQLite settings 为 background_tracking_at_login=1、launch_at_login=0、start_minimized=1，`~/.config/autostart/Patina.desktop` 不存在。completed reservation 中 desktopLaunchAtLogin=true 是交接时快照，不能替代当前 Desktop 偏好；completed 启动路径仅对账后台偏好，不据此重新开启 Desktop 自启动。宿主 loginctl 确认 Linger=yes，注销不能保证 user manager/daemon 退出，因此改为用户主动系统重启后验收，不改 Linger。重启前 boot ID 为 `1db84155-debf-4dae-b8f8-a118e6f52eb4`。用户重启并登录后先不打开 Patina，核对新 boot、新 daemon、无 Desktop 进程及追踪写入；当前尚未执行此项，不标为自启通过。
 
 `2026-09-09 / beta.5` 回滚进展：service 已停止并禁用，reservation 已持久化为 `rolled_back`；用户强制退出并重开 Desktop 后，lease 转为 desktop，原生活动恢复且 SQLite `quick_check=ok`。回滚后的自动重启未完成，不能将强制退出后重开视为自动重启通过。随后用户确认重新接管自动重启成功，`/tmp/patina-beta5-recutover-verified.json` 的 managed 检查通过：reservation completed、daemon lease、API 与 tracking ready，数据库完整；unit disabled 是当前登录偏好，不代表服务没有运行。验收采集器已修正将磁盘 `rolled_back` 错按诊断接口 `rolled-back` 比较的误报，并补充回归测试。
 

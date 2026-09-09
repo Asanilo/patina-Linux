@@ -171,6 +171,7 @@ fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Build
         commands::backup::cmd_pick_scheduled_backup_directory,
         commands::backup::cmd_save_scheduled_backup_config,
         commands::daemon_service::cmd_rollback_runtime_owner_to_embedded,
+        commands::daemon_service::cmd_reload_daemon_version,
         commands::daemon_service::cmd_retry_runtime_owner_cutover,
         commands::daemon_service::cmd_set_background_tracking_at_login,
         commands::persistence::cmd_reopen_sqlite_pool,

@@ -34,7 +34,69 @@ App note en: TBD.
 
 ### Internal
 
+- 补充 WebDAV 远端归档下载、索引和 ZIP 校验、私有暂存及失败清理的隔离回归；不使用生产凭据或数据，不代表完整远端恢复链路已经验收。
+
+## [1.9.0-beta.9] - 2026-09-09
+
+Release: patinad 后台服务 DEB 测试版：关闭桌面端后持续追踪，支持受控接管、回退和后台版本核对。安装前请先导出并验证备份；完整远端恢复、活动网页跨挂起和部分安装故障场景仍待验收，不作为稳定版保证。
+App note: 新增独立后台追踪、安全接管与回退，以及桌面和后台的版本核对。
+App note en: Adds independent background tracking, guarded migration and rollback, and desktop/daemon version checks.
+
+### Added
+
+- 设置诊断显示 Desktop 与运行中 daemon 的版本；版本不同时提供“重新加载后台”，只有重启凭证、新实例、追踪就绪及版本匹配后才提示成功。
+- 新增 `patinad` systemd user service、首次启动的单 owner 交接、后台登录启动偏好、失败重试和显式回退；生产客户端关闭后由后台继续追踪。
+- 新增应用/网页活动详情、应用/分类/网页趋势，以及安全活动导入和本地定时备份。
+- 本地 API/MCP 提供 daemon 能力协商、实时事件、受控设置和 Tools 写操作，配套字段级 OpenAPI 与 Agent Skill 文档。
+
+### Changed
+
+- 接管后 Desktop 使用 daemon 的数据与写侧接口；此预发布仅提供同时包含 Desktop、daemon、user unit 与 GNOME 扩展的 DEB，不提供尚未完成后台更新方案的 AppImage。
+
+### Fixed
+
+- 修复静默 SSE 导致桌面健康状态间歇过期、Zen 媒体身份匹配，以及追踪暂停和电源边界的记录一致性。
+- 修复 Linux 文件选择器闪退，以及回退和重新接管时的桌面重启问题。
+
+### Removed
+
 - 暂无。
+
+### Internal
+
+- 此节按最近公开版本 1.8.4 汇总首个拟公开 daemon beta 的变化；beta.1 至 beta.8 是本地验收记录，不代表这些版本曾公开发布。
+- 重新加载复用已有受控重启 API；请求不自动重试，不下载更新、不自动重启生产服务或改变登录偏好。
+- 增加版本核验与取消、确认、防重复点击的隔离测试；补充真实临时 systemd 服务的跨进程恢复测试，不使用生产数据。
+- 本地未签名候选已通过安装后的版本切换和健康状态用户复测；公开签名包仍须由 Actions 构建。完整 WebDAV 恢复与剩余矩阵继续保留，不以局部测试代替端到端验收。
+
+## [1.9.0-beta.8] - 2026-09-09
+
+Release: 修复后台正常采样时桌面诊断间歇显示追踪未就绪的问题，继续 DEB 实机验收。
+App note: 改进桌面客户端健康状态同步，避免窗口不变时误报追踪未就绪。
+App note en: Fixes stale desktop tracking health when the active window stays unchanged.
+
+### Added
+
+- 暂无。
+
+### Changed
+
+- 暂无。
+
+### Fixed
+
+- Desktop 在 SSE 即时同步之外每 2 秒重读后台快照，健康判断仍使用真实采样时间，读取失败仍进入断连与重连路径。
+- 周期刷新先于 SSE 通知时仍转发数据失效事件，避免统计页面漏刷新。
+
+### Removed
+
+- 暂无。
+
+### Internal
+
+- 补充静默 SSE、冻结采样时间、延迟通知与追踪不可用的隔离回归；增加备份恢复 receipt 幂等、失败回滚与维护清理回滚测试。
+- 调试及测试构建使用有限调试信息并停用增量编译，控制本机构建缓存增长；正式 Release 构建参数不变。
+- 本版为本地 DEB 候选，不表示已完成实机健康状态复测、真实 systemd 跨进程恢复或 WebDAV 恢复验收。
 
 ## [1.9.0-beta.7] - 2026-09-09
 

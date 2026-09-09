@@ -236,6 +236,8 @@ daemon 写侧按 capability 和真实 runtime owner 开放。默认 daemon surfa
 
 需要重建运行资源的配置不属于普通 settings upsert：browser bridge 端口/Token/隐私、audio source 启停和 local API listener/Token 现已由 daemon runtime control 应用；listener 换端口统一使用“预绑定、事务提交、切换旧 listener”的顺序。local API Token 只原子写入 owner-only 文件，轮换后撤销旧 bearer 与已有 SSE 会话，响应不返回密钥。service restart 由 systemd lifecycle owner 先持久化 owner-only ticket 并返回 `202 pending`，再触发有序关闭；只有下一 systemd 实例把同一 ticket 标记为 `completed` 后，客户端才能确认成功。手工启动的 preview daemon 不提供该写 scope。
 
+Desktop 的后台版本诊断与确认式重新加载由 `app/daemon_service/upgrade` 编排，薄 command 只校验 Production、managed client、已完成交接与显式确认，并使用既有服务变更互斥。版本不同不代表协议不兼容，也不得触发自动重启。重新加载复用 typed HTTP client 和既有 service restart ticket，不另建 systemctl 重启路径；POST 不自动重试，有界等待同一 ticket、新实例、版本匹配和追踪就绪后才报告成功。该操作只加载磁盘上已安装的程序，不负责下载更新。
+
 Stage 2F.2 已使用 Axum + Tower 替换通用 API/SSE 与浏览器 bridge 的自写 HTTP parser、server loop 和 SSE transport。现有 domain handler、DTO、endpoint registry 与 API surface 继续作为协议 owner；框架只拥有 HTTP 解析、路由、middleware、静态资源、并发预算和优雅关闭。API 与浏览器扩展 bridge 保持独立 listener、credential 和 origin policy，不保留两套自写 transport。
 
 浏览器 UI 与桌面 UI 默认复用现有 React feature 和 read model，但外部数据访问必须经过 transport-neutral gateway：
@@ -271,6 +273,8 @@ Stage 2H.3c.6 已实现该状态机。恢复 reservation 与暂存文件按 prof
 远端备份同样按 owner 分离。WebDAV URL、用户名、远端目录和最近完成时间属于 daemon 数据 owner 的白名单 app settings；密码属于当前 profile 的系统凭据边界，Linux 使用 Secret Service，Windows 冻结兼容路径保留 Credential Manager。上传由 tracking daemon 串行执行：从自己的 SQLite pool 创建一致性快照，在 profile 私有目录中生成 `0600` 临时归档，使用同一备份读取器复核后上传，并只清理该次操作的精确文件。远端列表也由 daemon 有界读取和验证，文件名及 remote path 必须由受限 ID 推导，不能信任 WebDAV index 提供的任意路径。远端恢复不把路径或归档正文交给 Desktop：用户先基于索引元数据确认，daemon 再有界下载、校验实际归档并复核归档大小、版本和记录计数与索引一致，随后写入既有 owner-only restore staging，并调用相同的 systemd 启动恢复状态机。HTTP 上传/恢复必须显式确认且不接收、返回或记录密码；这些远端能力不暴露给 MCP。
 
 浏览器 UI 不是公开 Web 部署面。daemon 默认只监听 loopback，并校验 loopback Host 与严格 Origin；浏览器 UI 使用 same-origin、HttpOnly、SameSite session，不获得长期 API Token。owner-only Bearer Token 只供 MCP、CLI 和 Agent 使用；浏览器扩展继续使用独立 bridge credential。浏览器写侧开放前，必须增加 CSRF 防护和操作确认，并验证跨站请求、DNS rebinding 与日志泄漏边界。
+
+Desktop runtime adapter 的健康快照刷新不依赖业务数据变化事件：保持 SSE 即时同步，同时每 2 秒通过既有只读接口更新快照，错过的周期不补发积压请求。心跳继续使用 daemon 的采样时间，不能以 HTTP 响应时间代替；快照读取失败进入既有断连与重连路径，不保留可用的旧实时数据。
 
 Tauri 是当前桌面客户端实现，不是长期协议 owner。未来可以在不改变 daemon、数据库、浏览器 UI、TUI 和 MCP 契约的前提下评估 GPUI 或其他 Linux 桌面 UI 框架；框架替换必须作为独立项目，以实测内存、启动速度、桌面集成完整性和维护成本决定。
 

@@ -45,6 +45,51 @@ pub async fn receipt_exists(
 }
 
 #[cfg(test)]
+pub(crate) mod test_support {
+    use super::*;
+
+    pub async fn seed_session(pool: &Pool<Sqlite>, id: i64, exe: &str, start: i64) {
+        sqlx::query("INSERT INTO sessions (id,app_name,exe_name,start_time,end_time,duration) VALUES (?,?,?,?,?,1000)")
+            .bind(id).bind(exe).bind(exe).bind(start).bind(start + 1000)
+            .execute(pool).await.unwrap();
+    }
+
+    pub async fn session_names(pool: &Pool<Sqlite>) -> Vec<String> {
+        sqlx::query_scalar("SELECT exe_name FROM sessions ORDER BY exe_name")
+            .fetch_all(pool)
+            .await
+            .unwrap()
+    }
+
+    pub async fn receipt_count(pool: &Pool<Sqlite>) -> i64 {
+        sqlx::query_scalar("SELECT COUNT(*) FROM backup_restore_receipts")
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    pub async fn inject_source_insert_failure(pool: &Pool<Sqlite>) {
+        sqlx::query("CREATE TRIGGER injected_restore_failure BEFORE INSERT ON sessions WHEN NEW.exe_name='source' BEGIN SELECT RAISE(ABORT,'isolated restore failure'); END")
+            .execute(pool).await.unwrap();
+    }
+
+    pub async fn assert_integrity(pool: &Pool<Sqlite>) {
+        assert_eq!(
+            sqlx::query_scalar::<_, String>("PRAGMA quick_check")
+                .fetch_one(pool)
+                .await
+                .unwrap(),
+            "ok"
+        );
+        assert!(sqlx::query("PRAGMA foreign_key_check")
+            .fetch_all(pool)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use sqlx::Executor;

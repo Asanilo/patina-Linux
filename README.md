@@ -75,7 +75,7 @@ Upstream changes are reviewed for Linux correctness and data-safety value. They 
 | GNOME Wayland window tracking | Working prototype | Uses `org.patina.WindowTracker` from the GNOME Shell extension. |
 | X11 tracking | Implemented fallback / limited verification | Used on X11 sessions; GNOME Wayland does not silently fall back to X11. |
 | KDE / wlroots Wayland | Not promised | Needs compositor-specific work later. |
-| `patinad` | Runtime-owner and service preview | `--serve-api --track` owns the isolated runtime; DEB packaging includes a default-disabled systemd user unit and ticketed controlled restart. The desktop Rust host can negotiate the daemon and combine current activity, active session, and replayable SSE without exposing credentials to JavaScript. Desktop remains the default owner. |
+| `patinad` | Daemon-backed DEB beta | After first-launch owner migration, the installed Production desktop is a client of `patinad.service`; closing the UI does not stop tracking. The package itself does not enable the unit. Settings provides migration diagnostics, explicit rollback and confirmed version reload. The published 1.8.4 stable line still uses the embedded desktop runtime. |
 | Local browser UI | Planned after daemon cutover | The first version will be a read-only loopback client served by `patinad`; not implemented yet. |
 | Local API | Implemented | Binds to `127.0.0.1:14840`, uses a bearer token, and exposes daemon capabilities plus an authenticated SSE stream. |
 | MCP wrapper and Agent Skill | Implemented | `npm run mcp:patina`; controlled writes cover app/settings, local API configuration, daemon restart verification, and Tools reminders, timers, and pomodoro. |
@@ -83,6 +83,14 @@ Upstream changes are reviewed for Linux correctness and data-safety value. They 
 | Firefox / Zen Web Sync | Implemented | The signed `0.1.1` XPI can be installed directly and identifies Firefox-family forks before generic Firefox. |
 | Linux packaging | Current stable pipeline configured | Current stable tags build x86_64 AppImage and `.deb`; the first daemon-backed beta will intentionally publish DEB only until AppImage service ownership and atomic updates are designed. |
 | Local API token/port UI | Implemented | Settings applies ports atomically and rotates the owner-only API Token separately from browser Web Sync. |
+
+### Daemon Beta Acceptance
+
+The daemon branch is being validated separately from stable `main`. Beta packages contain Desktop, `patinad`, the user unit and GNOME extension together, and publish DEB only. Use the [release list](https://github.com/Asanilo/patina-Linux/releases), not the stable latest-download link, to check for available prereleases.
+
+Before installing a beta, export and verify a backup outside the Patina data directory. Reopen Desktop after package installation; if Settings reports different Desktop/Daemon versions, explicitly confirm **Reload background service**. Installation alone does not replace an already-running daemon. Reload briefly interrupts tracking and does not download a package.
+
+Local beta.9 acceptance covers owner handover, UI close/reopen, version reload, rollback/re-enable, backup export, remove/reinstall data retention, GNOME lock/suspend and Zen reconnection. The user reports that the intermittent tracking-not-ready display no longer occurs. Full remote restore with an isolated credential service, active browser activity across suspend, and the remaining installation failure matrix still need validation. AppImage daemon ownership/updating and the local browser UI are not ready. These are beta limitations, not completed stable-release guarantees.
 
 ## Quick Start On Linux
 

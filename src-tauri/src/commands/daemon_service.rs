@@ -19,6 +19,42 @@ mod tests {
 }
 
 #[tauri::command]
+pub async fn cmd_reload_daemon_version(
+    confirmed: bool,
+    expected_running_version: String,
+    app: AppHandle,
+) -> Result<(), String> {
+    if !confirmed {
+        return Err("daemon reload requires confirmation".to_string());
+    }
+    if !cfg!(target_os = "linux")
+        || crate::platform::app_paths::app_profile(&app)
+            != crate::platform::app_paths::AppProfile::Production
+        || !app
+            .state::<crate::app::runtime::DesktopRuntimeMode>()
+            .is_managed_daemon_client()
+    {
+        return Err("daemon reload requires the managed Linux product client".to_string());
+    }
+    let mutation = app.state::<crate::app::daemon_service::DaemonServiceMutationState>();
+    let _guard = mutation.lock().await;
+    let control = crate::platform::storage_paths::default_storage_paths(&app)?.control_root;
+    if crate::app::runtime_owner_cutover::diagnose(
+        &control,
+        crate::platform::app_paths::AppProfile::Production,
+    )
+    .state
+        != "completed"
+    {
+        return Err("daemon owner transition must complete before reload".to_string());
+    }
+    let client = crate::app::daemon_client::command_client(&app)?
+        .ok_or_else(|| "daemon client unavailable".to_string())?;
+    crate::app::daemon_service::upgrade::restart_and_verify(&client, &expected_running_version)
+        .await
+}
+
+#[tauri::command]
 pub async fn cmd_retry_runtime_owner_cutover(
     confirmed: bool,
     app: AppHandle,

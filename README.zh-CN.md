@@ -74,7 +74,7 @@ Windows 代码采用冻结后删除策略：
 | GNOME Wayland 窗口追踪 | 原型可用 | 依赖 GNOME Shell 扩展提供的 `org.patina.WindowTracker`。 |
 | X11 追踪 | 已实现 fallback / 验证有限 | X11 session 可走 fallback；GNOME Wayland 不会静默降级到 X11。 |
 | KDE / wlroots Wayland | 暂不承诺 | 后续需要按桌面环境分别适配。 |
-| `patinad` | Runtime owner 与服务预览 | 显式使用 `--serve-api --track` 后，daemon 可为隔离 profile 运行 tracking/watchdog、Linux 参与信号、浏览器活动和 Tools 运行时。桌面 Rust host 已可在不向 JavaScript 暴露凭据的前提下组合当前活动、active session 和可重放 SSE，但桌面端仍是默认 owner。 |
+| `patinad` | daemon-backed DEB 测试版 | 已安装的 Production 桌面端在首次启动交接完成后成为 `patinad.service` 客户端，关闭 UI 不会停止追踪；安装包自身不启用服务。设置提供迁移诊断、显式回退和确认式版本重新加载。已公开的 1.8.4 稳定线仍使用桌面内置运行时。 |
 | 本机浏览器 UI | 已规划 | 将由 `patinad` 在 loopback 提供；当前尚未实现。 |
 | 本地 API | 已实现 | 监听 `127.0.0.1:14840`，使用 bearer token，并提供 daemon 能力查询和受认证 SSE。 |
 | MCP wrapper | 已实现 | `npm run mcp:patina`；受控写侧覆盖应用/设置，以及提醒、计时器和番茄钟。 |
@@ -129,6 +129,14 @@ Token 路径：
 ```text
 ${XDG_DATA_HOME:-~/.local/share}/Patina/api_token
 ```
+
+## Daemon 测试版验收
+
+daemon 分支与稳定 `main` 独立验证。测试包同时包含 Desktop、`patinad`、user unit 和 GNOME 扩展，只提供 DEB；请在 [Release 列表](https://github.com/Asanilo/patina-Linux/releases) 查看是否已有预发布版本，不使用稳定版 latest 下载入口判断 beta 是否发布。
+
+安装前先导出并验证一份位于 Patina 数据目录之外的备份。覆盖安装后重新打开桌面端；设置诊断若显示 Desktop/Daemon 版本不同，再显式确认“重新加载后台”。安装软件包不等于运行中的后台已经更新；重新加载会短暂停止记录，不负责下载软件包。
+
+本地 beta.9 已验证 owner 交接、关闭/重开 UI、版本重新加载、回退/再次接管、备份导出、remove/重装数据保留、GNOME 锁屏/挂起和 Zen 重连；用户确认“追踪运行时未就绪”不再间歇跳动。独立凭据服务下的完整远端恢复、活动网页跨挂起及剩余安装故障矩阵仍待验证。AppImage 的 daemon 接管/更新方案与本机浏览器 UI 尚未就绪，不能把这些 beta 边界当成稳定版保证。
 
 ## Linux 安装包
 

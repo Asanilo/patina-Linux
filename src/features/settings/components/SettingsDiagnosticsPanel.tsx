@@ -10,7 +10,7 @@ import {
   Wrench,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import QuietSwitch from "../../../shared/components/QuietSwitch";
 import type { QuietToastTone } from "../../../shared/components/QuietToast.tsx";
 import { UI_TEXT } from "../../../shared/copy/uiText.ts";
@@ -31,6 +31,7 @@ import {
 } from "../../../platform/runtime/desktopIntegrationDiagnosticsGateway.ts";
 import {
   getDaemonServiceDiagnostics,
+  reloadDaemonVersion,
   retryRuntimeOwnerCutover,
   rollbackRuntimeOwnerToEmbedded,
   setBackgroundTrackingAtLogin,
@@ -40,7 +41,7 @@ import {
   buildSettingsDiagnosticsViewModel,
   type SettingsDiagnosticItem,
 } from "../services/settingsDiagnosticsViewModel.ts";
-import { resolveDaemonServiceControlAvailability } from "../services/settingsDaemonServiceControls.ts";
+import { canReloadDaemonVersion, resolveDaemonServiceControlAvailability } from "../services/settingsDaemonServiceControls.ts";
 
 type SettingsDiagnosticsPanelProps = {
   trackerHealth: TrackerHealthSnapshot;
@@ -56,7 +57,7 @@ type SettingsDiagnosticsPanelProps = {
   onToast?: (message: string, tone?: QuietToastTone) => void;
 };
 
-type DaemonServiceAction = "idle" | "retrying" | "updating-login" | "rolling-back";
+type DaemonServiceAction = "idle" | "retrying" | "updating-login" | "rolling-back" | "reloading";
 
 const LIVE_DIAGNOSTICS_REFRESH_MS = 5_000;
 const DAEMON_SERVICE_DIAGNOSTICS_REFRESH_MS = 30_000;
@@ -91,6 +92,7 @@ export default function SettingsDiagnosticsPanel({
     useState<DaemonServiceDiagnosticsSnapshot | null>(null);
   const [isRepairingAutostart, setIsRepairingAutostart] = useState(false);
   const [daemonServiceAction, setDaemonServiceAction] = useState<DaemonServiceAction>("idle");
+  const reloadInFlight = useRef(false);
 
   useEffect(() => {
     let disposed = false;
@@ -218,6 +220,7 @@ export default function SettingsDiagnosticsPanel({
   };
 
   const daemonControls = resolveDaemonServiceControlAvailability(daemonServiceSnapshot);
+  const canReload = canReloadDaemonVersion(daemonServiceSnapshot);
   const daemonActionBusy = daemonServiceAction !== "idle";
   const backgroundTrackingAtLogin = daemonServiceSnapshot?.cutover.backgroundTrackingAtLogin
     ?? desktopIntegrationSnapshot?.backgroundTrackingAtLogin
@@ -282,11 +285,45 @@ export default function SettingsDiagnosticsPanel({
     }
   };
 
-  const daemonServiceActions = daemonControls.backgroundLogin
+  const handleReloadDaemon = async () => {
+    const runningVersion = daemonServiceSnapshot?.version?.runningVersion;
+    if (daemonActionBusy || reloadInFlight.current || !canReload || !runningVersion) return;
+    reloadInFlight.current = true;
+    setDaemonServiceAction("reloading");
+    try {
+      const accepted = await confirm({
+        title: UI_TEXT.settings.daemonReloadTitle,
+        description: UI_TEXT.settings.daemonReloadDetail,
+        confirmLabel: UI_TEXT.settings.daemonReloadLabel,
+      });
+      if (!accepted) return;
+      await reloadDaemonVersion(runningVersion);
+      onToast?.(UI_TEXT.settings.daemonReloadSucceeded, "success");
+    } catch (error) {
+      console.warn("daemon reload verification failed", error);
+      onToast?.(UI_TEXT.settings.daemonReloadFailed, "warning");
+    } finally {
+      try { setDaemonServiceSnapshot(await getDaemonServiceDiagnostics()); }
+      catch { setDaemonServiceSnapshot(null); }
+      reloadInFlight.current = false;
+      setDaemonServiceAction("idle");
+    }
+  };
+
+  const daemonServiceActions = canReload || daemonControls.backgroundLogin
+    || daemonServiceAction === "reloading"
     || daemonControls.retry
     || daemonControls.rollback
     ? (
       <div className="grid min-w-[220px] gap-3">
+        {canReload || daemonServiceAction === "reloading" ? (
+          <button type="button"
+            className="qp-button-secondary inline-flex min-h-8 items-center justify-center gap-2 px-3 py-1 text-xs font-semibold"
+            disabled={daemonActionBusy} onClick={() => void handleReloadDaemon()}>
+            <RefreshCw size={13} className={daemonServiceAction === "reloading" ? "animate-spin shrink-0" : "shrink-0"} />
+            <span>{UI_TEXT.settings.daemonReloadLabel}</span>
+          </button>
+        ) : null}
         {daemonControls.backgroundLogin ? (
           <DiagnosticSwitch
             label={UI_TEXT.settings.backgroundTrackingAtLoginLabel}

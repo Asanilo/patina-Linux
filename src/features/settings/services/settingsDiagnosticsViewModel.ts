@@ -97,6 +97,9 @@ function resolveDaemonServiceValue(
   if (daemonService.migrationState === "preference-mismatch") return "设置待对账";
   if (daemonService.migrationState === "rollback-pending") return "回退中";
   if (daemonService.migrationState === "embedded-rollback") return "桌面内置追踪";
+  if (daemonService.version?.error) return "版本待核对";
+  if (daemonService.version?.runningVersion
+    && daemonService.version.runningVersion !== daemonService.version.desktopVersion) return "版本不一致";
   if (daemonService.active) return "运行中";
   return "已安装 / 未启用";
 }
@@ -119,6 +122,11 @@ function resolveDaemonServiceDetail(
     return "正在等待桌面端重启或后台服务完成追踪就绪确认。";
   }
   if (daemonService.migrationState === "managed") {
+    if (daemonService.version?.error) return daemonService.version.error;
+    if (daemonService.version?.runningVersion
+      && daemonService.version.runningVersion !== daemonService.version.desktopVersion) {
+      return "桌面端与运行中的后台版本不同；重新加载将使用磁盘上已安装的后台程序，期间会短暂停止记录。";
+    }
     return "后台追踪由 patinad.service 持续运行，关闭桌面窗口不会停止记录。";
   }
   if (daemonService.migrationState === "managed-blocked") {
@@ -150,8 +158,10 @@ function resolveDaemonServiceTone(
   if (daemonService.migrationState === "owner-conflict") return "danger";
   if (daemonService.migrationState === "cutover-failed") return "danger";
   if (daemonService.migrationState === "cutover-pending") return "warning";
-  if (daemonService.migrationState === "managed") return "ok";
   if (daemonService.migrationState === "managed-blocked") return "danger";
+  if (daemonService.version?.error || (daemonService.version?.runningVersion
+    && daemonService.version.runningVersion !== daemonService.version.desktopVersion)) return "warning";
+  if (daemonService.migrationState === "managed") return "ok";
   if (daemonService.migrationState === "preference-mismatch") return "warning";
   if (daemonService.migrationState === "rollback-pending") return "warning";
   if (daemonService.migrationState === "embedded-rollback") return "warning";
@@ -173,6 +183,10 @@ function resolveDaemonServiceMetadata(
       value: [daemonService.activeState, daemonService.subState].filter(Boolean).join(" / ") || "未加载",
     },
   ];
+  if (daemonService.version) {
+    metadata.push({ label: "Desktop", value: daemonService.version.desktopVersion });
+    metadata.push({ label: "Daemon", value: daemonService.version.runningVersion ?? "未能确认" });
+  }
   if (daemonService.cutover.state !== "not-requested" && daemonService.cutover.state !== "unsupported") {
     metadata.push({ label: "Cutover", value: daemonService.cutover.state });
   }

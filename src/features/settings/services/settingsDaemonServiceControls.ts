@@ -10,6 +10,13 @@ export interface DaemonServiceControlAvailability {
 }
 
 const RETRY_STATES = new Set<RuntimeOwnerCutoverState>(["failed", "blocked", "rolled-back"]);
+
+export function canReloadDaemonVersion(snapshot: DaemonServiceDiagnosticsSnapshot | null): boolean {
+  const version = snapshot?.version;
+  return Boolean(snapshot?.controlAvailable && snapshot.active && snapshot.cutover.state === "completed"
+    && version?.restartAvailable && !version.error && version.runningVersion
+    && version.runningVersion !== version.desktopVersion);
+}
 const ROLLBACK_STATES = new Set<RuntimeOwnerCutoverState>([
   "completed",
   "failed",

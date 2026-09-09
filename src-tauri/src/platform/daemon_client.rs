@@ -705,6 +705,26 @@ impl PatinadClient {
         negotiate_tracking_capabilities(capabilities)
     }
 
+    pub async fn service_snapshot(
+        &self,
+    ) -> Result<crate::engine::api::runtime_control::DaemonServiceRuntimeSnapshot, PatinadClientError>
+    {
+        self.get_json("/api/v1/system/service", "daemon service")
+            .await
+    }
+
+    pub async fn restart_service(
+        &self,
+    ) -> Result<crate::engine::api::runtime_control::DaemonServiceRestartResult, PatinadClientError>
+    {
+        self.post_json(
+            "/api/v1/system/service/restart",
+            &serde_json::json!({"confirmed": true}),
+            "daemon restart",
+        )
+        .await
+    }
+
     async fn get_json<T>(&self, path: &str, response_name: &str) -> Result<T, PatinadClientError>
     where
         T: DeserializeOwned,

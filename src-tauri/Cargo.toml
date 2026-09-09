@@ -1,11 +1,16 @@
 [package]
 name = "patina"
-version = "1.9.0-beta.7"
+version = "1.9.0-beta.9"
 description = "Local-first Linux desktop time tracking"
 authors = ["Patina maintainers"]
 license = "MIT"
 edition = "2021"
 default-run = "patina"
+
+[profile.dev]
+# Keep useful backtraces without full type/variable debug data or large incremental caches.
+debug = 1
+incremental = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

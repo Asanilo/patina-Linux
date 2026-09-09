@@ -1,5 +1,7 @@
 use serde::Serialize;
 
+pub mod upgrade;
+
 #[derive(Debug, Default)]
 pub struct DaemonServiceMutationState {
     gate: tokio::sync::Mutex<()>,
@@ -20,6 +22,7 @@ pub enum EmbeddedCutoverPreparation {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct DaemonServiceDiagnosticsSnapshot {
+    pub version: Option<upgrade::DaemonVersionDiagnostics>,
     pub service_name: String,
     pub manager_available: bool,
     pub unit_installed: bool,
@@ -59,6 +62,7 @@ pub async fn inspect(
 
     #[cfg(not(target_os = "linux"))]
     DaemonServiceDiagnosticsSnapshot {
+        version: None,
         service_name: "patinad.service".to_string(),
         manager_available: false,
         unit_installed: false,
@@ -731,6 +735,7 @@ fn build_diagnostics(
         };
 
     DaemonServiceDiagnosticsSnapshot {
+        version: None,
         service_name: crate::platform::linux::systemd_user_service::PATINAD_SERVICE_NAME
             .to_string(),
         manager_available: service.manager_available,

@@ -50,6 +50,7 @@ export interface RuntimeOwnerCutoverDiagnosticsSnapshot {
 }
 
 interface RawDaemonServiceDiagnosticsSnapshot {
+  version?: RawDaemonVersionDiagnostics | null;
   service_name: string;
   manager_available: boolean;
   unit_installed: boolean;
@@ -66,6 +67,7 @@ interface RawDaemonServiceDiagnosticsSnapshot {
 }
 
 export interface DaemonServiceDiagnosticsSnapshot {
+  version?: DaemonVersionDiagnostics | null;
   serviceName: string;
   managerAvailable: boolean;
   unitInstalled: boolean;
@@ -79,6 +81,20 @@ export interface DaemonServiceDiagnosticsSnapshot {
   controlAvailable: boolean;
   error: string | null;
   cutover: RuntimeOwnerCutoverDiagnosticsSnapshot;
+}
+
+interface RawDaemonVersionDiagnostics {
+  desktop_version: string;
+  running_version: string | null;
+  restart_available: boolean;
+  error: string | null;
+}
+
+export interface DaemonVersionDiagnostics {
+  desktopVersion: string;
+  runningVersion: string | null;
+  restartAvailable: boolean;
+  error: string | null;
 }
 
 const MIGRATION_STATES = new Set<DaemonServiceMigrationState>([
@@ -136,6 +152,7 @@ function isRawDaemonServiceDiagnostics(
   const record = value as Record<string, unknown>;
 
   return typeof record.service_name === "string"
+    && (record.version == null || isDaemonVersionDiagnostics(record.version))
     && typeof record.manager_available === "boolean"
     && typeof record.unit_installed === "boolean"
     && isNullableString(record.unit_file_state)
@@ -151,10 +168,25 @@ function isRawDaemonServiceDiagnostics(
     && isRawRuntimeOwnerCutoverDiagnostics(record.cutover);
 }
 
+function isDaemonVersionDiagnostics(value: unknown): value is RawDaemonVersionDiagnostics {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.desktop_version === "string"
+    && isNullableString(record.running_version)
+    && typeof record.restart_available === "boolean"
+    && isNullableString(record.error);
+}
+
 function mapRawDaemonServiceDiagnostics(
   raw: RawDaemonServiceDiagnosticsSnapshot,
 ): DaemonServiceDiagnosticsSnapshot {
   return {
+    version: raw.version ? {
+      desktopVersion: raw.version.desktop_version,
+      runningVersion: raw.version.running_version,
+      restartAvailable: raw.version.restart_available,
+      error: raw.version.error,
+    } : null,
     serviceName: raw.service_name,
     managerAvailable: raw.manager_available,
     unitInstalled: raw.unit_installed,
@@ -203,4 +235,8 @@ export async function setBackgroundTrackingAtLogin(
 
 export async function rollbackRuntimeOwnerToEmbedded(): Promise<void> {
   await invoke(ROLLBACK_RUNTIME_OWNER_COMMAND, { confirmed: true });
+}
+
+export async function reloadDaemonVersion(expectedRunningVersion: string): Promise<void> {
+  await invoke("cmd_reload_daemon_version", { confirmed: true, expectedRunningVersion });
 }

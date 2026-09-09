@@ -15,6 +15,7 @@ const INITIAL_REPLAY_CURSOR: u64 = 0;
 const INITIAL_RETRY_DELAY: Duration = Duration::from_millis(500);
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(10);
 const INCOHERENT_SNAPSHOT_RETRY_DELAY: Duration = Duration::from_millis(25);
+const SNAPSHOT_REFRESH_INTERVAL: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -412,9 +413,21 @@ impl PatinadRuntimeAdapter {
         self.output
             .connection_changed(PatinadRuntimeConnectionStatus::Ready, None);
 
+        // Data-change events are not heartbeats: an unchanged window still needs fresh samples.
+        let mut refresh = tokio::time::interval_at(
+            tokio::time::Instant::now() + SNAPSHOT_REFRESH_INTERVAL,
+            SNAPSHOT_REFRESH_INTERVAL,
+        );
+        refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
         loop {
             let event = tokio::select! {
                 event = events.next_event() => event?,
+                _ = refresh.tick() => {
+                    snapshot = self.read_snapshot(&client, *cursor).await?;
+                    self.output.snapshot_changed(snapshot.clone());
+                    continue;
+                }
                 changed = shutdown.changed() => {
                     if changed.is_err() || *shutdown.borrow() {
                         return Ok(ConnectionExit::Shutdown);
@@ -446,11 +459,11 @@ impl PatinadRuntimeAdapter {
                         continue;
                     };
                     let changed_at_ms = i64::try_from(*changed_at_ms).unwrap_or(i64::MAX);
-                    if changed_at_ms < snapshot.current_window.sampled_at_ms {
-                        continue;
+                    if changed_at_ms >= snapshot.current_window.sampled_at_ms {
+                        snapshot = self.read_snapshot(&client, *cursor).await?;
+                        self.output.snapshot_changed(snapshot.clone());
                     }
-                    snapshot = self.read_snapshot(&client, *cursor).await?;
-                    self.output.snapshot_changed(snapshot.clone());
+                    // A periodic read may precede delivery of its data invalidation event.
                     self.output.tracking_data_changed(&envelope);
                 }
                 PatinadStreamEvent::ResyncRequired { reason, missed } => {

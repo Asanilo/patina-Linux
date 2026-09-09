@@ -2,6 +2,37 @@
 
 This page records the current Linux prototype setup path.
 
+## Build Storage
+
+Rust artifacts are under `src-tauri/target`, not the installed application's data directory. Repeated builds, tests, compiler versions and feature combinations can leave multiple artifact variants. Incremental compilation stores additional compiler state; full debug information also increases dependency and binary size. See the [Cargo profile reference](https://doc.rust-lang.org/cargo/reference/profiles.html).
+
+The repository's dev profile uses `debug = 1` and `incremental = false`; tests inherit these defaults. This retains limited debug information for backtraces while avoiding the largest incremental caches. Recompiling local Rust code can take longer, and inspecting variables/types in a debugger requires full debug information. Release settings are unchanged. Changing profiles does not delete artifacts from previous builds.
+
+Inspect before cleaning, from the repository root:
+
+```bash
+du -h --max-depth=2 src-tauri/target
+df -h .
+```
+
+Stop Cargo/rustc builds and source-launched development processes before cleaning. For a complete debug/test cache reset, leaving release bundles intact:
+
+```bash
+cargo clean --manifest-path src-tauri/Cargo.toml --profile dev
+```
+
+For a narrower reset, only `src-tauri/target/debug/incremental` is disposable incremental compiler state; inspect the exact path before deleting it. Do not delete application profiles, databases, backup archives or signing keys. Avoid an unrestricted `cargo clean` when local DEBs under `target/release/bundle` are needed for installation or rollback. Cleaning build artifacts does not uninstall the DEB or erase installed application data, but the next development build must recreate them.
+
+When full debugger information is needed temporarily, use `CARGO_PROFILE_DEV_DEBUG=2` (and `CARGO_PROFILE_TEST_DEBUG=2` for tests). `CARGO_INCREMENTAL=1` temporarily restores incremental compilation. These overrides can create additional cached variants; they are not the normal disk-conscious workflow. Prefer `cargo check` while iterating and run the required tests/build gates before delivery, rather than repackaging DEBs after every edit.
+
+## Reloading An Installed Daemon
+
+Installing a DEB replaces files on disk, not necessarily the running daemon. Opening a compatible Desktop also does not automatically restart it. Check the running version, not just the package version.
+
+The beta.9 candidate adds Desktop/Daemon versions to Settings -> Diagnostics and an explicitly confirmed reload action for a completed Production managed-client cutover. This UI is not included in the existing beta.8 DEB. The action appears only for a known version difference and an available systemd service-lifecycle capability. It briefly interrupts tracking, uses the existing graceful restart API, and does not download packages or change login preferences.
+
+Success requires a completed matching restart ticket, a new daemon instance, the Desktop version, and tracking readiness. Rejected, ambiguous or timed-out requests are not automatically resubmitted; inspect service state before trying again. If the disk still contains a different daemon version, reloading cannot install the missing version. Do not substitute a forced process kill for this flow.
+
 ## GNOME Wayland Window Tracking
 
 Patina uses a GNOME Shell extension on GNOME Wayland to read the focused window through session D-Bus.
@@ -226,6 +257,20 @@ npm run release:inspect-installed-patinad -- --phase managed --expected-version 
 Use `--output /absolute/new-file.json` to retain evidence. The collector creates that file as `0600` and refuses to overwrite an existing path. It never prints the API Token, window titles, or visited URLs; API output is reduced to protocol and capability readiness. It also never installs a package, enables or stops a service, changes owner state, or deletes data.
 
 Supported phases are `baseline`, `installed`, `managed`, `rolled-back`, and `uninstalled`. The authoritative action order and safety gates live in [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md); do not use a passing snapshot as a substitute for the before/after checks around UI exit, service crash, lock/suspend, upgrade, rollback, and uninstall.
+
+### Isolated Systemd Restore Acceptance
+
+This opt-in Rust test launches random `patina-restore-systemd_test_*.service` transient units under the current user's systemd manager. It never controls `patinad.service`, enables login startup, uses existing app profiles, or restores a user backup. It requires Linux, `systemd-run`, `systemctl`, `timeout`, and an explicitly selected daemon binary matching the source version:
+
+```bash
+PATINA_SYSTEMD_TEST_BINARY=/usr/bin/patinad cargo test \
+  --manifest-path src-tauri/Cargo.toml --lib \
+  real_systemd_restore_crosses_process_boundary -- --ignored --nocapture
+```
+
+Each case creates a private temporary HOME/XDG tree, a synthetic archive and database, pauses tracking, disables audio/web/remote-status integration, and disconnects the child from desktop D-Bus. It sends an authenticated restore request on a random loopback port, verifies a new systemd PID and terminal restore status, then checks data, receipts, integrity and exact staging cleanup. The cases cover Replace, Merge and an injected INSERT failure with transaction rollback. Test services have bounded runtime/restart limits and are stopped on completion or unwinding; a cleanup failure must be investigated using the exact printed test unit name. Never stop the product service to clean up a test.
+
+Successful cases retain small synthetic fixtures and owner-only `evidence.json` files under their printed temporary directories. No Token, real window title or URL is printed. Normal `cargo test` ignores this test. This is a real cross-process restore check, not a second installed package, separate user account, WebDAV test, power-loss test or validation of every security property of the packaged unit. The fixed service environment marker is reused for protocol negotiation while the actual transient unit name is intentionally distinct.
 
 ## MCP Wrapper
 

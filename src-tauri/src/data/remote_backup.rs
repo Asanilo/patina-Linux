@@ -20,6 +20,9 @@ const INDEX_VERSION: u32 = 1;
 const INDEX_PRODUCT: &str = "Patina";
 const MAX_BACKUP_LIST_ITEMS: usize = 50;
 
+#[cfg(test)]
+mod transfer_tests;
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RemoteBackupIndex {
@@ -504,12 +507,30 @@ pub async fn stage_webdav_backup_for_restore(
     let trimmed_id = id.trim();
     validate_backup_id(trimmed_id)?;
     let (config, client) = webdav_client(profile, config).await?;
-    let index = load_index(&client, &config.remote_dir).await?;
-    validate_index(&index, &config.remote_dir)?;
+    stage_webdav_backup_with_client(
+        &client,
+        &config.remote_dir,
+        trimmed_id,
+        temp_dir,
+        restore_staging_dir,
+    )
+    .await
+}
+
+async fn stage_webdav_backup_with_client(
+    client: &WebDavClient,
+    remote_dir: &str,
+    id: &str,
+    temp_dir: &Path,
+    restore_staging_dir: &Path,
+) -> Result<crate::platform::backup_restore_staging::StagedBackupArchive, String> {
+    validate_backup_id(id)?;
+    let index = load_index(client, remote_dir).await?;
+    validate_index(&index, remote_dir)?;
     let entry = index
         .backups
         .iter()
-        .find(|entry| entry.id == trimmed_id)
+        .find(|entry| entry.id == id)
         .ok_or_else(|| "remote backup was not found in the WebDAV index".to_string())?;
 
     ensure_temp_backup_dir(temp_dir)?;

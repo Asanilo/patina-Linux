@@ -411,6 +411,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn isolated_cleanup_failure_rolls_back_earlier_table_deletions() {
+        let pool = test_pool().await;
+        seed(&pool).await;
+        sqlx::query("CREATE TRIGGER injected_cleanup_failure BEFORE DELETE ON web_activity_segments BEGIN SELECT RAISE(ABORT,'isolated cleanup failure'); END")
+            .execute(&pool).await.unwrap();
+        assert!(delete_tracking_data_before(&pool, 2500).await.is_err());
+        for table in ["sessions", "session_title_samples", "web_activity_segments"] {
+            assert_eq!(
+                sqlx::query_scalar::<_, i64>(&format!("SELECT COUNT(*) FROM {table}"))
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap(),
+                2
+            );
+        }
+        assert_eq!(
+            sqlx::query_scalar::<_, String>("PRAGMA quick_check")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            "ok"
+        );
+        pool.close().await;
+    }
+
+    #[tokio::test]
     async fn cleanup_rejects_negative_cutoff_before_writing() {
         let pool = test_pool().await;
         seed(&pool).await;

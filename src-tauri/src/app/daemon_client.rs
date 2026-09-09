@@ -578,6 +578,95 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn runtime_adapter_refreshes_without_events_and_rejects_unavailable_tracking() {
+        let runtime = TestApiRuntime::start_tracking().await;
+        let client = PatinadClient::new(runtime.port, TEST_TOKEN).unwrap();
+        let state = std::sync::Arc::new(super::runtime::PatinadRuntimeState::default());
+        let output = std::sync::Arc::new(TestRuntimeOutput {
+            state: state.clone(),
+            notifications: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let adapter = super::runtime::PatinadRuntimeAdapter::new(client, output.clone());
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let task = tokio::spawn(async move { adapter.run(shutdown_rx).await });
+
+        wait_for_runtime(&state, "ghostty").await;
+        let initial_cursor = state.snapshot().runtime.unwrap().last_event_sequence;
+        // No SSE event: the same window continues to be sampled by the daemon.
+        runtime.replace_tracking_snapshot(tracking_snapshot("ghostty", 2_000));
+        let refreshed = tokio::time::timeout(std::time::Duration::from_secs(4), async {
+            loop {
+                if state
+                    .snapshot()
+                    .runtime
+                    .as_ref()
+                    .is_some_and(|snapshot| snapshot.current_window.sampled_at_ms == 2_000)
+                {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+
+        // Successful HTTP requests must not replace a stalled sample's timestamp with now.
+        tokio::time::sleep(std::time::Duration::from_millis(2_200)).await;
+        let frozen = state.snapshot().runtime.unwrap();
+
+        runtime
+            .event_hub
+            .emit(RuntimeEvent::TrackingDataChanged {
+                reason: "session-transition".to_string(),
+                changed_at_ms: 1_500,
+            })
+            .unwrap();
+        let notified = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while output
+                .notifications
+                .load(std::sync::atomic::Ordering::Relaxed)
+                == 0
+            {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+
+        runtime.tracking_state.as_ref().unwrap().clear();
+        let unavailable = tokio::time::timeout(std::time::Duration::from_secs(4), async {
+            loop {
+                let snapshot = state.snapshot();
+                if snapshot.runtime.is_none() && snapshot.error_code.is_some() {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+
+        shutdown_tx.send(true).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(1), task)
+            .await
+            .expect("runtime adapter should honor shutdown")
+            .unwrap();
+        runtime.shutdown().await;
+        assert!(
+            refreshed.is_ok(),
+            "quiet SSE must not leave a stale client snapshot"
+        );
+        assert_eq!(frozen.current_window.sampled_at_ms, 2_000);
+        assert_eq!(frozen.current_window.runtime_snapshot.sampled_at_ms, 2_000);
+        assert_eq!(frozen.last_event_sequence, initial_cursor);
+        assert!(
+            notified.is_ok(),
+            "refresh must not suppress delayed SSE invalidations"
+        );
+        assert!(
+            unavailable.is_ok(),
+            "failed refresh must invalidate live data"
+        );
+    }
+
+    #[tokio::test]
     async fn runtime_adapter_reconnects_with_replaced_client_configuration() {
         let first_runtime = TestApiRuntime::start_tracking().await;
         let second_runtime = TestApiRuntime::start_tracking().await;
@@ -638,6 +727,35 @@ mod tests {
                 if reason == "replay-gap"
         ));
         runtime.shutdown().await;
+    }
+
+    struct TestRuntimeOutput {
+        state: std::sync::Arc<super::runtime::PatinadRuntimeState>,
+        notifications: std::sync::atomic::AtomicUsize,
+    }
+
+    impl super::runtime::PatinadRuntimeOutput for TestRuntimeOutput {
+        fn connection_changed(
+            &self,
+            status: super::runtime::PatinadRuntimeConnectionStatus,
+            error: Option<&crate::platform::daemon_client::PatinadClientError>,
+        ) {
+            self.state.connection_changed(status, error);
+        }
+
+        fn snapshot_changed(&self, snapshot: super::runtime::PatinadRuntimeReadSnapshot) {
+            self.state.snapshot_changed(snapshot);
+        }
+
+        fn tracking_data_changed(
+            &self,
+            _event: &crate::engine::runtime_event::RuntimeEventEnvelope,
+        ) {
+            self.notifications
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+
+        fn resync_required(&self, _reason: &str, _missed: Option<u64>) {}
     }
 
     async fn wait_for_runtime(state: &super::runtime::PatinadRuntimeState, expected_exe: &str) {

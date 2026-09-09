@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { buildSettingsDiagnosticsViewModel } from "../src/features/settings/services/settingsDiagnosticsViewModel.ts";
 import {
   resolveDaemonServiceControlAvailability,
+  canReloadDaemonVersion,
 } from "../src/features/settings/services/settingsDaemonServiceControls.ts";
 import type {
   DaemonServiceDiagnosticsSnapshot,
@@ -101,6 +103,41 @@ runTest("pending and unavailable states expose no mutation", () => {
     retry: false,
     rollback: false,
   });
+});
+
+runTest("version reload requires a confirmed owner and a known version difference", () => {
+  const value = snapshot("completed");
+  value.version = { desktopVersion: "1.9.0-beta.8", runningVersion: "1.9.0-beta.7", restartAvailable: true, error: null };
+  assert.equal(canReloadDaemonVersion(value), true);
+  for (const update of [
+    { runningVersion: value.version.desktopVersion }, { runningVersion: null },
+    { restartAvailable: false }, { error: "offline" },
+  ]) {
+    assert.equal(canReloadDaemonVersion({ ...value, version: { ...value.version, ...update } }), false);
+  }
+  assert.equal(canReloadDaemonVersion({ ...value, active: false }), false);
+  assert.equal(canReloadDaemonVersion({ ...value, controlAvailable: false }), false);
+  assert.equal(canReloadDaemonVersion({ ...value, cutover: { ...value.cutover, state: "rolling-back" } }), false);
+  assert.equal(canReloadDaemonVersion(null), false);
+});
+
+runTest("managed service version mismatch is a warning with both versions", () => {
+  const value = snapshot("completed");
+  value.version = { desktopVersion: "1.9.0-beta.8", runningVersion: "1.9.0-beta.7", restartAvailable: true, error: null };
+  const input = {
+    trackerHealth: { status: "healthy" as const, lastHeartbeatMs: 100, checkedAtMs: 100, staleAfterMs: 8000 },
+    webActivityEnabled: false, webActivityPort: 12345, webActivityToken: "", webActivityBridge: null,
+    daemonService: value,
+  };
+  const row = buildSettingsDiagnosticsViewModel(input).find(row => row.id === "daemon-service")!;
+  assert.equal(row.value, "版本不一致");
+  assert.equal(row.tone, "warning");
+  assert.ok(row.metadata?.some(entry => entry.value === "1.9.0-beta.7"));
+  assert.ok(row.metadata?.some(entry => entry.value === "1.9.0-beta.8"));
+  value.version.runningVersion = value.version.desktopVersion;
+  assert.equal(buildSettingsDiagnosticsViewModel(input).find(row => row.id === "daemon-service")?.tone, "ok");
+  value.version.error = "offline";
+  assert.equal(buildSettingsDiagnosticsViewModel(input).find(row => row.id === "daemon-service")?.tone, "warning");
 });
 
 if (!process.exitCode) {

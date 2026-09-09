@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer, type Plugin } from "vite";
@@ -155,6 +155,20 @@ function tauriStubFor(path: string) {
       }
 
       export async function invoke(command, payload = {}) {
+        if (command === "cmd_get_daemon_service_diagnostics") {
+          return globalThis.__PATINA_SMOKE_DAEMON ?? null;
+        }
+        if (command === "cmd_reload_daemon_version") {
+          globalThis.__PATINA_SMOKE_RELOAD_CALLS = (globalThis.__PATINA_SMOKE_RELOAD_CALLS ?? 0) + 1;
+          globalThis.__PATINA_SMOKE_RELOAD_PAYLOAD = payload;
+          return new Promise((resolve) => {
+            globalThis.__PATINA_SMOKE_FINISH_RELOAD = () => {
+              globalThis.__PATINA_SMOKE_DAEMON.version.running_version = globalThis.__PATINA_SMOKE_DAEMON.version.desktop_version;
+              globalThis.__PATINA_SMOKE_DAEMON.version.restart_available = false;
+              resolve();
+            };
+          });
+        }
         if (command === "cmd_get_storage_snapshot") {
           return storageSnapshot();
         }
@@ -1634,6 +1648,51 @@ try {
       true,
     );
     await waitForExpression(client!, sessionId, "!document.querySelector('.settings-color-scheme-list')");
+  });
+
+  await runTest("daemon reload requires confirmation and waits for verified completion", async () => {
+    await evaluate(client!, sessionId, `
+      globalThis.__PATINA_SMOKE_DAEMON = {
+        service_name: "patinad.service", manager_available: true, unit_installed: true,
+        unit_file_state: "enabled", enabled: true, active_state: "active", sub_state: "running", active: true,
+        migration_state: "managed", migration_reason: "test", control_available: true, error: null,
+        cutover: {state: "completed", request_id: "test", updated_at_ms: 1, failure_code: null, failure_message: null, background_tracking_at_login: true},
+        version: {desktop_version: "1.9.0-beta.8", running_version: "1.9.0-beta.7", restart_available: true, error: null},
+      };
+      document.querySelector('[aria-label="关于"]').click();
+    `);
+    await waitForExpression(client!, sessionId, `!document.body.innerText.includes(${jsonString(SETTINGS_MARKER)})`);
+    await evaluate(client!, sessionId, `document.querySelector('[aria-label="设置"]').click()`);
+    await waitForExpression(client!, sessionId, `document.body.innerText.includes("版本不一致")`);
+    assert.equal(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_RELOAD_CALLS ?? 0`), 0);
+    assert.equal(await evaluate(client!, sessionId, `Array.from(document.querySelectorAll('.qp-status-warning')).some(node => node.textContent === "版本不一致")`), true);
+    const reload = `Array.from(document.querySelectorAll('button')).find(node => node.textContent.trim() === "重新加载后台")`;
+    for (const width of [1280, 620]) {
+      await client!.command("Emulation.setDeviceMetricsOverride", {width, height: 900, deviceScaleFactor: 1, mobile: false}, sessionId);
+      await evaluate(client!, sessionId, `${reload}.scrollIntoView({block:'center'})`);
+      assert.equal(await evaluate(client!, sessionId, `document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1`), true);
+      if (process.env.PATINA_UI_SCREENSHOTS_DIR) {
+        const shot = await client!.command("Page.captureScreenshot", {format: "png"}, sessionId);
+        writeFileSync(join(process.env.PATINA_UI_SCREENSHOTS_DIR, `daemon-reload-${width}.png`), Buffer.from(String(shot.data), "base64"));
+      }
+    }
+    await evaluate(client!, sessionId, `${reload}.click()`);
+    await waitForExpression(client!, sessionId, `document.body.innerText.includes("重新加载已安装的后台程序？")`);
+    await evaluate(client!, sessionId, `document.querySelectorAll('.qp-dialog-action')[0].click()`);
+    await waitForExpression(client!, sessionId, `!document.body.innerText.includes("重新加载已安装的后台程序？") && !${reload}.disabled`);
+    assert.equal(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_RELOAD_CALLS ?? 0`), 0);
+    await evaluate(client!, sessionId, `${reload}.click()`);
+    await waitForExpression(client!, sessionId, `document.body.innerText.includes("重新加载已安装的后台程序？")`);
+    await evaluate(client!, sessionId, `document.querySelectorAll('.qp-dialog-action')[1].click()`);
+    await waitForExpression(client!, sessionId, `globalThis.__PATINA_SMOKE_RELOAD_CALLS === 1`);
+    assert.deepEqual(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_RELOAD_PAYLOAD`), {confirmed: true, expectedRunningVersion: "1.9.0-beta.7"});
+    assert.equal(await evaluate(client!, sessionId, `${reload}.disabled`), true);
+    await evaluate(client!, sessionId, `${reload}.click()`);
+    assert.equal(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_RELOAD_CALLS`), 1);
+    assert.equal(await evaluate(client!, sessionId, `document.body.innerText.includes("后台已重新加载，版本核对通过。")`), false);
+    await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_FINISH_RELOAD()`);
+    await waitForExpression(client!, sessionId, `!document.body.innerText.includes("版本不一致") && !${reload}`);
+    await client!.command("Emulation.setDeviceMetricsOverride", {width:1280, height:800, deviceScaleFactor:1, mobile:false}, sessionId);
   });
 
   await runTest("settings remote backup panel opens WebDAV config dialog without narrow overflow", async () => {
