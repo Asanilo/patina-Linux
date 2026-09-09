@@ -409,7 +409,7 @@ await runTest("settings diagnostics show an explicit embedded rollback", () => {
       active: false,
       migrationState: "embedded-rollback",
       migrationReason: "explicit embedded runtime fallback",
-      controlAvailable: false,
+      controlAvailable: true,
       error: null,
       cutover: {
         state: "rolled-back",

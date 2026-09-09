@@ -292,6 +292,69 @@ pub async fn prepare_explicit_runtime_owner_retry(
 }
 
 #[cfg(target_os = "linux")]
+pub async fn prepare_explicit_runtime_owner_reenable(
+    profile: crate::platform::app_paths::AppProfile,
+    control_root: &std::path::Path,
+    settings: crate::domain::settings::DesktopBehaviorSettings,
+) -> Result<crate::app::runtime_owner_cutover::RuntimeOwnerCutoverSnapshot, String> {
+    use crate::platform::linux::systemd_user_service::inspect_patinad_service;
+
+    if profile != crate::platform::app_paths::AppProfile::Production {
+        return Err("runtime owner re-enable is only available for Production".to_string());
+    }
+    let cutover = crate::app::runtime_owner_cutover::diagnose(control_root, profile);
+    if cutover.state != "rolled-back" {
+        return Err("runtime owner is not in the rolled-back state".to_string());
+    }
+    let service = inspect_patinad_service().await;
+    if !service.manager_available {
+        return Err(service
+            .error
+            .unwrap_or_else(|| "systemd user manager is unavailable".to_string()));
+    }
+    if !service.unit_installed {
+        return Err("patinad.service is not installed".to_string());
+    }
+    if let Some(error) = service.error {
+        return Err(error);
+    }
+    if service.active {
+        return Err(
+            "patinad.service is active while embedded tracking owns the runtime".to_string(),
+        );
+    }
+
+    let reservation = crate::app::runtime_owner_cutover::prepare_explicit_reenable(
+        control_root,
+        profile,
+        settings.background_tracking_at_login,
+        settings.launch_at_login,
+        crate::app::runtime::now_ms(),
+    )?;
+    let prepare_result = async {
+        crate::app::autostart::apply_linux_autostart(settings.launch_at_login)?;
+        let service =
+            apply_background_tracking_login_preference(settings.background_tracking_at_login)
+                .await?;
+        if service.active {
+            return Err("patinad.service started before the embedded owner exited".to_string());
+        }
+        Ok::<(), String>(())
+    }
+    .await;
+    if let Err(error) = prepare_result {
+        return Err(record_cutover_failure(
+            control_root,
+            profile,
+            &reservation.request_id,
+            "prepare-failed",
+            &error,
+        ));
+    }
+    Ok(reservation)
+}
+
+#[cfg(target_os = "linux")]
 pub async fn prepare_explicit_runtime_owner_rollback(
     profile: crate::platform::app_paths::AppProfile,
     control_root: &std::path::Path,
@@ -679,14 +742,17 @@ fn build_diagnostics(
         active: service.active,
         migration_state: migration_state.to_string(),
         migration_reason: migration_reason.to_string(),
-        control_available: !desktop_owns_embedded_runtime
-            && service.manager_available
+        control_available: service.manager_available
             && service.unit_installed
             && service.error.is_none()
-            && matches!(
-                cutover.state.as_str(),
-                "completed" | "failed" | "blocked" | "rolling-back"
-            ),
+            && ((!desktop_owns_embedded_runtime
+                && matches!(
+                    cutover.state.as_str(),
+                    "completed" | "failed" | "blocked" | "rolling-back"
+                ))
+                || (desktop_owns_embedded_runtime
+                    && cutover.state == "rolled-back"
+                    && !service.active)),
         error: service.error,
         cutover,
     }
@@ -863,6 +929,7 @@ mod tests {
 
         assert_eq!(snapshot.migration_state, "embedded-rollback");
         assert!(!snapshot.active);
+        assert!(snapshot.control_available);
     }
 
     #[test]

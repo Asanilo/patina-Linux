@@ -9,7 +9,7 @@ export interface DaemonServiceControlAvailability {
   rollback: boolean;
 }
 
-const RETRY_STATES = new Set<RuntimeOwnerCutoverState>(["failed", "blocked"]);
+const RETRY_STATES = new Set<RuntimeOwnerCutoverState>(["failed", "blocked", "rolled-back"]);
 const ROLLBACK_STATES = new Set<RuntimeOwnerCutoverState>([
   "completed",
   "failed",

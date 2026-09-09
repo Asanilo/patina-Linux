@@ -36,6 +36,32 @@ App note en: TBD.
 
 - 暂无。
 
+## [1.9.0-beta.5] - 2026-09-09
+
+Release: 修复显式回退到桌面内置追踪后无法重新启用 patinad 接管的问题。
+App note: 支持从内置追踪安全恢复后台服务接管。
+App note en: Restores safe daemon cutover after using embedded tracking rollback.
+
+### Added
+
+- 暂无。
+
+### Changed
+
+- `rolled-back` 诊断状态现在提供显式“重试接管”入口；当前 embedded owner 只会创建新的 `prepared` 预约，待桌面端正常退出并释放 lease 后才启动 daemon。
+
+### Fixed
+
+- 修复安全回滚完成后，Settings 不再提供恢复入口且后端只接受 daemon-client 模式，导致用户无法通过产品界面重新切回 `patinad` 的问题。
+
+### Removed
+
+- 暂无。
+
+### Internal
+
+- 新增 rollback → prepared 状态机、运行模式门禁及损坏/symlink reservation 拒绝覆盖测试。
+
 ## [1.9.0-beta.4] - 2026-09-09
 
 Release: 修复 Zen 播放媒体时 MPRIS 信号无法匹配前台窗口的问题。

@@ -75,8 +75,16 @@ runTest("interrupted rollback only exposes idempotent rollback", () => {
   });
 });
 
-runTest("pending, embedded, and unavailable states expose no mutation", () => {
-  for (const state of ["prepared", "activating", "rolled-back", "not-requested"] as const) {
+runTest("completed rollback exposes an explicit re-enable action", () => {
+  assert.deepEqual(resolveDaemonServiceControlAvailability(snapshot("rolled-back")), {
+    backgroundLogin: false,
+    retry: true,
+    rollback: false,
+  });
+});
+
+runTest("pending and unavailable states expose no mutation", () => {
+  for (const state of ["prepared", "activating", "not-requested"] as const) {
     assert.deepEqual(resolveDaemonServiceControlAvailability(snapshot(state)), {
       backgroundLogin: false,
       retry: false,

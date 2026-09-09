@@ -195,6 +195,35 @@ pub fn prepare_explicit_retry(
     Ok(snapshot(&reservation))
 }
 
+pub fn prepare_explicit_reenable(
+    control_root: &Path,
+    profile: AppProfile,
+    background_tracking_at_login: bool,
+    desktop_launch_at_login: bool,
+    now_ms: u64,
+) -> Result<RuntimeOwnerCutoverSnapshot, String> {
+    let existing = read_reservation(control_root, profile)?
+        .ok_or_else(|| "runtime owner cutover has not been requested".to_string())?;
+    if existing.status != RuntimeOwnerCutoverStatus::RolledBack {
+        return Err("only a rolled back runtime owner can be re-enabled".to_string());
+    }
+    let reservation = RuntimeOwnerCutoverReservation {
+        version: CUTOVER_VERSION,
+        request_id: random_request_id()?,
+        profile: profile.key().to_string(),
+        status: RuntimeOwnerCutoverStatus::Prepared,
+        requested_at_ms: now_ms,
+        updated_at_ms: now_ms,
+        requested_desktop_pid: std::process::id(),
+        background_tracking_at_login,
+        desktop_launch_at_login,
+        failure_code: None,
+        failure_message: None,
+    };
+    write_reservation_atomic(control_root, &reservation, false)?;
+    Ok(snapshot(&reservation))
+}
+
 pub fn mark_activating(
     control_root: &Path,
     profile: AppProfile,
@@ -984,6 +1013,57 @@ mod tests {
 
         prepare(&root, AppProfile::Dev, true, true, 2_000).unwrap();
         assert!(prepare_explicit_retry(&root, AppProfile::Dev, true, true, 3_000).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn explicit_reenable_replaces_a_completed_rollback_with_current_preferences() {
+        let root = root("reenable-rolled-back");
+        let prepared = prepare(&root, AppProfile::Production, true, true, 1_000).unwrap();
+        mark_activating(&root, AppProfile::Production, &prepared.request_id, 2_000).unwrap();
+        mark_completed(&root, AppProfile::Production, &prepared.request_id, 3_000).unwrap();
+        let rolling =
+            prepare_explicit_rollback(&root, AppProfile::Production, true, 4_000).unwrap();
+        mark_rolled_back(&root, AppProfile::Production, &rolling.request_id, 5_000).unwrap();
+
+        let reenabled =
+            prepare_explicit_reenable(&root, AppProfile::Production, false, true, 6_000).unwrap();
+
+        assert_eq!(reenabled.status, RuntimeOwnerCutoverStatus::Prepared);
+        assert_ne!(reenabled.request_id, prepared.request_id);
+        assert!(!reenabled.background_tracking_at_login);
+        assert!(reenabled.desktop_launch_at_login);
+        assert_eq!(reenabled.failure_code, None);
+        assert!(!decide_desktop_startup(&root, AppProfile::Production).owns_embedded_runtime());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn explicit_reenable_rejects_non_rollback_and_untrusted_reservations() {
+        let root = root("reenable-rejected");
+        assert!(prepare_explicit_reenable(&root, AppProfile::Dev, true, true, 1_000).is_err());
+        prepare(&root, AppProfile::Dev, true, true, 2_000).unwrap();
+        assert!(prepare_explicit_reenable(&root, AppProfile::Dev, true, true, 3_000).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn explicit_reenable_does_not_replace_an_invalid_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let root = root("reenable-symlink");
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("do-not-modify.json");
+        fs::write(&target, b"external content").unwrap();
+        symlink(&target, reservation_path(&root)).unwrap();
+
+        assert!(prepare_explicit_reenable(&root, AppProfile::Dev, true, false, 1_000).is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"external content");
+        assert!(fs::symlink_metadata(reservation_path(&root))
+            .unwrap()
+            .file_type()
+            .is_symlink());
         fs::remove_dir_all(root).unwrap();
     }
 
