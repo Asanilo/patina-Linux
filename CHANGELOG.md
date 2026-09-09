@@ -36,6 +36,33 @@ App note en: TBD.
 
 - 暂无。
 
+## [1.9.0-beta.10] - 2026-09-09
+
+Release: patinad 后台服务 DEB 测试版，支持持续追踪、受控接管与回退，并修复午夜汇总错误。安装前请验证备份；内存回收、活动网页跨挂起和部分安装故障场景仍待验收。
+App note: 独立后台追踪与安全接管测试版，修复午夜汇总接口错误。
+App note en: Independent background tracking beta with guarded migration and a midnight summary fix.
+
+### Added
+
+- 包含 beta.9 的后台服务、版本诊断、趋势分析、活动导入、备份和 API/MCP 功能；首次公开 beta 仅提供 DEB，安装前请导出并验证备份。
+
+### Changed
+
+- 此版本为预发布，不替换稳定版更新通道；AppImage 与 Flatpak 暂不提供。
+
+### Fixed
+
+- 修复本地午夜（包括周一零点）汇总区间尚无已流逝时间时返回 500 的问题，现在返回零时长汇总。显式查询的空区间仍返回 400。
+
+### Removed
+
+- 暂无。
+
+### Internal
+
+- beta.9 标签的 Actions 在 UTC 午夜边界测试失败，未生成公开安装包；保留失败标签，不改写历史，以 beta.10 修复后重新发布。
+- 新增多时区午夜/周界线回归，并改善共享 API context 测试的失败诊断。内存与剩余安装矩阵的限制沿用 beta.9，不宣称已修复。
+
 ## [1.9.0-beta.9] - 2026-09-09
 
 Release: patinad 后台服务 DEB 测试版，支持持续追踪、受控接管与回退。安装前请导出并验证备份；内存回收、活动网页跨挂起和部分安装故障场景仍待验收，不作为稳定版保证。

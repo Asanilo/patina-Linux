@@ -204,17 +204,20 @@ async fn build_summary_response(
 ) -> RouteResponse {
     let pool = context.pool();
     let sampled_at_ms = context.now_ms();
-    let snapshot =
+    // A calendar period has no elapsed time at its exact opening boundary.
+    let contributions = if from_ms == to_ms {
+        Vec::new()
+    } else {
         match activity_read_model::load_snapshot(pool, from_ms, to_ms, sampled_at_ms).await {
-            Ok(snapshot) => snapshot,
+            Ok(snapshot) => snapshot.contributions(from_ms, to_ms),
             Err(error) => {
                 return RouteResponse {
                     status: 500,
                     body: serde_json::to_value(ApiError::internal(&error)).unwrap_or_default(),
                 };
             }
-        };
-    let contributions = snapshot.contributions(from_ms, to_ms);
+        }
+    };
 
     let app_semantics = match activity_read_model::load_app_semantics(pool).await {
         Ok(semantics) => semantics,
@@ -407,6 +410,48 @@ fn parse_summary_query(query: Option<&str>) -> SummaryQueryParams {
 mod local_summary_range_tests {
     use super::*;
     use chrono::{FixedOffset, TimeZone};
+
+    #[tokio::test]
+    async fn calendar_summary_at_midnight_is_empty_but_explicit_empty_range_is_rejected() {
+        let root = std::env::temp_dir().join(format!(
+            "patina-summary-midnight-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let pool = crate::data::sqlite_pool::open_prepared_sqlite_pool_at_path(
+            &root.join("patina.db"),
+            true,
+        )
+        .await
+        .unwrap();
+        let runtime = crate::engine::runtime_context::RuntimeContext::system(pool.clone());
+        let context = ApiRuntimeContext::new(runtime);
+        for seconds in [0, 8 * 3600, -5 * 3600] {
+            let midnight = FixedOffset::east_opt(seconds)
+                .unwrap()
+                .with_ymd_and_hms(2026, 6, 22, 0, 0, 0)
+                .unwrap();
+            for range in [local_today_range(midnight), local_week_range(midnight)] {
+                assert_eq!(range.from_ms, range.to_ms);
+                let response =
+                    build_summary_response(&context, range.from_ms, range.to_ms, &range.label)
+                        .await;
+                assert_eq!(response.status, 200, "{}", response.body);
+                assert_eq!(response.body["data"]["total_active_ms"], 0);
+            }
+        }
+        assert_eq!(
+            get_summary_range(&context, Some("from=1&to=1"))
+                .await
+                .status,
+            400
+        );
+        pool.close().await;
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn local_today_range_uses_local_midnight_instead_of_utc_midnight() {

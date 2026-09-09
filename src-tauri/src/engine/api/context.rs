@@ -303,7 +303,9 @@ mod tests {
             crate::engine::api::handlers::tools::get_tools_snapshot(&context).await,
         ];
 
-        assert!(responses.iter().all(|response| response.status == 200));
+        for (index, response) in responses.iter().enumerate() {
+            assert_eq!(response.status, 200, "handler {index}: {}", response.body);
+        }
         pool.close().await;
         std::fs::remove_dir_all(root).unwrap();
     }
