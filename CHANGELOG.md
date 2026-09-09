@@ -60,7 +60,7 @@ App note en: Fixes unnecessary daemon-owner waits when reopening the desktop cli
 
 ### Internal
 
-- `1.9.0-beta.1` 到 `beta.2` 的覆盖安装和受控 daemon 重启已验证：restart ticket 可跨实例完成，数据库计数不倒退，Firefox/Zen 扩展可在心跳周期内重连。
+- `1.9.0-beta.1` 到 `beta.2`、再到 `beta.3` 的连续覆盖安装和受控 daemon 重启已验证：restart ticket 可跨实例完成，数据库计数不倒退，Desktop 重开保持单一 daemon owner，Firefox/Zen 扩展可在心跳周期内重连。
 
 ## [1.9.0-beta.2] - 2026-09-09
 
