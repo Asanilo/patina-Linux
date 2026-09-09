@@ -20,15 +20,16 @@ function managedEvidence() {
       daemon: { exists: true, regular: true },
       unit: { exists: true, regular: true },
     },
-    systemd: { LoadState: "loaded", ActiveState: "active" },
+    systemd: { LoadState: "loaded", ActiveState: "active", ExecMainPID: "123" },
     cutover: { present: true, value: { state: "completed" } },
-    runtimeLease: { present: true, value: { role: "daemon" } },
+    runtimeLease: { present: true, value: { role: "daemon", pid: 123 } },
     host: { uid: 1000 },
     apiToken: { exists: true, regular: true, mode: "600", uid: 1000 },
     database: { exists: true, quickCheck: "ok" },
     api: {
       reachable: true,
       capabilities: {
+        serverVersion: "1.9.0-beta.1",
         runtimeHost: "daemon",
         tracking: { owned: true, ready: true },
         daemonService: { owned: true, ready: true },
@@ -105,6 +106,9 @@ function testCutoverSummaryMapsPersistedSnakeCaseFields() {
 
 function testUninstallEvidenceRequiresDataButNoPackagePayload() {
   const checks = evaluateAcceptanceEvidence({
+    host: { uid: 1000 },
+    apiToken: { exists: true, regular: true, mode: "600", uid: 1000 },
+    systemd: { ActiveState: "inactive", ExecMainPID: "0" },
     phase: "uninstalled",
     package: { installed: false },
     installedFiles: {
@@ -147,6 +151,7 @@ function testRollbackEvidenceUsesPersistedStatus() {
   const evidence = managedEvidence();
   evidence.phase = "rolled-back";
   evidence.systemd.ActiveState = "inactive";
+  evidence.systemd.ExecMainPID = "0";
   evidence.runtimeLease.value.role = "desktop";
   evidence.cutover.value = summarizeCutoverReservation({ status: "rolled_back" });
   assert.equal(evaluateAcceptanceEvidence(evidence).every(entry => entry.status === "pass"), true);
@@ -154,6 +159,33 @@ function testRollbackEvidenceUsesPersistedStatus() {
   assert.equal(evaluateAcceptanceEvidence(evidence).find(entry => entry.id === "cutover-rolled-back")?.status, "fail");
 }
 
+function testManagedRejectsOldRuntimeAndMismatchedPid() {
+  const evidence = managedEvidence();
+  evidence.api.capabilities.serverVersion = "1.8.3";
+  evidence.runtimeLease.value.pid = 456;
+  const failed = evaluateAcceptanceEvidence(evidence).filter(e => e.status === "fail").map(e => e.id);
+  assert.deepEqual(failed, ["daemon-service-pid", "daemon-version"]);
+}
+
+function testUnknownSystemdStateCannotPassAsStopped() {
+  for (const phase of ["rolled-back", "uninstalled"]) {
+    const evidence = { ...managedEvidence(), phase, systemd: { error: "bus unavailable" } };
+    assert.equal(evaluateAcceptanceEvidence(evidence).find(e => e.id === "service-stopped")?.status, "fail");
+  }
+}
+
+function testUninstallRequiresRetainedPrivateToken() {
+  const evidence = { ...managedEvidence(), phase: "uninstalled" };
+  evidence.apiToken.exists = false;
+  assert.equal(evaluateAcceptanceEvidence(evidence).find(e => e.id === "api-token-retained")?.status, "fail");
+  evidence.apiToken.exists = true;
+  evidence.apiToken.mode = "644";
+  assert.equal(evaluateAcceptanceEvidence(evidence).find(e => e.id === "api-token-retained")?.status, "fail");
+}
+
+testManagedRejectsOldRuntimeAndMismatchedPid();
+testUnknownSystemdStateCannotPassAsStopped();
+testUninstallRequiresRetainedPrivateToken();
 testRollbackEvidenceUsesPersistedStatus();
 testSystemdPropertiesPreserveValuesContainingEquals();
 testCapabilitySummaryKeepsOnlyAcceptanceFields();
@@ -163,4 +195,4 @@ testUninstallEvidenceRequiresDataButNoPackagePayload();
 testBaselineDoesNotRequireDaemonPackageFiles();
 await testEvidenceFilesAreOwnerOnlyAndNeverOverwritten();
 
-console.log("Passed 8 installed patinad acceptance tests");
+console.log("Passed 11 installed patinad acceptance tests");

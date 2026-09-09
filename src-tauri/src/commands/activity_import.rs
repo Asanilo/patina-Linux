@@ -5,8 +5,8 @@ use crate::domain::activity_import::{
 use tauri::AppHandle;
 
 #[tauri::command]
-pub fn cmd_pick_activity_import_file(initial_path: Option<String>) -> Option<String> {
-    activity_import::pick_canonical_csv_file(initial_path)
+pub async fn cmd_pick_activity_import_file(initial_path: Option<String>) -> Option<String> {
+    activity_import::pick_canonical_csv_file(initial_path).await
 }
 
 #[tauri::command]

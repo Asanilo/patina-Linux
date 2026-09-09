@@ -8,14 +8,41 @@ use crate::domain::backup::RestoreStrategy;
 use crate::domain::backup_schedule::{ScheduledBackupConfigInput, ScheduledBackupSnapshot};
 use tauri::AppHandle;
 
-#[tauri::command]
-pub fn cmd_pick_backup_save_file(initial_path: Option<String>) -> Option<String> {
-    backup::pick_backup_save_file(initial_path)
+#[cfg(test)]
+mod dialog_tests {
+    #[test]
+    fn file_pickers_use_async_commands_and_dialogs() {
+        let commands = [
+            (include_str!("backup.rs"), "cmd_pick_backup_save_file"),
+            (include_str!("backup.rs"), "cmd_pick_backup_file"),
+            (include_str!("backup.rs"), "cmd_pick_scheduled_backup_directory"),
+            (include_str!("activity_import.rs"), "cmd_pick_activity_import_file"),
+            (include_str!("storage.rs"), "cmd_pick_storage_parent"),
+        ];
+        for (source, name) in commands {
+            assert!(source.contains(&format!("pub async fn {name}(")), "{name}");
+        }
+        // Portal calls need the Tokio context, not the synchronous WebKit callback.
+        for source in [
+            include_str!("../data/backup.rs"),
+            include_str!("../app/activity_import.rs"),
+            include_str!("../app/scheduled_backup.rs"),
+            include_str!("storage.rs"),
+        ] {
+            assert!(!source.contains("rfd::FileDialog::new()"));
+            assert!(source.contains("rfd::AsyncFileDialog::new()"));
+        }
+    }
 }
 
 #[tauri::command]
-pub fn cmd_pick_backup_file(initial_path: Option<String>) -> Option<String> {
-    backup::pick_backup_file(initial_path)
+pub async fn cmd_pick_backup_save_file(initial_path: Option<String>) -> Option<String> {
+    backup::pick_backup_save_file(initial_path).await
+}
+
+#[tauri::command]
+pub async fn cmd_pick_backup_file(initial_path: Option<String>) -> Option<String> {
+    backup::pick_backup_file(initial_path).await
 }
 
 #[tauri::command]
@@ -195,8 +222,8 @@ pub async fn cmd_get_scheduled_backup_snapshot(
 }
 
 #[tauri::command]
-pub fn cmd_pick_scheduled_backup_directory(initial_path: Option<String>) -> Option<String> {
-    app::scheduled_backup::pick_directory(initial_path)
+pub async fn cmd_pick_scheduled_backup_directory(initial_path: Option<String>) -> Option<String> {
+    app::scheduled_backup::pick_directory(initial_path).await
 }
 
 #[tauri::command]

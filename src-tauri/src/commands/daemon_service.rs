@@ -1,5 +1,23 @@
 use tauri::{AppHandle, Emitter, Manager};
 
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn asynchronous_owner_transitions_do_not_block_the_executor_on_restart() {
+        let source = include_str!("daemon_service.rs");
+        let commands = source.split("\n#[tauri::command]\n").skip(1);
+        let mut restart_commands = 0;
+        for command in commands {
+            if command.contains("request_exit()") {
+                restart_commands += 1;
+                assert!(command.contains("app.request_restart()"));
+                assert!(!command.contains("app.restart()"));
+            }
+        }
+        assert_eq!(restart_commands, 2);
+    }
+}
+
 #[tauri::command]
 pub async fn cmd_retry_runtime_owner_cutover(
     confirmed: bool,
@@ -48,7 +66,8 @@ pub async fn cmd_retry_runtime_owner_cutover(
         }
         app.state::<crate::app::state::AppExitState>()
             .request_exit();
-        app.restart();
+        app.request_restart();
+        Ok(())
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -142,7 +161,8 @@ pub async fn cmd_rollback_runtime_owner_to_embedded(
             .update_background_tracking_at_login(false);
         app.state::<crate::app::state::AppExitState>()
             .request_exit();
-        app.restart();
+        app.request_restart();
+        Ok(())
     }
 
     #[cfg(not(target_os = "linux"))]

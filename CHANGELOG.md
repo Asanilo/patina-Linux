@@ -36,6 +36,60 @@ App note en: TBD.
 
 - 暂无。
 
+## [1.9.0-beta.7] - 2026-09-09
+
+Release: 修复 Linux 文件选择器导致桌面端闪退的问题，继续备份与安装验收。
+App note: 修复点击备份时保存窗口尚未打开便闪退的问题。
+App note en: Fixes a Linux desktop crash when opening backup file dialogs.
+
+### Added
+
+- 暂无。
+
+### Changed
+
+- 暂无。
+
+### Fixed
+
+- 备份保存/选择、定时备份目录、活动导入和数据目录选择改用异步 Tauri 命令与异步文件选择器，避免 portal 调用在缺少 Tokio runtime 的主线程触发进程终止。
+
+### Removed
+
+- 暂无。
+
+### Internal
+
+- 补充文件选择入口的异步调用约束测试；beta.7 已通过文件选择、备份导出/解析、卸载重装、Zen 重连与真实挂起恢复实机验收。
+- 安装验收脚本增加运行中 daemon 版本、service/lease PID 一致性和卸载后 Token 保留检查，拒绝把 systemd 查询失败视为正常停服；完整发布门槛仍需继续复核。
+
+## [1.9.0-beta.6] - 2026-09-09
+
+Release: 改进后台接管与回滚的桌面重启请求，继续 DEB 实机验收。
+App note: 避免切换追踪模式时重启命令阻塞后台执行线程。
+App note en: Avoids blocking an async worker when restarting after tracking owner changes.
+
+### Added
+
+- 暂无。
+
+### Changed
+
+- 暂无。
+
+### Fixed
+
+- 显式回滚与重试接管使用可返回的重启请求，释放异步命令持有的服务操作锁；回滚自动重启仍需安装后实机复测。
+- 修正回滚验收中持久化状态与诊断状态命名不同造成的误报。
+
+### Removed
+
+- 暂无。
+
+### Internal
+
+- 补充重启调用约束测试，记录 beta.5 回滚需强制退出、再次接管成功的实际验收边界。
+
 ## [1.9.0-beta.5] - 2026-09-09
 
 Release: 修复显式回退到桌面内置追踪后无法重新启用 patinad 接管的问题。

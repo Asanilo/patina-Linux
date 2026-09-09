@@ -27,14 +27,15 @@ struct LoadedCanonicalCsv {
     parsed: crate::domain::activity_import::ParsedCanonicalCsv,
 }
 
-pub fn pick_canonical_csv_file(initial_path: Option<String>) -> Option<String> {
-    let mut dialog = rfd::FileDialog::new().add_filter("Patina CSV", &["csv"]);
+pub async fn pick_canonical_csv_file(initial_path: Option<String>) -> Option<String> {
+    let mut dialog = rfd::AsyncFileDialog::new().add_filter("Patina CSV", &["csv"]);
     if let Some(directory) = resolve_dialog_directory(initial_path) {
         dialog = dialog.set_directory(directory);
     }
     dialog
         .pick_file()
-        .map(|path| path.to_string_lossy().to_string())
+        .await
+        .map(|file| file.path().to_string_lossy().to_string())
 }
 
 pub async fn preview<R: Runtime>(

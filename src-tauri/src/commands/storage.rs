@@ -13,14 +13,15 @@ pub fn cmd_get_storage_snapshot(app: AppHandle) -> Result<StorageSnapshot, Strin
 }
 
 #[tauri::command]
-pub fn cmd_pick_storage_parent(initial_path: Option<String>) -> Option<String> {
-    let mut dialog = rfd::FileDialog::new();
+pub async fn cmd_pick_storage_parent(initial_path: Option<String>) -> Option<String> {
+    let mut dialog = rfd::AsyncFileDialog::new();
     if let Some(path) = initial_path.filter(|path| !path.trim().is_empty()) {
         dialog = dialog.set_directory(path);
     }
     dialog
         .pick_folder()
-        .map(|path| path.to_string_lossy().into_owned())
+        .await
+        .map(|file| file.path().to_string_lossy().into_owned())
 }
 
 #[tauri::command]

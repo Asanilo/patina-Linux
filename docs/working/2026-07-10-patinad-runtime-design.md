@@ -163,22 +163,75 @@ Stage 2H.3d 不做一次性切换，按下面五个可回滚批次推进：
    - **2H.3d.3b embedded 准备与重启（已实现，DEB 正常路径已通过实机验收）**：仅 Production 且 user manager、固定 unit 和状态检查可用时触发；先持久化 reservation，再按后台登录偏好 enable/disable 固定 unit 并校准独立 Desktop autostart，随后请求 Tauri 受控重启且不启动 embedded runtime。Dev/Local、unit 缺失和 systemd 不可用时继续旧 embedded 路径；写入 reservation 后的失败会持久化为 failed。
    - **2H.3d.3c daemon-client 激活与确认（已实现，DEB 正常路径已通过实机验收）**：新进程由 reservation 自动选择 managed client，先把状态推进到 activating，并等待旧 Desktop `RuntimeLease` 释放后才启动固定 unit；client 在 15 秒内轮询 capability，只有 runtime host、协议、tracking owner 与 `tracking.ready` 全部成立才标记 completed。实机确认 Desktop 与 daemon 同时存在时端口、lease 和 capability 仍由 daemon 持有，Desktop 退出后记录继续增长。永久协商错误立即失败，暂时不可达可重试；failed、损坏和不可信 reservation 均不回退 embedded。显式 preview 不参与该状态机。
    - **2H.3d.3d 中断恢复自动化（已完成，service 崩溃恢复已通过实机验收）**：状态机测试覆盖每个持久化边界的重启 owner 决策、重复启动、错误 request ID、service failed、API 未就绪、版本不兼容和旧 Desktop 尚未释放 lease；`1.9.0-beta.1` 实机向固定 service 注入一次 `SIGKILL` 后，systemd restart count 增加、PID 更新、daemon lease/API/tracking 恢复且 SQLite `quick_check` 保持 `ok`。
-4. **2H.3d.4 设置与回滚入口（已实现，待 DEB 实机验收）**：在 Quiet Pro Settings 中提供后台服务状态、启停和显式回滚。停用 daemon 前必须先封口并停止服务，确认 RuntimeLease 已释放后才能预约下一次 embedded 启动；不允许两个 owner 同时运行，也不把服务管理暴露给浏览器 UI、MCP 或 Agent。
+4. **2H.3d.4 设置与回滚入口（正常路径实机通过，故障矩阵待补）**：在 Quiet Pro Settings 中提供后台服务状态、启停和显式回滚。停用 daemon 前必须先封口并停止服务，确认 RuntimeLease 已释放后才能预约下一次 embedded 启动；不允许两个 owner 同时运行，也不把服务管理暴露给浏览器 UI、MCP 或 Agent。
    - **2H.3d.4a 交接诊断（已实现）**：Tauri 专属诊断同时返回固定 unit 与 owner cutover 状态，区分未请求、准备、激活、完成、失败及 reservation 损坏；Settings 对接管中、接管失败、managed 正常和 managed 服务停止使用不同状态与提示，并展示有界失败原因，不暴露 Token。
-   - **2H.3d.4b 显式重试与重新接管（已实现，待 DEB 实机验收）**：仅允许本机 Tauri command 在确认后重试 failed/blocked 交接，或从可信的 `rolled-back` embedded 状态重新接管。failed/blocked 重试会在任何 reservation 变更前停止可能残留的 daemon、等待 lease 释放，再以当前偏好和新 request ID 原子重建 owner-only reservation。rolled-back 重新接管不会在 embedded lease 存活时启动 daemon，只创建新的 `prepared` 预约并受控重启，下一 Desktop 进程等待旧 lease 释放后再启动服务。损坏或 symlink reservation 不会被重新接管入口替换；能力未开放给 HTTP、MCP、browser UI 或普通 app-settings patch。
+   - **2H.3d.4b 显式重试与重新接管（重新接管实机通过，failed/blocked 实机待补）**：仅允许本机 Tauri command 在确认后重试 failed/blocked 交接，或从可信的 `rolled-back` embedded 状态重新接管。failed/blocked 重试会在任何 reservation 变更前停止可能残留的 daemon、等待 lease 释放，再以当前偏好和新 request ID 原子重建 owner-only reservation。rolled-back 重新接管不会在 embedded lease 存活时启动 daemon，只创建新的 `prepared` 预约并受控重启，下一 Desktop 进程等待旧 lease 释放后再启动服务。损坏或 symlink reservation 不会被重新接管入口替换；能力未开放给 HTTP、MCP、browser UI 或普通 app-settings patch。
    - **2H.3d.4c 登录偏好应用（已实现并通过 DEB 实机验收）**：后台追踪开关只修改 `background_tracking_at_login` 并对账固定 unit 的 enable/disable，不把“当前运行”与“下次登录启动”混成同一语义；Desktop 登录和启动最小化继续走独立 XDG autostart 偏好。专用 Tauri command 以 completed reservation 记录持久意图，再应用 unit 并同步 SQLite 镜像；managed Desktop 启动时按 reservation 重新对账 unit 和 host-owned 数据，因此任一步中断都能在后续启动继续收敛。systemd 状态与意图不一致时诊断显示 `preference-mismatch`，普通 settings patch 不能绕过专用入口。`1.9.0-beta.4` 已确认关闭和重新启用时 reservation、SQLite 镜像与 unit enable 状态双向一致，当前 daemon PID、restart count 和 active 状态不变。
-   - **2H.3d.4d 显式回滚（已实现，待 DEB 实机验收）**：本机确认式 Tauri command 先持久化 `rolling-back`，再让 systemd 停止 daemon，使 tracking/web session 通过正常 shutdown 封口；确认 lease 释放后禁用 unit、对账 Desktop autostart、保存后台登录偏好，最后提交 `rolled-back` 并受控重启。`rolling-back` 中断仍保持 client/fail-closed，可重复恢复；只有 `rolled-back` 才允许 embedded，且 embedded 启动会再次停用意外残留的 unit。损坏 reservation 可被原子替换，不跟随或修改 symlink 目标。
-   - **2H.3d.4e Quiet Pro 控件（已实现，待 DEB 实机验收）**：Settings 的后台服务诊断区按后端能力和 reservation 状态显示登录启动、重试/重新接管和回滚控件；重试与回滚必须经过确认，单一 action 状态会在操作期间禁用重复提交。`prepared/activating` 等进行中状态不开放变更，`rolling-back` 只允许幂等继续回滚，`rolled-back` 只允许重新接管；服务管理仍不开放给 HTTP、MCP、browser UI 或普通设置 patch。
+   - **2H.3d.4d 显式回滚（beta.6 正常路径实机通过）**：本机确认式 Tauri command 先持久化 `rolling-back`，再让 systemd 停止 daemon，使 tracking/web session 通过正常 shutdown 封口；确认 lease 释放后禁用 unit、对账 Desktop autostart、保存后台登录偏好，最后提交 `rolled-back` 并受控重启。`rolling-back` 中断仍保持 client/fail-closed，可重复恢复；只有 `rolled-back` 才允许 embedded，且 embedded 启动会再次停用意外残留的 unit。损坏 reservation 可被原子替换，不跟随或修改 symlink 目标。
+   - **2H.3d.4e Quiet Pro 控件（正常操作实机通过，故障态待补）**：Settings 的后台服务诊断区按后端能力和 reservation 状态显示登录启动、重试/重新接管和回滚控件；重试与回滚必须经过确认，单一 action 状态会在操作期间禁用重复提交。`prepared/activating` 等进行中状态不开放变更，`rolling-back` 只允许幂等继续回滚，`rolled-back` 只允许重新接管；服务管理仍不开放给 HTTP、MCP、browser UI 或普通设置 patch。
 5. **2H.3d.5 DEB 成品与实机验收（进行中）**：覆盖首次迁移中断、重复执行、unit 缺失、systemd 不可用、服务崩溃、Token/端口不一致、旧 XDG autostart、pending storage migration 和自定义挂载目录。最后在已安装 DEB 上验证登录启动、关闭 UI 后持续记录、重开 UI、锁屏/睡眠、浏览器活动、升级、卸载与数据保留。
    - **2H.3d.5a 成品静态验证（已实现）**：发布工作流在上传前解包最终 `.deb`，核对 `patina` 包名、版本、`amd64` 架构、Patina Desktop 与 `patinad` 可执行文件、固定 user unit、安全选项、GNOME 扩展 UUID，并拒绝通过维护脚本提前 enable/start `patinad.service`。该检查不安装软件，也不替代真实用户会话验收。
    - **2H.3d.5b DEB-only beta 发布契约（已实现）**：带预发布后缀的 daemon-backed 版本只构建和上传 `.deb`、对应签名、DEB updater 元数据及扩展资产；稳定 tag 仍保留 AppImage、DEB 和通用 AppImage fallback。发布说明、bundle target、资产复制、GitHub Release 附件和 `latest.json` 平台项由同一版本策略决定，并有自动化防止 beta 混入 AppImage。预发布 manifest 只挂在对应 prerelease，不替换稳定 `/releases/latest/`；专用 beta 自动更新通道不属于首次实机验收前置条件。
-   - **2H.3d.5c 已安装包实机验收（进行中）**：只读验收采集器、旧版升级前基线、数据目录外的可恢复备份、`1.9.0-beta.1` DEB 安装、静态成品校验和完整 release gate 已完成。首次 owner 交接已达到 `completed`；关闭 Desktop 后 daemon 继续记录，重开 Desktop 未形成第二 owner；固定 service 崩溃后由 systemd 自动恢复；Firefox/Zen 扩展也已在 daemon 重启后重新连接浏览器桥接。`beta.1 → beta.2 → beta.3` 连续覆盖安装及受控 daemon 重启已确认 restart ticket、实例切换、数据库完整性、计数不倒退和扩展重连。`beta.2` 暴露的 completed reservation Desktop 重开错误等待健康 daemon lease 已在 `beta.3` 修复：实机启动跨过原 5 秒故障窗口，未再输出 lease timeout，daemon PID 与 lease 不变。`beta.3` 的 GNOME 锁屏/解锁及休眠/恢复实机验收也已通过：两类边界都会封口，恢复后原生与网页追踪继续写入，service 与 daemon lease 保持稳定。音频参与在 `beta.3` 已确认 PulseAudio session 可匹配 Zen；同时发现 Zen MPRIS 使用 `firefox.instance_*` 而前台可执行文件未归一的问题，并在 `beta.4` 修复。`beta.3 → beta.4` 覆盖安装、受控重启和实机复测确认两路均为 `matched`，最终由 `system-media` 驱动参与状态。`beta.4` 也已确认后台登录偏好关闭与重开时 reservation、SQLite 和 systemd unit 双向对账，当前 daemon 不被误停。剩余关口是设置页显式回滚与再次接管，以及卸载后的数据保留。
+   - **2H.3d.5c 已安装包实机验收（进行中）**：只读验收采集器、旧版升级前基线、数据目录外的可恢复备份、`1.9.0-beta.1` DEB 安装、静态成品校验和完整 release gate 已完成。首次 owner 交接已达到 `completed`；关闭 Desktop 后 daemon 继续记录，重开 Desktop 未形成第二 owner；固定 service 崩溃后由 systemd 自动恢复；Firefox/Zen 扩展也已在 daemon 重启后重新连接浏览器桥接。`beta.1 → beta.2 → beta.3` 连续覆盖安装及受控 daemon 重启已确认 restart ticket、实例切换、数据库完整性、计数不倒退和扩展重连。`beta.2` 暴露的 completed reservation Desktop 重开错误等待健康 daemon lease 已在 `beta.3` 修复：实机启动跨过原 5 秒故障窗口，未再输出 lease timeout，daemon PID 与 lease 不变。`beta.3` 的 GNOME 锁屏/解锁已确认边界封口，恢复后原生与网页追踪继续写入，service 与 daemon lease 保持稳定；用户报告的休眠/恢复已有追踪空档证据，但尚缺系统 suspend/resume 事件确认，不作为完整休眠验收通过。音频参与在 `beta.3` 已确认 PulseAudio session 可匹配 Zen；同时发现 Zen MPRIS 使用 `firefox.instance_*` 而前台可执行文件未归一的问题，并在 `beta.4` 修复。`beta.3 → beta.4` 覆盖安装、受控重启和实机复测确认两路均为 `matched`，最终由 `system-media` 驱动参与状态。`beta.4` 也已确认后台登录偏好关闭与重开时 reservation、SQLite 和 systemd unit 双向对账，当前 daemon 不被误停。`beta.6` 已通过设置页回滚自动重启与再次接管验收；`beta.7` 已通过备份导出/读取、remove 卸载数据保留、重装不自动启服和首次打开恢复追踪验收；最新重装后的 Zen 扩展重连及切走封口也已通过；`beta.7` 已补齐真实系统 suspend/resume 日志及数据库边界证据，挂起期间无计时、恢复后新会话正常写入。以上为已执行场景，不代替最终发布门槛复核。
 
 2H.3d.5c 使用同一 working 文档收口，不再新建一次性顶层文档。仓库提供 `npm run release:inspect-installed-patinad -- ...` 作为只读证据采集器；它只检查固定包路径、systemd 状态、owner 文件、SQLite `quick_check` 和裁剪后的 capability，不输出 API Token、窗口标题或 URL，不安装软件、不控制服务、不覆盖已有证据文件。输出文件使用 `create_new` 和 `0600`。
 
-实机验收必须按以下顺序执行：
+#### 当前验收结论（2026-09-09，beta.7）
 
-`2026-09-09 / beta.5` 回滚进展：service 已停止并禁用，reservation 已持久化为 `rolled_back`；用户手动退出并重开 Desktop 后，lease 转为 desktop，原生活动恢复且 SQLite `quick_check=ok`。回滚后的自动重启未完成，仍是待修复项，不能将手动重开视为自动重启通过；重新接管尚待实机验证。验收采集器已修正将磁盘 `rolled_back` 错按诊断接口 `rolled-back` 比较的误报，并补充回归测试。
+| 场景 | 状态与边界 |
+| --- | --- |
+| 单 owner、关闭/重开 Desktop、服务崩溃恢复 | 已通过，见 beta.1 至 beta.3 证据 |
+| 回滚自动重启、再次接管 | beta.6 已通过 |
+| 备份选择/取消、导出、产品内解析 | beta.7 已通过；未执行恢复写入 |
+| remove 卸载、数据/Token/备份保留、重装、追踪恢复 | beta.7 已通过；不覆盖 purge |
+| Zen 重连、切走封口、真实 suspend/resume | beta.7 已通过；挂起前无活动网页，不代表活动网页跨挂起已验证 |
+| 登录偏好开关 | 已验证配置与 unit 对账；真实注销/登录启动尚未验证 |
+| 故障与维护路径 | failed/blocked 重试、Token/端口不一致、缺失 unit、自定义挂载目录/pending migration 等已有自动化或实现，未全部做真实安装故障注入 |
+| 受控备份恢复、远端恢复 | 跨 systemd 的真实恢复验收待补，应在隔离 profile/测试会话中进行，不能直接覆盖当前生产数据 |
+| 发布 | beta.7 仅本地未签名 DEB；未推 tag/发布。稳定版前仍需 AppImage 兼容或退役迁移方案 |
+
+下一步顺序：保存本轮修复与证据；真实重新登录验证独立后台启动；补活动网页跨挂起及隔离维护/恢复场景；再决定 DEB beta 发布。不得因为正常路径通过就将 Stage 2H.3d 整体标为完成。恢复策略按钮文案/摘要位置改进属于后续 UX 项，不阻塞已通过的只读归档校验。
+
+验收脚本已加强：managed 同时检查运行中的 serverVersion 与期望版本、service PID 与 lease PID 一致；无法查询 systemd 不再视为停服；uninstalled 必须保留 owner-only Token。PID 与 capability 校验仍不能替代动作前后对比或证明所有潜在进程不存在。旧证据文件不改写，后续用新文件重新采集。
+
+本轮收口验证：`test:release` 通过（24 项发布策略、3 项 DEB 静态验证、11 项已安装验收测试），版本/Changelog 校验、架构检查和 `git diff --check` 通过。加强后的 `/tmp/patina-beta7-closeout-strict.json` managed 复查通过。此前 beta.7 的完整 release:check 与成品构建证据仍适用于未再改动的运行时代码；本轮只新增验收脚本检查和文档，不重打同版本安装包。
+
+<details>
+<summary>beta.5 至 beta.7 实机证据时间线（当时的待办不代表当前状态）</summary>
+
+`2026-09-09 / beta.5` 回滚进展：service 已停止并禁用，reservation 已持久化为 `rolled_back`；用户强制退出并重开 Desktop 后，lease 转为 desktop，原生活动恢复且 SQLite `quick_check=ok`。回滚后的自动重启未完成，不能将强制退出后重开视为自动重启通过。随后用户确认重新接管自动重启成功，`/tmp/patina-beta5-recutover-verified.json` 的 managed 检查通过：reservation completed、daemon lease、API 与 tracking ready，数据库完整；unit disabled 是当前登录偏好，不代表服务没有运行。验收采集器已修正将磁盘 `rolled_back` 错按诊断接口 `rolled-back` 比较的误报，并补充回归测试。
+
+`beta.6` 候选修复：回滚和重试命令统一使用 `request_restart()`，避免异步命令调用永不返回的 `restart()` 后持续占用执行线程与服务操作锁。这是已发现的明确风险，不等于已证明上次卡住的唯一根因。先安装候选并复测无需强制退出的回滚及再次接管，再进入卸载/重装的数据保留验收；实际休眠边界还需系统 suspend/resume 证据，不能只用用户唤醒反馈和追踪空档替代。
+
+`beta.6` 本地验证：`release:check` 全部通过（Rust 560 passed / 3 ignored，30 项真实浏览器 smoke，Clippy 与扩展检查）；版本一致性与成品 `release:verify-daemon-deb` 通过。本地未签名安装候选为 `src-tauri/target/release/bundle/deb/Patina_1.9.0-beta.6_amd64.deb`，SHA-256 为 `86d9e3d4b26f8bad48b3cfba85658b9e6d3ad888e1389b178ce1bed6a4ea42ba`。这是本地安装候选，不表示已发布。
+
+`2026-09-09 / beta.6` 回滚复测通过：用户确认不再卡住，已自动回到桌面内置追踪并显示 beta.6。宿主只读证据 `/tmp/patina-beta6-rollback-host-verified.json` 的 rolled-back 检查全部通过：固定 unit inactive/disabled、ExecMainPID=0、reservation rolled_back、lease role=desktop，且对应 Desktop PID 603711 经进程检查仍在运行；SQLite quick_check=ok，activeSessions=1。最初受沙箱限制无法访问 systemd 的采集不作为服务状态证据。本次无需强制退出的回滚已通过。随后用户确认重新接管成功，`/tmp/patina-beta6-recutover-host-verified.json` 的 managed 检查全部通过：service active、reservation completed、daemon lease PID 与 ExecMainPID 均为 614399，API/tracking ready、quick_check=ok、activeSessions=1。unit disabled 保留当前未登录自启的偏好，并非运行失败。beta.6 的回滚与再次接管闭环通过；卸载/重装的数据保留及实际系统休眠证据仍待完成。进入卸载前先导出并验证最新备份，保存在当前数据目录之外；然后正常退出 Desktop 并停止固定 daemon 服务，再执行包卸载，不删除 profile 或使用 purge。
+
+`beta.6` 备份阻塞项：用户点击备份后尚未出现保存窗口，Desktop 即闪退。宿主日志确认主线程在 zbus executor 抛出 `there is no reactor running`，panic 穿过 WebKit 回调导致 abort。同步 Tauri picker 调用了 portal-backed 同步 rfd API，缺少 Tokio runtime；`beta.7` 将五个相关选择入口改为 async command + AsyncFileDialog，不改备份数据格式或写库逻辑。闪退后 `/tmp/patina-beta6-after-backup-crash.json` 的 managed 检查仍通过，daemon 与数据库正常；这不代表备份成功。卸载验收暂停，待新包验证打开/取消选择器、实际导出和归档预览后继续。
+
+`beta.7` 本地验证：完整 `release:check` 通过，Rust 561 passed / 3 ignored，30 项真实浏览器 smoke、Clippy、扩展检查及版本一致性均通过。`src-tauri/target/release/bundle/deb/Patina_1.9.0-beta.7_amd64.deb` 已通过成品验证，SHA-256 为 `f6748afb07039e898627db8c1023bb3aed679a63d04f165c0e31dfc13e924a27`。这是未签名的本地安装候选；自动化未覆盖真实系统保存对话框，待用户安装后验证打开/取消、实际导出及归档预览，未发布。
+
+`beta.7` 文件选择器实机进展：用户确认已完成覆盖安装、重新打开以及保存窗口打开/取消和导出操作。`/tmp/patina-beta7-after-backup-verified.json` 的 managed 检查通过，包版本为 beta.7，service active、daemon lease 一致、quick_check=ok。daemon PID 仍为升级前的 614399，因此不把包版本检查当作新版 daemon 已运行的证明。备份文件路径和归档完整性尚待核验；卸载验收仍暂停，新版 daemon 重启后须另行确认。
+
+`beta.7` 导出归档完整性已核验：`/home/arinp22/Documents/Patina-backup-20260909-133503.zip` 是数据目录外的普通文件，权限 0600，大小 229370935 字节，SHA-256 `ba996f28eb19cd798dcee2180e8997c69ef72507101e222a1f849dcd7865e177`。ZIP 全条目 CRC、checksums.json 的 CRC32、JSON 解析、manifest 文件清单与记录数一致；13 个条目无重复名称、路径穿越或 symlink，大小均在读取限制内。format=PatinaBackup、backup_version=1、schema_version=10、app_version=1.9.0-beta.7，包含 sessions=45494、title_samples=103858、web_activity_segments=60123。仅只读验证，没有执行恢复；产品内归档预览和恢复演练不能由此替代。下一步先确认产品内预览可读，不确认恢复，再正常退出 Desktop，准备停服和卸载前最终基线。
+
+`beta.7` 产品内读取验证：用户选择上述本地备份后显示“恢复策略”框，未点击恢复。代码确认该框仅在 `prepareBackupRestoreWithDeps` 调用 `previewBackup` 并通过 restoreSupported 检查后打开，因此可记录产品内解析/兼容检查通过，但不能记录“已展示摘要”或“已恢复”。当前 UI 把摘要放在策略框“恢复”按钮之后的第二次确认框中；先前要求“选择后直接看到预览”的指引不准确。用户可直接取消策略框，无需执行任何恢复。此按钮命名和摘要位置存在歧义，后续 UI 改善应保留最终确认与写入边界，不在卸载验收中扩大修改范围。下一步正常退出 Desktop，再准备停服和卸载前最终基线。
+
+`beta.7` 卸载前停服基线：用户正常退出 Desktop 后，经进程检查确认已退出，再以 `systemctl --user stop patinad.service` 正常停止服务。`/tmp/patina-beta7-before-uninstall-stopped.json` 检查通过：service inactive/dead、ExecMainPID=0、ExecMainStatus=0，Patina/patinad 进程均不存在；数据库 quick_check=ok，sessions=45525、webSegments=60136、activeSessions=0、activeWebSegments=0，Token 普通文件 0600 保留。磁盘 lease 元数据仍记录旧 PID 614399，不视为运行 owner，不删除该文件。停服时 systemd 提示 unit 文件变更尚未 daemon-reload，卸载/重装后需复核加载状态。当前仅完成停服和基线采集，尚未卸载；后续只执行包 remove，不执行 purge、autoremove 或手工删除 profile，卸载后逐项核对包文件移除、数据/备份/Token 保留及记录数量不变。
+
+`beta.7` remove 卸载验收通过：用户执行包卸载后，`/tmp/patina-beta7-uninstalled-verified.json` 检查通过。Desktop、daemon、unit 包属文件均不存在，systemd LoadState=not-found、ActiveState=inactive，Patina/patinad 均无残留进程。数据库保留且 quick_check=ok，counts 与停服前逐字段一致（sessions=45525、webSegments=60136、activeSessions=0、activeWebSegments=0）；Token 普通文件、0600 权限及文件元数据与基线一致，未输出其内容。外部备份 ZIP 的 SHA-256 仍为 `ba996f28eb19cd798dcee2180e8997c69ef72507101e222a1f849dcd7865e177`。此项仅覆盖 remove，不代表 purge/自动清理或恢复演练已验证。下一步重装同一 beta.7 DEB，先不打开 Desktop，核对安装不会自行启动服务，再启动 Desktop 检查新版 daemon 和追踪恢复。
+
+`beta.7` 重装后、首次打开前验收通过：用户重新安装且尚未打开 Desktop，`/tmp/patina-beta7-reinstalled-before-open.json` 的 installed 检查通过。包版本 beta.7，Desktop/daemon/unit 文件恢复，systemd loaded 但 inactive/dead、disabled、ExecMainPID=0，进程检查确认 Patina/patinad 均未自动启动。SQLite quick_check=ok，全部 counts 与卸载前停服基线一致，Token 文件元数据一致。安装未意外开始追踪；首次打开后的新版 daemon 身份、owner 和追踪恢复仍待验证。
+
+`beta.7` 重装首次打开验收通过：`/tmp/patina-beta7-reinstalled-opened.json` 的 managed 检查全部通过，API serverVersion=1.9.0-beta.7，service active、daemon lease 与 ExecMainPID 同为新 PID 686373，tracking owned/ready；进程检查为一个 Patina 和一个 patinad。SQLite quick_check=ok，activeSessions=1。只读核对停服边界之前仍有全部 45525 条会话，跨越停服边界的旧会话为 0，首次新增会话 start_time=1788933020074，停服区间未被补入旧会话。浏览器桥接 owned/ready，但该快照网页数量仍为 60136，尚不作为最新扩展重连证据。remove/重装/追踪恢复闭环已通过，不代表 purge、恢复演练或完整系统休眠验收通过。
+
+`beta.7` 重装后 Zen 扩展重连和网页封口验收通过：用户在 Zen 浏览后切到其他应用，`/tmp/patina-beta7-reinstalled-zen-verified.json` 的 managed 检查通过，daemon PID 686373、NRestarts=0、quick_check=ok。网页数量从 60136 增至 60141，activeWebSegments=0。只读查询确认 5 条新增记录均为 browser_kind=firefox、browser_exe_name=zen、source=browser-extension，均有关联 native session 且边界位于该 session 内；最后一段 duration=19984ms，已封口。未读取或输出 URL/标题。最新重装后的扩展重连缺口已关闭；实际系统挂起/恢复日志与追踪边界的联合验收仍待完成，不用锁屏或单独的活动空档代替。
+
+`beta.7` 实际系统挂起/恢复联合验收通过（2026-09-09）：systemd-suspend 日志确认 14:01:44 +0800 进入 suspend，14:07:46 返回，14:07:47 unit 正常完成。数据库只读核对 [1788933704000, 1788934066000) 区间：sessions、web_activity_segments、session_title_samples 的重叠计时均为 0。挂起前最后会话结束于 1788933701020，恢复后首个新会话开始于 1788934070866，之后继续产生新会话。`/tmp/patina-beta7-after-suspend.json` 的 managed 检查通过，API serverVersion=beta.7、tracking ready、daemon PID 686373、NRestarts=0、quick_check=ok。采集时 activeSessions=0，但已有恢复后的写入证据，不以单个活跃计数判断恢复失败。该项验证 suspend，不扩大为 hibernate、混合睡眠或所有硬件兼容性保证；挂起前无活跃网页，未单独验证活跃网页跨 suspend 的封口场景。
+
+</details>
+
+实机验收操作顺序：
 
 1. **升级前基线与可恢复备份**：关闭不必要的写入操作，通过设置页导出一份已验证的结构化备份，并把它保存在当前 Patina 数据目录之外；记录现有包版本、数据库完整性和行数基线。没有可读取的备份不得进入安装步骤。
 2. **安装后、首次切换前**：安装静态验证已通过的 `X.Y.Z-beta.N` DEB，立即确认 Desktop、`patinad` 和 unit 来自同一包；维护脚本不得启动或启用 unit，用户数据与旧 XDG autostart 仍存在。

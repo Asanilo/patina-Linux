@@ -237,8 +237,8 @@ fn resolve_dialog_directory(initial_path: Option<String>) -> Option<PathBuf> {
     })
 }
 
-pub fn pick_backup_save_file(initial_path: Option<String>) -> Option<String> {
-    let mut dialog = rfd::FileDialog::new().add_filter("Patina backup", &["zip"]);
+pub async fn pick_backup_save_file(initial_path: Option<String>) -> Option<String> {
+    let mut dialog = rfd::AsyncFileDialog::new().add_filter("Patina backup", &["zip"]);
     if let Some(dir) = resolve_dialog_directory(initial_path) {
         dialog = dialog.set_directory(dir);
     }
@@ -246,18 +246,20 @@ pub fn pick_backup_save_file(initial_path: Option<String>) -> Option<String> {
 
     dialog
         .save_file()
-        .map(|path| path.to_string_lossy().to_string())
+        .await
+        .map(|file| file.path().to_string_lossy().to_string())
 }
 
-pub fn pick_backup_file(initial_path: Option<String>) -> Option<String> {
-    let mut dialog = rfd::FileDialog::new().add_filter("Patina backup", &["zip"]);
+pub async fn pick_backup_file(initial_path: Option<String>) -> Option<String> {
+    let mut dialog = rfd::AsyncFileDialog::new().add_filter("Patina backup", &["zip"]);
     if let Some(dir) = resolve_dialog_directory(initial_path) {
         dialog = dialog.set_directory(dir);
     }
 
     dialog
         .pick_file()
-        .map(|path| path.to_string_lossy().to_string())
+        .await
+        .map(|file| file.path().to_string_lossy().to_string())
 }
 
 fn build_backup_manifest(payload: &BackupPayload) -> BackupArchiveManifest {

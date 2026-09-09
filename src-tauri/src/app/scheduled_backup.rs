@@ -39,14 +39,15 @@ pub async fn save_config(
     Ok(snapshot)
 }
 
-pub fn pick_directory(initial_path: Option<String>) -> Option<String> {
-    let mut dialog = rfd::FileDialog::new();
+pub async fn pick_directory(initial_path: Option<String>) -> Option<String> {
+    let mut dialog = rfd::AsyncFileDialog::new();
     if let Some(path) = initial_path.filter(|path| !path.trim().is_empty()) {
         dialog = dialog.set_directory(path);
     }
     dialog
         .pick_folder()
-        .map(|path| path.to_string_lossy().to_string())
+        .await
+        .map(|file| file.path().to_string_lossy().to_string())
 }
 
 pub async fn run(app: AppHandle) -> Result<(), String> {

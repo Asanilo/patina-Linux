@@ -190,6 +190,9 @@ export function evaluateAcceptanceEvidence(evidence: any) {
     && evidence.apiToken?.regular === true
     && evidence.apiToken?.mode === "600"
     && evidence.apiToken?.uid === evidence.host?.uid;
+  const serviceStopped = !evidence.systemd?.error
+    && evidence.systemd?.ActiveState === "inactive"
+    && evidence.systemd?.ExecMainPID === "0";
   const checks = [];
 
   if (phase === "uninstalled") {
@@ -200,6 +203,8 @@ export function evaluateAcceptanceEvidence(evidence: any) {
       ), "package-owned executables and unit are absent"),
       check("data-retained", evidence.database?.exists === true, "the user database still exists"),
       check("database-integrity", databaseHealthy, "the retained database passes quick_check"),
+      check("api-token-retained", tokenSecure, "the API token remains an owner-only regular file"),
+      check("service-stopped", serviceStopped, "systemd confirms the service is inactive with no main PID"),
     );
     return checks;
   }
@@ -242,14 +247,21 @@ export function evaluateAcceptanceEvidence(evidence: any) {
       check("service-active", evidence.systemd?.ActiveState === "active", "patinad.service is active"),
       check("cutover-completed", evidence.cutover?.value?.state === "completed", "owner cutover is completed"),
       check("daemon-lease", evidence.runtimeLease?.value?.role === "daemon", "the runtime lease reports daemon ownership"),
+      check("daemon-service-pid", Number(evidence.systemd?.ExecMainPID) > 0
+        && Number(evidence.systemd?.ExecMainPID) === evidence.runtimeLease?.value?.pid,
+      "the runtime lease PID matches the active service main PID"),
       check("daemon-api", evidence.api?.reachable === true, "the authenticated daemon API is reachable"),
       check("daemon-runtime-host", capabilities?.runtimeHost === "daemon", "capabilities identify the daemon runtime"),
       check("tracking-ready", capabilities?.tracking?.owned === true && capabilities?.tracking?.ready === true, "tracking is owned and ready"),
       check("service-capability", capabilities?.daemonService?.owned === true && capabilities?.daemonService?.ready === true, "the managed service capability is ready"),
     );
+    if (evidence.expectedVersion) {
+      checks.push(check("daemon-version", capabilities?.serverVersion === evidence.expectedVersion,
+        `running daemon ${capabilities?.serverVersion ?? "unknown"}; expected ${evidence.expectedVersion}`));
+    }
   } else if (phase === "rolled-back") {
     checks.push(
-      check("service-stopped", evidence.systemd?.ActiveState !== "active", "patinad.service is not active"),
+      check("service-stopped", serviceStopped, "systemd confirms the service is inactive with no main PID"),
       check("cutover-rolled-back", evidence.cutover?.value?.state === "rolled_back", "owner cutover is committed as rolled-back"),
       check("daemon-lease-released", evidence.runtimeLease?.value?.role !== "daemon", "the daemon no longer owns the runtime lease"),
     );

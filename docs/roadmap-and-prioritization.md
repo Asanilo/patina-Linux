@@ -174,7 +174,11 @@ Windows runtime、installer、updater、ARM/UWP 等平台专属实现不移植�
 5. 完成首次启动迁移、systemd 服务控制、默认 owner 切换和双 owner 验收。
 6. 发布 daemon-backed DEB beta 并完成登录启动、关闭 UI 后持续记录、崩溃恢复、升级、卸载和数据保留验证。
 
-当前执行位置：第 1 步已完成单向合流；第 2 步已完成 owner 审计和 fail-closed 防护，活动导入已通过 owner-only 暂存票据收口，定时备份也已由 daemon 持有唯一调度任务、配置 API、运行状态与 SSE 失效通知，按应用删除已通过受确认的事务 API 和 typed client 收口。第 3 步已移植启动恢复、采样恢复、watchdog 竞态、browser bridge 重试、网页趋势区间去重、power lifecycle generation、暂停原子边界，以及网页段与活动原生浏览器 session 的持久化事务绑定。第 4 步已完成受控恢复及 remote backup owner 收口：非密钥配置、Linux 系统凭据、上传、列表、有界下载和启动恢复衔接均已落地。第 5 步 Stage 2H.3d 已完成受限 systemd 控制基础、登录偏好的持久化语义拆分、两阶段 owner 交接代码路径、交接失败诊断、本机显式重试、后台登录偏好对账、安全回滚后端、Quiet Pro 设置控件及持久状态中断自动化；最终 DEB 成品静态验证和 DEB-only 预发布契约也已接入发布工作流。`1.9.0-beta.1` 已通过首次接管、关闭 UI 后持续记录、服务崩溃恢复和 Firefox/Zen 重连实机验收；`beta.1 → beta.2 → beta.3` 连续覆盖安装、daemon 受控重启和 Desktop 重开也已通过，期间发现并修复了 completed owner 错误等待健康 daemon lease 的问题。`beta.3` 已进一步通过 GNOME 锁屏/解锁及休眠/恢复边界验收，停用区间没有计入活动，恢复后原生和网页追踪继续写入且 daemon owner 保持稳定。`beta.4` 修复并实机确认 Zen 的 MPRIS/PulseAudio 双路参与身份，两路均可匹配且由 MPRIS 优先驱动；后台登录偏好关闭与重开也已确认 reservation、SQLite 与 systemd unit 双向一致。回滚预检发现 `rolled-back` 原本没有重新接管入口，`beta.5` 已补齐只允许可信 reservation、先预约后释放 embedded lease 的安全路径，等待 DEB 实机闭环。当前收口关口缩小为设置页回滚/再次接管，以及卸载后的数据保留。详细安全顺序以 [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md) 为准。
+当前执行位置：第 1 至 4 步的功能合流、owner 收口、追踪边界修复、受控恢复与 remote backup 实现已完成；第 5 步 Stage 2H.3d 的默认 owner 切换和设置入口已实现，正在第 6 步的 DEB beta 实机验收与发布收口，不能视为稳定版已完成。
+
+截至本地 `1.9.0-beta.7`，已验证首次接管、关闭/重开 Desktop、服务崩溃恢复、连续覆盖安装、登录偏好配置对账、回滚自动重启/再次接管，以及备份导出和产品内解析、remove 卸载保留数据、重装不自动启动、首次打开恢复追踪。Zen 扩展重连与切走封口、音频/MPRIS 身份匹配已有实机证据；真正的 systemd suspend/resume 及数据库无跨挂起计时已在 beta.7 补齐，不再依赖早期仅有屏幕唤醒反馈的结论。
+
+剩余顺序：真实注销/登录后台自启（不等同于 enable/disable 对账）；活动网页跨挂起与隔离环境维护/恢复故障矩阵；DEB beta 发布复核。稳定版还受 AppImage 兼容或明确退役迁移方案约束。当前只有本地未签名候选，不代表 tag、GitHub Release 或签名更新链已验收。当前状态矩阵和证据时间线统一见 [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md)。
 
 在第 6 步完成前，不再把新的上游大型功能只加入 Linux `main` 而不进入 patinad 架构线。
 
