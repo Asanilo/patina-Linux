@@ -187,7 +187,7 @@ mod tests {
     fn daemon_status_identifies_managed_tracking_service() {
         let paths = storage_paths("/tmp/Patina");
         let status = build_startup_status(
-            "1.9.0-beta.2",
+            "1.9.0-beta.3",
             crate::platform::app_paths::AppProfile::Production,
             true,
             true,

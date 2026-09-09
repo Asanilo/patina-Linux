@@ -202,8 +202,12 @@ pub async fn activate_runtime_owner_cutover(
             .unwrap_or_else(|| "runtime owner cutover requires explicit repair".to_string()));
     }
     if reservation.status == RuntimeOwnerCutoverStatus::Completed {
-        apply_background_tracking_login_preference(reservation.background_tracking_at_login)
-            .await?;
+        let service =
+            apply_background_tracking_login_preference(reservation.background_tracking_at_login)
+                .await?;
+        if !completed_cutover_requires_service_start(&service) {
+            return Ok(());
+        }
         crate::app::runtime_lease::wait_for_runtime_lease_release(
             control_root,
             std::time::Duration::from_secs(5),
@@ -569,6 +573,13 @@ fn should_stop_conflicting_service(
 }
 
 #[cfg(target_os = "linux")]
+fn completed_cutover_requires_service_start(
+    service: &crate::platform::linux::systemd_user_service::SystemdUserServiceSnapshot,
+) -> bool {
+    !service.active
+}
+
+#[cfg(target_os = "linux")]
 fn build_diagnostics(
     service: crate::platform::linux::systemd_user_service::SystemdUserServiceSnapshot,
     cutover: crate::app::runtime_owner_cutover::RuntimeOwnerCutoverDiagnosticsSnapshot,
@@ -684,9 +695,9 @@ fn build_diagnostics(
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::{
-        build_diagnostics, classify_cutover_confirmation, explicit_retry_allowed,
-        explicit_rollback_allowed, permanent_negotiation_failure, should_stop_conflicting_service,
-        CutoverConfirmation,
+        build_diagnostics, classify_cutover_confirmation, completed_cutover_requires_service_start,
+        explicit_retry_allowed, explicit_rollback_allowed, permanent_negotiation_failure,
+        should_stop_conflicting_service, CutoverConfirmation,
     };
     use crate::platform::app_paths::AppProfile;
     use crate::platform::linux::systemd_user_service::SystemdUserServiceSnapshot;
@@ -875,6 +886,19 @@ mod tests {
             AppProfile::Production,
             &service
         ));
+    }
+
+    #[test]
+    fn completed_cutover_reuses_an_active_daemon_owner() {
+        let mut active = service_snapshot("enabled", true);
+        active.active = true;
+        active.active_state = Some("active".to_string());
+        active.sub_state = Some("running".to_string());
+
+        assert!(!completed_cutover_requires_service_start(&active));
+        assert!(completed_cutover_requires_service_start(&service_snapshot(
+            "enabled", true
+        )));
     }
 
     #[test]

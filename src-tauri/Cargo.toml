@@ -1,6 +1,6 @@
 [package]
 name = "patina"
-version = "1.9.0-beta.2"
+version = "1.9.0-beta.3"
 description = "Local-first Linux desktop time tracking"
 authors = ["Patina maintainers"]
 license = "MIT"

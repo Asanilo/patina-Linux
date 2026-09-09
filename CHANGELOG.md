@@ -36,6 +36,32 @@ App note en: TBD.
 
 - 暂无。
 
+## [1.9.0-beta.3] - 2026-09-09
+
+Release: 修复 patinad 接管完成后重新打开桌面端仍等待后台 owner 的问题。
+App note: 修复重新打开桌面端时不必要的后台服务等待。
+App note en: Fixes unnecessary daemon-owner waits when reopening the desktop client.
+
+### Added
+
+- 暂无。
+
+### Changed
+
+- 暂无。
+
+### Fixed
+
+- 修复 owner 交接已完成且 `patinad` 正常运行时，Desktop 仍等待 daemon 释放合法 runtime lease、导致启动延迟并输出错误诊断的问题。
+
+### Removed
+
+- 暂无。
+
+### Internal
+
+- `1.9.0-beta.1` 到 `beta.2` 的覆盖安装和受控 daemon 重启已验证：restart ticket 可跨实例完成，数据库计数不倒退，Firefox/Zen 扩展可在心跳周期内重连。
+
 ## [1.9.0-beta.2] - 2026-09-09
 
 Release: 修正 patinad 后台服务的运行身份诊断，并继续验证测试版覆盖升级。
