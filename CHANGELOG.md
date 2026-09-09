@@ -36,6 +36,34 @@ App note en: TBD.
 
 - 暂无。
 
+## [1.9.0-beta.12] - 2026-09-09
+
+Release: patinad 后台服务 DEB 测试版，支持持续追踪、安全接管与回退、备份和 API/MCP。安装前请验证备份；内存回收、活动网页跨挂起和部分安装故障场景仍待验收。
+App note: 独立后台追踪测试版，修复午夜汇总与发布校验入口。
+App note en: Independent background tracking beta with midnight summary and release validation fixes.
+
+### Added
+
+- 独立 patinad 服务、桌面接管/回退、版本核对、应用和网页趋势、活动导入、定时备份，以及 HTTP/MCP 接口，详见 beta.9 功能清单。
+
+### Changed
+
+- 仅提供 DEB 预发布，不替换稳定版更新通道。安装前请导出并验证备份；AppImage 和 Flatpak 尚不提供。
+
+### Fixed
+
+- 本地午夜及周一零点汇总正确返回零时长，显式空范围查询仍拒绝。
+
+### Removed
+
+- 暂无。
+
+### Internal
+
+- 修复版本校验 CLI 无参数时未读取当前产品版本的问题，增加无参数、显式版本及错误版本的实际进程回归。
+- beta.9 至 beta.11 发布尝试均在检查阶段失败，没有生成公开安装包；保留标签，不覆盖发布历史。
+- 内存回收及剩余安装故障矩阵仍待验证，不因发布声明为完成。
+
 ## [1.9.0-beta.11] - 2026-09-09
 
 Release: patinad 后台服务 DEB 测试版，支持持续追踪、安全接管与回退、备份和 API/MCP。安装前请验证备份；内存回收、活动网页跨挂起和部分安装故障场景仍待验收。

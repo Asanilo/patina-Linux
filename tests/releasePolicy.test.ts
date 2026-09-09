@@ -623,4 +623,11 @@ await testPrepareLinuxReleaseAssetsRejectsMissingDebSignature();
 await testPrepareStableLinuxReleaseAssetsCreatesBothPackageTargets();
 await testPreparePrereleaseLinuxAssetsCreatesOnlyDebianTarget();
 
-console.log("Passed 24 release policy tests");
+await execFileAsync(process.execPath, ["--experimental-strip-types", releaseScriptPath, "validate-version-files"]);
+await execFileAsync(process.execPath, ["--experimental-strip-types", releaseScriptPath, "validate-version-files", currentPackageVersion]);
+await assert.rejects(
+  execFileAsync(process.execPath, ["--experimental-strip-types", releaseScriptPath, "validate-version-files", "0.0.0-cli-mismatch"]),
+  /version files are not ready/,
+);
+
+console.log("Passed 25 release policy tests");

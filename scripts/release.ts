@@ -720,7 +720,7 @@ async function main() {
       await syncVersion(args[0]);
       break;
     case "validate-version-files":
-      await validateReleaseVersionFiles(args[0]);
+      await validateReleaseVersionFiles(await resolveTargetVersion(args[0]));
       break;
     case "validate-changelog":
       await validateChangelog(args[0]);
