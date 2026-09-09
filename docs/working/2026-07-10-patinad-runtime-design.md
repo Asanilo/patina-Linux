@@ -178,6 +178,8 @@ Stage 2H.3d 不做一次性切换，按下面五个可回滚批次推进：
 
 #### 当前验收结论（2026-09-09，beta.9 候选）
 
+**最终发布结果：** `v1.9.0-beta.12` 已于 2026-09-09 从 `e2705d6` 发布为 DEB prerelease，Actions `34357826059` 成功。公开资产包含 DEB、GNOME/Chromium/Firefox 扩展和仅有 `linux-x86_64-deb` 的更新清单；GitHub Latest 仍为 `v1.8.4`。下载后的 DEB 通过成品检查及仓库配置公钥的 Minisign 验签，大小 24835988 bytes，SHA-256 `21515feaa34ec720ba516da424f6218a734497b885fd8398e679dba14938b10c`。下载验证文件在 `/tmp/patina-beta12-release-verify-yQNe2X`，没有安装；正式 daemon PID 583229、NRestarts=1 保持不变。以下失败尝试是历史过程，当前发布状态以本段为准。
+
 最新候选为 beta.12：beta.11 的元数据检查通过，但新增本地 gate 调用无参数版本校验时缺少默认值，Actions `34357279422` 提前失败，未打包。现已让该 CLI 默认读取 package.json，并增加真实子进程测试覆盖无参数、显式版本和错误版本。提交与标签继续不可变，不以失败尝试称为发布成功。
 
 后续发布记录：beta.10 的本地 `TZ=UTC npm run release:check` 通过（569 Rust passed / 6 ignored，31 browser smoke），但提交遗漏 Cargo.lock，Actions `34356819593` 在版本校验拒绝，仍未生成安装包。beta.11 补齐锁文件并将版本校验前置到本地 release gate；两次失败 tag 均保留，发布以新标签推进。本机 beta.9 和生产后台没有被改动。
@@ -196,9 +198,9 @@ Stage 2H.3d 不做一次性切换，按下面五个可回滚批次推进：
 | 故障与维护路径 | failed/blocked 重试、Token/端口不一致、缺失 unit、自定义挂载目录/pending migration 等已有自动化或实现，未全部做真实安装故障注入 |
 | 受控备份恢复、远端恢复 | 合成数据的磁盘恢复/重开、receipt 幂等、失败保留和清理回滚已通过；真实临时 systemd 服务的跨进程 Replace/Merge 及失败回滚通过；私有 Secret Service 凭据到 HTTP 下载、预约及 systemd 重启恢复链路已通过。不覆盖第三方 WebDAV/TLS、上传及任意崩溃时刻 |
 | 桌面 UI 内存 | 已增加只读分进程采样及回归；首次 Desktop/WebKit 合计约 618 MiB PSS、daemon 约 18 MiB。低耗后台回收与重开对照待人工操作，尚未证明优化收益或泄漏 |
-| 发布 | beta.9 本地未签名 DEB 已安装，用户确认 Desktop/Daemon 均为 beta.9，只读 managed 验收通过；未推 tag/发布。稳定版前仍需 AppImage 兼容或退役迁移方案 |
+| 发布 | beta.12 DEB prerelease 已发布，下载成品与公钥验签通过；本机仍安装 beta.9，未自动升级。稳定版前仍需 AppImage 兼容或退役迁移方案 |
 
-下一步顺序：健康状态与版本对齐的实机正常路径已收口，分支已推送但未发布 tag；独立凭据远端恢复已补齐下述隔离链路。继续活动网页跨挂起和剩余安装故障矩阵，并行验证桌面内存回收，再评审有明确限制的 DEB beta 发布。独立后台自启已通过当前 Linger=yes 的重启登录场景，不为扩展矩阵擅自修改用户登录配置。不得因为正常路径通过就将 Stage 2H.3d 或稳定版整体标为完成。Flatpak 属于后续安装格式评估，不替代 AppImage 更新承诺或桌面 provider 适配；恢复策略 UX 不阻塞已通过的只读归档校验。
+下一步顺序：明确限制的 DEB beta 已发布；先验证并处理桌面内存回收，再继续活动网页跨挂起和剩余安装故障矩阵。独立凭据远端恢复已补齐下述隔离链路，后台自启已通过当前 Linger=yes 的重启登录场景，不为扩展矩阵擅自修改用户登录配置。不得因为 Beta 发布就将 Stage 2H.3d 或稳定版整体标为完成。Flatpak 属于后续安装格式评估，不替代 AppImage 更新承诺或桌面 provider 适配；恢复策略 UX 不阻塞已通过的只读归档校验。
 
 2026-09-09 健康状态修复：Desktop 原本只在 SSE 数据变化或 resync 时刷新快照，与前端 8 秒心跳过期判断不匹配。隔离 HTTP 回归测试已在修复前复现后台采样推进、客户端仍持有旧时间的问题。runtime adapter 增加 2 秒周期重读，使用后台采样时间，不以客户端请求成功时间续命；读取失败仍清除实时快照并进入重连。测试覆盖无事件刷新、冻结采样时间不被改写、追踪不可用时清除旧数据，同时保留既有 SSE、配置切换与退出测试。随后已打入 beta.8 并由用户安装，真实故障发生时刻的关联与新包复测仍待完成。
 
