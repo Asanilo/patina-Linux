@@ -33,12 +33,14 @@ pub fn build_startup_status(
     options: DaemonRunOptions,
     storage_paths: &crate::platform::storage_paths::StoragePaths,
     local_api_port: u16,
+    managed_by_systemd: bool,
 ) -> DaemonStartupStatus {
     status::build_startup_status(
         version,
         options.profile,
         options.serve_api,
         options.track,
+        managed_by_systemd,
         local_api_port,
         storage_paths,
     )
@@ -250,6 +252,7 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
         options,
         &storage_paths,
         confirmed_port,
+        service_lifecycle.managed_by_systemd(),
     );
     println!(
         "[{}] {} {} ({})",

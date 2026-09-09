@@ -177,9 +177,9 @@ Raw DTO 只能停留在明确边界：
 
 ### 4.5 运行时宿主与长期所有权
 
-Tauri desktop 仍是默认 tracking owner。`patinad` Stage 0、Stage 1、Stage 2A、Stage 2B tracking preview、Stage 2C power preview、Stage 2D audio preview、Stage 2E MPRIS preview 和 Stage 2F browser bridge preview 已完成 profile-safe storage bootstrap、单 owner `RuntimeLease`、共享 runtime/event 边界、完整只读 API、受认证 SSE、宿主无关的 tracking/watchdog、共享 systemd-logind lifecycle source、可取消的 Linux audio/MPRIS sources，以及共用的浏览器活动记录与 loopback transport。显式 `--serve-api --track` 模式还接管 Tools tick、启动恢复、提醒/计时器/番茄钟写入和 Linux 系统通知，并通过同一 SSE 发布 Tools 变化；默认 daemon 模式仍不记录、不监听 browser bridge，也不拥有 Tools runtime。迁移期间不得复制第二套业务实现，也不得让 desktop 与 daemon 同时追踪同一 profile。
+已发布稳定版与 Dev/Local 开发 profile 仍以 Tauri embedded runtime 为默认 tracking owner；完成 owner reservation 的 daemon-backed DEB beta 则由 systemd user service 中的 `patinad` 持有 Production tracking owner，Tauri desktop 只作为客户端。`patinad` 已完成 profile-safe storage bootstrap、单 owner `RuntimeLease`、共享 runtime/event 边界、完整本地 API、受认证 SSE、宿主无关的 tracking/watchdog、共享 systemd-logind lifecycle source、可取消的 Linux audio/MPRIS sources，以及共用的浏览器活动记录与 loopback transport。显式 `--serve-api --track` 既可用于隔离 profile 的手动 preview，也是 packaged service 的启动参数；是否属于 managed service 必须由受信任的 systemd 环境识别，不能只根据 CLI 参数推断。迁移期间不得复制第二套业务实现，也不得让 desktop 与 daemon 同时追踪同一 profile。
 
-“preview owner 已迁移”不等于“默认服务质量已成立”。在 `patinad` 成为默认 owner 或进入 systemd 服务化之前，必须同时满足以下运行时门槛：
+“beta 已切换 owner”不等于“稳定版服务质量已成立”。daemon-backed stable 发布前必须持续满足以下运行时门槛：
 
 - 崩溃恢复只能使用最后可信采样、最后心跳或最后网页上报作为封口边界，不能用下一次进程启动时间填补停机空白
 - 浏览器 bridge 的 connected 状态必须使用大于扩展上报周期的宽限窗口；上报过期后必须按最后成功上报时间封口活动网页段

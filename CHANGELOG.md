@@ -36,6 +36,32 @@ App note en: TBD.
 
 - 暂无。
 
+## [1.9.0-beta.2] - 2026-09-09
+
+Release: 修正 patinad 后台服务的运行身份诊断，并继续验证测试版覆盖升级。
+App note: 修正 patinad 后台服务的运行身份诊断。
+App note en: Fixes patinad managed-service runtime diagnostics.
+
+### Added
+
+- 暂无。
+
+### Changed
+
+- `patinad` 启动状态现在明确区分只读 daemon、手动 tracking preview 和 systemd managed service，便于诊断真实运行 owner。
+
+### Fixed
+
+- 修复 systemd 管理的正式后台服务仍在日志中显示为旧 preview 阶段、可能误导故障排查的问题。
+
+### Removed
+
+- 暂无。
+
+### Internal
+
+- 记录 `1.9.0-beta.1` 已安装包的首次接管、关闭与重开桌面端、服务崩溃恢复和 Firefox/Zen 扩展重连实机证据。
+
 ## [1.9.0-beta.1] - 2026-09-09
 
 Release: 首个 patinad 后台服务测试版，支持关闭桌面窗口后持续追踪，并提供安全迁移与回滚。

@@ -118,7 +118,7 @@ Persistent Firefox/Zen installation requires a signed XPI. Temporary development
 
 Settings -> Diagnostics shows the current `~/.config/autostart/Patina.desktop` state. When the `Exec` path points to a stale launcher, such as a terminal executable used during development, the Desktop Integration row exposes a repair action that rewrites it to the current Patina executable with `--autostart`.
 
-## patinad Service Preview
+## patinad Managed Service
 
 The Debian bundle now includes both:
 
@@ -127,7 +127,7 @@ The Debian bundle now includes both:
 /usr/lib/systemd/user/patinad.service
 ```
 
-The package does not enable or start the unit. Desktop remains the default production tracking owner until the client cutover stage migrates the current user's XDG autostart and enables the daemon from the user session. Do not manually start the production unit while Patina Desktop is tracking the same profile.
+Package maintainer scripts only install the unit; they do not enable or start it. Before owner cutover, Desktop remains the Production tracking owner. A daemon-backed DEB starts the transition from the current user's Desktop session, persists an owner-only reservation, releases the embedded runtime, and only then enables and starts the user service. After the reservation reaches `completed`, `patinad` is the Production tracking owner and Desktop is its client. Do not manually start the Production unit while an embedded Desktop still owns the same profile.
 
 Validate the source packaging contract without installing it:
 
@@ -157,7 +157,7 @@ For an isolated manual preview, use a non-production profile:
 src-tauri/target/debug/patinad --profile dev --serve-api --track --port 0
 ```
 
-A manual preview exposes service state but rejects controlled restart because no supervisor can bring it back. A systemd-managed instance advertises `service-lifecycle`; restart persists a ticket, responds before shutdown, exits through the graceful runtime path, and the next instance confirms the same ticket.
+A manual preview reports startup stage `tracking-preview`, exposes service state, and rejects controlled restart because no supervisor can bring it back. A systemd-managed instance reports `managed-service` and advertises `service-lifecycle`; restart persists a ticket, responds before shutdown, exits through the graceful runtime path, and the next instance confirms the same ticket. A daemon without `--track` reports `read-only`.
 
 ## Linux Release Bundles
 
@@ -220,7 +220,7 @@ The installed-package collector is read-only and can be run from the repository 
 
 ```bash
 npm run release:inspect-installed-patinad -- --phase baseline --expected-version 1.8.3
-npm run release:inspect-installed-patinad -- --phase managed --expected-version 1.9.0-beta.1
+npm run release:inspect-installed-patinad -- --phase managed --expected-version "$BETA_VERSION"
 ```
 
 Use `--output /absolute/new-file.json` to retain evidence. The collector creates that file as `0600` and refuses to overwrite an existing path. It never prints the API Token, window titles, or visited URLs; API output is reduced to protocol and capability readiness. It also never installs a package, enables or stops a service, changes owner state, or deletes data.

@@ -24,18 +24,45 @@ pub fn build_startup_status(
     profile: crate::platform::app_paths::AppProfile,
     local_api_enabled: bool,
     tracking_enabled: bool,
+    managed_by_systemd: bool,
     local_api_port: u16,
     storage_paths: &crate::platform::storage_paths::StoragePaths,
 ) -> DaemonStartupStatus {
+    let mut notes = if tracking_enabled {
+        vec![
+            "daemon owns tracking and watchdog for this profile",
+            "daemon observes lock, suspend, resume, and shutdown through systemd-logind",
+            "daemon owns the Linux audio participation source and follows its persisted setting",
+            "daemon owns the Linux MPRIS participation source",
+            "daemon owns the configured loopback browser activity bridge",
+            "daemon owns Tools reminders, timers, pomodoro, and Linux notifications",
+            "daemon owns the local API listener and owner-only credential lifecycle",
+        ]
+    } else {
+        vec![
+            "daemon exposes the shared read-only local API and authenticated event stream when enabled",
+            "tracking stays owned by the desktop runtime unless --track is supplied",
+        ]
+    };
+    if tracking_enabled {
+        notes.push(if managed_by_systemd {
+            "systemd user service is the active tracking owner; the desktop must remain a client for this profile"
+        } else {
+            "manual tracking preview is active; the desktop must not use the same profile"
+        });
+    }
+
     DaemonStartupStatus {
         service_name: "patinad",
         mode: "daemon",
         profile,
         version: version.into(),
-        stage: if tracking_enabled {
-            "stage-2h2-systemd-service-preview"
+        stage: if tracking_enabled && managed_by_systemd {
+            "managed-service"
+        } else if tracking_enabled {
+            "tracking-preview"
         } else {
-            "stage-2a-event-stream"
+            "read-only"
         },
         sqlite_enabled: true,
         tracking_enabled,
@@ -46,23 +73,7 @@ pub fn build_startup_status(
         data_root: storage_paths.data_root.clone(),
         db_path: storage_paths.db_path.clone(),
         webview_root: storage_paths.webview_root.clone(),
-        notes: if tracking_enabled {
-            vec![
-                "daemon owns tracking and watchdog for this profile",
-                "daemon observes lock, suspend, resume, and shutdown through systemd-logind",
-                "daemon owns the Linux audio participation source and follows its persisted setting",
-                "daemon owns the Linux MPRIS participation source",
-                "daemon owns the configured loopback browser activity bridge",
-                "daemon owns Tools reminders, timers, pomodoro, and Linux notifications",
-                "daemon owns the local API listener and owner-only credential lifecycle",
-                "tracking preview is explicitly enabled and the desktop must not use the same profile",
-            ]
-        } else {
-            vec![
-                "daemon exposes the shared read-only local API and authenticated event stream when enabled",
-                "tracking stays owned by the desktop runtime unless --track is supplied",
-            ]
-        },
+        notes,
     }
 }
 
@@ -89,6 +100,7 @@ mod tests {
             crate::platform::app_paths::AppProfile::Dev,
             false,
             false,
+            false,
             14_840,
             &paths,
         );
@@ -97,7 +109,7 @@ mod tests {
         assert_eq!(status.mode, "daemon");
         assert_eq!(status.profile, crate::platform::app_paths::AppProfile::Dev);
         assert_eq!(status.version, "1.8.3");
-        assert_eq!(status.stage, "stage-2a-event-stream");
+        assert_eq!(status.stage, "read-only");
         assert!(status.sqlite_enabled);
         assert!(!status.tracking_enabled);
         assert!(!status.local_api_enabled);
@@ -121,6 +133,7 @@ mod tests {
             crate::platform::app_paths::AppProfile::Dev,
             true,
             false,
+            false,
             42_321,
             &paths,
         );
@@ -139,11 +152,12 @@ mod tests {
             crate::platform::app_paths::AppProfile::Dev,
             true,
             true,
+            false,
             42_321,
             &paths,
         );
 
-        assert_eq!(status.stage, "stage-2h2-systemd-service-preview");
+        assert_eq!(status.stage, "tracking-preview");
         assert!(status.tracking_enabled);
         assert!(status
             .notes
@@ -163,5 +177,33 @@ mod tests {
             .notes
             .iter()
             .any(|note| note.contains("credential lifecycle")));
+        assert!(status
+            .notes
+            .iter()
+            .any(|note| note.contains("manual tracking preview")));
+    }
+
+    #[test]
+    fn daemon_status_identifies_managed_tracking_service() {
+        let paths = storage_paths("/tmp/Patina");
+        let status = build_startup_status(
+            "1.9.0-beta.2",
+            crate::platform::app_paths::AppProfile::Production,
+            true,
+            true,
+            true,
+            14_840,
+            &paths,
+        );
+
+        assert_eq!(status.stage, "managed-service");
+        assert!(status
+            .notes
+            .iter()
+            .any(|note| note.contains("systemd user service is the active tracking owner")));
+        assert!(!status
+            .notes
+            .iter()
+            .any(|note| note.contains("tracking preview")));
     }
 }
