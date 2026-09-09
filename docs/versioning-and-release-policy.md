@@ -22,7 +22,7 @@
 
 截至当前发布线：
 
-- 代码版本为 `1.9.0-beta.10`
+- 代码版本为 `1.9.0-beta.11`
 - 稳定发布线为 `1.x`
 - 仓库已进入公开稳定阶段，后续版本按标准 `SemVer` 管理
 - 默认通过推送 `vX.Y.Z` / `vX.Y.Z-prerelease` 版本 tag 自动触发 GitHub Actions 工作流 [prepare-release.yml](../.github/workflows/prepare-release.yml) 中的 `Publish Linux Release` 流程；必要时也可手动触发已有 tag 的发布流程补跑
@@ -50,6 +50,8 @@
 上面这项文档同步不是新的版本来源，而是防止长期规则与仓库现实漂移：只要本文保留“代码版本为 `X.Y.Z`”这类当前状态字段，每次准备正式发布时都必须随版本文件一起更新。
 
 统一规则：
+
+`release:sync-version` 当前不更新 Cargo.lock；同步后运行 `cargo update --manifest-path src-tauri/Cargo.toml --offline --workspace`，核对锁文件仅产品版本变化，并显式暂存 Cargo.lock。`release:check` 必须先验证版本文件再编译，避免 Cargo 自动刷新本地锁文件掩盖不一致。推标签前还要从提交导出的干净源码运行版本与 changelog 校验，不能只校验可能有未提交文件的工作区。
 
 - 代码版本号使用不带前缀的 `SemVer` 字符串，例如 `1.0.1`
 - Git tag 使用带 `v` 前缀的形式，例如 `v1.0.1`

@@ -1,7 +1,7 @@
 {
   "name": "patina",
   "private": true,
-  "version": "1.9.0-beta.10",
+  "version": "1.9.0-beta.11",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -63,7 +63,7 @@
     "release:verify-daemon-deb": "node --experimental-strip-types scripts/verify-daemon-deb.ts",
     "release:inspect-installed-patinad": "node --experimental-strip-types scripts/patinad-installed-acceptance.ts",
     "release:notes": "node --experimental-strip-types scripts/release.ts print-release-notes",
-    "release:check": "npm run check:full && npm run extension:gnome:check && npm run extension:chromium:check && npm run extension:firefox:verify-signed && npm run release:validate-changelog",
+    "release:check": "npm run release:validate-version-files && npm run check:full && npm run extension:gnome:check && npm run extension:chromium:check && npm run extension:firefox:verify-signed && npm run release:validate-changelog",
     "preview": "vite preview",
     "tauri": "tauri"
   },

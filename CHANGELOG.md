@@ -36,6 +36,33 @@ App note en: TBD.
 
 - 暂无。
 
+## [1.9.0-beta.11] - 2026-09-09
+
+Release: patinad 后台服务 DEB 测试版，支持持续追踪、安全接管与回退、备份和 API/MCP。安装前请验证备份；内存回收、活动网页跨挂起和部分安装故障场景仍待验收。
+App note: 独立后台追踪测试版，包含午夜汇总修复与完整版本文件。
+App note en: Independent background tracking beta with the midnight summary fix and consistent version metadata.
+
+### Added
+
+- 独立 patinad 服务、桌面接管/回退、版本核对、应用和网页趋势、活动导入、定时备份，以及 HTTP/MCP 写侧接口；功能范围包含下述 beta.9 和 beta.10。
+
+### Changed
+
+- 仅提供 DEB 预发布，不替换稳定版更新通道，不提供 AppImage 或 Flatpak；安装前请导出并验证备份。
+
+### Fixed
+
+- 包含日/周午夜汇总返回零时长的修复，显式空范围查询仍拒绝。
+
+### Removed
+
+- 暂无。
+
+### Internal
+
+- 补齐 Cargo.lock 版本。beta.10 在元数据校验失败，未生成公开安装包；保留失败标签，以新标签重新发布。
+- 发布前额外校验从 Git 提交导出的干净源码，避免本地未提交版本文件掩盖远端不一致。
+
 ## [1.9.0-beta.10] - 2026-09-09
 
 Release: patinad 后台服务 DEB 测试版，支持持续追踪、受控接管与回退，并修复午夜汇总错误。安装前请验证备份；内存回收、活动网页跨挂起和部分安装故障场景仍待验收。
