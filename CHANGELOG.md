@@ -61,6 +61,7 @@ App note en: Fixes media participation detection for Zen Browser.
 ### Internal
 
 - 新增真实 Zen 安装路径与 Firefox MPRIS 总线标识组合的回归测试。
+- `beta.3 → beta.4` 覆盖安装和受控 daemon 重启已通过实机验收：restart count 正常增加，数据库完整且 active 边界唯一；Zen 前台播放时 MPRIS 与 PulseAudio 两路均报告 `matched`，最终采用 `system-media` 参与信号。
 
 ## [1.9.0-beta.3] - 2026-09-09
 
