@@ -178,6 +178,8 @@ Stage 2H.3d 不做一次性切换，按下面五个可回滚批次推进：
 
 实机验收必须按以下顺序执行：
 
+`2026-09-09 / beta.5` 回滚进展：service 已停止并禁用，reservation 已持久化为 `rolled_back`；用户手动退出并重开 Desktop 后，lease 转为 desktop，原生活动恢复且 SQLite `quick_check=ok`。回滚后的自动重启未完成，仍是待修复项，不能将手动重开视为自动重启通过；重新接管尚待实机验证。验收采集器已修正将磁盘 `rolled_back` 错按诊断接口 `rolled-back` 比较的误报，并补充回归测试。
+
 1. **升级前基线与可恢复备份**：关闭不必要的写入操作，通过设置页导出一份已验证的结构化备份，并把它保存在当前 Patina 数据目录之外；记录现有包版本、数据库完整性和行数基线。没有可读取的备份不得进入安装步骤。
 2. **安装后、首次切换前**：安装静态验证已通过的 `X.Y.Z-beta.N` DEB，立即确认 Desktop、`patinad` 和 unit 来自同一包；维护脚本不得启动或启用 unit，用户数据与旧 XDG autostart 仍存在。
 3. **首次 owner 交接**：启动 Desktop，完成显式迁移与受控重启；确认 reservation 为 `completed`、lease owner 为 `daemon`、systemd service active，并且 capability 同时报告 daemon runtime、tracking ready 和 managed service ready。任一条件失败均保持 fail-closed，先使用设置页重试或回滚，不手工删除 owner 文件。

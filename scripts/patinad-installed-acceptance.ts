@@ -250,7 +250,7 @@ export function evaluateAcceptanceEvidence(evidence: any) {
   } else if (phase === "rolled-back") {
     checks.push(
       check("service-stopped", evidence.systemd?.ActiveState !== "active", "patinad.service is not active"),
-      check("cutover-rolled-back", evidence.cutover?.value?.state === "rolled-back", "owner cutover is committed as rolled-back"),
+      check("cutover-rolled-back", evidence.cutover?.value?.state === "rolled_back", "owner cutover is committed as rolled-back"),
       check("daemon-lease-released", evidence.runtimeLease?.value?.role !== "daemon", "the daemon no longer owns the runtime lease"),
     );
   }

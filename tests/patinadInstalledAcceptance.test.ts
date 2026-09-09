@@ -143,6 +143,18 @@ async function testEvidenceFilesAreOwnerOnlyAndNeverOverwritten() {
   }
 }
 
+function testRollbackEvidenceUsesPersistedStatus() {
+  const evidence = managedEvidence();
+  evidence.phase = "rolled-back";
+  evidence.systemd.ActiveState = "inactive";
+  evidence.runtimeLease.value.role = "desktop";
+  evidence.cutover.value = summarizeCutoverReservation({ status: "rolled_back" });
+  assert.equal(evaluateAcceptanceEvidence(evidence).every(entry => entry.status === "pass"), true);
+  evidence.cutover.value.state = "rolling_back";
+  assert.equal(evaluateAcceptanceEvidence(evidence).find(entry => entry.id === "cutover-rolled-back")?.status, "fail");
+}
+
+testRollbackEvidenceUsesPersistedStatus();
 testSystemdPropertiesPreserveValuesContainingEquals();
 testCapabilitySummaryKeepsOnlyAcceptanceFields();
 testManagedEvidenceRequiresOneReadyDaemonOwner();
@@ -151,4 +163,4 @@ testUninstallEvidenceRequiresDataButNoPackagePayload();
 testBaselineDoesNotRequireDaemonPackageFiles();
 await testEvidenceFilesAreOwnerOnlyAndNeverOverwritten();
 
-console.log("Passed 7 installed patinad acceptance tests");
+console.log("Passed 8 installed patinad acceptance tests");
