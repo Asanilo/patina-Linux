@@ -245,7 +245,7 @@ Stage 2H.3d 不做一次性切换，按下面五个可回滚批次推进：
 - 当前适合评估带明确限制的 DEB prerelease，不适合发布 1.9.0 stable。稳定版前仍需独立凭据与 systemd 的完整远端恢复、活动网页跨挂起、剩余安装故障矩阵，以及 AppImage 兼容或明确退役方案。恢复预览 UX、TUI、本机浏览器 UI 和大规模平台删除不阻塞本轮 beta，也不在发布前顺带扩张。
 - 发布前修正中英文 README 的旧默认 owner 描述，并说明 stable/main 与 daemon 分支、DEB-only、备份前置和显式版本重新加载。新 WebDAV 回归只提取私有客户端函数并补测试，没有引入新的凭据入口或 HTTP 协议；它在源码中但不在此前用户安装的 beta.9 二进制中。
 - 本轮最终 `release:check` 通过：568 项 Rust 测试通过、4 项按约定忽略，31 项真实浏览器 smoke、构建、bundle budget、Clippy 和扩展验证通过。Chromium 临时 profile 清理仍有非致命 `ENOTEMPTY` 警告，不影响通过结论，也不作为测试基础设施已完全收口的证明。
-- 准备提交并推送 `feature/patinad-daemon`，不合并 `main`；公开 beta/tag 动作等待用户确认，不能将本次分支推送称为已发布。
+- 已提交 `6b13973` 并推送至 `origin/feature/patinad-daemon`，连同此前积累的 51 个提交一并同步；未合并或推送 `main`。公开 beta/tag 动作等待用户确认，不能将本次分支推送称为已发布。
 
 #### 真实 systemd 跨进程恢复（2026-09-09）
 
