@@ -24,10 +24,11 @@ pub use sustained_identity::*;
 #[cfg(test)]
 mod tests {
     use super::{
-        is_trackable_window, resolve_sustained_participation_kind, resolve_tracking_status,
-        should_track, signal_matches_window, source_app_id_identity,
-        sustained_participation_app_identity, SustainedParticipationAppIdentity,
-        SustainedParticipationKind, SustainedParticipationSignalSnapshot,
+        evaluate_sustained_participation_signal, is_trackable_window,
+        resolve_sustained_participation_kind, resolve_tracking_status, should_track,
+        signal_matches_window, source_app_id_identity, sustained_participation_app_identity,
+        SustainedParticipationAppIdentity, SustainedParticipationKind,
+        SustainedParticipationSignalMatchResult, SustainedParticipationSignalSnapshot,
         SustainedParticipationSignalSource, SystemMediaPlaybackType, TrackingDataChangedPayload,
         TrackingStatusResolutionInput, WindowSessionIdentity, WindowTrackingCandidate,
         WindowTransitionDecision, TRACKING_REASON_STARTUP_SEALED, TRACKING_REASON_STATUS_CHANGED,
@@ -167,6 +168,10 @@ mod tests {
             ),
             Some(SustainedParticipationAppIdentity::Chrome)
         );
+        assert_eq!(
+            sustained_participation_app_identity("zen", "/opt/zen/zen"),
+            Some(SustainedParticipationAppIdentity::Firefox)
+        );
         assert_eq!(sustained_participation_app_identity("QQ.exe", ""), None);
     }
 
@@ -188,7 +193,33 @@ mod tests {
             source_app_id_identity("TencentMeeting"),
             Some(SustainedParticipationAppIdentity::WeMeet)
         );
+        assert_eq!(
+            source_app_id_identity("firefox.instance_1_4191"),
+            Some(SustainedParticipationAppIdentity::Firefox)
+        );
+        assert_eq!(
+            source_app_id_identity("zen-browser"),
+            Some(SustainedParticipationAppIdentity::Firefox)
+        );
         assert_eq!(source_app_id_identity("Spotify"), None);
+    }
+
+    #[test]
+    fn zen_window_matches_firefox_mpris_identity() {
+        let signal = SustainedParticipationSignalSnapshot {
+            is_available: true,
+            is_active: true,
+            signal_source: Some(SustainedParticipationSignalSource::SystemMedia),
+            source_app_id: Some("firefox.instance_1_4191".into()),
+            source_app_identity: Some(SustainedParticipationAppIdentity::Firefox),
+            playback_type: None,
+        };
+
+        assert!(signal_matches_window("zen", "/opt/zen/zen", &signal));
+        assert_eq!(
+            evaluate_sustained_participation_signal("zen", "/opt/zen/zen", &signal).match_result,
+            SustainedParticipationSignalMatchResult::Matched
+        );
     }
 
     #[test]

@@ -38,9 +38,12 @@ pub fn sustained_participation_app_identity(
 
     if matches!(
         normalized_exe.as_str(),
-        "firefox.exe" | "firefox" | "firefox-esr"
+        "firefox.exe" | "firefox" | "firefox-esr" | "zen" | "zen-bin" | "zen-browser"
     ) || normalized_path.ends_with("\\firefox.exe")
         || normalized_path.contains("/firefox")
+        || normalized_path.ends_with("/zen")
+        || normalized_path.ends_with("/zen-bin")
+        || normalized_path.ends_with("/zen-browser")
     {
         return Some(SustainedParticipationAppIdentity::Firefox);
     }
@@ -124,7 +127,9 @@ pub fn source_app_id_identity(source_app_id: &str) -> Option<SustainedParticipat
         return Some(SustainedParticipationAppIdentity::Edge);
     }
 
-    if normalized_source.contains("firefox") {
+    if normalized_source.contains("firefox")
+        || matches!(normalized_source.as_str(), "zen" | "zenbin" | "zenbrowser")
+    {
         return Some(SustainedParticipationAppIdentity::Firefox);
     }
 

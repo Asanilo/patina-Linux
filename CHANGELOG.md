@@ -36,6 +36,32 @@ App note en: TBD.
 
 - 暂无。
 
+## [1.9.0-beta.4] - 2026-09-09
+
+Release: 修复 Zen 播放媒体时 MPRIS 信号无法匹配前台窗口的问题。
+App note: 修复 Zen 的媒体播放参与识别。
+App note en: Fixes media participation detection for Zen Browser.
+
+### Added
+
+- 暂无。
+
+### Changed
+
+- 暂无。
+
+### Fixed
+
+- 将 `zen`、`zen-bin` 和 `zen-browser` 归一为 Firefox 系媒体身份，使 Zen 前台窗口能够匹配其 `firefox.instance_*` MPRIS 播放器，同时保留原有 PulseAudio session 匹配。
+
+### Removed
+
+- 暂无。
+
+### Internal
+
+- 新增真实 Zen 安装路径与 Firefox MPRIS 总线标识组合的回归测试。
+
 ## [1.9.0-beta.3] - 2026-09-09
 
 Release: 修复 patinad 接管完成后重新打开桌面端仍等待后台 owner 的问题。
