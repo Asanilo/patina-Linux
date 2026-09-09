@@ -34,11 +34,11 @@ App note en: TBD.
 
 ### Internal
 
-- 补充 WebDAV 远端归档下载、索引和 ZIP 校验、私有暂存及失败清理的隔离回归；不使用生产凭据或数据，不代表完整远端恢复链路已经验收。
+- 暂无。
 
 ## [1.9.0-beta.9] - 2026-09-09
 
-Release: patinad 后台服务 DEB 测试版：关闭桌面端后持续追踪，支持受控接管、回退和后台版本核对。安装前请先导出并验证备份；完整远端恢复、活动网页跨挂起和部分安装故障场景仍待验收，不作为稳定版保证。
+Release: patinad 后台服务 DEB 测试版，支持持续追踪、受控接管与回退。安装前请导出并验证备份；内存回收、活动网页跨挂起和部分安装故障场景仍待验收，不作为稳定版保证。
 App note: 新增独立后台追踪、安全接管与回退，以及桌面和后台的版本核对。
 App note en: Adds independent background tracking, guarded migration and rollback, and desktop/daemon version checks.
 
@@ -67,7 +67,9 @@ App note en: Adds independent background tracking, guarded migration and rollbac
 - 此节按最近公开版本 1.8.4 汇总首个拟公开 daemon beta 的变化；beta.1 至 beta.8 是本地验收记录，不代表这些版本曾公开发布。
 - 重新加载复用已有受控重启 API；请求不自动重试，不下载更新、不自动重启生产服务或改变登录偏好。
 - 增加版本核验与取消、确认、防重复点击的隔离测试；补充真实临时 systemd 服务的跨进程恢复测试，不使用生产数据。
-- 本地未签名候选已通过安装后的版本切换和健康状态用户复测；公开签名包仍须由 Actions 构建。完整 WebDAV 恢复与剩余矩阵继续保留，不以局部测试代替端到端验收。
+- 本地未签名候选已通过安装后的版本切换和健康状态用户复测；公开签名包由 Actions 构建，不能用本机包替代签名产物验收。
+- 新增已安装 Linux Desktop/WebKit 与 daemon 的只读 PSS/USS/RSS 采样工具及回归测试，不读取应用凭据或活动内容。桌面内存回收仍待对照验证，尚未宣称内存问题已修复。
+- 私有 Secret Service 凭据、远端下载和真实临时 systemd 跨进程恢复已验证替换、合并及失败回滚；另有下载校验与暂存失败清理回归。不接触生产数据，不代表第三方 WebDAV/TLS、上传或任意崩溃时刻已验收。
 
 ## [1.9.0-beta.8] - 2026-09-09
 

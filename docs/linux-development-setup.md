@@ -272,6 +272,26 @@ Each case creates a private temporary HOME/XDG tree, a synthetic archive and dat
 
 Successful cases retain small synthetic fixtures and owner-only `evidence.json` files under their printed temporary directories. No Token, real window title or URL is printed. Normal `cargo test` ignores this test. This is a real cross-process restore check, not a second installed package, separate user account, WebDAV test, power-loss test or validation of every security property of the packaged unit. The fixed service environment marker is reused for protocol negotiation while the actual transient unit name is intentionally distinct.
 
+The remote variant additionally requires `dbus-daemon`, `gdbus` and `gnome-keyring-daemon`:
+
+```bash
+PATINA_SYSTEMD_TEST_BINARY=/usr/bin/patinad cargo test \
+  --manifest-path src-tauri/Cargo.toml --lib \
+  real_webdav_restore_crosses_private_credentials_and_systemd -- --ignored --nocapture
+```
+
+It creates a private D-Bus and Secret Service with synthetic credentials under the temporary tree. A guarded child test seeds that keyring; never invoke `seed_private_webdav_credential` manually or run all ignored tests indiscriminately. Only the fixture and test daemon receive that bus address; the parent keeps the user-manager connection. The daemon lists/downloads a synthetic archive from an authenticated loopback HTTP fixture and completes Replace/Merge/rollback across a real systemd restart. It does not read the login keyring, connect to a real WebDAV account, test upload/TLS interoperability, or change production settings. Owned fixture processes and transient units are stopped; synthetic evidence remains private under `/tmp`.
+
+## Desktop Memory Evidence
+
+```bash
+npm run perf:memory-snapshot -- --label foreground --output /tmp/patina-memory-foreground.json
+```
+
+This read-only Linux collector reads `/proc` metadata and `smaps_rollup`, not command lines, environment variables, databases or credentials. Output is owner-only and refuses overwrite. It groups current-user `/usr/bin/Patina`, `/usr/bin/patinad` and attributable live descendants; custom build paths and reparented processes are outside its scope. Missing metrics remain null. Compare PSS and USS rather than summed RSS; samples are non-atomic and have no pass/fail memory budget.
+
+Capture comparable foreground, tray-hidden, low-resource-background after its delay, and reopened states with different output filenames. The current low-resource setting defaults off; when enabled, main-window close schedules destruction after five minutes and rechecks visibility/generation. Hiding is not immediate destruction. Do not change the setting or close the user's window automatically for a measurement. Keep tracking enabled and verify it continues across UI reclamation.
+
 ## MCP Wrapper
 
 The MCP wrapper is a stdio server that maps MCP tool calls to the local API:

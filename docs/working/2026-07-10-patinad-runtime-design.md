@@ -188,10 +188,11 @@ Stage 2H.3d 不做一次性切换，按下面五个可回滚批次推进：
 | Zen 重连、切走封口、真实 suspend/resume | beta.7 已通过；挂起前无活动网页，不代表活动网页跨挂起已验证 |
 | 登录偏好与独立后台启动 | 配置/unit 对账及 Linger=yes 下重启登录自启已通过，Desktop 未启动也能记录；不覆盖 Linger=no 或仅注销再登录 |
 | 故障与维护路径 | failed/blocked 重试、Token/端口不一致、缺失 unit、自定义挂载目录/pending migration 等已有自动化或实现，未全部做真实安装故障注入 |
-| 受控备份恢复、远端恢复 | 合成数据的磁盘恢复/重开、receipt 幂等、失败保留和清理回滚已通过；真实临时 systemd 服务的跨进程 Replace/Merge 及失败回滚通过；WebDAV 下载校验/暂存的隔离 HTTP 回归通过，真实凭据、远端到重启恢复完整链路与任意崩溃时刻仍待验证 |
+| 受控备份恢复、远端恢复 | 合成数据的磁盘恢复/重开、receipt 幂等、失败保留和清理回滚已通过；真实临时 systemd 服务的跨进程 Replace/Merge 及失败回滚通过；私有 Secret Service 凭据到 HTTP 下载、预约及 systemd 重启恢复链路已通过。不覆盖第三方 WebDAV/TLS、上传及任意崩溃时刻 |
+| 桌面 UI 内存 | 已增加只读分进程采样及回归；首次 Desktop/WebKit 合计约 618 MiB PSS、daemon 约 18 MiB。低耗后台回收与重开对照待人工操作，尚未证明优化收益或泄漏 |
 | 发布 | beta.9 本地未签名 DEB 已安装，用户确认 Desktop/Daemon 均为 beta.9，只读 managed 验收通过；未推 tag/发布。稳定版前仍需 AppImage 兼容或退役迁移方案 |
 
-下一步顺序：健康状态与版本对齐的实机正常路径已收口，准备分支推送及明确限制的 DEB beta 发布评审；继续补活动网页跨挂起、独立凭据下的完整远端恢复与尚未覆盖的安装故障矩阵。独立后台自启已通过当前 Linger=yes 的重启登录场景，不为扩展矩阵擅自修改用户登录配置。不得因为正常路径通过就将 Stage 2H.3d 或稳定版整体标为完成。恢复策略按钮文案/摘要位置改进属于后续 UX 项，不阻塞已通过的只读归档校验。
+下一步顺序：健康状态与版本对齐的实机正常路径已收口，分支已推送但未发布 tag；独立凭据远端恢复已补齐下述隔离链路。继续活动网页跨挂起和剩余安装故障矩阵，并行验证桌面内存回收，再评审有明确限制的 DEB beta 发布。独立后台自启已通过当前 Linger=yes 的重启登录场景，不为扩展矩阵擅自修改用户登录配置。不得因为正常路径通过就将 Stage 2H.3d 或稳定版整体标为完成。Flatpak 属于后续安装格式评估，不替代 AppImage 更新承诺或桌面 provider 适配；恢复策略 UX 不阻塞已通过的只读归档校验。
 
 2026-09-09 健康状态修复：Desktop 原本只在 SSE 数据变化或 resync 时刷新快照，与前端 8 秒心跳过期判断不匹配。隔离 HTTP 回归测试已在修复前复现后台采样推进、客户端仍持有旧时间的问题。runtime adapter 增加 2 秒周期重读，使用后台采样时间，不以客户端请求成功时间续命；读取失败仍清除实时快照并进入重连。测试覆盖无事件刷新、冻结采样时间不被改写、追踪不可用时清除旧数据，同时保留既有 SSE、配置切换与退出测试。随后已打入 beta.8 并由用户安装，真实故障发生时刻的关联与新包复测仍待完成。
 
@@ -247,7 +248,18 @@ Stage 2H.3d 不做一次性切换，按下面五个可回滚批次推进：
 - 本轮最终 `release:check` 通过：568 项 Rust 测试通过、4 项按约定忽略，31 项真实浏览器 smoke、构建、bundle budget、Clippy 和扩展验证通过。Chromium 临时 profile 清理仍有非致命 `ENOTEMPTY` 警告，不影响通过结论，也不作为测试基础设施已完全收口的证明。
 - 已提交 `6b13973` 并推送至 `origin/feature/patinad-daemon`，连同此前积累的 51 个提交一并同步；未合并或推送 `main`。公开 beta/tag 动作等待用户确认，不能将本次分支推送称为已发布。
 
-#### 真实 systemd 跨进程恢复（2026-09-09）
+#### 私有凭据远端恢复与内存基线补充（2026-09-09）
+
+- 使用已安装 beta.9 二进制，在每个独立临时 HOME/XDG 下启动私有 D-Bus/Keyring；只在该私有总线保存合成密码。真实 daemon 从受控 Basic-auth HTTP fixture 读取索引、下载 exporter 生成的 ZIP，经 HTTP 202 预约、systemd 新实例执行，再检查终态、数据库、receipt 和所属 staging。未修改生产服务、凭据或数据。
+- Replace、Merge、INSERT 失败回滚三场景通过，PID 分别为 `785280 -> 785663`、`785710 -> 785734`、`785854 -> 785880`。证据目录分别为 `/tmp/patina-systemd_test_3107bede40edb5bc00cf94c9896e388a`、`/tmp/patina-systemd_test_322248a9223e35dbfe8fa3e3ef3fdb13`、`/tmp/patina-systemd_test_f590984f68b4b573b6e022a1dcc5eff7`。每次归档只下载一次，成功清理所属暂存，失败保留暂存与原有数据；源归档和无关文件保持不变。
+- 这是私有真实 Secret Service + 受控 HTTP 下载 + 当前用户 manager 的真实跨进程恢复，不代表第三方 WebDAV 服务、TLS、上传、真实账号或任意断电点均已验收。默认测试忽略两项 opt-in 恢复入口及私有 worker；只按开发文档逐项显式运行。
+- `npm run check:full` 通过：568 Rust passed / 6 ignored，31 browser smoke、前端回归、构建、bundle budget、边界与 Clippy 通过。浏览器临时 profile 清理的非致命 ENOTEMPTY 警告仍在，未将其隐藏。
+- 重用测试框架的本地恢复也在 beta.9 复跑三场景通过：PID `787135 -> 787164`、`787194 -> 787221`、`787287 -> 787348`，未因新增远端路径退化。
+- 内存证据 `/tmp/patina-beta9-memory-observed.json`：Desktop 主进程 PSS 266868 KiB，WebKit Network 14563 KiB、WebProcess 351464 KiB，桌面合计 632895 KiB（约 618 MiB）；daemon 18062 KiB（约 18 MiB）。这是未确认窗口状态的单次观测，不是泄漏证明或前后优化对照。工具不读取 Token、数据库、活动内容或进程环境。
+- 现有低耗后台默认关闭，启用后关闭主窗口需等待 5 分钟并通过 generation/visibility 检查才销毁 WebView。本轮未改变默认行为，等待用户执行关闭到托盘后的对照采样；恢复速度、追踪持续性及重复开关周期均需验证。Flatpak 两种候选架构与权限边界已回写平台文档。
+- 本轮未更新版本、覆盖 beta.9 DEB、安装或发布；本节新增源码与文档尚未提交推送。
+
+#### 本地恢复首次实测（beta.8）
 
 新增显式 opt-in 测试 `app/daemon/backup_restore/systemd_tests.rs`，使用已安装的 `/usr/bin/patinad` beta.8；常规 `cargo test` 默认忽略，运行方式见开发文档。每个场景创建随机临时 user unit 和独立 `0700` HOME/XDG 根，固定使用其内部 Dev profile、随机端口和私有凭据，源归档通过既有 Rust exporter 从合成记录生成。追踪暂停、音频/网页/远端状态禁用，子进程断开桌面 D-Bus。没有读取用户备份或调用正式 `patinad.service` 的写操作。
 

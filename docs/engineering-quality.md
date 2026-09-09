@@ -108,6 +108,7 @@
 
 - `npm run check:naming`
 - `npm run check:architecture`
+- `npm run test:memory`
 - `npm test`
 - `npm run test:replay`
 - `npm run test:update`
@@ -184,6 +185,12 @@ Rust 默认门槛包含 `npm run check:rust-boundaries`、`cargo check`、Rust �
 - 后台优化这类会释放 UI WebView 的资源策略必须默认关闭；用户可见文案不暴露具体等待阈值，内部实现用统一阈值和 generation/token 防护，确保短时间重复打开关闭仍走快速复用路径
 
 当前仓库已经有可复用示例：
+
+桌面常驻内存另用 `npm run perf:memory-snapshot` 采样。它是诊断工具，不是有固定预算的性能 benchmark：分别记录 Desktop 及其 WebKit 子进程、daemon 的 PSS/USS/RSS，缺失读数保留为 unknown，不能按零处理。RSS 相加会重复计算共享页，优先比较 PSS 与 USS；一次高占用不能证明泄漏。
+
+内存验收应在同一版本、相近数据量和页面状态下覆盖前台稳定、关闭到托盘、开启低耗后台并超过回收等待期、重新打开四种状态，重复多轮并检查追踪持续性、页面恢复和子进程存活情况。先验证现有回收，再定位查询缓存、轮询和渲染保留；更换 UI 框架不是没有测量时的默认解法。工具只识别当前用户的已安装标准路径及仍可归属的子进程，不包含独立 GPU 服务、已重挂父进程或自定义开发路径，扫描也不是原子快照；缺少目标进程时不得声称整个产品占用为零。
+
+已有读模型 benchmark：
 
 - `npm run perf:history-read-model`
 - `npm run perf:dashboard-read-model`

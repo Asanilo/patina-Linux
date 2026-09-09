@@ -12,6 +12,8 @@ use serde_json::{json, Value};
 
 use crate::data::repositories::backup_restore::test_support as fixture;
 
+mod remote;
+
 struct TestUnit {
     name: String,
     stopped: Cell<bool>,
@@ -87,6 +89,22 @@ async fn wait_json(
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires explicit PATINA_SYSTEMD_TEST_BINARY and a real user systemd manager"]
 async fn real_systemd_restore_crosses_process_boundary() {
+    run_restore_cases(false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires explicit daemon binary, private D-Bus/keyring and real user systemd"]
+async fn real_webdav_restore_crosses_private_credentials_and_systemd() {
+    run_restore_cases(true).await;
+}
+
+#[tokio::test]
+#[ignore = "private credential fixture worker; only invoked by the isolated parent test"]
+async fn seed_private_webdav_credential() {
+    remote::seed_credential().await;
+}
+
+async fn run_restore_cases(webdav: bool) {
     let binary = std::env::var("PATINA_SYSTEMD_TEST_BINARY")
         .expect("set an absolute path to the daemon binary under test");
     assert!(Path::new(&binary).is_absolute());
@@ -142,13 +160,23 @@ async fn real_systemd_restore_crosses_process_boundary() {
             fixture::inject_source_insert_failure(&pool).await;
         }
         pool.close().await;
-        let stage =
-            crate::platform::backup_restore_staging::stage_file(&staging, &archive).unwrap();
+        fs::create_dir_all(&staging).unwrap();
+        let stage = if webdav {
+            None
+        } else {
+            Some(crate::platform::backup_restore_staging::stage_file(&staging, &archive).unwrap())
+        };
         let sentinel = staging.join("unrelated.txt");
         fs::write(&sentinel, b"keep").unwrap();
         fs::create_dir_all(root.join("home")).unwrap();
         fs::create_dir_all(root.join("runtime")).unwrap();
         fs::set_permissions(root.join("runtime"), fs::Permissions::from_mode(0o700)).unwrap();
+
+        let remote = if webdav {
+            Some(remote::RemoteFixture::start(&root, &archive).await)
+        } else {
+            None
+        };
 
         // A racing bind must fail the test, never fall back to a production endpoint.
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -190,10 +218,11 @@ async fn real_systemd_restore_crosses_process_boundary() {
         ] {
             command.arg(format!("--setenv={name}={}", path.display()));
         }
-        command.arg(format!(
-            "--setenv=DBUS_SESSION_BUS_ADDRESS=unix:path={}/no-session-bus",
-            root.display()
-        ));
+        let bus = remote
+            .as_ref()
+            .map(|fixture| fixture.bus.clone())
+            .unwrap_or_else(|| format!("unix:path={}/no-session-bus", root.display()));
+        command.arg(format!("--setenv=DBUS_SESSION_BUS_ADDRESS={bus}"));
         command.arg("--").arg(&binary).args([
             "--profile",
             "dev",
@@ -231,11 +260,39 @@ async fn real_systemd_restore_crosses_process_boundary() {
         );
         let before_pid = unit.pid();
         assert_ne!(before_pid, "0");
-        let response = client.post(format!("{base}/backups/restore"))
-            .bearer_auth(token.trim()).header("Content-Type", "application/json").body(json!({
-                "ticket": stage.ticket, "expected_sha256": stage.sha256,
-                "expected_size_bytes": stage.size_bytes, "strategy": strategy, "confirmed": true,
-            }).to_string()).send().await.unwrap();
+        let (endpoint, body) = if let Some(remote) = &remote {
+            let config = json!({"url": remote.url, "username": "user", "remoteDir": "/Patina"});
+            let list = client
+                .post(format!("{base}/backups/remote/list"))
+                .bearer_auth(token.trim())
+                .header("content-type", "application/json")
+                .body(serde_json::to_vec(&json!({"config": config})).unwrap())
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(list.status(), 200);
+            let listed: Value = serde_json::from_slice(&list.bytes().await.unwrap()).unwrap();
+            assert_eq!(listed["data"][0]["id"], "remote-source");
+            (
+                "backups/remote/restore",
+                json!({"config": config, "id": "remote-source", "strategy": strategy, "confirmed": true}),
+            )
+        } else {
+            let stage = stage.as_ref().unwrap();
+            (
+                "backups/restore",
+                json!({"ticket": stage.ticket, "expected_sha256": stage.sha256,
+                "expected_size_bytes": stage.size_bytes, "strategy": strategy, "confirmed": true}),
+            )
+        };
+        let response = client
+            .post(format!("{base}/{endpoint}"))
+            .bearer_auth(token.trim())
+            .header("content-type", "application/json")
+            .body(serde_json::to_vec(&body).unwrap())
+            .send()
+            .await
+            .unwrap();
         assert_eq!(response.status(), 202);
         let scheduled: Value = serde_json::from_slice(&response.bytes().await.unwrap()).unwrap();
         let request_id = scheduled["data"]["restore"]["request_id"].as_str().unwrap();
@@ -273,7 +330,14 @@ async fn real_systemd_restore_crosses_process_boundary() {
         pool.close().await;
         assert_eq!(fs::read(&archive).unwrap(), archive_bytes);
         assert_eq!(fs::read(&sentinel).unwrap(), b"keep");
-        assert_eq!(staging.join(format!("{}.zip", stage.ticket)).exists(), fail);
+        let reservation = super::read_reservation(&control).unwrap().unwrap();
+        assert_eq!(
+            staging.join(format!("{}.zip", reservation.ticket)).exists(),
+            fail
+        );
+        if let Some(remote) = &remote {
+            remote.assert_downloaded();
+        }
         let evidence = json!({
             "format": "patina.isolated-systemd-restore.v1",
             "daemon_version": capabilities["data"]["server_version"],
@@ -282,6 +346,7 @@ async fn real_systemd_restore_crosses_process_boundary() {
             "restore": restored["data"], "sessions": names,
             "database_integrity": "ok", "service_stopped": unit.stopped.get(),
             "source_and_unrelated_file_preserved": true,
+            "remote_credentials_and_download": webdav,
         });
         let mut file = fs::OpenOptions::new()
             .write(true)
@@ -292,6 +357,6 @@ async fn real_systemd_restore_crosses_process_boundary() {
         file.write_all(&serde_json::to_vec_pretty(&evidence).unwrap())
             .unwrap();
         file.sync_all().unwrap();
-        eprintln!("isolated systemd restore passed: strategy={strategy}, injected_failure={fail}, pid={before_pid}->{after_pid}, evidence={}", root.display());
+        eprintln!("isolated systemd restore passed: webdav={webdav}, strategy={strategy}, injected_failure={fail}, pid={before_pid}->{after_pid}, evidence={}", root.display());
     }
 }

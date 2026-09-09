@@ -62,3 +62,11 @@ Firefox / Zen 与 Chromium 扩展负责上报当前活动标签页的 URL、标�
 3. 根据真实用户环境分别评估 Sway、Hyprland 等 wlroots compositor。
 
 在现有支持面仍有明显正确性缺口时，不扩大平台承诺。
+
+## 7. 跨发行版安装格式（待评估）
+
+Flatpak 尚未实现，也不属于当前 beta 发布物。跨发行版分发与跨桌面追踪是两个问题：改变安装格式不会补齐 KWin 或 wlroots provider。
+
+后续比较两种方案：宿主原生 `patinad` + Flatpak 桌面客户端，以及完整 Flatpak 应用。前者更符合现有 C/S 边界，但仍需单独安装宿主后台，不能称为单包通用安装；后者必须重新验证后台生命周期、GNOME 扩展 D-Bus、logind/MPRIS、音频参与、系统凭据、文件选择与备份、客户端认证和升级 owner。不能直接搬用 DEB 的宿主 systemd 安装/控制流程，也不以开放整个宿主文件系统或整条 session bus 绕过边界。
+
+Flatpak 默认有文件系统、进程和 D-Bus 等沙箱限制，应优先采用 portal 与最小权限。参考 [Sandbox Permissions](https://docs.flatpak.org/en/latest/sandbox-permissions.html) 和 [Desktop Integration](https://docs.flatpak.org/en/latest/desktop-integration.html)。具体架构取舍与发行矩阵需独立验收后再决定，不替代既有 AppImage 用户的更新或退役迁移承诺。
