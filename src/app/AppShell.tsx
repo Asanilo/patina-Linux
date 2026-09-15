@@ -38,7 +38,6 @@ import {
   clearDataBootstrapCache,
   clearDataHeavyCaches,
 } from "../features/data/services/dataCacheLifecycle.ts";
-import { prewarmDataFirstScreen } from "../features/data/services/dataFirstScreenPrewarm.ts";
 import { clearHistorySnapshotCache } from "../features/history/services/historySnapshotCache.ts";
 import { clearToolsPageCaches } from "../features/tools/services/toolsCacheLifecycle.ts";
 import { AppClassification } from "../shared/classification/appClassification.ts";
@@ -63,7 +62,6 @@ import { resolvePlatformTrackingDiagnosticMessage } from "./services/platformTra
 import DestinationDetailDialogEntry from "../features/destination/components/DestinationDetailDialogEntry.tsx";
 import { useDestinationDetailLauncher } from "../features/destination/hooks/useDestinationDetailLauncher.ts";
 
-const DATA_FOREGROUND_PREWARM_DELAY_MS = 1_200;
 const BACKGROUND_CACHE_RELEASE_DELAY_MS = LONG_BACKGROUND_DELAY_MS;
 
 const History = createPreloadableViewComponent("history");
@@ -301,24 +299,6 @@ function AppShellContent() {
       }
     };
   }, []);
-
-  useEffect(() => {
-    if (!classificationReady || !isForegroundReady) return undefined;
-
-    const timer = window.setTimeout(() => {
-      if (!classificationReady || !isForegroundReady) return;
-
-      void prewarmDataFirstScreen({
-        mappingVersion,
-        reason: "foreground-opened",
-        uiLanguage: uiTextLanguage,
-      });
-    }, DATA_FOREGROUND_PREWARM_DELAY_MS);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [classificationReady, isForegroundReady, mappingVersion, uiTextLanguage]);
 
   useEffect(() => {
     const wasForegroundReady = wasForegroundReadyRef.current;

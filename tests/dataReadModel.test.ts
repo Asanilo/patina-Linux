@@ -551,7 +551,7 @@ await runTest("data first screen prewarm saves a bootstrap snapshot", async () =
 
   const snapshot = await prewarmDataFirstScreen({
     mappingVersion: 3,
-    reason: "foreground-opened",
+    reason: "data-opened",
     uiLanguage: "zh-CN",
     nowMs,
   }, {
@@ -612,7 +612,7 @@ await runTest("data first screen prewarm dedupes pending matching work and throt
 
   const first = prewarmDataFirstScreen({
     mappingVersion: 1,
-    reason: "foreground-opened",
+    reason: "data-opened",
     uiLanguage: "zh-CN",
     nowMs,
   }, deps);
@@ -627,7 +627,7 @@ await runTest("data first screen prewarm dedupes pending matching work and throt
 
   const throttled = await prewarmDataFirstScreen({
     mappingVersion: 1,
-    reason: "foreground-opened",
+    reason: "data-opened",
     uiLanguage: "zh-CN",
     nowMs: nowMs + 1_000,
   }, deps);

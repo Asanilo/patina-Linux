@@ -110,10 +110,6 @@ function createWarmupDeps(events: string[], options: {
       events.push(`chunk:${view}`);
       maybeFail("view-chunks");
     },
-    prewarmClassificationBootstrapCache: async () => {
-      events.push("mapping-bootstrap");
-      maybeFail("mapping-bootstrap");
-    },
     prewarmSettingsBootstrapCache: async () => {
       events.push("settings-bootstrap");
       maybeFail("settings-bootstrap");
@@ -179,7 +175,6 @@ await runTest("startup warmup runs default tasks in a stable order", async () =>
     "chunk:history",
     "chunk:data",
     "settings-bootstrap",
-    "mapping-bootstrap",
     "data-bootstrap-snapshot-cache",
     "dashboard-snapshot",
     "history-snapshot",
@@ -232,7 +227,7 @@ await runTest("startup warmup keeps later tasks running after a failure", async 
 
   await controller.ready;
 
-  assert.ok(events.includes("mapping-bootstrap"));
+  assert.ok(events.includes("data-bootstrap-snapshot-cache"));
   assert.ok(events.includes("dashboard-snapshot"));
   assert.deepEqual(warnings, [
     "Startup warm-up task failed: settings-bootstrap:settings-bootstrap busy",
@@ -260,7 +255,7 @@ await runTest("startup warmup waits for runtime readiness before runtime tasks",
   assert.deepEqual(events.slice(0, 3), [
     "chunk:history",
     "settings-bootstrap",
-    "mapping-bootstrap",
+    "data-bootstrap-snapshot-cache",
   ]);
   assert.equal(events.includes("dashboard-snapshot"), false);
 

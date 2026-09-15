@@ -547,10 +547,15 @@ await runTest("classification web domain colors prefer favicon theme colors", ()
   assert.match(webActivityRepository, /ORDER BY CASE WHEN icon\.favicon_url LIKE 'data:%' THEN 0 ELSE 1 END/);
 });
 
-await runTest("app shell uses feature-owned Data prewarm and heavy cache lifecycle exits", () => {
+await runTest("app shell defers heavy Data and classification reads to their pages", () => {
   const shell = readUtf8("src/app/AppShell.tsx");
+  const warmup = readUtf8("src/app/services/startupWarmupService.ts");
+  const data = readUtf8("src/features/data/components/Data.tsx");
 
-  assert.match(shell, /prewarmDataFirstScreen/);
+  assert.doesNotMatch(shell, /prewarmDataFirstScreen/);
+  assert.doesNotMatch(warmup, /prewarmClassificationBootstrapCache/);
+  assert.match(data, /prewarmDataFirstScreen/);
+  assert.match(data, /reason: "data-opened"/);
   assert.match(shell, /clearDataHeavyCaches/);
   assert.match(shell, /clearDataBootstrapCache/);
   assert.doesNotMatch(shell, /clearDataBootstrapSnapshot/);

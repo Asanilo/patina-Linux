@@ -287,6 +287,16 @@ mod tests {
     }
 
     #[test]
+    fn main_window_lifecycle_rehide_invalidates_old_reclamation() {
+        let state = MainWindowLifecycleState::default();
+        let old = state.hide();
+        state.show();
+        let current = state.hide();
+        assert!(!state.should_destroy_hidden_window(old));
+        assert!(state.should_destroy_hidden_window(current));
+    }
+
+    #[test]
     fn widget_lifecycle_coalesces_concurrent_show_requests() {
         let state = WidgetWindowLifecycleState::default();
 

@@ -17,7 +17,7 @@ import {
 export interface DataFirstScreenPrewarmOptions {
   mappingVersion: number;
   uiLanguage: AppLanguage;
-  reason: "foreground-opened" | "data-opened";
+  reason: "data-opened";
   nowMs?: number;
 }
 

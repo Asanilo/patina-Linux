@@ -36,6 +36,34 @@ App note en: TBD.
 
 - 暂无。
 
+## [1.9.0-beta.13] - 2026-09-15
+
+Release: 桌面内存优化 DEB 测试候选，减少启动重查询，并在低耗后台窗口销毁后归还空闲堆。真实数据长期表现仍待验收。
+App note: 减少桌面启动开销，改善开启低耗后台后的内存回收。
+App note en: Reduce desktop startup work and reclaim unused heap after low-resource background teardown.
+
+### Added
+
+- 暂无。
+
+### Changed
+
+- 全年热力图和分类候选改为进入对应页面时加载，不再因打开 Dashboard 而提前读取大量明细；分类规则初始化和统计口径保持不变。
+
+### Fixed
+
+- GNU Linux 下开启低耗后台时，主窗口销毁后尝试归还空闲堆，缓解查询完成后桌面进程长期保留较多内存的问题；默认开关和五分钟等待不变。
+- 回收前重新检查低耗开关、隐藏代次和存活 WebView；重开窗口或 widget 存活时跳过堆回收。
+
+### Removed
+
+- 暂无。
+
+### Internal
+
+- 补充启动预热、回收条件及并发分配回归验证；隔离 Wayland 验证覆盖低耗关闭、运行中关闭开关、widget 存活、两轮重开和合成窗口持续记录。
+- 本版本仍为 DEB beta。隔离实验不代表真实数据长期内存预算达标；长 SQL 与回收重叠、后端有界聚合和流式备份仍待跟进。
+
 ## [1.9.0-beta.12] - 2026-09-09
 
 Release: patinad 后台服务 DEB 测试版，支持持续追踪、安全接管与回退、备份和 API/MCP。安装前请验证备份；内存回收、活动网页跨挂起和部分安装故障场景仍待验收。

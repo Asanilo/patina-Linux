@@ -197,7 +197,7 @@ Stage 2H.3d 不做一次性切换，按下面五个可回滚批次推进：
 | 登录偏好与独立后台启动 | 配置/unit 对账及 Linger=yes 下重启登录自启已通过，Desktop 未启动也能记录；不覆盖 Linger=no 或仅注销再登录 |
 | 故障与维护路径 | failed/blocked 重试、Token/端口不一致、缺失 unit、自定义挂载目录/pending migration 等已有自动化或实现，未全部做真实安装故障注入 |
 | 受控备份恢复、远端恢复 | 合成数据的磁盘恢复/重开、receipt 幂等、失败保留和清理回滚已通过；真实临时 systemd 服务的跨进程 Replace/Merge 及失败回滚通过；私有 Secret Service 凭据到 HTTP 下载、预约及 systemd 重启恢复链路已通过。不覆盖第三方 WebDAV/TLS、上传及任意崩溃时刻 |
-| 桌面 UI 内存 | 已增加只读分进程采样及回归；首次 Desktop/WebKit 合计约 618 MiB PSS、daemon 约 18 MiB。低耗后台回收与重开对照待人工操作，尚未证明优化收益或泄漏 |
+| 桌面 UI 内存 | 第一批源码修复通过完整 check 与隔离 Wayland 验收：取消无关重预热，主进程启动 USS 244.5→101.9 MiB；合成备份后关闭自动回收至 79.7 MiB，重开 108.2 MiB。另通过低耗开关、widget 存活、同实例两轮回收及合成窗口持续记录。beta.13 本地 DEB 已通过 release gate 和成品检查，尚未安装或发布；真实安装长期使用和长 SQL 重叠仍待验，后端聚合和流式备份未完成 |
 | 发布 | beta.12 DEB prerelease 已发布，下载成品与公钥验签通过；本机仍安装 beta.9，未自动升级。稳定版前仍需 AppImage 兼容或退役迁移方案 |
 
 下一步顺序：明确限制的 DEB beta 已发布；先验证并处理桌面内存回收，再继续活动网页跨挂起和剩余安装故障矩阵。独立凭据远端恢复已补齐下述隔离链路，后台自启已通过当前 Linger=yes 的重启登录场景，不为扩展矩阵擅自修改用户登录配置。不得因为 Beta 发布就将 Stage 2H.3d 或稳定版整体标为完成。Flatpak 属于后续安装格式评估，不替代 AppImage 更新承诺或桌面 provider 适配；恢复策略 UX 不阻塞已通过的只读归档校验。
@@ -264,8 +264,143 @@ Stage 2H.3d 不做一次性切换，按下面五个可回滚批次推进：
 - `npm run check:full` 通过：568 Rust passed / 6 ignored，31 browser smoke、前端回归、构建、bundle budget、边界与 Clippy 通过。浏览器临时 profile 清理的非致命 ENOTEMPTY 警告仍在，未将其隐藏。
 - 重用测试框架的本地恢复也在 beta.9 复跑三场景通过：PID `787135 -> 787164`、`787194 -> 787221`、`787287 -> 787348`，未因新增远端路径退化。
 - 内存证据 `/tmp/patina-beta9-memory-observed.json`：Desktop 主进程 PSS 266868 KiB，WebKit Network 14563 KiB、WebProcess 351464 KiB，桌面合计 632895 KiB（约 618 MiB）；daemon 18062 KiB（约 18 MiB）。这是未确认窗口状态的单次观测，不是泄漏证明或前后优化对照。工具不读取 Token、数据库、活动内容或进程环境。
-- 现有低耗后台默认关闭，启用后关闭主窗口需等待 5 分钟并通过 generation/visibility 检查才销毁 WebView。本轮未改变默认行为，等待用户执行关闭到托盘后的对照采样；恢复速度、追踪持续性及重复开关周期均需验证。Flatpak 两种候选架构与权限边界已回写平台文档。
-- 本轮未更新版本、覆盖 beta.9 DEB、安装或发布；本节新增源码与文档尚未提交推送。
+- 当时尚未执行人工关闭/重开对照；后续证据见下一节。Flatpak 两种候选架构与权限边界已回写平台文档。
+
+#### 桌面内存回收调查（2026-09-09）
+
+正式安装仍为 beta.9。以下是同一 Desktop PID 582450 的只读采样，时间为 UTC，单位 KiB；PSS 包含按比例分摊的共享页，USS 为私有驻留页。
+
+| 状态 / 时间 | Desktop PSS | Desktop USS | Desktop + WebKit PSS | WebProcess |
+| --- | ---: | ---: | ---: | --- |
+| 第一次关闭并等待 / 14:46:24 | 300804 | 268544 | 316434 | 已退出 |
+| 重开 Dashboard / 14:51:37 | 392616 | 366596 | 787567 | 新 PID 1037875 |
+| 第二次关闭并等待 / 15:08:54 | 400878 | 368588 | 416586 | 已退出 |
+
+- 证据依次为 `/tmp/patina-memory-hidden-report.json`、`/tmp/patina-memory-reopened-dashboard.json`、`/tmp/patina-memory-second-hidden.json`。daemon PID 583229 的 PSS 约 20 MiB，没有相似增量。
+- 两次关闭后的 Desktop USS 相差 100044 KiB（约 97.7 MiB）。这不是 RSS 共享页重复计算可以解释的现象，但一次循环还不能区分对象泄漏、原生缓存和分配器未归还的空闲页。
+- 当前锁定的 tauri-runtime-wry 2.10.1 在 Linux 上保留 WebContext，以复用 WebKit Network 进程；不能把仍存活的单个 Network 进程直接视为本次泄漏证据。相关上游背景为 [Tauri #14626](https://github.com/tauri-apps/tauri/issues/14626)。
+- 本轮采用独立 HOME/XDG、D-Bus、虚拟显示和空数据库中的发布二进制堆分析，不对正式 Desktop 注入调试器、不读取正式数据库或 Token、不控制正式 daemon。虚拟 X11 结果不能直接替代 GNOME Wayland 验收。保持后台优化默认关闭、既有五分钟回收阈值不变。
+- 正式版补采样 `/tmp/patina-memory-investigation-production-unchanged.json`（15:34:29 UTC）：同一 Desktop 的 RSS 仍为 517908 KiB，USS 为 367540 KiB，较第二次关闭后约 26 分钟前略降 1048 KiB；daemon PSS 为 20973 KiB。当前观察没有显示隐藏期间继续快速增长，不能据此排除重开引起的保留。
+
+隔离对照已完成，证据位于 `/tmp/patina-heap-investigation-RInJGl`：
+
+- 使用已验签 beta.12 DEB 的解包副本、`--daemon-client-preview`、空数据库、暂停追踪、关闭音频和网页 bridge、独立 HOME/XDG/D-Bus、Xvfb。beta.9 到 beta.12 的前端、主窗口回收及 Desktop runtime adapter 代码没有变化；但 profile 内容、显示后端、运行时长及 profiler 开销不同，不能直接把两组绝对内存差值当作优化收益。
+- heaptrack 从启动开始采集，不附加正式进程。隔离副本的 GDB 附加被系统拒绝，未降低 ptrace 安全限制，也未执行 malloc_trim。虚拟 X11 中仍加载了 NVIDIA 库，不能称为纯软件渲染实验。
+- 首次关闭在回收前几秒被提前重开，只算快速复用，排除出销毁对照。之后两次均等到 WebProcess 实际退出：15:31:16 UTC 的 Desktop PSS/USS 为 132249/107528 KiB，15:37:18 UTC 为 132537/107816 KiB。同一 Desktop PID 1130779 的 USS 仅增加 288 KiB；重建期间 WebProcess 从 1131064 换为 1156569，截图确认 Dashboard 正常恢复，Network PID 1131043 复用。
+- 完整 `desktop.heaptrack.zst` 记录约 1040 秒，malloc 类分配峰值约 12.85 MB。`desktop.massif` 在两次销毁后的约 670 秒、1030 秒分别记录 9460210、9432690 bytes 存活堆，未见与正式环境 98 MiB 对应的增量。WebKit 自有分配器、直接映射和驱动缓冲区不保证被 malloc 拦截完整覆盖，不能据此宣称全部原生内存没有问题。
+- 进程通过 SIGTERM 结束，报告中的 `leaked` 表示当时尚未释放的分配，并非本项目已证实的泄漏；原生库全局缓存和未运行的退出清理也可能计入。没有把该字段当作修复依据。
+- 临时 Desktop、daemon、Xvfb、私有 D-Bus 及核对到的 portal 服务均已退出，所属测试进程组无残留。正式 Desktop PID 582450、daemon PID 583229 保持存活。中途读取未完成压缩流的临时报表有解析警告，已弃用；结论仅使用退出后完整读取成功的报告。
+
+以上是第一轮仅有 X11 对照时的结论，后续 Wayland 和数据量对照见下一节。不能把实验环境变量直接放入正式启动配置，也不因空数据未复现就将内存验收关闭。
+
+- 本轮调查未更新版本、安装或发布；仅修改本节调查记录，产品行为未变。
+
+#### 系统链路与数据量对照（2026-09-10）
+
+本轮确认了可复现机制，但不是正式实例已经修复的验收：批量读取在 Desktop 中创建 SQL 行、JSON 对象和 IPC 缓冲区，释放后 glibc 仍可保留大量空闲页。仅销毁 WebView 不保证这些页归还操作系统。
+
+正式实例只读事实：
+
+- Desktop PID 582450 的 RSS 517916 KiB，匿名映射私有驻留 282728 KiB、主堆 41740 KiB；46 个线程、67 个文件描述符。daemon PID 583229 仍是小体积后台进程，未随 Desktop 出现相似增长。分类后的映射/线程证据为 `/tmp/patina-heap-investigation-RInJGl/production-chain-audit.json`，不含堆内容、Token 或活动明细。
+- 仅 stat 正式数据库文件，大小 223916032 bytes；仅读取用户此前给出的 ZIP 中央目录，备份共 229369337 bytes 未压缩条目，其中网页活动 197925520、会话 12304152、标题样本 17726598、图标 1329637 bytes。文件大小不是常驻内存大小；没有读取正式数据库行或备份条目内容，也没有按这一份旧备份推断当前各表行数。
+- 现有 Linux `platform/linux/resource.rs` 把 `VmData` 填入兼容字段 `private_usage_bytes`，不能将其当作 USS；正式进程该值约 68 GiB，是虚拟地址空间口径。本轮使用 smaps 的 RSS/PSS/USS，不受此字段影响。修正诊断口径应单独保持字段兼容、缺失值语义和前端校验一致。
+
+隔离方法与结果：
+
+- 使用 beta.12 解包二进制、私有 HOME/XDG/D-Bus、随机 API 端口、暂停 tracking、禁用音频/网页 bridge，并借用本机 GNOME Wayland 显示服务。临时探针只在精确匹配解包可执行文件和临时 HOME 时生效；通过自身 GTK 窗口触发关闭，通过真实 Tauri 命令执行合成备份，不控制正式窗口。未更换 WebKit 分配器或图形环境变量。
+- 合成数据为 50000 条应用会话、10000 条网页记录，启动前数据库均为 97558528 bytes（运行后配置和缓存写入会改变文件大小）。网页使用 `fixture.invalid` 和合成 favicon，没有复制用户数据。日期对照只把应用会话移到 400 天前，网页数据保持相同。分类迁移已完成的对照显式设置 `__classification_manual_confirmation_migration::v1`，排除一次性全历史迁移。
+- 下表只列 Desktop 主进程，单位 MiB；开启 UI 时仍需另算 WebProcess，因此不把这些数字称为整个产品总量。每组为单次实验，不能当作跨机器预算。
+
+| 场景 | RSS | USS | 证据目录后缀（`/tmp/patina-native-lab-`） |
+| --- | ---: | ---: | --- |
+| 空数据 Wayland，第二次窗口销毁后 | 237.1 | 86.5 | `vmZFNV` |
+| 空数据，仅隔离 trim 后 | 211.6 | 61.1 | `vmZFNV` |
+| 有数据，新配置打开 Dashboard，尚未备份 | 423.1 | 272.6 | `XrGFoU` |
+| 完成合成备份、关闭并实际销毁 WebProcess | 418.7 | 268.4 | `XrGFoU` |
+| 上一状态，仅隔离 trim 后 | 240.2 | 89.8 | `XrGFoU` |
+| 相同数据量但日期较旧，仍需首次分类迁移 | 336.8 | 186.1 | `H1VEzo` |
+| 分类已迁移，会话在当前查询范围内 | 395.0 | 244.5 | `qISbxb` |
+| 分类已迁移，会话移出查询范围 | 236.4 | 85.8 | `1ZzMe1` |
+
+- 有数据副本销毁后 `mallinfo2` 在用块约 13.1 MB、空闲块约 240.7 MB；隔离 `malloc_trim(0)` 后 USS 减少 182864 KiB（约 178.6 MiB），在用分配基本不变。`fordblks` 不是物理驻留计数，trim 后仍可包含不驻留的空闲地址空间，不能将其直接与 USS 相加。空数据重复销毁的 USS 增量仅 440 KiB。
+- 短时堆分析在 `cl571g/startup.heaptrack.zst`，完整文本报告为 `heap-summary.txt`。约 59 秒内有 5503413 次 malloc 类调用，堆峰值约 112.11 MB。主要调用栈包括 `tauri_plugin_sql -> IndexMap<String, JsonValue>::insert`（该热点约 44.80 MB）和 `IpcResponse::body -> serde_json`（约 16.78 MB）。另有 Mesa/LLVM 图形分配；不同热点峰值不可直接相加。该组包含 profiler 开销，不能与无 profiler 的绝对内存直接比较，也不把 SIGTERM 退出时的 `leaked` 字段当作泄漏证明。
+- 合成备份通过真实 `cmd_export_backup` 输出 107722343 bytes，ZIP 条目 CRC 检查通过。它制造了额外瞬时分配，但本组备份完成后的 RSS 未超过启动后的保留量，因此不能说备份是唯一原因，更不能把它当作每次重开增长的解释。
+
+已对齐的代码链路：
+
+1. `AppShell.tsx` 前台打开后调用 `prewarmDataFirstScreen`；Data 预热读取 7 日趋势和最近 53 周热力图。`dataReadModel.ts` 的热力图仍通过 `getSessionSummariesInRange` 获取逐条会话，返回给前端后才聚合。
+2. `startupWarmupService.ts` 还预热分类候选；`classificationPersistence.ts::loadObservedSessionStats` 拉取范围内明细后再在前端合并。候选列表的最终 `limit=120` 不等于 SQL 明细读取上限。首次旧分类迁移另外调用起点为 0 的全历史查询，必须与每次启动预热分开看。
+3. `tauri-plugin-sql` 的 SQLite 实现先 `fetch_all`，再为每行创建 `IndexMap<String, JsonValue>`，随后由 Tauri 序列化 IPC 响应；上述堆栈已实测命中。当前 Desktop 的这部分读模型还没有完全客户端化，不能误称所有重读数均已交给 daemon。
+4. 前端缓存数量有限，隐藏会清理部分重缓存；WebProcess 已实际退出。Desktop 的 glibc arena 仍可能保留已释放页，形成长期高 RSS/USS。正式实例大映射形状与此相符，但未在正式进程内测量分配器，不能承诺其中每一 MiB 都可回收。
+5. `data/backup.rs` 的导出同时持有完整 payload、多个 pretty JSON 字符串和 `Cursor<Vec<u8>>` ZIP；这是额外的大数据峰值风险。未来流式化必须保留一致性快照、checksum、归档兼容、原子发布与失败清理，不能在本轮调查中顺手重写。
+
+后续实施边界与顺序：
+
+- 先在已有低耗后台语义内评估一次性、受生命周期保护的 Linux 空闲堆归还；正式默认开关和五分钟等待不变。必须测试快速重开、widget、长查询并发、延迟及追踪持续性，不引入高频强制 trim 定时器。
+- 根本优化留在分类/Data 读模型 owner：减少 Dashboard 启动时不必要的重明细预热，分离轻量分类配置与重候选统计，逐步让后端提供有界聚合结果。优先核对已有 trend/summary 与领域编译逻辑，避免重复 API；不得用简单 SQL SUM 破坏跨日、AFK、分类排除、导入优先级和 active session 语义。
+- 随后独立处理备份流式化与网页元数据体积；不因为 ZIP 中网页记录最多就断言 favicon 是主要字段，字段级数量/字节统计尚未执行。
+- 不以更换 UI 框架、减少 Tokio 线程数、删除数据或重启正式进程代替根因修复。当前产品代码和安装包均未改变，本轮只有调查文档变动；真实安装后的多轮回归仍待修复阶段完成。
+
+收尾验证：2026-09-10 00:28 +0800，六组临时 Desktop/daemon 和私有 D-Bus 均已退出；仅删除经路径、文件类型与所有者校验的合成数据库及合成备份，回收 628991591 bytes，保留采样和堆分析证据（`native-cleanup.json`）。正式 Desktop/daemon 的 PID 与启动时间均未改变，最终 Desktop RSS/PSS/USS 为 517904/391916/368564 KiB，daemon 为 26404/21340/21232 KiB；无存活 WebProcess，Network 子进程仍在。正式数据库及用户备份未修改。这是调查收尾，不是内存优化验收。
+
+#### 桌面内存第一批修复（2026-09-10，隔离验收通过）
+
+范围限定为既有 Desktop 生命周期和启动预热编排，不改 tracking、数据库 schema、统计口径、备份格式或版本号。
+
+- 取消 AppShell 每次回到前台时触发的 Data 首屏重预热；Data 页自身仍按需加载趋势和热力图，保留已持久化的聚合首屏缓存。
+- 取消启动 warmup 的分类候选查询；分类规则仍由既有 ProcessMapper 初始化路径加载，Mapping 页继续自行加载完整候选。旧分类一次性迁移保持不变，不通过跳过迁移降低占用。
+- Linux GNU 平台在低耗后台主窗口销毁请求成功后等待两秒，再到 blocking worker 做一次最佳努力的 `malloc_trim(0)`；重新确认低耗开关、同一次隐藏 generation 和所有 WebView 已消失。窗口仍在、快速重开或 widget 存活时跳过，不重试、不增加周期定时器。GNU 以外不调用此接口。该函数可与分配并发，但不能保证回收全部空闲页或消除重开时的分配延迟。
+- 开关默认关闭与五分钟销毁等待不变。后端聚合和备份流式化仍属于后续批次；本轮不宣称重查询已全部迁往 daemon。
+
+验收要求：前端完整 check、Rust check/test/Clippy、隔离 Wayland 合成数据的启动/隐藏/销毁/重开采样。正式安装、跨多轮长期使用和 widget/长查询并发的真实体验不得仅凭单元测试标为通过。
+
+自动验证：`npm run check:full` 通过，Rust 572 passed / 6 ignored，Clippy、前端构建和 bundle 预算通过，31 项真实浏览器 smoke 覆盖 Data/History/Mapping 导航及热力图。首次沙箱内 release 子进程测试未取得预期 stderr，取得本机测试权限后完整重跑通过；浏览器 smoke 结束时临时 profile 清理出现 ENOTEMPTY 警告，不计作产品失败，也不隐去这项工具清理问题。`perf:startup-bootstrap` 的合成编排预算通过，不将其当作真实 GUI 启动速度测量。release 模式二进制编译通过，仅用于隔离验收，未安装或发布。
+
+实际修复版对照证据：`/tmp/patina-native-lab-nxHM9Z/samples.jsonl` 和 `desktop.log`。临时二进制 SHA-256 为 `0debaafc4947ccd81b7252d7707bc7deda139c8507b0bd32182853d68eecea34`，由当前源码 release + `tauri/custom-protocol` 构建，不冒充已发布 beta.12 的相同成品。复用前述 GNOME Wayland 隔离方案、50000 条合成会话和 10000 条网页；分类迁移 marker 启动前设为 1 并只读复核。采集脚本最初打印的 migrationAlreadyComplete 字段遗漏新 mode，已修正显示条件；初始化 SQL 本身正确，不据错误打印字段判定迁移状态。
+
+| 修复版阶段 | Desktop RSS / USS（MiB） | 结果 |
+| --- | --- | --- |
+| Dashboard 启动稳定 | 250.7 / 101.9 | 对应旧版已迁移、近期数据对照为 395.0 / 244.5 |
+| 合成备份完成 | 394.0 / 245.2 | 仍存在备份内存峰值，未宣称流式化完成 |
+| 关闭后，尚未销毁 | 393.8 / 244.8 | 没有在短时隐藏时提前 trim |
+| 五分钟后实际销毁并自动回收 | 222.0 / 79.7 | 无 WebProcess；仅一次 released=true，调用耗时 17 ms |
+| 销毁后重开稳定 | 257.3 / 108.2 | Desktop PID 不变，WebProcess 换为新 PID |
+
+这次没有通过探针调用 trim，下降来自产品自己的销毁及空闲堆归还流程；不能把销毁前后全部降幅仅归因于 trim。快速重开复用旧 WebProcess，旧 hide generation 到期后未误销毁或多触发 trim。开启 UI 时仍须另算 WebProcess（初次 USS 266.8 MiB，重开 208.6 MiB），主进程的 79.7 MiB 不是整组产品总量。关闭回收后的 Desktop + Network 总 PSS 为 113.6 MiB，未包含独立 daemon。
+
+同一隔离 daemon PID 保持存活；因追踪暂停，该项不是采样持续性实测。合成 SQLite quick_check/foreign_key_check 和 50000/10000 行数复核通过；107659856 bytes 合成备份 ZIP CRC 通过。临时进程和私有 D-Bus 均退出，仅清理指定合成数据库及备份 211792464 bytes，保留日志（`cleanup.json`）。正式进程只读复核见 `/tmp/patina-memory-after-first-fix-validation.json`，Desktop/daemon 的 PID 和启动时间均未变化。剩余门槛：正式安装后的多轮测试、活跃 widget/长查询及真实追踪连续性体验；单轮结果不等于所有场景内存问题关闭。
+
+#### beta.13 本地安装候选（2026-09-15）
+
+- 当前分支仍为 `feature/patinad-daemon`，版本文件统一为 `1.9.0-beta.13`；只更新 Cargo.lock 中的自身版本，未升级依赖。CHANGELOG 已记录本批内存修复与剩余限制。
+- `npm run release:check` 通过，包括 572 项 Rust 测试（6 项忽略）、Clippy、31 项真实浏览器 UI smoke、前端构建和 GNOME/Chromium/Firefox 扩展检查。浏览器 smoke 有临时 profile 清理 `ENOTEMPTY` 警告，不影响测试结果，不能称为无警告执行。
+- 本地构建命令为 `npm run tauri build -- --bundles deb --config '{"bundle":{"createUpdaterArtifacts":false}}'`；匹配版本的 Desktop 与 daemon 均完成 release 编译。只在本次 CLI 关闭 updater 签名产物生成，没有读取私钥或修改持久化签名配置、公钥和更新地址。
+- 成品：`src-tauri/target/release/bundle/deb/Patina_1.9.0-beta.13_amd64.deb`。包元数据为 `patina / 1.9.0-beta.13 / amd64`，`release:verify-daemon-deb` 通过，包含 Desktop、daemon、默认未启用的 user unit 和 GNOME 扩展。
+- DEB SHA-256：`bbee0f1a76b843881c0803c48024c0e7ec89069461f70e6c81f58703f1c2e15b`。
+- 尚未安装、提交、推送、打 tag 或公开发布，不改变 beta.12 的已发布状态。安装会升级同名 `patina` 包，不是隔离副本；安装前保留可用备份，安装后完全退出并重开 Desktop，按诊断确认 Desktop/daemon 版本，需要时使用已有确认式后台重新加载。
+- 实机下一步：开启并保存“低耗后台”，关闭主窗口且不保留 widget，等待超过五分钟后观察进程分组内存，再重开重复两至三轮。分别记录 Desktop、WebKit 与 daemon，不能把单主进程 USS 与系统监视器应用总量混为一谈。真实数据长期表现、长 SQL 与回收重叠仍待验收，不以本地包构建成功代替这些验证。
+
+#### 内存回收边界补验（2026-09-10，隔离验收通过）
+
+使用同一修复候选（SHA-256 见上一节），不改默认值、超时或产品代码。临时探针只对精确候选路径和匹配的私有 HOME 生效；通过真实 Tauri command 控制测试开关和 widget，不调用手动 trim。每组仍为独立 HOME/XDG/D-Bus、随机端口和合成数据库，不操作正式服务。
+
+| 场景 | 当前结果 | 证据目录（`/tmp/patina-native-lab-` 后缀） |
+| --- | --- | --- |
+| 启动时低耗关闭 | 超过五分钟后主窗口仍隐藏存活，trim=0；重开 DOM 就绪，数据库完整 | `yKjTWi` |
+| 隐藏后关闭低耗开关 | 已排队的回收被取消；主窗口保留、trim=0，重开及数据库检查通过 | `n1OvcN` |
+| 主窗口隐藏后打开 widget | 主窗口到期销毁，widget 仍可见，trim=0；重开及数据库检查通过 | `bapHBj` |
+| 同一 Desktop 两轮销毁/重开 | 同 PID 完成两轮，每轮 trim 一次（5/3 ms），两次重开 DOM 就绪；数据库完整 | `cnJRnE` |
+| 合成窗口持续记录 | 销毁前后保留同一 active row；357 次采样最大间隔 1119 ms，切换应用后封口 364261 ms；重开、数据库和记录数检查通过 | `V4ThvT` |
+
+四组生命周期实验并行使用本机 Wayland，不能把它们的绝对 PSS/USS 与上一节单副本数字直接当作性能回归；共享页归属会随其他副本退出而变化。重复回收组额外采集 RssAnon、Private_Dirty 和 Private_Clean，以区分匿名内存与共享页口径变化。矩阵日志在 `/tmp/patina-boundary-matrix-iWE9wa`。
+
+持续记录组只在私有 D-Bus 导出合成焦点和 idle 数据，不读取真实窗口内容。首个测试尝试发现断言误用了 active row 的 `duration`（按设计为 null），已主动停止并清理临时进程，改为可信采样时间推进、采样间隔和最终封口时长后重跑；这是测试修正，不是修改会话存储语义。真实安装、长时间使用以及长 SQL 查询与回收重叠仍保留为后续验收，不据模拟 provider 扩大为真实 GNOME 环境全部通过。
+
+两轮回收均在真实五分钟阈值后执行，没有缩短测试用阈值。第二轮 RssAnon 从 97640 降到 61980 KiB；同期其他副本退出，Private_Clean 从 1184 增至 29012 KiB。因此第一次/第二次销毁后的 USS 49008/91148 KiB 不能直接作为同条件内存增长对照。两轮 malloc 在用块约 16.03/18.25 MB，也不据此宣称零增长或长期平台已经建立；本组证明生命周期及再次回收有效，不代替单副本长期预算。
+
+五组最终验收均通过，持续记录组的 daemon PID 1330095 保持不变，原会话 id 50001 在销毁前后相同；可信采样时间推进 321398 ms，切换合成应用后产生第二条会话，最终合成数据计数为 sessions=50002/web=10000。其他四组暂停 tracking，计数保持 50000/10000，均通过 SQLite quick_check/foreign_key_check。本轮没有再修改产品代码或重建候选；上一轮完整 check 对应的候选哈希未变，新增的是实际边界实验。
+
+收尾：六个临时 profile（含主动中止的一组）的 Desktop/daemon、合成 provider 和私有 D-Bus 已退出，额外匿名内存采样也已结束；只清理精确合成数据库文件，共 624795648 bytes，证据在矩阵目录的 `cleanup.json`。正式 Desktop/daemon 的 PID 及启动时间未变化，见 `/tmp/patina-memory-after-boundary-tests.json`。未安装、提交、推送或发布；下一步准备安装候选并进行真实数据多轮复测，长 SQL 重叠仍为独立待验项。
 
 #### 本地恢复首次实测（beta.8）
 
