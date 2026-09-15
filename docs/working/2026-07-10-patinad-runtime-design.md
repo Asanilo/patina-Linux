@@ -425,6 +425,14 @@ Stage 2H.3d 不做一次性切换，按下面五个可回滚批次推进：
 - 单元测试覆盖回收请求失效与全部门禁组合、启动计划组合、smaps 解析和缺失字段语义。真实 Wayland 原生回归 `/tmp/patina-window-test-lTEFEe` 在 630.09 秒后通过：默认 autostart 只创建 Widget、不创建 Main；创建取消后的 Widget 被清理，旧 Main timer 不误销毁重开窗口；Main 销毁而 Widget 存活时不回收，最后 WebView 销毁后只执行一次 app-level 回收；合成数据库保持 `sessions=0`。隔离 portal 的 PipeWire/窗口列表警告不影响断言。当前仍不形成新 beta，不打包、不安装，也不触碰正式 runtime。
 - 最终 `npm run check:full` 通过：Rust 580 项通过、7 项忽略，Clippy 以 `-D warnings` 通过，前端测试、31 项浏览器 UI smoke、生产构建和 bundle budget 通过。浏览器 smoke 仍有临时 profile 清理 `ENOTEMPTY` 警告，不影响断言。第二批尚未推送、打包或安装；已安装版本仍是 beta.14 第一批生命周期修复。
 
+#### beta.15 悬浮窗闪烁与内存候选（2026-09-16）
+
+- 用户报告 Linux 悬浮窗频繁闪烁。代码确认移动事件会重新发起吸附，延迟到达的 compositor 事件可再次触发布局；原生布局每次重复设置尺寸、位置、置顶和显示。该链路是可修复的反馈来源，尚不能确认覆盖用户全部闪烁现象。
+- Widget controller 仅在用户拖动结束的待收尾阶段响应移动通知；无用户拖动的通知不写布局。原生已显示窗口不重复 show/置顶，尺寸和位置相同时跳过调用。回归模拟 compositor 保留偏移位置并连续通知，确认只吸附一次，同时保留漏发移动事件和拖动释放竞争场景。
+- 本地候选版本为 `1.9.0-beta.15`，包含 `0e00c4a`、`0b79846` 生命周期修复及上述变更。安装验收需要观察静置、展开/收起、拖动、切换应用、隐藏/重开和自启动，随后按 Desktop/WebKit/daemon 分组记录 PSS/USS。真实视觉验收仍待用户安装后完成。
+- `check:full` 通过：580 项 Rust 测试、31 项浏览器 smoke、前端/replay/构建和 Clippy；7 项 Rust 测试按设计忽略。仍有浏览器临时 profile 的 `ENOTEMPTY` 清理警告。版本、changelog、GNOME/Chromium/已签名 Firefox 扩展校验通过。本批没有重新执行十分钟原生长测，上一批结果不能代替本批实际视觉验收。
+- 本地 DEB 已构建并通过 `release:verify-daemon-deb`：`src-tauri/target/release/bundle/deb/Patina_1.9.0-beta.15_amd64.deb`。SHA-256 为 `a7c16d48b4395b97bff1854016f9aeacc5b884a06ad3763f02895f198ac3107a`。构建只通过 CLI 关闭 updater 签名产物；未安装、推送、打 tag 或公开发布。
+
 #### beta.13 本地安装候选（2026-09-15）
 
 - 当前分支仍为 `feature/patinad-daemon`，版本文件统一为 `1.9.0-beta.13`；只更新 Cargo.lock 中的自身版本，未升级依赖。CHANGELOG 已记录本批内存修复与剩余限制。

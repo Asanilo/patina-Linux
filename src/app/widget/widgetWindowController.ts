@@ -306,7 +306,10 @@ export function createWidgetWindowController(
       return;
     }
 
-    scheduleFinalizeMove();
+    // Late compositor moves must not restart an unsupported edge snap.
+    if (collapsedDragSettlePending) {
+      scheduleFinalizeMove();
+    }
   }
 
   function setShowObjectSlot(nextShowObjectSlot: boolean) {

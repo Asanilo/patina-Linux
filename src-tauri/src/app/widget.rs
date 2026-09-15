@@ -136,18 +136,18 @@ fn apply_widget_bounds<R: Runtime>(
     window: &WebviewWindow<R>,
     bounds: WidgetWindowBounds,
 ) -> Result<(), String> {
-    let _ = window.set_shadow(false);
-    window
-        .set_size(Size::Physical(PhysicalSize::new(
-            bounds.width,
-            bounds.height,
-        )))
-        .map_err(|error| format!("failed to size widget window: {error}"))?;
-    window
-        .set_position(Position::Physical(PhysicalPosition::new(
-            bounds.x, bounds.y,
-        )))
-        .map_err(|error| format!("failed to position widget window: {error}"))?;
+    let size = PhysicalSize::new(bounds.width, bounds.height);
+    if window.inner_size().ok() != Some(size) {
+        window
+            .set_size(Size::Physical(size))
+            .map_err(|error| format!("failed to size widget window: {error}"))?;
+    }
+    let position = PhysicalPosition::new(bounds.x, bounds.y);
+    if window.outer_position().ok() != Some(position) {
+        window
+            .set_position(Position::Physical(position))
+            .map_err(|error| format!("failed to position widget window: {error}"))?;
+    }
     Ok(())
 }
 
@@ -170,15 +170,21 @@ async fn apply_widget_layout_internal<R: Runtime + 'static>(
     if let Some(window) = app.get_webview_window(WIDGET_WINDOW_LABEL) {
         let monitor = monitor.ok_or_else(|| "failed to resolve widget monitor".to_string())?;
         let bounds = resolve_widget_bounds(&monitor, placement, expanded, show_object_slot);
+        let was_visible = window.is_visible().unwrap_or(false);
         lifecycle.show_existing();
-        let _ = window.set_ignore_cursor_events(false);
-        let _ = window.set_always_on_top(true);
+        if !was_visible {
+            let _ = window.set_always_on_top(true);
+            let _ = window.set_focusable(true);
+        }
         if !expanded {
             emit_widget_runtime_collapsed(app);
         }
         apply_widget_bounds(&window, bounds)?;
-        let _ = window.show();
-        let _ = window.set_focusable(true);
+        if !was_visible {
+            window
+                .show()
+                .map_err(|error| format!("failed to show widget window: {error}"))?;
+        }
         if focus_after_show {
             let _ = window.set_focus();
         }

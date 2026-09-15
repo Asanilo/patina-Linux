@@ -20,6 +20,16 @@ App note en: TBD.
 
 - 暂无。
 
+## [1.9.0-beta.15] - 2026-09-16
+
+Release: 桌面内存与悬浮窗测试候选，完善自启动和最后窗口回收，避免移动事件反复触发吸附。
+App note: 改善后台内存回收，减少悬浮窗重复定位和显示。
+App note en: Improve background memory reclamation and avoid repeated Widget positioning and display.
+
+### Added
+
+- 暂无。
+
 ### Changed
 
 - 登录自启动会先读取桌面行为，再按设置创建主窗口或 Widget；默认 Widget 模式不再预先创建隐藏主窗口。
@@ -28,6 +38,7 @@ App note en: TBD.
 
 - 开启低耗后台后，最后销毁的是 Widget 时也会触发一次受状态保护的空闲堆归还；快速重开、退出过程和仍有 WebView 时会取消。
 - GNOME Wayland 登录自启动且尚无现有窗口时，Widget 会先以最小透明 surface 获取显示器信息，再应用正常尺寸和位置，避免因找不到主显示器而启动失败。
+- 悬浮窗仅在真实拖动结束后吸附，避免窗口管理器返回的移动事件再次触发吸附；已有可见窗口跳过重复显示和未变化的尺寸、位置设置。用户报告的实际闪烁仍待安装观察。
 
 ### Removed
 

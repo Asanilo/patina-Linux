@@ -206,6 +206,8 @@ beta.14 本地候选已完成：原生 GTK/WebKit 回归运行 626.64 秒通过�
 
 当前结构主线按以下顺序推进：
 
+2026-09-16：准备 beta.15 本地测试候选，将第二批内存生命周期与悬浮窗重复吸附修复合并验收。已补移动事件反馈回归；真实闪烁、登录启动和多轮内存表现仍待安装观察，通过后继续 Data/分类有界聚合。
+
 1. Stage 0 基础已完成：数据 profile、存储锚点、运行时唯一 owner、API 凭据、受限请求解析与生命周期、OpenAPI 一致性和优雅关闭已有自动验证。
 2. Stage 1 已完成：共享 `RuntimeContext`、`RuntimeEventSink`、API runtime context、完整只读 GET API 和 host-neutral handler 已落地。
 3. Stage 2A 已完成：本机有界 event stream、bearer 认证、replay/resync、能力协商和关闭语义已有自动验证。

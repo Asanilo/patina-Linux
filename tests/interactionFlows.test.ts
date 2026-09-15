@@ -496,6 +496,8 @@ await runTest("widget window controller covers expand collapse focus-loss collap
     position: { x: 1500, y: 300 },
     size: { width: 64, height: 48 },
   };
+  controller.beginUserDrag();
+  controller.endUserDrag();
   controller.handleWindowMoved();
   scheduler.flushAll();
   await flushMicrotasks();
@@ -554,6 +556,15 @@ await runTest("widget controller snaps collapsed drag to the nearest edge", asyn
   scheduler.flushAll();
   await flushMicrotasks();
   assert.equal(placementFromCallback, "left:0.50");
+  assert.deepEqual(events, ["layout:left:0.50:false:true", "settled"]);
+  scheduler.flushAll();
+  await flushMicrotasks();
+  // Model a compositor that reports the same off-edge position after a snap.
+  for (let index = 0; index < 5; index += 1) {
+    controller.handleWindowMoved();
+    scheduler.flushAll();
+    await flushMicrotasks();
+  }
   assert.deepEqual(events, ["layout:left:0.50:false:true", "settled"]);
 });
 
@@ -714,6 +725,12 @@ await runTest("widget controller accepts runtime collapse without persisting ano
     size: { width: 64, height: 48 },
   };
   controller.handleWindowMoved();
+  scheduler.flushAll();
+  await flushMicrotasks();
+  assert.equal(placementFromCallback, "right:0.28");
+  assert.deepEqual(events, ["expanded:true:true"]);
+  controller.beginUserDrag();
+  controller.endUserDrag();
   scheduler.flushAll();
   await flushMicrotasks();
   assert.equal(placementFromCallback, "right:0.35");
