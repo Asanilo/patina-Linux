@@ -88,13 +88,6 @@ pub(crate) fn hide_main_window_for_background<R: Runtime + 'static>(
 pub(crate) fn ensure_main_window<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Result<WebviewWindow<R>, String> {
-    ensure_main_window_with_initial_visibility(app, true)
-}
-
-pub(crate) fn ensure_main_window_with_initial_visibility<R: Runtime>(
-    app: &AppHandle<R>,
-    visible: bool,
-) -> Result<WebviewWindow<R>, String> {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         return Ok(window);
     }
@@ -107,7 +100,7 @@ pub(crate) fn ensure_main_window_with_initial_visibility<R: Runtime>(
         .decorations(false)
         .transparent(true)
         .center()
-        .visible(visible)
+        .visible(true)
         .data_directory(storage_paths::resolve_storage_paths(app)?.webview_root)
         .build()
         .map_err(|error| format!("failed to create main window: {error}"))
@@ -162,65 +155,14 @@ fn schedule_main_window_destroy_after_background<R: Runtime + 'static>(
 
         if let Err(error) = window.destroy() {
             eprintln!("[main-window] failed to destroy idle main window: {error}");
-            return;
-        }
-
-        #[cfg(all(target_os = "linux", target_env = "gnu"))]
-        {
-            // Destruction is queued on the UI loop. Allow teardown to finish,
-            // then skip (without retrying) if any WebView remains or was reopened.
-            drop(window);
-            tokio::time::sleep(Duration::from_secs(2)).await;
-            let _ = tauri::async_runtime::spawn_blocking(move || {
-                if should_release_background_heap(
-                    app.state::<DesktopBehaviorState>()
-                        .snapshot()
-                        .should_optimize_background_resources(),
-                    app.state::<MainWindowLifecycleState>()
-                        .should_destroy_hidden_window(hide_generation),
-                    app.webview_windows().is_empty(),
-                ) {
-                    let started = std::time::Instant::now();
-                    let released = crate::platform::linux::resource::release_unused_heap_pages();
-                    eprintln!(
-                        "[main-window] idle heap release: released={released}, elapsed_ms={}",
-                        started.elapsed().as_millis(),
-                    );
-                }
-            })
-            .await;
         }
     });
-}
-
-#[cfg(all(target_os = "linux", target_env = "gnu"))]
-fn should_release_background_heap(
-    enabled: bool,
-    same_hidden_generation: bool,
-    no_webviews: bool,
-) -> bool {
-    enabled && same_hidden_generation && no_webviews
 }
 
 #[cfg(test)]
 mod tests {
     use super::main_window_url;
     use tauri::WebviewUrl;
-
-    #[cfg(all(target_os = "linux", target_env = "gnu"))]
-    #[test]
-    fn heap_release_requires_opt_in_current_hide_and_all_webviews_gone() {
-        for enabled in [false, true] {
-            for current in [false, true] {
-                for empty in [false, true] {
-                    assert_eq!(
-                        super::should_release_background_heap(enabled, current, empty),
-                        enabled && current && empty,
-                    );
-                }
-            }
-        }
-    }
 
     #[test]
     fn main_window_url_uses_dev_server_in_debug_builds() {

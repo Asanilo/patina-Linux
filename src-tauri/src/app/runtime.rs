@@ -2,7 +2,7 @@ use crate::app::desktop_behavior;
 use crate::app::main_window;
 use crate::app::runtime_tasks;
 use crate::app::state::DesktopBehaviorState;
-use crate::app::tray::{apply_tray_visibility, setup_tray, MAIN_WINDOW_LABEL};
+use crate::app::tray::{apply_tray_visibility, setup_tray};
 use crate::data::sqlite_pool::wait_for_sqlite_pool;
 use crate::engine::tracking::watchdog::RuntimeHealthState;
 #[cfg(target_os = "linux")]
@@ -131,19 +131,22 @@ pub fn setup(
     }
 
     let app_handle = app.handle().clone();
-    main_window::ensure_main_window_with_initial_visibility(&app_handle, !launched_by_autostart)
-        .map_err(std::io::Error::other)?;
     setup_tray(&app_handle)?;
     let desktop_behavior = app_handle.state::<DesktopBehaviorState>().snapshot();
     apply_tray_visibility(&app_handle, desktop_behavior);
 
-    if launched_by_autostart {
-        if let Some(window) = app_handle.get_webview_window(MAIN_WINDOW_LABEL) {
-            let _ = window.hide();
+    if let Err(error) =
+        tauri::async_runtime::block_on(desktop_behavior::sync_desktop_behavior_from_storage(
+            app_handle.clone(),
+            launched_by_autostart,
+        ))
+    {
+        eprintln!("[tray] failed to sync desktop behavior from storage: {error}");
+        if !launched_by_autostart {
+            main_window::show_main_window(&app_handle);
         }
     }
 
-    desktop_behavior::spawn_sync_from_storage(app.handle().clone(), launched_by_autostart);
     runtime_tasks::spawn_updater_startup_auto_check(app.handle().clone());
 
     Ok(())

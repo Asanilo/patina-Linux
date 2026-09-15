@@ -12,7 +12,7 @@ use tauri::{Manager, State};
 pub struct ResourceDiagnosticsSnapshot {
     pub webview_window_count: usize,
     pub webview_window_labels: Vec<String>,
-    pub process_resources: resource::WindowsProcessResourceSnapshot,
+    pub process_resources: resource::ProcessResourceSnapshot,
     pub process_details_cache: foreground::ProcessDetailsCacheStats,
     pub icon_result_cache: icon::IconResultCacheStats,
 }

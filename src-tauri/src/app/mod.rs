@@ -1,6 +1,7 @@
 pub mod activity_import;
 pub mod api_runtime;
 pub mod autostart;
+pub mod background_resource_reclaimer;
 pub mod backup;
 pub mod bootstrap;
 pub mod daemon;

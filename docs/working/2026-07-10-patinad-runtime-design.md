@@ -411,8 +411,19 @@ Stage 2H.3d 不做一次性切换，按下面五个可回滚批次推进：
 - 两个测试进程组最终均已退出。第一次失败实验的私有 document portal 未响应 SIGTERM，经临时 HOME/runtime 与进程名复核后定点终止；runner 收尾增加私有进程组的一秒退出宽限及强制清理，关闭继承日志管道。最终 runner 语法检查通过，该清理增补未再重复十分钟窗口实验。保留两个小型合成 fixture 和日志，没有清理或读取正式数据库。
 - 本地构建命令为 `npm run tauri build -- --bundles deb --config '{"bundle":{"createUpdaterArtifacts":false}}'`，`release:verify-daemon-deb` 通过。成品 `src-tauri/target/release/bundle/deb/Patina_1.9.0-beta.14_amd64.deb`，25602832 bytes；包元数据 `patina / 1.9.0-beta.14 / amd64`，包含匹配 Desktop/daemon、unit 和 GNOME 扩展。
 - DEB SHA-256：`acc08e8a16446b68ef58c88ab10d6d3a2a6478339cf3b19e80102c71226092a7`。未读取私钥，永久 updater 配置、公钥和地址不变。
-- 未安装、提交、推送或发布本轮候选；远端仍以 `855ad0a` 为审查基线。用户安装后需完全退出并重开 Desktop，重点复测开启低耗后的 Widget 最小化、五分钟销毁与重开；诊断中后台版本不一致时使用已有确认式重新加载。安装升级同名 patina 包，先保留可用备份。
-- 自启延迟建窗、最后 WebView 堆回收、VmData 诊断口径、有界聚合、流式备份和 Widget 入口拆分仍未完成，不承诺可见 Widget 存活时内存归零或固定预算。
+- 用户已安装并重开 beta.14，报告系统监视器主进程关闭前后约 258M/220M。只读 `smaps_rollup` 分组采样在无 WebProcess 时记录 Desktop 主进程 RSS/PSS/USS 约 221.7/89.6/74.0 MiB，Network 进程 PSS/USS 约 13.0/8.8 MiB，Desktop 与 Network 合计 PSS/USS 约 102.6/82.8 MiB；daemon PSS/USS 约 13.0/12.9 MiB。该样本说明 220M RSS 不能直接解释为同量私有内存，不证明任意长期循环均无泄漏。
+- beta.14 已以 `0e00c4a` 提交在 `feature/patinad-daemon`，尚未推送、打 tag 或公开发布；远端仍为 `855ad0a`。有界聚合、流式备份和 Widget 入口拆分仍未完成，不承诺可见 Widget 存活时内存归零或固定预算。
+
+#### Desktop 生命周期第二批修复（2026-09-16，原生验证通过）
+
+本批 owner 仍是 Desktop 宿主生命周期与 Linux 资源诊断，不修改 `patinad` tracking、数据库 schema、统计语义、备份格式、低耗默认值或五分钟窗口销毁等待。
+
+- allocator 回收从 Main 私有计时器移到 Desktop 级最后 WebView 边界。Main 或 Widget 发出真实 `Destroyed` 事件后，宿主将请求按 generation 合并，等待两秒再重新检查低耗开关、退出意图、最新请求和空 WebView 注册表；只在 GNU Linux blocking worker 执行一次 `malloc_trim(0)`。重开窗口、仍有 Widget/Main、关闭低耗或退出应用都会跳过；不增加周期 trim，也不保证捕获任意更晚结束的长查询。
+- 登录自启动不再先构建隐藏 Main。SQLite 初始化后同步读取桌面行为和更新后重开意图，再形成 `MainVisible`、`MainTaskbarMinimized` 或 `WidgetOnly` 计划；默认 Widget 自启动只创建 Widget。手动启动和更新后重开始终显示 Main，任务栏模式仍保留真实 Main。设置读取失败时手动启动回退显示 Main；自启动保留 tray 可达并记录错误。
+- Wayland 在第一个窗口创建前可能无法从应用上下文取得主显示器。Widget-only 启动会先构建不可见的 1x1 窗口，再以透明、跳过任务栏的最小 surface 完成 monitor discovery，随后应用正常边界并显示；发现失败会恢复隐藏状态并进入已有延迟清理，不遗留永久 WebView。该实现尚需安装包观察是否存在可见的一像素闪现，不将原生回归通过扩大为视觉验收。
+- Linux 进程内诊断从 `smaps_rollup` 读取 RSS/PSS/Swap，以 `Private_Clean + Private_Dirty + Private_Hugetlb` 计算 USS；缺失字段返回未知。兼容的 `working_set_bytes/private_usage_bytes` 在 Linux 上分别映射 RSS/USS，不再读取 `VmData`。外部进程分组脚本仍是跨 Desktop/WebKit/daemon 验收主工具。
+- 单元测试覆盖回收请求失效与全部门禁组合、启动计划组合、smaps 解析和缺失字段语义。真实 Wayland 原生回归 `/tmp/patina-window-test-lTEFEe` 在 630.09 秒后通过：默认 autostart 只创建 Widget、不创建 Main；创建取消后的 Widget 被清理，旧 Main timer 不误销毁重开窗口；Main 销毁而 Widget 存活时不回收，最后 WebView 销毁后只执行一次 app-level 回收；合成数据库保持 `sessions=0`。隔离 portal 的 PipeWire/窗口列表警告不影响断言。当前仍不形成新 beta，不打包、不安装，也不触碰正式 runtime。
+- 最终 `npm run check:full` 通过：Rust 580 项通过、7 项忽略，Clippy 以 `-D warnings` 通过，前端测试、31 项浏览器 UI smoke、生产构建和 bundle budget 通过。浏览器 smoke 仍有临时 profile 清理 `ENOTEMPTY` 警告，不影响断言。第二批尚未推送、打包或安装；已安装版本仍是 beta.14 第一批生命周期修复。
 
 #### beta.13 本地安装候选（2026-09-15）
 

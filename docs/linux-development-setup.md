@@ -290,6 +290,12 @@ npm run perf:memory-snapshot -- --label foreground --output /tmp/patina-memory-f
 
 This read-only Linux collector reads `/proc` metadata and `smaps_rollup`, not command lines, environment variables, databases or credentials. Output is owner-only and refuses overwrite. It groups current-user `/usr/bin/Patina`, `/usr/bin/patinad` and attributable live descendants; custom build paths and reparented processes are outside its scope. Missing metrics remain null. Compare PSS and USS rather than summed RSS; samples are non-atomic and have no pass/fail memory budget.
 
+The development-only in-process resource command follows the same Linux memory
+definitions: RSS and PSS come from `smaps_rollup`, USS is
+`Private_Clean + Private_Dirty + Private_Hugetlb`, and Swap is reported
+separately. Its compatibility `private_usage_bytes` field equals USS on Linux;
+it is no longer derived from `VmData`. Unavailable fields remain null.
+
 Capture comparable foreground, tray-hidden, low-resource-background after its delay, and reopened states with different output filenames. The current low-resource setting defaults off; when enabled, main-window close schedules destruction after five minutes and rechecks visibility/generation. Hiding is not immediate destruction. Do not change the setting or close the user's window automatically for a measurement. Keep tracking enabled and verify it continues across UI reclamation.
 
 ## Native Window Lifecycle Regression
@@ -306,13 +312,15 @@ real GTK/WebKit windows with inert content and uses a synthetic SQLite database.
 It does not initialize the product tracker, systemd integration or production API.
 Expect about eleven minutes: the two five-minute lifecycle timers are not shortened.
 
-The test injects cancellation after Widget creation starts but before native
-registration, checks its hidden-window cleanup, checks that reopening cancels the
-old Main timer, and checks Main teardown while a visible Widget survives. The
+The test first applies the default autostart plan and verifies that it creates a
+Widget without a hidden Main window. It then injects cancellation after Widget
+creation starts but before native registration, checks its hidden-window cleanup,
+checks that reopening cancels the old Main timer, and checks Main teardown while a visible Widget survives. The
 first reopen deliberately avoids the normal focus/Widget-close callbacks, which
 would otherwise schedule another cleanup and mask the missing-timer regression.
-This is a native lifecycle test, not full React/IPC, tracking continuity, startup,
-allocator-budget or long-running memory acceptance.
+Finally it destroys Widget and Main and verifies that the last WebView schedules
+one app-level heap reclaim attempt. This is a native lifecycle test, not full
+React/IPC, tracking continuity, allocator-budget or long-running memory acceptance.
 
 Evidence remains in the printed `/tmp/patina-window-test-*` directory as
 `native.log` and `result.json`. The test is skipped by default; do not run all

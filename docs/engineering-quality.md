@@ -188,6 +188,8 @@ Rust 默认门槛包含 `npm run check:rust-boundaries`、`cargo check`、Rust �
 
 桌面常驻内存另用 `npm run perf:memory-snapshot` 采样。它是诊断工具，不是有固定预算的性能 benchmark：分别记录 Desktop 及其 WebKit 子进程、daemon 的 PSS/USS/RSS，缺失读数保留为 unknown，不能按零处理。RSS 相加会重复计算共享页，优先比较 PSS 与 USS；一次高占用不能证明泄漏。
 
+Linux 进程内资源诊断必须以 `/proc/self/smaps_rollup` 为 RSS/PSS/USS 来源，USS 按 `Private_Clean + Private_Dirty + Private_Hugetlb` 计算；文件或字段不可读时保留 unknown，不得用 `VmData`、虚拟地址空间或零值代替私有驻留。兼容字段如继续存在，必须明确映射到相同驻留口径。
+
 内存验收应在同一版本、相近数据量和页面状态下覆盖前台稳定、关闭到托盘、开启低耗后台并超过回收等待期、重新打开四种状态，重复多轮并检查追踪持续性、页面恢复和子进程存活情况。先验证现有回收，再定位查询缓存、轮询和渲染保留；更换 UI 框架不是没有测量时的默认解法。工具只识别当前用户的已安装标准路径及仍可归属的子进程，不包含独立 GPU 服务、已重挂父进程或自定义开发路径，扫描也不是原子快照；缺少目标进程时不得声称整个产品占用为零。
 
 已有读模型 benchmark：

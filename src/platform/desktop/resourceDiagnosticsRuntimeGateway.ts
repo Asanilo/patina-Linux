@@ -1,10 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 
-interface RawWindowsProcessResourceSnapshot {
-  handle_count: number;
-  thread_count: number;
-  working_set_bytes: number;
-  private_usage_bytes: number;
+interface RawProcessResourceSnapshot {
+  handle_count: number | null;
+  thread_count: number | null;
+  working_set_bytes: number | null;
+  private_usage_bytes: number | null;
+  rss_bytes: number | null;
+  pss_bytes: number | null;
+  uss_bytes: number | null;
+  swap_bytes: number | null;
 }
 
 interface RawProcessDetailsCacheStats {
@@ -22,7 +26,7 @@ interface RawIconResultCacheStats {
 interface RawResourceDiagnosticsSnapshot {
   webview_window_count: number;
   webview_window_labels: string[];
-  process_resources: RawWindowsProcessResourceSnapshot;
+  process_resources: RawProcessResourceSnapshot;
   process_details_cache: RawProcessDetailsCacheStats;
   icon_result_cache: RawIconResultCacheStats;
 }
@@ -31,10 +35,14 @@ export interface ResourceDiagnosticsSnapshot {
   webviewWindowCount: number;
   webviewWindowLabels: string[];
   processResources: {
-    handleCount: number;
-    threadCount: number;
-    workingSetBytes: number;
-    privateUsageBytes: number;
+    handleCount: number | null;
+    threadCount: number | null;
+    workingSetBytes: number | null;
+    privateUsageBytes: number | null;
+    rssBytes: number | null;
+    pssBytes: number | null;
+    ussBytes: number | null;
+    swapBytes: number | null;
   };
   processDetailsCache: {
     entries: number;
@@ -58,20 +66,28 @@ function isNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+function isNullableNumber(value: unknown): value is number | null {
+  return value === null || isNumber(value);
+}
+
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
-function isRawProcessResources(value: unknown): value is RawWindowsProcessResourceSnapshot {
+function isRawProcessResources(value: unknown): value is RawProcessResourceSnapshot {
   if (!value || typeof value !== "object") {
     return false;
   }
 
   const record = value as Record<string, unknown>;
-  return isNumber(record.handle_count)
-    && isNumber(record.thread_count)
-    && isNumber(record.working_set_bytes)
-    && isNumber(record.private_usage_bytes);
+  return isNullableNumber(record.handle_count)
+    && isNullableNumber(record.thread_count)
+    && isNullableNumber(record.working_set_bytes)
+    && isNullableNumber(record.private_usage_bytes)
+    && isNullableNumber(record.rss_bytes)
+    && isNullableNumber(record.pss_bytes)
+    && isNullableNumber(record.uss_bytes)
+    && isNullableNumber(record.swap_bytes);
 }
 
 function isRawCacheStats(value: unknown): value is RawProcessDetailsCacheStats {
@@ -115,6 +131,10 @@ function mapRawResourceDiagnostics(raw: RawResourceDiagnosticsSnapshot): Resourc
       threadCount: raw.process_resources.thread_count,
       workingSetBytes: raw.process_resources.working_set_bytes,
       privateUsageBytes: raw.process_resources.private_usage_bytes,
+      rssBytes: raw.process_resources.rss_bytes,
+      pssBytes: raw.process_resources.pss_bytes,
+      ussBytes: raw.process_resources.uss_bytes,
+      swapBytes: raw.process_resources.swap_bytes,
     },
     processDetailsCache: mapRawCacheStats(raw.process_details_cache),
     iconResultCache: mapRawCacheStats(raw.icon_result_cache),

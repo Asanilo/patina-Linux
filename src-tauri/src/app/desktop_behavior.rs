@@ -1,6 +1,7 @@
 use crate::app::autostart;
+use crate::app::main_window;
 use crate::app::state::DesktopBehaviorState;
-use crate::app::tray::{apply_tray_visibility, show_main_window, MAIN_WINDOW_LABEL};
+use crate::app::tray::{apply_tray_visibility, show_main_window};
 use crate::app::widget;
 use crate::data::repositories::{app_settings, update_state};
 use crate::data::sqlite_pool::wait_for_sqlite_pool;
@@ -8,6 +9,31 @@ use crate::domain::settings::MinimizeBehavior;
 use tauri::{AppHandle, Manager, Runtime};
 #[cfg(not(target_os = "linux"))]
 use tauri_plugin_autostart::ManagerExt as AutostartManagerExt;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum InitialWindowPlan {
+    MainVisible,
+    MainTaskbarMinimized,
+    WidgetOnly,
+}
+
+fn resolve_initial_window_plan(
+    launched_by_autostart: bool,
+    should_reopen_main_window: bool,
+    settings: crate::domain::settings::DesktopBehaviorSettings,
+) -> InitialWindowPlan {
+    if should_reopen_main_window
+        || !launched_by_autostart
+        || !settings.should_start_minimized_on_autostart()
+    {
+        return InitialWindowPlan::MainVisible;
+    }
+
+    match settings.minimize_behavior {
+        MinimizeBehavior::Taskbar => InitialWindowPlan::MainTaskbarMinimized,
+        MinimizeBehavior::Widget => InitialWindowPlan::WidgetOnly,
+    }
+}
 
 pub(crate) fn apply_autostart<R: Runtime>(
     app: &AppHandle<R>,
@@ -97,20 +123,15 @@ pub(crate) async fn sync_desktop_behavior_from_storage<R: Runtime>(
     }
     apply_tray_visibility(&app, next);
 
-    if should_reopen_main_window {
-        show_main_window(&app);
-    } else if launched_by_autostart {
-        if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-            if next.should_start_minimized_on_autostart() {
-                let _ = window.hide();
-                if next.minimize_behavior == MinimizeBehavior::Widget {
-                    let preferred_monitor = window.current_monitor().ok().flatten();
-                    if let Err(error) = widget::show_widget_window(&app, preferred_monitor).await {
-                        eprintln!("[widget] failed to show startup widget window: {error}");
-                    }
-                }
-            } else {
-                show_main_window(&app);
+    match resolve_initial_window_plan(launched_by_autostart, should_reopen_main_window, next) {
+        InitialWindowPlan::MainVisible => show_main_window(&app),
+        InitialWindowPlan::MainTaskbarMinimized => {
+            show_main_window(&app);
+            main_window::minimize_main_window(&app);
+        }
+        InitialWindowPlan::WidgetOnly => {
+            if let Err(error) = widget::show_widget_window(&app, None).await {
+                eprintln!("[widget] failed to show startup widget window: {error}");
             }
         }
     }
@@ -118,13 +139,48 @@ pub(crate) async fn sync_desktop_behavior_from_storage<R: Runtime>(
     Ok(())
 }
 
-pub(crate) fn spawn_sync_from_storage<R: Runtime + 'static>(
-    app: AppHandle<R>,
-    launched_by_autostart: bool,
-) {
-    tauri::async_runtime::spawn(async move {
-        if let Err(error) = sync_desktop_behavior_from_storage(app, launched_by_autostart).await {
-            eprintln!("[tray] failed to sync desktop behavior from storage: {error}");
-        }
-    });
+#[cfg(test)]
+mod tests {
+    use super::{resolve_initial_window_plan, InitialWindowPlan};
+    use crate::domain::settings::{DesktopBehaviorSettings, MinimizeBehavior};
+
+    #[test]
+    fn direct_launch_and_update_reopen_always_show_main_window() {
+        let minimized = DesktopBehaviorSettings::default();
+
+        assert_eq!(
+            resolve_initial_window_plan(false, false, minimized),
+            InitialWindowPlan::MainVisible
+        );
+        assert_eq!(
+            resolve_initial_window_plan(true, true, minimized),
+            InitialWindowPlan::MainVisible
+        );
+    }
+
+    #[test]
+    fn autostart_uses_the_configured_minimize_surface_without_hidden_main() {
+        let widget = DesktopBehaviorSettings::default();
+        assert_eq!(
+            resolve_initial_window_plan(true, false, widget),
+            InitialWindowPlan::WidgetOnly
+        );
+
+        let taskbar =
+            widget.with_desktop_behavior(widget.close_behavior, MinimizeBehavior::Taskbar);
+        assert_eq!(
+            resolve_initial_window_plan(true, false, taskbar),
+            InitialWindowPlan::MainTaskbarMinimized
+        );
+    }
+
+    #[test]
+    fn autostart_without_start_minimized_shows_main_window() {
+        let settings = DesktopBehaviorSettings::default().with_launch_behavior(true, false);
+
+        assert_eq!(
+            resolve_initial_window_plan(true, false, settings),
+            InitialWindowPlan::MainVisible
+        );
+    }
 }

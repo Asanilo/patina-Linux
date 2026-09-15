@@ -200,7 +200,9 @@ Windows runtime、installer、updater、ARM/UWP 等平台专属实现不移植�
 
 2026-09-15 外部审查后更新：beta.13 源码已以 `855ad0a` 推送 daemon 分支，用户提供关闭前后 257M/219M 读数，但测量口径及长期表现仍待核对。先修最小化到 Widget 绕过回收计时、创建取消后 Widget 漏排销毁，再独立处理自启延迟建窗和最后 WebView 回收；下一轮性能验收前修正 VmData 诊断口径。随后依次推进 Data/分类有界聚合、流式备份和 Widget 独立入口。现有 trend 底层仍 fetch_all，不能简单把重查询搬到 daemon 就称为内存有界；实施与验收边界以 runtime working 文档“beta.13 外部审查核对与后续修复”为准。本轮后续修复尚未进入已安装 DEB。
 
-beta.14 本地候选已完成：原生 GTK/WebKit 回归运行 626.64 秒通过，除两个生命周期缺口外，还修复了尚未显示的 Widget 设置鼠标穿透触发的 Tao/Wayland 崩溃。完整 release gate 与 DEB 成品检查通过；复现 runner 已入工作区，默认不运行，不触碰生产 runtime。尚未提交、推送或安装，远端仍为 `855ad0a`。下一步是候选安装复测，再按上述顺序推进最后 WebView 回收与启动路径；不将本轮结果等同于全部内存优化完成。
+beta.14 本地候选已完成：原生 GTK/WebKit 回归运行 626.64 秒通过，除两个生命周期缺口外，还修复了尚未显示的 Widget 设置鼠标穿透触发的 Tao/Wayland 崩溃。完整 release gate 与 DEB 成品检查通过；复现 runner 已入仓库，默认不运行，不触碰生产 runtime。用户已安装并完成关闭前后观察，本批以 `0e00c4a` 提交在 daemon 分支，尚未推送或公开发布。只看系统监视器主进程 RSS 的约 258M/220M 不能代表产品总内存或私有驻留；同次只读采样在无 WebProcess 时记录 Desktop 主进程 RSS/PSS/USS 约 221.7/89.6/74.0 MiB，Desktop 与 Network 合计 PSS/USS 约 102.6/82.8 MiB。
+
+下一批 Desktop 生命周期源码已完成并通过完整 `check:full` 与真实 Wayland 原生回归：最后 WebView 的真实 `Destroyed` 事件统一触发一次可合并、可取消的空闲堆归还；登录自启动先读取设置，Widget 模式不再创建隐藏 Main；Linux 进程内诊断改用 `smaps_rollup` 的 RSS/PSS/USS/Swap。原生回归确认默认 autostart 只创建 Widget、Main/Widget 销毁边界正确且最后 WebView 只回收一次。默认低耗开关和两个五分钟窗口销毁等待不变，不新增周期 trim。当前尚未形成新版本或安装包，安装后的视觉观察和真实数据长期内存循环仍待验收；之后按 Data/分类有界聚合、流式备份、Widget 独立入口推进。
 
 当前结构主线按以下顺序推进：
 

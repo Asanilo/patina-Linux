@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::app::{
-    runtime,
+    background_resource_reclaimer, runtime,
     state::{
         AppExitState, DesktopBehaviorState, MainWindowLifecycleState, WidgetWindowLifecycleState,
     },
@@ -63,6 +63,7 @@ fn register_managed_state_and_plugins(
     builder
         .manage(DesktopBehaviorState::default())
         .manage(AppExitState::default())
+        .manage(background_resource_reclaimer::BackgroundResourceReclaimerState::default())
         .manage(MainWindowLifecycleState::default())
         .manage(WidgetWindowLifecycleState::default())
         .manage(TrackingRuntimeSnapshotState::default())
@@ -318,6 +319,16 @@ fn register_runtime_hooks(
 }
 
 pub(crate) fn handle_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
+    if matches!(
+        &event,
+        tauri::RunEvent::WindowEvent {
+            event: tauri::WindowEvent::Destroyed,
+            ..
+        }
+    ) {
+        background_resource_reclaimer::schedule_after_webview_destroyed(app.clone());
+    }
+
     if let tauri::RunEvent::ExitRequested { api, .. } = event {
         let exit_requested = app.state::<AppExitState>().is_exit_requested();
         let keep_tray_visible = app

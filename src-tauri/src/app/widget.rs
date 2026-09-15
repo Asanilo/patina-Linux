@@ -164,11 +164,12 @@ async fn apply_widget_layout_internal<R: Runtime + 'static>(
         return Ok(());
     }
 
-    let monitor = resolve_widget_monitor(app, preferred_monitor)?;
-    let bounds = resolve_widget_bounds(&monitor, placement, expanded, show_object_slot);
+    let monitor = resolve_widget_monitor(app, preferred_monitor.clone()).ok();
     let lifecycle = app.state::<WidgetWindowLifecycleState>();
 
     if let Some(window) = app.get_webview_window(WIDGET_WINDOW_LABEL) {
+        let monitor = monitor.ok_or_else(|| "failed to resolve widget monitor".to_string())?;
+        let bounds = resolve_widget_bounds(&monitor, placement, expanded, show_object_slot);
         lifecycle.show_existing();
         let _ = window.set_ignore_cursor_events(false);
         let _ = window.set_always_on_top(true);
@@ -185,11 +186,9 @@ async fn apply_widget_layout_internal<R: Runtime + 'static>(
         return Ok(());
     }
 
-    let logical_x = f64::from(bounds.x) / monitor.scale_factor();
-    let logical_y = f64::from(bounds.y) / monitor.scale_factor();
-    let logical_width = f64::from(bounds.width) / monitor.scale_factor();
-    let logical_height = f64::from(bounds.height) / monitor.scale_factor();
-
+    let initial_bounds = monitor
+        .as_ref()
+        .map(|monitor| resolve_widget_bounds(monitor, placement, expanded, show_object_slot));
     let webview_root = storage_paths::resolve_storage_paths(app)?.webview_root;
     if !lifecycle.begin_show() {
         return Ok(());
@@ -202,32 +201,48 @@ async fn apply_widget_layout_internal<R: Runtime + 'static>(
         close_widget_window(app);
     }
 
-    let window = WebviewWindowBuilder::new(
-        app,
-        WIDGET_WINDOW_LABEL,
-        WebviewUrl::App("index.html".into()),
-    )
-    .title(WIDGET_TITLE)
-    .position(logical_x, logical_y)
-    .inner_size(logical_width, logical_height)
-    .resizable(false)
-    .maximizable(false)
-    .minimizable(false)
-    .closable(false)
-    .decorations(false)
-    .shadow(false)
-    .transparent(true)
-    .always_on_top(true)
-    .skip_taskbar(true)
-    .focusable(true)
-    .focused(false)
-    .visible(false)
-    .data_directory(webview_root)
-    .build()
-    .map_err(|error| {
-        let _ = lifecycle.finish_show();
-        format!("failed to create widget window: {error}")
-    })?;
+    let window = {
+        let mut builder = WebviewWindowBuilder::new(
+            app,
+            WIDGET_WINDOW_LABEL,
+            WebviewUrl::App("index.html".into()),
+        )
+        .title(WIDGET_TITLE)
+        .resizable(false)
+        .maximizable(false)
+        .minimizable(false)
+        .closable(false)
+        .decorations(false)
+        .shadow(false)
+        .transparent(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .focusable(true)
+        .focused(false)
+        .visible(false)
+        .data_directory(webview_root);
+
+        if let (Some(monitor), Some(bounds)) = (monitor.as_ref(), initial_bounds) {
+            builder = builder
+                .position(
+                    f64::from(bounds.x) / monitor.scale_factor(),
+                    f64::from(bounds.y) / monitor.scale_factor(),
+                )
+                .inner_size(
+                    f64::from(bounds.width) / monitor.scale_factor(),
+                    f64::from(bounds.height) / monitor.scale_factor(),
+                );
+        } else {
+            // Wayland may not expose a primary monitor before the first native
+            // window is mapped. Register an invisible one-pixel surface first.
+            builder = builder.inner_size(1.0, 1.0);
+        }
+
+        builder.build().map_err(|error| {
+            let _ = lifecycle.finish_show();
+            format!("failed to create widget window: {error}")
+        })?
+    };
 
     if let WidgetShowCompletion::Hidden { hide_generation } = lifecycle.finish_show() {
         park_widget_window(&window);
@@ -235,9 +250,25 @@ async fn apply_widget_layout_internal<R: Runtime + 'static>(
         return Ok(());
     }
 
+    let monitor = match monitor {
+        Some(monitor) => monitor,
+        None => {
+            match resolve_widget_monitor_after_creation(app, &window, preferred_monitor).await {
+                Ok(monitor) => monitor,
+                Err(error) => {
+                    let hide_generation = lifecycle.hide();
+                    park_widget_window(&window);
+                    schedule_widget_destroy_after_idle(app.clone(), hide_generation);
+                    return Err(error);
+                }
+            }
+        }
+    };
+    let bounds = resolve_widget_bounds(&monitor, placement, expanded, show_object_slot);
     let _ = window.set_ignore_cursor_events(false);
     let _ = window.set_focusable(true);
     let _ = window.set_shadow(false);
+    apply_widget_bounds(&window, bounds)?;
     window
         .show()
         .map_err(|error| format!("failed to show widget window: {error}"))?;
@@ -248,24 +279,36 @@ async fn apply_widget_layout_internal<R: Runtime + 'static>(
     Ok(())
 }
 
+async fn resolve_widget_monitor_after_creation<R: Runtime>(
+    app: &AppHandle<R>,
+    window: &WebviewWindow<R>,
+    preferred_monitor: Option<Monitor>,
+) -> Result<Monitor, String> {
+    window
+        .show()
+        .map_err(|error| format!("failed to map widget window for monitor discovery: {error}"))?;
+
+    for _ in 0..40 {
+        if let Some(monitor) = preferred_monitor
+            .clone()
+            .or_else(|| window.current_monitor().ok().flatten())
+            .or_else(|| app.primary_monitor().ok().flatten())
+        {
+            return Ok(monitor);
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+
+    Err("failed to resolve widget monitor after native window creation".to_string())
+}
+
 fn resolve_widget_bounds(
     monitor: &Monitor,
     placement: WidgetPlacement,
     expanded: bool,
     show_object_slot: bool,
 ) -> WidgetWindowBounds {
-    let (width, height) = if expanded {
-        (
-            if show_object_slot {
-                WIDGET_EXPANDED_WIDTH_WITH_OBJECT
-            } else {
-                WIDGET_EXPANDED_WIDTH_COMPACT
-            },
-            WIDGET_EXPANDED_HEIGHT,
-        )
-    } else {
-        (WIDGET_COLLAPSED_WIDTH, WIDGET_COLLAPSED_HEIGHT)
-    };
+    let (width, height) = resolve_widget_dimensions(expanded, show_object_slot);
     let work_area = monitor.work_area();
     resolve_widget_bounds_from_work_area(
         work_area.position.x,
@@ -276,6 +319,21 @@ fn resolve_widget_bounds(
         width,
         height,
     )
+}
+
+fn resolve_widget_dimensions(expanded: bool, show_object_slot: bool) -> (u32, u32) {
+    if expanded {
+        (
+            if show_object_slot {
+                WIDGET_EXPANDED_WIDTH_WITH_OBJECT
+            } else {
+                WIDGET_EXPANDED_WIDTH_COMPACT
+            },
+            WIDGET_EXPANDED_HEIGHT,
+        )
+    } else {
+        (WIDGET_COLLAPSED_WIDTH, WIDGET_COLLAPSED_HEIGHT)
+    }
 }
 
 fn resolve_widget_bounds_from_work_area(

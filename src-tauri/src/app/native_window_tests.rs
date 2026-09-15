@@ -1,5 +1,5 @@
 //! Opt-in native lifecycle regression. No tracker, service or production database.
-use super::{main_window, state::*, widget};
+use super::{background_resource_reclaimer, desktop_behavior, main_window, state::*, widget};
 use crate::data::sqlite_pool::{open_prepared_sqlite_pool_at_path, SQLITE_DB_NAME};
 use std::path::PathBuf;
 use std::sync::{atomic::Ordering, Arc, Mutex};
@@ -96,6 +96,7 @@ fn native_window_lifecycle() {
     let app = tauri::Builder::default()
         .any_thread()
         .manage(behavior)
+        .manage(background_resource_reclaimer::BackgroundResourceReclaimerState::default())
         .manage(MainWindowLifecycleState::default())
         .manage(WidgetWindowLifecycleState::default())
         .manage(AppExitState::default())
@@ -105,7 +106,31 @@ fn native_window_lifecycle() {
             tauri::async_runtime::spawn(async move {
                 let worker_app = handle.clone();
                 let worker = tauri::async_runtime::spawn(async move {
+                    desktop_behavior::sync_desktop_behavior_from_storage(
+                        worker_app.clone(),
+                        true,
+                    )
+                    .await
+                    .unwrap();
+                    wait_window(&worker_app, "widget", true).await;
+                    assert!(worker_app.get_webview_window("main").is_none());
+                    assert!(worker_app
+                        .get_webview_window("widget")
+                        .unwrap()
+                        .is_visible()
+                        .unwrap());
+                    worker_app
+                        .state::<DesktopBehaviorState>()
+                        .update_background_optimization(true);
                     make_main(&worker_app);
+                    worker_app
+                        .get_webview_window("widget")
+                        .unwrap()
+                        .destroy()
+                        .unwrap();
+                    wait_window(&worker_app, "widget", false).await;
+                    eprintln!("NATIVE autostart-widget-without-main");
+
                     tokio::time::sleep(Duration::from_secs(2)).await;
                     widget::CANCEL_NEXT_CREATION.store(true, Ordering::SeqCst);
                     main_window::minimize_main_window(&worker_app);
@@ -170,18 +195,54 @@ fn native_window_lifecycle() {
                         .await
                         .is_empty()
                     );
+                    worker_app
+                        .get_webview_window("widget")
+                        .unwrap()
+                        .destroy()
+                        .unwrap();
+                    wait_window(&worker_app, "widget", false).await;
+                    worker_app
+                        .get_webview_window("main")
+                        .unwrap()
+                        .destroy()
+                        .unwrap();
+                    wait_window(&worker_app, "main", false).await;
+                    tokio::time::sleep(Duration::from_secs(3)).await;
+                    assert_eq!(
+                        worker_app
+                            .state::<background_resource_reclaimer::BackgroundResourceReclaimerState>()
+                            .reclaim_attempt_count(),
+                        1
+                    );
+                    eprintln!("NATIVE last-webview-reclaim-once");
                     pool.close().await;
                     eprintln!("NATIVE reopened fixture-unchanged");
                 });
                 let passed = worker.await.is_ok();
                 *outcome.lock().unwrap() = Some(passed);
+                handle.state::<AppExitState>().request_exit();
                 handle.exit(if passed { 0 } else { 1 });
             });
             Ok(())
         })
         .build(context)
         .unwrap();
-    let code = app.run_return(|_, _| {});
+    let code = app.run_return(|app, event| {
+        if matches!(
+            event,
+            tauri::RunEvent::WindowEvent {
+                event: tauri::WindowEvent::Destroyed,
+                ..
+            }
+        ) {
+            background_resource_reclaimer::schedule_after_webview_destroyed(app.clone());
+        }
+        if let tauri::RunEvent::ExitRequested { api, .. } = event {
+            if !app.state::<AppExitState>().is_exit_requested() {
+                api.prevent_exit();
+            }
+        }
+    });
     assert_eq!(code, 0);
     assert_eq!(*result.lock().unwrap(), Some(true));
 }

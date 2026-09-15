@@ -9,21 +9,30 @@ use windows::Win32::System::Threading::{
 };
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-pub struct WindowsProcessResourceSnapshot {
+pub struct ProcessResourceSnapshot {
     pub handle_count: Option<u32>,
     pub thread_count: Option<u32>,
     pub working_set_bytes: Option<usize>,
     pub private_usage_bytes: Option<usize>,
+    pub rss_bytes: Option<usize>,
+    pub pss_bytes: Option<usize>,
+    pub uss_bytes: Option<usize>,
+    pub swap_bytes: Option<usize>,
 }
 
-pub fn current_process_resource_snapshot() -> WindowsProcessResourceSnapshot {
+pub fn current_process_resource_snapshot() -> ProcessResourceSnapshot {
     let memory = current_process_memory_counters();
+    let working_set_bytes = memory.map(|counters| counters.WorkingSetSize);
 
-    WindowsProcessResourceSnapshot {
+    ProcessResourceSnapshot {
         handle_count: current_process_handle_count(),
         thread_count: current_process_thread_count(),
-        working_set_bytes: memory.map(|counters| counters.WorkingSetSize),
+        working_set_bytes,
         private_usage_bytes: memory.map(|counters| counters.PrivateUsage),
+        rss_bytes: working_set_bytes,
+        pss_bytes: None,
+        uss_bytes: None,
+        swap_bytes: None,
     }
 }
 

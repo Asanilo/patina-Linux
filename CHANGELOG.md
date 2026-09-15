@@ -22,11 +22,12 @@ App note en: TBD.
 
 ### Changed
 
-- 暂无。
+- 登录自启动会先读取桌面行为，再按设置创建主窗口或 Widget；默认 Widget 模式不再预先创建隐藏主窗口。
 
 ### Fixed
 
-- 暂无。
+- 开启低耗后台后，最后销毁的是 Widget 时也会触发一次受状态保护的空闲堆归还；快速重开、退出过程和仍有 WebView 时会取消。
+- GNOME Wayland 登录自启动且尚无现有窗口时，Widget 会先以最小透明 surface 获取显示器信息，再应用正常尺寸和位置，避免因找不到主显示器而启动失败。
 
 ### Removed
 
@@ -34,7 +35,7 @@ App note en: TBD.
 
 ### Internal
 
-- 暂无。
+- Linux 资源诊断改从 `/proc/self/smaps_rollup` 返回 RSS、PSS、USS 和 Swap；兼容字段 `private_usage_bytes` 使用 USS，不再误报 `VmData` 虚拟地址空间。
 
 ## [1.9.0-beta.14] - 2026-09-15
 
