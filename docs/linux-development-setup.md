@@ -292,6 +292,32 @@ This read-only Linux collector reads `/proc` metadata and `smaps_rollup`, not co
 
 Capture comparable foreground, tray-hidden, low-resource-background after its delay, and reopened states with different output filenames. The current low-resource setting defaults off; when enabled, main-window close schedules destruction after five minutes and rechecks visibility/generation. Hiding is not immediate destruction. Do not change the setting or close the user's window automatically for a measurement. Keep tracking enabled and verify it continues across UI reclamation.
 
+## Native Window Lifecycle Regression
+
+From a GNOME Wayland session, explicitly run:
+
+```bash
+node scripts/native-window-lifecycle.mjs
+```
+
+The runner builds the ignored Rust test using the normal Cargo cache, then starts
+only that test under private HOME/XDG roots and a private D-Bus session. It opens
+real GTK/WebKit windows with inert content and uses a synthetic SQLite database.
+It does not initialize the product tracker, systemd integration or production API.
+Expect about eleven minutes: the two five-minute lifecycle timers are not shortened.
+
+The test injects cancellation after Widget creation starts but before native
+registration, checks its hidden-window cleanup, checks that reopening cancels the
+old Main timer, and checks Main teardown while a visible Widget survives. The
+first reopen deliberately avoids the normal focus/Widget-close callbacks, which
+would otherwise schedule another cleanup and mask the missing-timer regression.
+This is a native lifecycle test, not full React/IPC, tracking continuity, startup,
+allocator-budget or long-running memory acceptance.
+
+Evidence remains in the printed `/tmp/patina-window-test-*` directory as
+`native.log` and `result.json`. The test is skipped by default; do not run all
+ignored tests against the normal user environment. No installed app is replaced.
+
 ## MCP Wrapper
 
 The MCP wrapper is a stdio server that maps MCP tool calls to the local API:

@@ -36,6 +36,23 @@ App note en: TBD.
 
 - 暂无。
 
+## [1.9.0-beta.14] - 2026-09-15
+
+Release: 桌面窗口生命周期 DEB 测试候选，补齐最小化到 Widget 的低耗回收，并修复创建取消后的隐藏窗口清理及 Wayland 崩溃路径。
+App note: 修复 Widget 最小化与创建取消时的窗口回收问题。
+App note en: Fix low-resource cleanup when minimizing to Widget and cancelling Widget creation.
+
+### Fixed
+
+- 最小化到 Widget 复用主窗口隐藏代次与五分钟回收计时；低耗后台默认开关和等待时间不变。
+- Widget 创建取消后安排隐藏窗口销毁，后续重开使旧计时失效；路径解析失败不会遗留正在创建状态。
+- 隐藏 Widget 不再设置多余的鼠标穿透，避免尚未显示的 Wayland 窗口触发 Tao 原生窗口空值崩溃。
+
+### Internal
+
+- 增加默认跳过的原生 GTK/WebKit 生命周期回归及私有 HOME/XDG/D-Bus runner，不接触已安装 runtime。
+- 本候选不包含自启延迟建窗、最后 WebView 统一堆回收、诊断口径修正、有界聚合、流式备份或 Widget 独立入口；不承诺固定内存上限。
+
 ## [1.9.0-beta.13] - 2026-09-15
 
 Release: 桌面内存优化 DEB 测试候选，减少启动重查询，并在低耗后台窗口销毁后归还空闲堆。真实数据长期表现仍待验收。

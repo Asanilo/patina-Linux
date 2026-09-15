@@ -197,7 +197,7 @@ Stage 2H.3d 不做一次性切换，按下面五个可回滚批次推进：
 | 登录偏好与独立后台启动 | 配置/unit 对账及 Linger=yes 下重启登录自启已通过，Desktop 未启动也能记录；不覆盖 Linger=no 或仅注销再登录 |
 | 故障与维护路径 | failed/blocked 重试、Token/端口不一致、缺失 unit、自定义挂载目录/pending migration 等已有自动化或实现，未全部做真实安装故障注入 |
 | 受控备份恢复、远端恢复 | 合成数据的磁盘恢复/重开、receipt 幂等、失败保留和清理回滚已通过；真实临时 systemd 服务的跨进程 Replace/Merge 及失败回滚通过；私有 Secret Service 凭据到 HTTP 下载、预约及 systemd 重启恢复链路已通过。不覆盖第三方 WebDAV/TLS、上传及任意崩溃时刻 |
-| 桌面 UI 内存 | 第一批源码修复通过完整 check 与隔离 Wayland 验收：取消无关重预热，主进程启动 USS 244.5→101.9 MiB；合成备份后关闭自动回收至 79.7 MiB，重开 108.2 MiB。另通过低耗开关、widget 存活、同实例两轮回收及合成窗口持续记录。beta.13 本地 DEB 已通过 release gate 和成品检查，尚未安装或发布；真实安装长期使用和长 SQL 重叠仍待验，后端聚合和流式备份未完成 |
+| 桌面 UI 内存 | 第一批重预热/堆回收修复及隔离 Wayland 验收已完成，合成数据主进程启动 USS 244.5→101.9 MiB、备份后关闭至 79.7 MiB。用户安装 beta.13 后报告 257M→219M，口径和长期表现待核对。beta.14 又修复 Widget 隐藏计时、创建取消清理及未显示窗口鼠标穿透崩溃；626.64 秒原生回归、release gate 和本地 DEB 检查通过，候选尚未安装或发布。最后 WebView 回收、启动路径、诊断口径、有界聚合和流式备份仍待完成 |
 | 发布 | beta.12 DEB prerelease 已发布，下载成品与公钥验签通过；本机仍安装 beta.9，未自动升级。稳定版前仍需 AppImage 兼容或退役迁移方案 |
 
 下一步顺序：明确限制的 DEB beta 已发布；先验证并处理桌面内存回收，再继续活动网页跨挂起和剩余安装故障矩阵。独立凭据远端恢复已补齐下述隔离链路，后台自启已通过当前 Linger=yes 的重启登录场景，不为扩展矩阵擅自修改用户登录配置。不得因为 Beta 发布就将 Stage 2H.3d 或稳定版整体标为完成。Flatpak 属于后续安装格式评估，不替代 AppImage 更新承诺或桌面 provider 适配；恢复策略 UX 不阻塞已通过的只读归档校验。
@@ -369,6 +369,50 @@ Stage 2H.3d 不做一次性切换，按下面五个可回滚批次推进：
 这次没有通过探针调用 trim，下降来自产品自己的销毁及空闲堆归还流程；不能把销毁前后全部降幅仅归因于 trim。快速重开复用旧 WebProcess，旧 hide generation 到期后未误销毁或多触发 trim。开启 UI 时仍须另算 WebProcess（初次 USS 266.8 MiB，重开 208.6 MiB），主进程的 79.7 MiB 不是整组产品总量。关闭回收后的 Desktop + Network 总 PSS 为 113.6 MiB，未包含独立 daemon。
 
 同一隔离 daemon PID 保持存活；因追踪暂停，该项不是采样持续性实测。合成 SQLite quick_check/foreign_key_check 和 50000/10000 行数复核通过；107659856 bytes 合成备份 ZIP CRC 通过。临时进程和私有 D-Bus 均退出，仅清理指定合成数据库及备份 211792464 bytes，保留日志（`cleanup.json`）。正式进程只读复核见 `/tmp/patina-memory-after-first-fix-validation.json`，Desktop/daemon 的 PID 和启动时间均未变化。剩余门槛：正式安装后的多轮测试、活跃 widget/长查询及真实追踪连续性体验；单轮结果不等于所有场景内存问题关闭。
+
+#### beta.13 外部审查核对与后续修复（2026-09-15）
+
+审查基线为已推送的 `855ad0a`。用户报告安装后系统监视器读数由 257M 降至 219M；尚未确认进程分组、RSS/PSS/USS 口径和关闭等待时长，不能据此宣称真实数据长期验收通过。以下改动不包含在既有 beta.13 DEB 中。
+
+本轮局部修复（owner 为 Desktop 窗口生命周期）：
+
+- 确认最小化到 Widget 裸调用 hide，绕过主窗口隐藏代次与五分钟销毁计时。复用 `hide_main_window_for_background`，不改变低耗默认开关、等待时长或任务栏最小化行为。
+- 确认 Widget 创建期间 close 看不到窗口时，完成创建后的取消分支只 park、不安排销毁。由已有 Mutex 状态在完成创建时返回最新取消代次，park 后安排既有销毁计时，不重新 hide 覆盖更新后的用户意图。路径解析提前到 begin_show 之前，避免解析失败遗留 create_in_progress。补测重复 close、创建中 reopen 和旧代次失效；不等同于所有原生窗口事件并发均已验收。
+
+后续边界与顺序：
+
+1. **启动与最后 WebView 回收**：确认 autostart 先创建隐藏 Main，读取偏好后再决定 Widget；确认 trim 仅挂 Main 销毁，Widget 最后销毁时没有补偿入口。由 Desktop 生命周期 owner 协调，平台层只提供 allocator 操作，不交给 daemon、不新增周期性 trim。延迟建窗必须保留手动启动、升级重开意图、设置加载失败可恢复、tray 可达，并避免晚到的启动流程隐藏用户已打开窗口。先验证 Destroyed 与 WebView 注册表清理次序，再决定取消代次、去重及最多一次补偿；固定两次尝试不能保证任意长 SQL 结束后回收。
+2. **诊断口径**：确认 Linux private_usage_bytes 读取 VmData，应在下一轮性能验收前改为私有驻留页；smaps_rollup 不可读时返回未知，不用 VmData 兜底。字段扩展和 UI 保持兼容。
+3. **Data/分类有界聚合**：确认 Data 53 周逐 session 查询、两套明细缓存及分类候选按需重查询仍存在。现有 trend handler 的 activity_read_model::load_snapshot 仍 fetch_all 全范围记录；仅改 HTTP 可减少 IPC 放大，但可能把峰值搬到 daemon。必须保持导入优先级、排除、分类、本地日期、active session 和采样截止语义，并测量 daemon 峰值，不能把响应只有数百条视为计算内存有界。
+4. **流式备份**：确认完整 payload、pretty JSON 和 ZIP Vec 多份驻留。由 data backup owner 独立执行，保留一致性事务、归档/checksum 与恢复兼容、失败不覆盖目标；覆盖取消、磁盘满、长读事务下 WAL 增长及临时文件安全清理。
+5. **Widget 独立入口**：确认与 Main 静态共用入口，后续拆分 bundle 并实测；静态依赖本身不能证明等量主 UI 常驻。
+
+审查有一处事实纠正：Main 当前是 Mutex 内的 desired_visible 与 hide_generation，默认显示意图 false，不是默认 true 的 AtomicBool。是否需要显式 Absent 状态由启动和事件契约决定，不直接照搬重构；上述资源缺陷也不统一定为紧急 P0。
+
+本轮不变更版本号、不重打包、不自动安装或触碰正式 runtime；不将合成实验约 113.6 MiB PSS 当作所有机器的承诺值。下一阶段跨路径回收和延迟建窗应先按上述边界补实现方案与真实 Wayland 验收，不混入数据读模型或备份迁移。
+
+本轮源码验证：`npm run check:full` 通过，Rust 574 项通过、6 项忽略，Clippy、前端构建及 31 项浏览器 UI smoke 通过；浏览器临时 profile 清理仍报告 ENOTEMPTY 警告。7 项窗口状态单测通过，包含新增两项取消/重开回归；这些是状态与构建验证，不是原生 Widget 创建中取消或五分钟销毁的端到端实测。尚未提交、推送或安装本轮修改，远端审查基线仍为 `855ad0a`。
+
+#### beta.14 原生窗口回归（2026-09-15）
+
+复现入口现保存在 `scripts/native-window-lifecycle.mjs` 和仅 cfg(test) 编译的 `app/native_window_tests.rs`，默认 cargo test 跳过，需要显式运行。runner 先在正常构建环境编译，再以白名单环境、私有 HOME/XDG、私有 D-Bus、合成 SQLite 和真实 Wayland 窗口执行；不初始化 tracker、systemd 或产品 API。页面使用静态测试内容，不代表完整 React/IPC 或实际用户数据库验收。
+
+第一次 `/tmp/patina-window-test-E5xyQ6` 受控取消 Widget 创建时复现真实崩溃：Tao 0.34.8 的 CursorIgnoreEvents(true) 对尚未 realize 的 GTK window 调用 unwrap，退出码 134。隐藏窗口不接收输入，因此移除 park 中多余的 set_ignore_cursor_events(true)，保留隐藏、尺寸、位置及重新显示流程。失败证据保留；runner 的子进程日志管道在退出后显式关闭，避免 D-Bus 激活子进程持有管道使 runner 不退出。
+
+本轮受控回归范围：创建取消后的隐藏 Widget 在真实五分钟后销毁；重开后的 Main 不受旧计时影响；最小化到可见 Widget 后，Main 在真实五分钟后销毁而 Widget 保留；Main 可再创建。取消场景重开不调用普通 focus/close-Widget 回调，否则新排的销毁计时会掩盖原缺陷。计时常量不缩短，取消钩子只在测试编译存在。
+
+候选版本准备为 `1.9.0-beta.14`，不覆盖 beta.13 文件名；签名配置、默认开关和数据协议不变。是否可以安装以本节后续原生结果、release gate 和成品检查为准，不把测试包准备等同于公开发布。
+
+最终结果：
+
+- 修复后的 `/tmp/patina-window-test-RGIDzX` 原生回归通过，运行 626.64 秒、退出码 0、未超时。取消 Widget 已销毁，旧 Main timer 已失效；第二轮 Main 已销毁、Widget 可见，再次创建 Main 成功。本轮没有缩短两次五分钟计时。
+- 原生回归编译时仍标为 beta.13，产品窗口修复与最终候选一致；之后版本切到 beta.14，测试内数据库断言改为复用现有 data 测试助手以遵守 SQL 边界。最终源码由完整 release gate 编译验证。对原生实验库另行只读复核 quick_check=ok、foreign_key_check 为空、sessions=0，不把这些结果扩大为真实用户数据或完整 UI 验收。
+- `npm run release:check` 通过：574 项 Rust 测试通过、7 项忽略（含独立执行的原生长测），31 项浏览器 UI smoke、前端构建、Clippy 和三类扩展检查通过。浏览器 smoke 仍有临时 profile 清理 ENOTEMPTY 警告；私有 portal 因隔离环境缺少 PipeWire/GNOME 窗口服务出现警告，不代表正式 tracking 故障。
+- 两个测试进程组最终均已退出。第一次失败实验的私有 document portal 未响应 SIGTERM，经临时 HOME/runtime 与进程名复核后定点终止；runner 收尾增加私有进程组的一秒退出宽限及强制清理，关闭继承日志管道。最终 runner 语法检查通过，该清理增补未再重复十分钟窗口实验。保留两个小型合成 fixture 和日志，没有清理或读取正式数据库。
+- 本地构建命令为 `npm run tauri build -- --bundles deb --config '{"bundle":{"createUpdaterArtifacts":false}}'`，`release:verify-daemon-deb` 通过。成品 `src-tauri/target/release/bundle/deb/Patina_1.9.0-beta.14_amd64.deb`，25602832 bytes；包元数据 `patina / 1.9.0-beta.14 / amd64`，包含匹配 Desktop/daemon、unit 和 GNOME 扩展。
+- DEB SHA-256：`acc08e8a16446b68ef58c88ab10d6d3a2a6478339cf3b19e80102c71226092a7`。未读取私钥，永久 updater 配置、公钥和地址不变。
+- 未安装、提交、推送或发布本轮候选；远端仍以 `855ad0a` 为审查基线。用户安装后需完全退出并重开 Desktop，重点复测开启低耗后的 Widget 最小化、五分钟销毁与重开；诊断中后台版本不一致时使用已有确认式重新加载。安装升级同名 patina 包，先保留可用备份。
+- 自启延迟建窗、最后 WebView 堆回收、VmData 诊断口径、有界聚合、流式备份和 Widget 入口拆分仍未完成，不承诺可见 Widget 存活时内存归零或固定预算。
 
 #### beta.13 本地安装候选（2026-09-15）
 

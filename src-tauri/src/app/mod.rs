@@ -8,6 +8,8 @@ pub mod daemon_client;
 pub mod daemon_service;
 pub mod desktop_behavior;
 pub mod main_window;
+#[cfg(all(test, target_os = "linux"))]
+mod native_window_tests;
 pub mod runtime;
 pub mod runtime_lease;
 pub mod runtime_owner_cutover;

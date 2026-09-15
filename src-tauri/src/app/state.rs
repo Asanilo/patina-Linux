@@ -182,6 +182,12 @@ struct WidgetWindowLifecycle {
     hide_generation: u64,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum WidgetShowCompletion {
+    Show,
+    Hidden { hide_generation: u64 },
+}
+
 impl WidgetWindowLifecycleState {
     pub(crate) fn show_existing(&self) {
         match self.inner.lock() {
@@ -223,16 +229,19 @@ impl WidgetWindowLifecycleState {
         }
     }
 
-    pub(crate) fn finish_show(&self) -> bool {
-        match self.inner.lock() {
-            Ok(mut guard) => {
-                guard.create_in_progress = false;
-                guard.desired_visible
-            }
-            Err(poisoned) => {
-                let mut guard = poisoned.into_inner();
-                guard.create_in_progress = false;
-                guard.desired_visible
+    pub(crate) fn finish_show(&self) -> WidgetShowCompletion {
+        let mut guard = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        guard.create_in_progress = false;
+        if guard.desired_visible {
+            WidgetShowCompletion::Show
+        } else {
+            // Return the cancellation generation under the same lock so a
+            // later reopen invalidates the pending cleanup timer.
+            WidgetShowCompletion::Hidden {
+                hide_generation: guard.hide_generation,
             }
         }
     }
@@ -272,7 +281,7 @@ impl WidgetWindowLifecycleState {
 
 #[cfg(test)]
 mod tests {
-    use super::{MainWindowLifecycleState, WidgetWindowLifecycleState};
+    use super::{MainWindowLifecycleState, WidgetShowCompletion, WidgetWindowLifecycleState};
 
     #[test]
     fn main_window_lifecycle_cancels_stale_destroy_after_show() {
@@ -302,7 +311,7 @@ mod tests {
 
         assert!(state.begin_show());
         assert!(!state.begin_show());
-        assert!(state.finish_show());
+        assert_eq!(state.finish_show(), WidgetShowCompletion::Show);
         assert!(state.begin_show());
     }
 
@@ -312,10 +321,13 @@ mod tests {
 
         assert!(state.begin_show());
         let hide_generation = state.hide();
-        assert!(!state.finish_show());
+        assert_eq!(
+            state.finish_show(),
+            WidgetShowCompletion::Hidden { hide_generation }
+        );
         assert!(state.should_destroy_hidden_window(hide_generation));
         assert!(state.begin_show());
-        assert!(state.finish_show());
+        assert_eq!(state.finish_show(), WidgetShowCompletion::Show);
     }
 
     #[test]
@@ -323,10 +335,39 @@ mod tests {
         let state = WidgetWindowLifecycleState::default();
 
         assert!(state.begin_show());
-        assert!(state.finish_show());
+        assert_eq!(state.finish_show(), WidgetShowCompletion::Show);
         let hide_generation = state.hide();
         state.show_existing();
 
         assert!(!state.should_destroy_hidden_window(hide_generation));
+    }
+
+    #[test]
+    fn widget_cancelled_creation_returns_latest_hide_for_cleanup() {
+        let state = WidgetWindowLifecycleState::default();
+        assert!(state.begin_show());
+        let old = state.hide();
+        let latest = state.hide();
+        assert!(!state.should_destroy_hidden_window(latest));
+        assert_eq!(
+            state.finish_show(),
+            WidgetShowCompletion::Hidden {
+                hide_generation: latest
+            }
+        );
+        assert!(!state.should_destroy_hidden_window(old));
+        assert!(state.should_destroy_hidden_window(latest));
+        state.show_existing();
+        assert!(!state.should_destroy_hidden_window(latest));
+    }
+
+    #[test]
+    fn widget_reopen_during_creation_keeps_latest_show_intent() {
+        let state = WidgetWindowLifecycleState::default();
+        assert!(state.begin_show());
+        let cancelled = state.hide();
+        assert!(!state.begin_show());
+        assert_eq!(state.finish_show(), WidgetShowCompletion::Show);
+        assert!(!state.should_destroy_hidden_window(cancelled));
     }
 }

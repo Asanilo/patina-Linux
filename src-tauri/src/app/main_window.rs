@@ -60,7 +60,7 @@ fn minimize_main_window_to_widget<R: Runtime + 'static>(
     window: &WebviewWindow<R>,
 ) {
     let preferred_monitor = window.current_monitor().ok().flatten();
-    let _ = window.hide();
+    hide_main_window_for_background(app, &window.as_ref().window());
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
         if let Err(error) = widget::show_widget_window(&app_handle, preferred_monitor).await {

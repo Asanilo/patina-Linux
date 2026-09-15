@@ -1,4 +1,4 @@
-use crate::app::state::WidgetWindowLifecycleState;
+use crate::app::state::{WidgetShowCompletion, WidgetWindowLifecycleState};
 use crate::domain::widget::{WidgetPlacement, WidgetSide};
 use crate::engine::widget as widget_engine;
 use crate::platform::storage_paths;
@@ -19,6 +19,10 @@ const WIDGET_COLLAPSED_WIDTH: u32 = 64;
 const WIDGET_COLLAPSED_HEIGHT: u32 = 48;
 const WIDGET_COLLAPSED_VISIBLE_WIDTH: u32 = 64;
 const WIDGET_DESTROY_AFTER_IDLE_SECS: u64 = 5 * 60;
+
+#[cfg(test)]
+pub(super) static CANCEL_NEXT_CREATION: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct WidgetWindowBounds {
@@ -103,7 +107,8 @@ fn park_widget_window<R: Runtime>(window: &WebviewWindow<R>) {
     let _ = window.hide();
     let _ = window.set_focusable(false);
     let _ = window.set_always_on_top(false);
-    let _ = window.set_ignore_cursor_events(true);
+    // Hidden windows receive no input. On Wayland a never-shown widget may
+    // have no GDK window yet; enabling cursor passthrough can panic in Tao.
     let _ = window.set_size(Size::Physical(PhysicalSize::new(1, 1)));
     let _ = window.set_position(Position::Physical(PhysicalPosition::new(-32_000, -32_000)));
 }
@@ -185,8 +190,16 @@ async fn apply_widget_layout_internal<R: Runtime + 'static>(
     let logical_width = f64::from(bounds.width) / monitor.scale_factor();
     let logical_height = f64::from(bounds.height) / monitor.scale_factor();
 
+    let webview_root = storage_paths::resolve_storage_paths(app)?.webview_root;
     if !lifecycle.begin_show() {
         return Ok(());
+    }
+
+    #[cfg(test)]
+    if CANCEL_NEXT_CREATION.swap(false, std::sync::atomic::Ordering::SeqCst) {
+        // Deterministically exercise close before the native window is registered.
+        assert!(app.get_webview_window(WIDGET_WINDOW_LABEL).is_none());
+        close_widget_window(app);
     }
 
     let window = WebviewWindowBuilder::new(
@@ -209,15 +222,16 @@ async fn apply_widget_layout_internal<R: Runtime + 'static>(
     .focusable(true)
     .focused(false)
     .visible(false)
-    .data_directory(storage_paths::resolve_storage_paths(app)?.webview_root)
+    .data_directory(webview_root)
     .build()
     .map_err(|error| {
         let _ = lifecycle.finish_show();
         format!("failed to create widget window: {error}")
     })?;
 
-    if !lifecycle.finish_show() {
+    if let WidgetShowCompletion::Hidden { hide_generation } = lifecycle.finish_show() {
         park_widget_window(&window);
+        schedule_widget_destroy_after_idle(app.clone(), hide_generation);
         return Ok(());
     }
 
