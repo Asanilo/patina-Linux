@@ -110,7 +110,19 @@ fn park_widget_window<R: Runtime>(window: &WebviewWindow<R>) {
     // Hidden windows receive no input. On Wayland a never-shown widget may
     // have no GDK window yet; enabling cursor passthrough can panic in Tao.
     let _ = window.set_size(Size::Physical(PhysicalSize::new(1, 1)));
-    let _ = window.set_position(Position::Physical(PhysicalPosition::new(-32_000, -32_000)));
+    if supports_global_coordinates(window.app_handle()) {
+        let _ = window.set_position(Position::Physical(PhysicalPosition::new(-32_000, -32_000)));
+    }
+}
+
+fn supports_global_coordinates<R: Runtime>(app: &AppHandle<R>) -> bool {
+    #[cfg(target_os = "linux")]
+    return crate::platform::linux::widget_window::supports_global_coordinates(app);
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = app;
+        true
+    }
 }
 
 fn is_main_window_visible<R: Runtime>(app: &AppHandle<R>) -> bool {
@@ -143,7 +155,9 @@ fn apply_widget_bounds<R: Runtime>(
             .map_err(|error| format!("failed to size widget window: {error}"))?;
     }
     let position = PhysicalPosition::new(bounds.x, bounds.y);
-    if window.outer_position().ok() != Some(position) {
+    if supports_global_coordinates(window.app_handle())
+        && window.outer_position().ok() != Some(position)
+    {
         window
             .set_position(Position::Physical(position))
             .map_err(|error| format!("failed to position widget window: {error}"))?;
@@ -229,15 +243,16 @@ async fn apply_widget_layout_internal<R: Runtime + 'static>(
         .data_directory(webview_root);
 
         if let (Some(monitor), Some(bounds)) = (monitor.as_ref(), initial_bounds) {
-            builder = builder
-                .position(
+            if supports_global_coordinates(app) {
+                builder = builder.position(
                     f64::from(bounds.x) / monitor.scale_factor(),
                     f64::from(bounds.y) / monitor.scale_factor(),
-                )
-                .inner_size(
-                    f64::from(bounds.width) / monitor.scale_factor(),
-                    f64::from(bounds.height) / monitor.scale_factor(),
                 );
+            }
+            builder = builder.inner_size(
+                f64::from(bounds.width) / monitor.scale_factor(),
+                f64::from(bounds.height) / monitor.scale_factor(),
+            );
         } else {
             // Wayland may not expose a primary monitor before the first native
             // window is mapped. Register an invisible one-pixel surface first.

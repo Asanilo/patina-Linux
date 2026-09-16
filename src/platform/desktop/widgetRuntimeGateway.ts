@@ -129,8 +129,19 @@ export async function onWidgetRuntimeShown(handler: () => void): Promise<() => v
   });
 }
 
-export async function isPrimaryMouseButtonDown(): Promise<boolean> {
-  return invoke<boolean>("cmd_is_primary_mouse_button_down");
+export async function isPrimaryMouseButtonDown(): Promise<boolean | null> {
+  return invoke<boolean | null>("cmd_is_primary_mouse_button_down");
+}
+
+let globalCoordinatesCapability: Promise<boolean> | null = null;
+
+function supportsGlobalCoordinates(): Promise<boolean> {
+  globalCoordinatesCapability ??= invoke<boolean>("cmd_widget_supports_global_coordinates")
+    .catch(() => {
+      globalCoordinatesCapability = null;
+      return false;
+    });
+  return globalCoordinatesCapability;
 }
 
 export function resolveCurrentAppWindowLabel(): AppWindowLabel {
@@ -164,6 +175,9 @@ export async function startCurrentWidgetWindowDrag(): Promise<void> {
 }
 
 export async function readCurrentWidgetWindowRect(): Promise<WidgetWindowRect | null> {
+  if (!await supportsGlobalCoordinates()) {
+    return null;
+  }
   const currentWindow = getCurrentWindow();
   const visible = await currentWindow.isVisible().catch(() => false);
   if (!visible) {
@@ -185,7 +199,10 @@ export async function readCurrentWidgetWindowRect(): Promise<WidgetWindowRect | 
   };
 }
 
-export async function isCursorInsideCurrentWidgetWindow(): Promise<boolean> {
+export async function isCursorInsideCurrentWidgetWindow(): Promise<boolean | null> {
+  if (!await supportsGlobalCoordinates()) {
+    return null;
+  }
   const currentWindow = getCurrentWindow();
   const visible = await currentWindow.isVisible().catch(() => false);
   if (!visible) {
@@ -199,7 +216,7 @@ export async function isCursorInsideCurrentWidgetWindow(): Promise<boolean> {
   ]);
 
   if (!position || !size || !cursor) {
-    return false;
+    return null;
   }
 
   return cursor.x >= position.x

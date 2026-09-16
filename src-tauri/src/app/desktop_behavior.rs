@@ -130,9 +130,13 @@ pub(crate) async fn sync_desktop_behavior_from_storage<R: Runtime>(
             main_window::minimize_main_window(&app);
         }
         InitialWindowPlan::WidgetOnly => {
-            if let Err(error) = widget::show_widget_window(&app, None).await {
-                eprintln!("[widget] failed to show startup widget window: {error}");
-            }
+            // setup() waits for settings on the GTK thread. First-window mapping
+            // needs that thread's event loop, so build the Widget after it resumes.
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = widget::show_widget_window(&app, None).await {
+                    eprintln!("[widget] failed to show startup widget window: {error}");
+                }
+            });
         }
     }
 

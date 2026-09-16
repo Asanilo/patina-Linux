@@ -433,6 +433,18 @@ Stage 2H.3d 不做一次性切换，按下面五个可回滚批次推进：
 - `check:full` 通过：580 项 Rust 测试、31 项浏览器 smoke、前端/replay/构建和 Clippy；7 项 Rust 测试按设计忽略。仍有浏览器临时 profile 的 `ENOTEMPTY` 清理警告。版本、changelog、GNOME/Chromium/已签名 Firefox 扩展校验通过。本批没有重新执行十分钟原生长测，上一批结果不能代替本批实际视觉验收。
 - 本地 DEB 已构建并通过 `release:verify-daemon-deb`：`src-tauri/target/release/bundle/deb/Patina_1.9.0-beta.15_amd64.deb`。SHA-256 为 `a7c16d48b4395b97bff1854016f9aeacc5b884a06ad3763f02895f198ac3107a`。构建只通过 CLI 关闭 updater 签名产物；未安装、推送、打 tag 或公开发布。
 
+#### beta.16 Wayland 悬浮窗边界修正（2026-09-17）
+
+- beta.15 安装后用户报告拖动仍频繁闪烁且只吸附左边，主进程读数约 246M→212M；因此 beta.15 不能算闪烁验收通过，也不能把该 RSS 读数作为私有内存预算。
+- owner 为 Desktop Widget 与 Linux 窗口平台边界。GTK Wayland 不提供可靠全局位置，X11 QueryPointer 也不能代表原生 Wayland 拖动。按实际 raw display handle 区分后端，X11 保留吸附；原生 Wayland 保留 compositor 拖动、禁用无效绝对定位和坐标推导，不改写保存的左右偏好。全局按键查询不可用返回 null；DOM pointercancel 不当成松手，释放或后续本地 pointer enter/move 的 buttons=0 结束拖动。
+- 首次 Widget 的 monitor discovery 需要 GTK 事件循环，自启动读取设置后异步创建 Widget，避免 setup 的 block_on 阻塞首次映射。GNOME 扩展目前仅焦点读取；完整 Wayland 吸附需要后续设计受限的 compositor provider，不能把本轮降级标为功能完成。
+- 验收范围：无全局坐标时不写位置、不吸附；X11 实际后端仍可吸附；拖动中不提前收尾，释放后能继续展开/收起；用户静置闪烁需安装观察。完成此项后继续既定 Data/分类有界聚合、流式备份和 Widget 独立入口。
+- 自动检查：581 项 Rust 测试、31 项浏览器 smoke、前端/replay/构建通过；Clippy 首次提示 Option 的 `let...else` 可用 `?` 简化，等价修改后单独复查通过。GNOME/Chromium/已签名 Firefox、版本和 changelog 校验通过。浏览器临时 profile 仍有 `ENOTEMPTY` 清理警告。
+- 本地 DEB 构建与 `release:verify-daemon-deb` 通过，成品 `src-tauri/target/release/bundle/deb/Patina_1.9.0-beta.16_amd64.deb`，SHA-256 为 `76120b42757a379e8df68d3be245e967eb69f66361be77218f6b112d0bef135a`。未安装、推送或发布，真实拖动与闪烁不因编译通过而视为验收完成。
+- 真实 Wayland 生命周期回归 `/tmp/patina-window-test-qSOb4H` 通过，耗时 630.18 秒，runner 退出码 0。默认 autostart 只创建 Widget，创建取消清理、旧 Main timer 失效、Main 销毁而 Widget 保留、最后 WebView 一次回收和合成数据库不变均通过。隔离 portal 仍有缺少 PipeWire/窗口列表的警告，收尾 D-Bus 断连提示未导致测试失败；该静态测试页面不覆盖 React 悬浮窗的真实拖动视觉表现。
+
+下一阶段的有界聚合先落 Data heatmap：由 `data/repositories/activity_read_model.rs` 提供一致性读取，`domain/activity_read_model.rs` 保留本机记录优先、导入桶分配和区间裁剪语义，Desktop command 与 daemon handler 复用同一计算入口。前端仅接收按本地日期聚合的 DTO，移除 heatmap 的两套逐会话缓存。当前 `load_snapshot` 的 `fetch_all` 与 contributions 多份克隆均需纳入峰值测量；按天分批仍不能保证单日极端数据有界，不能直接宣称流式完成。先确定单次读取上限、重叠活动处理及一致性事务，再以跨日、DST、active cutoff、排除与导入覆盖对照现有结果；随后才扩到分类候选和其他趋势视图。
+
 #### beta.13 本地安装候选（2026-09-15）
 
 - 当前分支仍为 `feature/patinad-daemon`，版本文件统一为 `1.9.0-beta.13`；只更新 Cargo.lock 中的自身版本，未升级依赖。CHANGELOG 已记录本批内存修复与剩余限制。

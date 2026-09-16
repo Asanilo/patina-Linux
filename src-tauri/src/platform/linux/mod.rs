@@ -7,4 +7,5 @@ pub mod notifications;
 pub mod power;
 pub mod resource;
 pub mod systemd_user_service;
+pub mod widget_window;
 pub mod window_activation;

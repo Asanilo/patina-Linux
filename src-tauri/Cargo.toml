@@ -1,6 +1,6 @@
 [package]
 name = "patina"
-version = "1.9.0-beta.15"
+version = "1.9.0-beta.16"
 description = "Local-first Linux desktop time tracking"
 authors = ["Patina maintainers"]
 license = "MIT"
@@ -59,6 +59,7 @@ windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_Window
 tauri-winrt-notification = "0.7.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+raw-window-handle = "0.6"
 xcb = { version = "1.4", features = ["xlib_xcb", "screensaver", "randr"] }
 zbus = { version = "4", default-features = false, features = ["tokio"] }
 libpulse-binding = "2"

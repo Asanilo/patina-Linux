@@ -83,6 +83,23 @@ pub async fn cmd_show_widget_window(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn cmd_is_primary_mouse_button_down() -> bool {
-    input::is_primary_mouse_button_down()
+pub fn cmd_widget_supports_global_coordinates(app: AppHandle) -> bool {
+    #[cfg(target_os = "linux")]
+    return crate::platform::linux::widget_window::supports_global_coordinates(&app);
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = app;
+        true
+    }
+}
+
+#[tauri::command]
+pub fn cmd_is_primary_mouse_button_down(app: AppHandle) -> Option<bool> {
+    if !cmd_widget_supports_global_coordinates(app) {
+        return None;
+    }
+    #[cfg(target_os = "linux")]
+    return input::is_primary_mouse_button_down();
+    #[cfg(not(target_os = "linux"))]
+    Some(input::is_primary_mouse_button_down())
 }

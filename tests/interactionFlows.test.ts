@@ -737,4 +737,38 @@ await runTest("widget controller accepts runtime collapse without persisting ano
   assert.deepEqual(events.slice(-1), ["layout:right:0.35:false:true"]);
 });
 
+await runTest("widget drag without global coordinates preserves placement and never snaps", async () => {
+  const scheduler = new FakeScheduler();
+  let layouts = 0;
+  let settled = 0;
+  const controller = createWidgetWindowController(false, {
+    loadPlacement: async () => ({ side: "right", anchorY: 0.6 }),
+    persistExpanded: async () => {},
+    applyLayout: async () => { layouts += 1; },
+    readWindowRect: async () => null,
+    resolveMonitorForWindowRect: async () => {
+      throw new Error("unavailable coordinates must not be mapped to a monitor");
+    },
+    schedule: (callback) => scheduler.schedule(callback),
+    clearScheduled: (handle) => scheduler.clear(handle),
+    onCollapsedDragSettled: () => { settled += 1; },
+  });
+  await controller.initialize();
+  controller.beginUserDrag();
+  controller.endUserDrag();
+  scheduler.flushAll();
+  await flushMicrotasks();
+  assert.equal(settled, 1);
+  assert.equal(layouts, 0);
+  assert.deepEqual(controller.getState().placement, { side: "right", anchorY: 0.6 });
+  for (let index = 0; index < 5; index += 1) {
+    controller.handleWindowMoved();
+    scheduler.flushAll();
+    await flushMicrotasks();
+  }
+  assert.equal(layouts, 0);
+  assert.equal(settled, 1);
+  controller.dispose();
+});
+
 console.log(`Passed ${passed} interaction flow tests`);

@@ -20,6 +20,22 @@ App note en: TBD.
 
 - 暂无。
 
+## [1.9.0-beta.16] - 2026-09-17
+
+Release: Wayland 悬浮窗拖动测试候选，修正全局坐标与鼠标状态误用，采用原生自由拖动。
+App note: 修正 Wayland 拖动误判；原生 Wayland 暂停边缘吸附。
+App note en: Correct Wayland drag handling; native Wayland uses free dragging without edge snapping.
+
+### Fixed
+
+- 按实际窗口后端区分全局坐标能力；原生 Wayland 不再将无效位置判成左边或反复请求绝对定位，X11 保留边缘吸附。
+- 鼠标状态未知时不再当成已松手；原生拖动交接触发的 pointercancel 不再提前结束拖动，本地释放或后续指针事件完成收尾。
+- 登录启动的首次悬浮窗映射异步执行，避免等待显示器信息时阻塞 GTK 事件循环。
+
+### Internal
+
+- 新增无全局坐标拖动回归与实际显示后端能力测试。完整 GNOME Wayland 边缘吸附仍待 compositor provider；实际闪烁与视觉表现待安装验收。
+
 ## [1.9.0-beta.15] - 2026-09-16
 
 Release: 桌面内存与悬浮窗测试候选，完善自启动和最后窗口回收，避免移动事件反复触发吸附。

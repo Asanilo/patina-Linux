@@ -30,6 +30,7 @@ GNOME Wayland 下，如果 `org.patina.WindowTracker` 没有 D-Bus owner，Patin
 | 应用图标 | freedesktop 图标与进程信息 | 找不到时使用稳定 fallback |
 | 浏览器网页活动 | Firefox / Zen 与 Chromium 扩展 | 未连接时仅保留窗口标题级数据 |
 | 桌面通知 | freedesktop 通知 | 失败时记录错误，不改变 tracking 数据 |
+| 悬浮窗拖动 / 吸附 | X11 使用全局坐标吸附；原生 Wayland 由 compositor 处理拖动 | Wayland 不读写 GTK 伪全局坐标，不自动吸附或覆盖已保存的左右偏好；全局按键未知时等待本地指针事件结束拖动态 |
 | 自启动 | 当前已发布稳定版仍使用 XDG autostart desktop entry；daemon 分支的 DEB 输入包含默认禁用的 `patinad.service`，并已接入后台/客户端登录偏好拆分和首次安全交接 | Settings 继续显示并修复旧 desktop entry；daemon-backed DEB 完成实机验收前不把该交接标为稳定支持，也不开放可能启动第二 owner 的普通设置写入 |
 | 本地 API | `127.0.0.1` + owner-only Bearer token | daemon 可原子换端口/轮换 Token；冲突时保留旧 listener，轮换后旧 API/SSE 凭据失效 |
 
@@ -38,6 +39,8 @@ GNOME Wayland 下，如果 `org.patina.WindowTracker` 没有 D-Bus owner，Patin
 ## 4. GNOME 扩展边界
 
 GNOME Shell 扩展只负责读取 Shell 已知的焦点窗口，并通过 `org.patina.WindowTracker` 暴露最小 D-Bus 接口。它不拥有 session 切分、分类、AFK 决策、数据库或 API。
+
+当前扩展不提供悬浮窗移动、置顶或全局指针状态接口。Wayland 原生窗口的边缘吸附尚未实现，不能用 GTK 返回的 `(0, 0)` 推断左侧位置；详见 [GTK 窗口位置限制](https://docs.gtk.org/gtk3/method.Window.get_position.html)。能力判断应使用实际显示后端，而非仅使用 `XDG_SESSION_TYPE`，以兼容 Wayland 会话内的 X11 客户端。
 
 扩展源码位于：
 

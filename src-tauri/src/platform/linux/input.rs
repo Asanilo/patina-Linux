@@ -1,14 +1,12 @@
 use xcb::x;
 
-pub fn is_primary_mouse_button_down() -> bool {
+pub fn is_primary_mouse_button_down() -> Option<bool> {
     let Ok((conn, screen_num)) = xcb::Connection::connect(None) else {
-        return false;
+        return None;
     };
 
     let setup = conn.get_setup();
-    let Some(screen) = setup.roots().nth(screen_num as usize) else {
-        return false;
-    };
+    let screen = setup.roots().nth(screen_num as usize)?;
 
     let cookie = conn.send_request(&x::QueryPointer {
         window: screen.root(),
@@ -18,8 +16,8 @@ pub fn is_primary_mouse_button_down() -> bool {
         Ok(reply) => {
             let mask = reply.mask().bits();
             // Button1Mask = 0x100 (button 1 pressed)
-            (mask & 0x100) != 0
+            Some((mask & 0x100) != 0)
         }
-        Err(_) => false,
+        Err(_) => None,
     }
 }

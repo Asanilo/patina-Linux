@@ -3331,7 +3331,7 @@ checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
 
 [[package]]
 name = "patina"
-version = "1.9.0-beta.15"
+version = "1.9.0-beta.16"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -3346,6 +3346,7 @@ dependencies = [
  "libpulse-binding",
  "notify-rust",
  "percent-encoding",
+ "raw-window-handle",
  "reqwest 0.12.28",
  "rfd",
  "secret-service",

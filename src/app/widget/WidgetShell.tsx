@@ -114,7 +114,7 @@ export default function WidgetShell() {
 
     void isCursorInsideCurrentWidgetWindow()
       .then((cursorInsideWidget) => {
-        if (hoverSuppressionTokenRef.current === token && !cursorInsideWidget) {
+        if (hoverSuppressionTokenRef.current === token && cursorInsideWidget === false) {
           setSuppressHoverReveal(false);
         }
       })
@@ -188,7 +188,15 @@ export default function WidgetShell() {
       dragReleasePollRef.current = null;
       void isPrimaryMouseButtonDown()
         .then((isDown) => {
-          if (!isDown) {
+          if (!dragActiveRef.current) {
+            return;
+          }
+          if (isDown === null) {
+            // Native Wayland dragging has no global X11 button state. Finish
+            // from pointer release or the next local pointer event instead.
+            return;
+          }
+          if (isDown === false) {
             stopCollapsedDrag();
             return;
           }
@@ -196,7 +204,6 @@ export default function WidgetShell() {
           pollCollapsedDragRelease();
         })
         .catch((error) => {
-          stopCollapsedDrag();
           console.warn("poll widget drag release failed", error);
         });
     }, DRAG_RELEASE_POLL_MS);
@@ -218,7 +225,11 @@ export default function WidgetShell() {
     && !dragging
     && Date.now() - dragHoverSuppressStartedAtRef.current > STALE_HOVER_ENTER_GUARD_MS;
 
-  const revealHoverIfAllowed = () => {
+  const revealHoverIfAllowed = (event: PointerEvent<HTMLDivElement>) => {
+    if (dragActiveRef.current && (event.buttons & 1) === 0) {
+      stopCollapsedDrag();
+      return;
+    }
     if (dragging || renderExpanded) {
       return;
     }
@@ -265,6 +276,11 @@ export default function WidgetShell() {
       releaseCollapsedDragPointerCapture();
     }
 
+    // Handing the pointer to the compositor may cancel DOM capture while the
+    // button is still held. Cancellation alone is not a drag-release signal.
+    if (event.type === "pointercancel" && dragActiveRef.current) {
+      return;
+    }
     stopCollapsedDrag();
     if (suppressNextToggleRef.current) {
       window.setTimeout(() => {
