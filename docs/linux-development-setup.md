@@ -326,6 +326,45 @@ Evidence remains in the printed `/tmp/patina-window-test-*` directory as
 `native.log` and `result.json`. The test is skipped by default; do not run all
 ignored tests against the normal user environment. No installed app is replaced.
 
+## Real Frontend Heatmap Acceptance
+
+From a Wayland session, explicitly run:
+
+```bash
+npm run perf:heatmap-desktop
+```
+
+This builds the real frontend and an opt-in Rust test executable, then runs the
+production Desktop bootstrap in daemon-client preview mode and the real daemon
+runtime in separate test processes. Both use the same synthetic Local profile
+under a private `0700` `/tmp/patina-heatmap-test-*` tree. A private D-Bus serves as
+both session and system bus; only the Wayland display is borrowed. Tracking is
+paused, audio/web bridges and login preferences are disabled. No installed app,
+production database, user service, or production credential is used.
+
+The runner creates 50,000 native sessions near the current date, serves the built
+React assets on an ephemeral loopback port, and drives the real WebKit page.
+It observes daily IPC responses without mocking them, checks heatmap data and
+History navigation, closes Main through the normal lifecycle, waits 310 seconds,
+and reopens it. It then stops the daemon with the service's normal `SIGINT` signal
+and checks fixture counts, total duration and SQLite integrity. Expect about six
+minutes plus compilation; do not run every ignored test indiscriminately.
+
+Evidence includes `build.json`, `ui-1.json`, `ui-2.json`, `closed.json`,
+`destroyed.json`, `integrity.json`, logs, `evidence.json` and `result.json`.
+The collector samples spawned Desktop/daemon processes and attributable live
+descendants about every 250ms. Missing memory values remain null; PSS/USS are more
+useful than summed RSS. The UI probe only retains compact synthetic daily totals,
+not authentication headers or complete activity records.
+
+This is a debug-runtime functional gate and memory observation, not a fixed
+whole-product memory-budget benchmark or release-package acceptance. It excludes
+unattributable/reparented helpers, production data, continuous real tracking,
+widget appearance, screenshot-based visual review and multi-year/import-heavy
+scalability. Failed or interrupted runs retain their private evidence rather than
+deleting directories recursively. Do not infer a memory improvement merely from
+`passed: true`; compare the recorded phases and query-level budgets separately.
+
 ## MCP Wrapper
 
 The MCP wrapper is a stdio server that maps MCP tool calls to the local API:

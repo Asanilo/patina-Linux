@@ -1,7 +1,9 @@
 pub mod activity_import;
 pub mod activity_read_model;
+pub mod activity_read_policy;
 pub mod backup;
 pub mod backup_schedule;
+pub mod daily_activity;
 pub mod data_maintenance;
 pub mod remote_backup;
 pub mod settings;

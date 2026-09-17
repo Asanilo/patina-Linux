@@ -190,6 +190,8 @@ Rust 默认门槛包含 `npm run check:rust-boundaries`、`cargo check`、Rust �
 
 Linux 进程内资源诊断必须以 `/proc/self/smaps_rollup` 为 RSS/PSS/USS 来源，USS 按 `Private_Clean + Private_Dirty + Private_Hugetlb` 计算；文件或字段不可读时保留 unknown，不得用 `VmData`、虚拟地址空间或零值代替私有驻留。兼容字段如继续存在，必须明确映射到相同驻留口径。
 
+真实热力图链路另用 `npm run perf:heatmap-desktop`：私有 Local profile、D-Bus、合成数据和真实构建的 React/WebKit，经生产 IPC 与 typed daemon client 读取日汇总，检查关闭、五分钟销毁及重开。它只在测试构建中注入页面操作，不改变正式入口；记录各进程组约 250ms 的 PSS/USS/RSS 采样。该命令的成功表示功能与数据完整性门禁通过，不代表固定整机内存预算达标，也不替代 release DEB、视觉或真实 tracking 验收。运行条件和证据格式见 [开发文档](./linux-development-setup.md#real-frontend-heatmap-acceptance)。
+
 内存验收应在同一版本、相近数据量和页面状态下覆盖前台稳定、关闭到托盘、开启低耗后台并超过回收等待期、重新打开四种状态，重复多轮并检查追踪持续性、页面恢复和子进程存活情况。先验证现有回收，再定位查询缓存、轮询和渲染保留；更换 UI 框架不是没有测量时的默认解法。工具只识别当前用户的已安装标准路径及仍可归属的子进程，不包含独立 GPU 服务、已重挂父进程或自定义开发路径，扫描也不是原子快照；缺少目标进程时不得声称整个产品占用为零。
 
 已有读模型 benchmark：
@@ -197,6 +199,9 @@ Linux 进程内资源诊断必须以 `/proc/self/smaps_rollup` 为 RSS/PSS/USS �
 - `npm run perf:history-read-model`
 - `npm run perf:dashboard-read-model`
 - `npm run perf:startup-bootstrap`
+- `npm run perf:daily-activity`（Linux，显式运行的 Rust 查询进程对照）
+
+`perf:daily-activity` 在独立 `/tmp/patina-daily-bench-*` 目录生成 50,000 条合成 session，以新的只读进程分别执行旧明细 SQL/JSON 参考路径和共享日聚合；记录实际查询计划、响应字节、耗时和每 10ms 采样的 PSS/USS/RSS。它校验总时长、SQLite integrity 与读前后数据库哈希，不发现或读取正式 profile，不启动 tracker、daemon 或 Desktop。日聚合预算为 5 秒、64 KiB 响应及 64 MiB 采样 USS 增量，缺失 USS 或超限以非零退出；证据保留在上述目录。该 debug 场景不包含 IPC、HTTP、JS、WebKit，不精确复刻 SQL plugin 的分配器行为，也不能代表全进程峰值或多年份/大量导入数据。发布前仍需真实客户端整链路验收。
 
 它们不是唯一性能脚本，但代表默认口径：先固定场景，再做前后对照，而不是靠主观感觉宣称“更快了”。
 这些脚本的输出必须明确预算，并在任一测量项超过预算时以非零退出码失败；如果某个脚本只是在比较参考路径和完整现状路径，输出必须说清它不是直接优化收益对照。

@@ -177,6 +177,7 @@ fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Build
         commands::daemon_service::cmd_retry_runtime_owner_cutover,
         commands::daemon_service::cmd_set_background_tracking_at_login,
         commands::persistence::cmd_reopen_sqlite_pool,
+        commands::persistence::cmd_get_daily_activity,
         commands::persistence::cmd_delete_tracking_data_before,
         commands::persistence::cmd_clear_all_window_titles,
         commands::persistence::cmd_delete_app_tracking_data,
@@ -357,6 +358,24 @@ pub(crate) fn handle_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn main_notification_bootstrap_only_gets_read_permission() {
+        let capability: serde_json::Value =
+            serde_json::from_str(include_str!("../../capabilities/default.json")).unwrap();
+        let permissions = capability["permissions"].as_array().unwrap();
+        assert!(permissions
+            .iter()
+            .any(|value| value == "notification:allow-is-permission-granted"));
+        assert!(!permissions.iter().any(|value| matches!(
+            value.as_str(),
+            Some(
+                "notification:default"
+                    | "notification:allow-notify"
+                    | "notification:allow-request-permission"
+            )
+        )));
+    }
+
     #[test]
     fn startup_storage_maintenance_precedes_sqlite_initialization() {
         let source = include_str!("bootstrap.rs");

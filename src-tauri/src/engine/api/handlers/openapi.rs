@@ -269,6 +269,19 @@ fn paths(surface: ApiSurface) -> Value {
     });
     let object = paths.as_object_mut().expect("OpenAPI paths object");
     object.insert(
+        "/api/v1/heatmap".to_string(),
+        json!({
+            "get": get_operation_with_parameters(
+                "Bounded daily totals in the runtime host local timezone. Native/import precedence is applied before app exclusions, following API summary semantics. At most 378 days; budget failures return no partial result. No window titles or URLs are returned.",
+                "HeatmapResponse",
+                vec![
+                    required_query_param("from", "string", "Inclusive local date, strictly YYYY-MM-DD."),
+                    required_query_param("to", "string", "Exclusive local date, strictly YYYY-MM-DD."),
+                ],
+            )
+        }),
+    );
+    object.insert(
         "/api/v1/imports".to_string(),
         json!({
             "get": get_operation(
@@ -898,6 +911,26 @@ fn schemas() -> Value {
     schemas.insert(
         "TrendResponse".to_string(),
         envelope(schema_ref("TrendData")),
+    );
+    schemas.insert(
+        "HeatmapDay".to_string(),
+        object_schema(vec![
+            ("start_ms", integer_schema()),
+            ("end_ms", integer_schema()),
+            ("active_ms", integer_schema()),
+        ]),
+    );
+    schemas.insert(
+        "HeatmapData".to_string(),
+        object_schema(vec![
+            ("sampled_at_ms", integer_schema()),
+            ("earliest_start_ms", nullable_integer_schema()),
+            ("days", array_schema(schema_ref("HeatmapDay"))),
+        ]),
+    );
+    schemas.insert(
+        "HeatmapResponse".to_string(),
+        envelope(schema_ref("HeatmapData")),
     );
     schemas.insert(
         "WebActivityEntry".to_string(),

@@ -68,7 +68,8 @@ function isValidAppTrendViewModel(value: unknown) {
 function isValidBootstrapSnapshot(value: unknown): value is DataBootstrapSnapshot {
   if (!isRecord(value)) return false;
   return (
-    typeof value.createdAtMs === "number"
+    value.heatmapReadVersion === 2
+    && typeof value.createdAtMs === "number"
     && typeof value.overviewRangeCacheKey === "string"
     && typeof value.appRangeCacheKey === "string"
     && (typeof value.heatmapSelection === "number" || value.heatmapSelection === "recent")
@@ -134,7 +135,7 @@ export async function saveDataBootstrapSnapshot(
     return false;
   }
 
-  const payload = JSON.stringify(snapshot);
+  const payload = JSON.stringify({ ...snapshot, heatmapReadVersion: 2 });
   if (payload.length > DATA_BOOTSTRAP_SNAPSHOT_MAX_BYTES) {
     resolvedDeps.warn(
       "Skipped Data bootstrap snapshot because it exceeded the size budget",

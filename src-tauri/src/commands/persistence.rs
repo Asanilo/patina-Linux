@@ -4,6 +4,33 @@ use crate::engine::tracking::runtime::emit_tracking_data_changed;
 use tauri::{AppHandle, Runtime};
 
 #[tauri::command]
+pub async fn cmd_get_daily_activity<R: Runtime>(
+    from: String,
+    to: String,
+    app: AppHandle<R>,
+) -> Result<crate::domain::daily_activity::DailyActivitySnapshot, String> {
+    let boundaries = crate::domain::daily_activity::local_day_boundaries(&from, &to)?;
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        return client
+            .daily_activity(&from, &to)
+            .await
+            .map_err(|error| match error {
+                crate::platform::daemon_client::PatinadClientError::Http {
+                    status: 404, ..
+                } => "heatmap-unsupported".to_string(),
+                error => error.to_string(),
+            });
+    }
+    let pool = sqlite_pool::wait_for_sqlite_pool(&app).await?;
+    crate::data::repositories::daily_activity::load_daily_activity(
+        &pool,
+        &boundaries,
+        crate::app::runtime::now_ms() as i64,
+    )
+    .await
+}
+
+#[tauri::command]
 pub async fn cmd_reopen_sqlite_pool<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     sqlite_pool::reopen_sqlite_pool(&app).await.map(|_| ())
 }

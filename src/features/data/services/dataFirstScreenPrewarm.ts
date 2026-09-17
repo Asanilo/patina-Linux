@@ -1,6 +1,6 @@
 import type { AppLanguage } from "../../../shared/settings/appSettings.ts";
 import {
-  buildActivityHeatmap,
+  buildDailyActivityHeatmap,
   buildDataAppTrendViewModel,
   buildDataTrendViewModel,
   prewarmRecentDataHeatmapCache,
@@ -79,7 +79,7 @@ function buildBootstrapSnapshot(
       trendSnapshot.fetchedAtMs,
       null,
     ),
-    heatmapRows: buildActivityHeatmap(heatmapSnapshot.sessions, "recent", nowMs),
+    heatmapRows: buildDailyActivityHeatmap(heatmapSnapshot.days, "recent", nowMs),
     earliestStartTime: heatmapSnapshot.earliestStartTime,
   };
 }

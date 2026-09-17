@@ -1,19 +1,25 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { getDailyActivity } from "../src/platform/persistence/dailyActivityRepository.ts";
 import { ProcessMapper } from "../src/shared/classification/processMapper.ts";
 import { mapRawAggregateSessionCandidates } from "../src/platform/persistence/sessionReadRepository.ts";
 import {
   buildActivityHeatmap,
+  aggregateHeatmapDays,
+  buildDailyActivityHeatmap,
   buildDataTrendViewModel,
   buildDataAppTrendViewModel,
   buildYearOptions,
-  getDataHeatmapSessionCacheSizeForTests,
-  getCachedDataHeatmapSessions,
+  getDataHeatmapDayCacheSizeForTests,
+  getCachedDataHeatmapDays,
+  getCachedEarliestSessionStartTime,
+  clearDataReadModelCache,
   getHeatmapRange,
-  loadDataHeatmapSnapshot,
-  prewarmRecentDataHeatmapCache,
+  loadDataHeatmapSnapshot as loadDailyHeatmapSnapshot,
+  prewarmRecentDataHeatmapCache as prewarmDailyHeatmapCache,
   resetDataReadModelCacheForTests,
   type AggregateSessionRecord,
-  type DataHeatmapDependencies,
+  type HeatmapSelection,
 } from "../src/features/data/services/dataReadModel.ts";
 import { clearDataHeavyCaches } from "../src/features/data/services/dataCacheLifecycle.ts";
 import {
@@ -35,6 +41,26 @@ import {
 
 let passed = 0;
 
+// Legacy fact fixtures are aggregated inside the test, never by the production loader.
+interface DataHeatmapDependencies {
+  getEarliestSessionStartTime: () => Promise<number | null>;
+  getSessionsInRange: (start: number, end: number) => Promise<AggregateSessionRecord[]>;
+}
+function dailyFixtureDeps(selection: HeatmapSelection, now: number, deps: DataHeatmapDependencies) {
+  return { getDailyActivity: async (start: number, end: number) => {
+    const [earliestStartTime, sessions] = await Promise.all([
+      deps.getEarliestSessionStartTime(), deps.getSessionsInRange(start, end),
+    ]);
+    return { earliestStartTime, days: aggregateHeatmapDays(sessions, selection, now) };
+  } };
+}
+function loadDataHeatmapSnapshot(selection: HeatmapSelection, now: number, deps: DataHeatmapDependencies) {
+  return loadDailyHeatmapSnapshot(selection, now, dailyFixtureDeps(selection, now, deps));
+}
+function prewarmRecentDataHeatmapCache(now: number, deps: DataHeatmapDependencies) {
+  return prewarmDailyHeatmapCache(now, dailyFixtureDeps("recent", now, deps));
+}
+
 async function runTest(name: string, fn: () => Promise<void> | void) {
   resetDataBootstrapSnapshotForTests();
   resetDataFirstScreenPrewarmForTests();
@@ -43,6 +69,59 @@ async function runTest(name: string, fn: () => Promise<void> | void) {
   passed += 1;
   console.log(`PASS ${name}`);
 }
+
+await runTest("daily gateway validates complete local days without SQL fallback", async () => {
+  const start = new Date(2026, 0, 1).getTime();
+  const middle = new Date(2026, 0, 2).getTime();
+  const end = new Date(2026, 0, 3).getTime();
+  const response = { sampled_at_ms: end, earliest_start_ms: start, days: [
+    { start_ms: start, end_ms: middle, active_ms: 123 },
+    { start_ms: middle, end_ms: end, active_ms: 456 },
+  ] };
+  let calls = 0;
+  const result = await getDailyActivity(start, end, async (from, to) => {
+    calls += 1;
+    assert.equal(from, "2026-01-01");
+    assert.equal(to, "2026-01-03");
+    return response;
+  });
+  assert.deepEqual(result.days, [{ date: "2026-01-01", duration: 123 }, { date: "2026-01-02", duration: 456 }]);
+  for (const invalid of [null, {}, { ...response, days: [] },
+    { ...response, days: response.days.slice().reverse() },
+    { ...response, days: [{ ...response.days[0], start_ms: start + 1 }, response.days[1]] },
+    { ...response, days: [{ ...response.days[0], active_ms: -1 }, response.days[1]] },
+    { ...response, sampled_at_ms: Number.NaN },
+  ]) {
+    await assert.rejects(getDailyActivity(start, end, async () => invalid));
+  }
+  await assert.rejects(getDailyActivity(start, end, async () => { calls += 1; throw new Error("heatmap-unsupported"); }), /heatmap-unsupported/);
+  assert.equal(calls, 2);
+  await assert.rejects(getDailyActivity(start + 1, end, async () => { throw new Error("unexpected request"); }), /midnights/);
+  const source = await readFile(new URL("../src/features/data/services/dataReadModel.ts", import.meta.url), "utf8");
+  assert.ok(!source.includes("getSessionSummariesInRange"));
+  assert.ok(!source.includes("getSessionsInRange"));
+});
+
+await runTest("daily snapshot consumes backend totals and refreshes earliest activity atomically", async () => {
+  resetDataReadModelCacheForTests();
+  let earliest = 1;
+  const now = new Date(2026, 0, 3).getTime();
+  const deps = { getDailyActivity: async () => ({ earliestStartTime: earliest, days: [{ date: "2026-01-01", duration: 37 }] }) };
+  const first = await loadDailyHeatmapSnapshot(2026, now, deps);
+  assert.equal(first.days[0].duration, 37);
+  earliest = 2;
+  assert.equal((await loadDailyHeatmapSnapshot(2026, now, deps)).earliestStartTime, 2);
+});
+
+await runTest("bootstrap rejects snapshots produced by the legacy heatmap compiler", async () => {
+  let cleared = false;
+  const result = await loadPersistedDataBootstrapSnapshot({
+    loadPayload: async () => JSON.stringify(makeBootstrapSnapshot()),
+    clearPayload: async () => { cleared = true; },
+  });
+  assert.equal(result, null);
+  assert.equal(cleared, true);
+});
 
 function makeSession(overrides: Partial<AggregateSessionRecord>): AggregateSessionRecord {
   return {
@@ -389,7 +468,7 @@ await runTest("recent heatmap range is aligned to whole local weeks", () => {
   assert.equal(range.end.getDay(), 1);
 });
 
-await runTest("heatmap snapshot caches earliest activity and refreshes sessions", async () => {
+await runTest("heatmap snapshot caches earliest activity and only retains daily totals", async () => {
   resetDataReadModelCacheForTests();
   let earliestLoadCount = 0;
   let sessionLoadCount = 0;
@@ -412,13 +491,15 @@ await runTest("heatmap snapshot caches earliest activity and refreshes sessions"
   const nowMs = new Date(2026, 0, 3, 12, 0, 0).getTime();
 
   const first = await loadDataHeatmapSnapshot(2026, nowMs, deps);
-  const cached = getCachedDataHeatmapSessions(2026, nowMs);
+  const cached = getCachedDataHeatmapDays(2026, nowMs);
   const second = await loadDataHeatmapSnapshot(2026, nowMs, deps);
 
   assert.equal(first.earliestStartTime, sessions[0].startTime);
-  assert.equal(cached, sessions);
-  assert.equal(second.sessions, sessions);
-  assert.equal(earliestLoadCount, 1);
+  assert.equal(cached, first.days);
+  assert.deepEqual(second.days, first.days);
+  assert.equal(first.days.find((day) => day.date === "2026-01-01")?.duration, 3_600_000);
+  assert.ok(!("sessions" in first));
+  assert.equal(earliestLoadCount, 2);
   assert.equal(sessionLoadCount, 2);
 });
 
@@ -447,13 +528,13 @@ await runTest("recent heatmap prewarm reuses a warm cache", async () => {
   const first = await prewarmRecentDataHeatmapCache(nowMs, deps);
   const second = await prewarmRecentDataHeatmapCache(nowMs, deps);
 
-  assert.equal(first.sessions, sessions);
-  assert.equal(second.sessions, sessions);
+  assert.equal(second.days, first.days);
+  assert.equal(first.days.length, 371);
   assert.equal(earliestLoadCount, 1);
   assert.equal(sessionLoadCount, 1);
 });
 
-await runTest("heatmap session cache keeps a small LRU set", async () => {
+await runTest("heatmap daily cache keeps a small LRU set", async () => {
   resetDataReadModelCacheForTests();
   const deps: DataHeatmapDependencies = {
     getEarliestSessionStartTime: async () => null,
@@ -465,14 +546,104 @@ await runTest("heatmap session cache keeps a small LRU set", async () => {
   await loadDataHeatmapSnapshot(2025, nowMs, deps);
   await loadDataHeatmapSnapshot(2026, nowMs, deps);
 
-  assert.equal(getDataHeatmapSessionCacheSizeForTests(), 2);
-  assert.equal(getCachedDataHeatmapSessions("recent", nowMs), undefined);
+  assert.equal(getDataHeatmapDayCacheSizeForTests(), 2);
+  assert.equal(getCachedDataHeatmapDays("recent", nowMs), undefined);
+});
+
+await runTest("50,000 heatmap records retain only bounded daily values", async () => {
+  resetDataReadModelCacheForTests();
+  const start = new Date(2026, 0, 1).getTime();
+  const nowMs = new Date(2026, 11, 31, 12).getTime();
+  const sessions = Array.from({ length: 50_000 }, (_, index) => makeSession({
+    startTime: start + index * 10_000,
+    endTime: start + index * 10_000 + 1000,
+  }));
+  const snapshot = await loadDataHeatmapSnapshot(2026, nowMs, {
+    getEarliestSessionStartTime: async () => start,
+    getSessionsInRange: async () => sessions,
+  });
+  assert.ok(snapshot.days.length <= 378);
+  assert.equal(snapshot.days.reduce((sum, day) => sum + day.duration, 0), 50_000_000);
+  assert.ok(snapshot.days.every((day) => Object.keys(day).sort().join() === "date,duration"));
+  assert.deepEqual(buildDailyActivityHeatmap(snapshot.days, 2026, nowMs), buildActivityHeatmap(sessions, 2026, nowMs));
+  assert.deepEqual(snapshot.days, aggregateHeatmapDays(sessions, 2026, nowMs));
+  assert.ok(JSON.stringify(snapshot.days).length < JSON.stringify(sessions).length / 100);
+  sessions[0].endTime += 12345;
+  assert.equal(snapshot.days.reduce((sum, day) => sum + day.duration, 0), 50_000_000);
+});
+
+await runTest("late heatmap reads cannot repopulate a cleared background cache", async () => {
+  resetDataReadModelCacheForTests();
+  let finish!: (sessions: AggregateSessionRecord[]) => void;
+  const nowMs = new Date(2026, 0, 3).getTime();
+  const pending = loadDataHeatmapSnapshot("recent", nowMs, {
+    getEarliestSessionStartTime: async () => 123,
+    getSessionsInRange: () => new Promise((resolve) => { finish = resolve; }),
+  });
+  clearDataReadModelCache();
+  finish([]);
+  await pending;
+  assert.equal(getDataHeatmapDayCacheSizeForTests(), 0);
+  assert.equal(getCachedEarliestSessionStartTime(), undefined);
+});
+
+await runTest("heatmap page and prewarm reuse one in-flight read and can retry failures", async () => {
+  resetDataReadModelCacheForTests();
+  let finish!: (sessions: AggregateSessionRecord[]) => void;
+  let loads = 0;
+  const nowMs = new Date(2026, 0, 3).getTime();
+  const deps: DataHeatmapDependencies = {
+    getEarliestSessionStartTime: async () => null,
+    getSessionsInRange: () => {
+      loads += 1;
+      return new Promise((resolve) => { finish = resolve; });
+    },
+  };
+  const first = loadDataHeatmapSnapshot("recent", nowMs, deps);
+  const prewarm = prewarmRecentDataHeatmapCache(nowMs, deps);
+  assert.equal(loads, 1);
+  finish([]);
+  const [snapshot, warmed] = await Promise.all([first, prewarm]);
+  assert.equal(snapshot, warmed);
+  clearDataReadModelCache();
+  await assert.rejects(loadDataHeatmapSnapshot("recent", nowMs, {
+    ...deps, getSessionsInRange: async () => { throw new Error("read failed"); },
+  }), /read failed/);
+  const retried = loadDataHeatmapSnapshot("recent", nowMs, deps);
+  finish([]);
+  await retried;
+  assert.equal(loads, 2);
+});
+
+await runTest("an obsolete heatmap completion cannot delete a newer pending read", async () => {
+  resetDataReadModelCacheForTests();
+  let loads = 0;
+  const finishes: Array<(sessions: AggregateSessionRecord[]) => void> = [];
+  const nowMs = new Date(2026, 0, 3).getTime();
+  const deps: DataHeatmapDependencies = {
+    getEarliestSessionStartTime: async () => null,
+    getSessionsInRange: () => {
+      loads += 1;
+      return new Promise((resolve) => { finishes.push(resolve); });
+    },
+  };
+  const oldRead = loadDataHeatmapSnapshot("recent", nowMs, deps);
+  clearDataReadModelCache();
+  const newRead = loadDataHeatmapSnapshot("recent", nowMs, deps);
+  finishes[0]([]);
+  await oldRead;
+  assert.equal(getDataHeatmapDayCacheSizeForTests(), 0);
+  assert.equal(loadDataHeatmapSnapshot("recent", nowMs, deps), newRead);
+  finishes[1]([]);
+  await newRead;
+  assert.equal(loads, 2);
+  assert.equal(getDataHeatmapDayCacheSizeForTests(), 1);
 });
 
 await runTest("data bootstrap snapshot loads a valid persisted payload into cache", async () => {
   const snapshot = makeBootstrapSnapshot();
   const loaded = await loadPersistedDataBootstrapSnapshot({
-    loadPayload: async () => JSON.stringify(snapshot),
+    loadPayload: async () => JSON.stringify({ ...snapshot, heatmapReadVersion: 2 }),
     savePayload: async () => {
       throw new Error("unexpected save");
     },
@@ -495,7 +666,7 @@ await runTest("data bootstrap snapshot rejects incomplete app options and clears
   let cleared = false;
 
   const loaded = await loadPersistedDataBootstrapSnapshot({
-    loadPayload: async () => JSON.stringify(snapshot),
+    loadPayload: async () => JSON.stringify({ ...snapshot, heatmapReadVersion: 2 }),
     savePayload: async () => {
       throw new Error("unexpected save");
     },
@@ -560,7 +731,7 @@ await runTest("data first screen prewarm saves a bootstrap snapshot", async () =
       earliestStartTime: sessions[0].startTime,
       range: getHeatmapRange("recent", nowMs),
       cacheKey: "recent:2025-05-05:2026-05-11",
-      sessions,
+      days: aggregateHeatmapDays(sessions, "recent", nowMs),
     }),
     saveBootstrapSnapshot: async (nextSnapshot) => {
       savedSnapshot = nextSnapshot;
@@ -602,7 +773,7 @@ await runTest("data first screen prewarm dedupes pending matching work and throt
       earliestStartTime: sessions[0].startTime,
       range: getHeatmapRange("recent", nowMs),
       cacheKey: "recent:2025-05-05:2026-05-11",
-      sessions,
+      days: aggregateHeatmapDays(sessions, "recent", nowMs),
     }),
     saveBootstrapSnapshot: async () => true,
     warn: () => {
@@ -653,15 +824,15 @@ await runTest("data heavy cache cleanup clears trend and heatmap caches without 
   });
 
   assert.equal(getDataTrendSnapshotCacheSizeForTests(), 1);
-  assert.equal(getDataHeatmapSessionCacheSizeForTests(), 1);
+  assert.equal(getDataHeatmapDayCacheSizeForTests(), 1);
 
   clearDataHeavyCaches();
 
   assert.equal(getDataTrendSnapshotCacheSizeForTests(), 0);
-  assert.equal(getDataHeatmapSessionCacheSizeForTests(), 0);
+  assert.equal(getDataHeatmapDayCacheSizeForTests(), 0);
   assert.equal((await loadPersistedDataBootstrapSnapshot({
     clearPayload: async () => undefined,
-    loadPayload: async () => JSON.stringify(makeBootstrapSnapshot()),
+    loadPayload: async () => JSON.stringify({ ...makeBootstrapSnapshot(), heatmapReadVersion: 2 }),
     savePayload: async () => undefined,
   }))?.overviewRangeCacheKey, "rolling:7:2026-05-02:2026-05-08");
 });

@@ -729,11 +729,36 @@ impl PatinadClient {
     where
         T: DeserializeOwned,
     {
+        self.get_json_with_timeout(path, response_name, REQUEST_TIMEOUT)
+            .await
+    }
+
+    pub async fn daily_activity(
+        &self,
+        from: &str,
+        to: &str,
+    ) -> Result<crate::domain::daily_activity::DailyActivitySnapshot, PatinadClientError> {
+        crate::domain::daily_activity::local_day_boundaries(from, to)
+            .map_err(PatinadClientError::InvalidConfiguration)?;
+        self.get_json_with_timeout(
+            &format!("/api/v1/heatmap?from={from}&to={to}"),
+            "daily activity",
+            Duration::from_secs(18),
+        )
+        .await
+    }
+
+    async fn get_json_with_timeout<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        response_name: &str,
+        timeout: Duration,
+    ) -> Result<T, PatinadClientError> {
         let response = self
             .client
             .get(format!("{}{path}", self.base_url))
             .bearer_auth(&self.token)
-            .timeout(REQUEST_TIMEOUT)
+            .timeout(timeout)
             .send()
             .await
             .map_err(map_transport_error)?;
@@ -999,6 +1024,77 @@ mod tests {
     use crate::engine::api::types::{
         AvailabilityCapability, OwnedRuntimeCapability, ProtocolCapability, WriteApiCapability,
     };
+
+    #[tokio::test]
+    async fn daily_activity_transport_is_authenticated_bounded_and_never_falls_back() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let boundaries =
+            crate::domain::daily_activity::local_day_boundaries("2026-01-01", "2026-01-03")
+                .unwrap();
+        let snapshot = crate::domain::daily_activity::DailyActivitySnapshot {
+            sampled_at_ms: boundaries[2],
+            earliest_start_ms: Some(boundaries[0]),
+            days: boundaries
+                .windows(2)
+                .map(|day| crate::domain::daily_activity::DailyActivityTotal {
+                    start_ms: day[0],
+                    end_ms: day[1],
+                    active_ms: 123,
+                })
+                .collect(),
+        };
+        let encoded = serde_json::to_string(&ApiResponse {
+            data: snapshot.clone(),
+        })
+        .unwrap();
+        for (status, body, expected_error) in [
+            (200, encoded, None),
+            (404, "{}".to_string(), Some("http-error")),
+            (401, "{}".to_string(), Some("unauthorized")),
+            (200, "{}".to_string(), Some("invalid-response")),
+            (
+                200,
+                "x".repeat(MAX_RESPONSE_BYTES + 1),
+                Some("response-too-large"),
+            ),
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let client =
+                PatinadClient::new(listener.local_addr().unwrap().port(), "test-heatmap-token")
+                    .unwrap();
+            let server = tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                let mut chunk = [0; 1024];
+                while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                    let count = socket.read(&mut chunk).await.unwrap();
+                    assert!(count > 0 && request.len() < 8192);
+                    request.extend_from_slice(&chunk[..count]);
+                }
+                let request = String::from_utf8(request).unwrap().to_lowercase();
+                assert!(request.starts_with("get /api/v1/heatmap?from=2026-01-01&to=2026-01-03 "));
+                assert!(request.contains("authorization: bearer test-heatmap-token\r\n"));
+                let response = format!("HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+                let _ = socket.write_all(response.as_bytes()).await;
+            });
+            let result = client.daily_activity("2026-01-01", "2026-01-03").await;
+            if let Some(code) = expected_error {
+                assert_eq!(result.unwrap_err().code(), code);
+            } else {
+                assert_eq!(result.unwrap(), snapshot);
+            }
+            server.await.unwrap();
+        }
+        let client = PatinadClient::new(1, "test-token").unwrap();
+        assert_eq!(
+            client
+                .daily_activity("2026-01-01&extra=1", "2026-01-03")
+                .await
+                .unwrap_err()
+                .code(),
+            "invalid-configuration"
+        );
+    }
 
     #[test]
     fn debug_output_never_contains_the_bearer_token() {

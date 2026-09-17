@@ -8,6 +8,8 @@ pub mod daemon;
 pub mod daemon_client;
 pub mod daemon_service;
 pub mod desktop_behavior;
+#[cfg(all(test, target_os = "linux"))]
+mod heatmap_acceptance_tests;
 pub mod main_window;
 #[cfg(all(test, target_os = "linux"))]
 mod native_window_tests;

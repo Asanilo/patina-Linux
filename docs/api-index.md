@@ -62,6 +62,7 @@ Current caveats:
 | `/api/v1/summary/range` | `GET` | Implemented | Caller-provided millisecond range summary |
 | `/api/v1/summary/week` | `GET` | Implemented | Local-week summary |
 | `/api/v1/trend` | `GET` | Partial | Daily activity trend for week/month |
+| `/api/v1/heatmap` | `GET` | Development branch | Bounded local-calendar daily totals; used by the development Desktop heatmap |
 | `/api/v1/web-activity` | `GET` | Implemented | Browser activity segment query |
 | `/api/v1/ai/activity-context` | `GET` | Implemented | Aggregated diagnostics, active session, summaries, and recent web activity for external AI analysis |
 | `/api/v1/apps` | `GET` | Implemented | Known apps from native and imported facts |
@@ -622,6 +623,45 @@ Known gaps:
 - No `hour` or `week` granularity yet.
 - No category trend yet.
 - No explicit timezone field yet.
+
+### `GET /api/v1/heatmap`
+
+Development-branch endpoint, available on Desktop, read-only daemon and tracking daemon API surfaces. Uses the same Bearer authentication as other reads. The development Desktop heatmap now uses this daily read contract; it is not included in the previously published beta.12 package.
+
+```bash
+curl -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  "$PATINA_API_BASE/api/v1/heatmap?from=2026-01-01&to=2027-01-01"
+```
+
+| Query | Type | Contract |
+|---|---|---|
+| `from` | string | Required inclusive local date, exactly `YYYY-MM-DD` |
+| `to` | string | Required exclusive local date, exactly `YYYY-MM-DD` |
+
+Dates use the runtime host's local timezone, not the caller's timezone. Each local midnight is resolved independently, so days need not be 24 hours. Ambiguous midnight uses its earliest occurrence; nonexistent midnight is rejected. Duplicate/unknown parameters, invalid dates and ranges outside 1–378 days return `400`.
+
+Response schema: `HeatmapResponse` → `data`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `sampled_at_ms` | integer | Fixed runtime sample time used for open sessions |
+| `earliest_start_ms` | integer or null | Earliest native/imported fact, including excluded apps; null for empty storage |
+| `days` | array | Chronological daily totals, including zero-activity days |
+| `days[].start_ms` | integer | Inclusive local-day boundary in epoch milliseconds |
+| `days[].end_ms` | integer | Exclusive local-day boundary in epoch milliseconds |
+| `days[].active_ms` | integer | Activity duration after native/import precedence and app exclusions |
+
+Native facts take priority over imported exact facts, then imported hourly buckets share remaining capacity. Historical process filtering (including metadata-sensitive installer checks) and app exclusions apply **after** precedence, so removing native activity does not reveal overlapping imported activity. Historical filtering is additional to the shared API activity compiler; other summary endpoints have not been changed by this migration. Only open native sessions use `sampled_at_ms`; closed/imported facts retain their stored interval semantics. No app names, titles or URLs are returned.
+
+The query holds one SQLite read snapshot and processes one day at a time. Budgets: one in-flight query per process (no waiting queue), 30 seconds for the repository operation (the HTTP handler currently has a shorter 15-second timeout), 20,000 intersecting facts per day, 20,000 app override/legacy exclusion settings in total, 1,024 UTF-8 bytes per app key and 16,384 bytes per setting value. Repository budget/read failures currently return `500` with the usual error envelope, never partial totals or an automatic full-history fallback. These limits bound retained application data, not total SQLite/OS memory. Native/import-exact reads use existing covering indexes to avoid rereading title-heavy table pages for each day; imported buckets use both time bounds. The covering paths still scan their indexes per day, and SQLite may sort temporary results. Query-worker performance gates have passed on 50,000 synthetic native sessions; this does not prove multi-year scalability or Desktop/WebKit/daemon end-to-end memory acceptance, which remains required before packaging this milestone.
+
+Exclusion keys and recorded executable names use the same canonical aliases as the Desktop mapper (including known helper and version/build aliases). A current `__app_override` object takes precedence over legacy `__app_excluded` for that canonical app: only literal `track: false` excludes it, unless `enabled: false`. A disabled current override also suppresses a stale legacy exclusion. Without a current override, the legacy boolean applies. Invalid JSON/non-object overrides, conflicting current alias decisions, or oversized settings fail the whole query; the read never repairs or migrates stored settings. This fixes the unreleased endpoint's earlier legacy-only lookup. Other existing summary endpoints still use their previous settings reader and have not been changed here.
+
+Classification metadata is fetched only for metadata-sensitive executable names, one row at a time within the same snapshot. Limits are 1,024 UTF-8 bytes for the app name and 16,384 for the title; over-budget metadata rejects the query instead of silently truncating classification. Titles are not retained in daily facts or included in the ordered fact query.
+
+The historical filter and canonical aliases have shared Rust/TypeScript contract fixtures. Relative to the legacy Desktop heatmap, two intentional corrections are pinned in fixtures: user-excluded apps no longer count, and unlocated hourly bucket quantities are prorated within each local day rather than placed as a synthetic continuous interval at the bucket start. Native/import priority is resolved before filtering. These rules apply to the development Desktop heatmap, not already installed packages. It has no dedicated MCP tool yet; authenticated HTTP is available.
+
+Desktop transport: `cmd_get_daily_activity {from, to}` forwards through the typed daemon client when daemon-owned, otherwise uses the same bounded repository. The daemon client keeps credentials in Rust, allows 18 seconds for this read only, and retains the 64 KiB response cap. No daemon error falls back to Desktop SQLite. The frontend validates every returned day against its requested local-calendar boundaries, rejects incomplete/misaligned/invalid numeric results, and displays an error with retry. A daemon `404` gets an explicit upgrade/restart notice. Bootstrap payloads carry `heatmapReadVersion: 2`; legacy cached charts are discarded.
 
 ### `GET /api/v1/web-activity`
 

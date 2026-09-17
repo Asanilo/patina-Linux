@@ -1,0 +1,388 @@
+{
+  "chrome.exe": {
+    "name": "Google Chrome"
+  },
+  "msedge.exe": {
+    "name": "Microsoft Edge"
+  },
+  "firefox.exe": {
+    "name": "Firefox"
+  },
+  "opera.exe": {
+    "name": "Opera"
+  },
+  "brave.exe": {
+    "name": "Brave"
+  },
+  "vivaldi.exe": {
+    "name": "Vivaldi"
+  },
+  "arc.exe": {
+    "name": "Arc"
+  },
+  "code.exe": {
+    "name": "VS Code"
+  },
+  "codex.exe": {
+    "name": "Codex"
+  },
+  "vscodium.exe": {
+    "name": "VSCodium"
+  },
+  "cursor.exe": {
+    "name": "Cursor"
+  },
+  "alma.exe": {
+    "name": "Alma"
+  },
+  "antigravity.exe": {
+    "name": "Antigravity"
+  },
+  "idea64.exe": {
+    "name": "IntelliJ IDEA"
+  },
+  "pycharm64.exe": {
+    "name": "PyCharm"
+  },
+  "webstorm64.exe": {
+    "name": "WebStorm"
+  },
+  "clion64.exe": {
+    "name": "CLion"
+  },
+  "goland64.exe": {
+    "name": "GoLand"
+  },
+  "rider64.exe": {
+    "name": "Rider"
+  },
+  "devenv.exe": {
+    "name": "Visual Studio"
+  },
+  "sublime_text.exe": {
+    "name": "Sublime Text"
+  },
+  "notepad++.exe": {
+    "name": "Notepad++"
+  },
+  "vim.exe": {
+    "name": "Vim"
+  },
+  "nvim.exe": {
+    "name": "Neovim"
+  },
+  "wechat.exe": {
+    "name": "微信"
+  },
+  "weixin.exe": {
+    "name": "微信"
+  },
+  "qq.exe": {
+    "name": "QQ"
+  },
+  "qqnt.exe": {
+    "name": "QQ"
+  },
+  "discord.exe": {
+    "name": "Discord"
+  },
+  "slack.exe": {
+    "name": "Slack"
+  },
+  "telegram.exe": {
+    "name": "Telegram"
+  },
+  "lark.exe": {
+    "name": "飞书"
+  },
+  "dingtalk.exe": {
+    "name": "钉钉"
+  },
+  "teams.exe": {
+    "name": "Microsoft Teams"
+  },
+  "zoom.exe": {
+    "name": "Zoom"
+  },
+  "todesk.exe": {
+    "name": "ToDesk"
+  },
+  "teamviewer.exe": {
+    "name": "TeamViewer"
+  },
+  "anydesk.exe": {
+    "name": "AnyDesk"
+  },
+  "wps.exe": {
+    "name": "WPS Office"
+  },
+  "wpsoffice.exe": {
+    "name": "WPS Office"
+  },
+  "et.exe": {
+    "name": "WPS 表格"
+  },
+  "wpp.exe": {
+    "name": "WPS 演示"
+  },
+  "winword.exe": {
+    "name": "Word"
+  },
+  "excel.exe": {
+    "name": "Excel"
+  },
+  "powerpnt.exe": {
+    "name": "PowerPoint"
+  },
+  "onenote.exe": {
+    "name": "OneNote"
+  },
+  "obsidian.exe": {
+    "name": "Obsidian"
+  },
+  "notion.exe": {
+    "name": "Notion"
+  },
+  "typora.exe": {
+    "name": "Typora"
+  },
+  "zotero.exe": {
+    "name": "Zotero"
+  },
+  "spotify.exe": {
+    "name": "Spotify"
+  },
+  "vlc.exe": {
+    "name": "VLC Player"
+  },
+  "steam.exe": {
+    "name": "Steam"
+  },
+  "epicgameslauncher.exe": {
+    "name": "Epic Games"
+  },
+  "leagueclient.exe": {
+    "name": "League of Legends"
+  },
+  "valorant.exe": {
+    "name": "Valorant"
+  },
+  "csgo.exe": {
+    "name": "CS:GO"
+  },
+  "cs2.exe": {
+    "name": "CS2"
+  },
+  "bilibili.exe": {
+    "name": "哔哩哔哩"
+  },
+  "douyin.exe": {
+    "name": "抖音"
+  },
+  "qqmusic.exe": {
+    "name": "QQ Music"
+  },
+  "neteasemusic.exe": {
+    "name": "NetEase Music"
+  },
+  "hoyoplay.exe": {
+    "name": "HoYoPlay"
+  },
+  "powershell.exe": {
+    "name": "PowerShell"
+  },
+  "pwsh.exe": {
+    "name": "PowerShell 7"
+  },
+  "cmd.exe": {
+    "name": "Command Prompt"
+  },
+  "windowsterminal.exe": {
+    "name": "Windows Terminal"
+  },
+  "wt.exe": {
+    "name": "Windows Terminal"
+  },
+  "conhost.exe": {
+    "name": "Console Host"
+  },
+  "openconsole.exe": {
+    "name": "OpenConsole"
+  },
+  "explorer.exe": {
+    "name": "File Explorer",
+    "localizedNames": {
+      "zh-CN": "文件资源管理器"
+    }
+  },
+  "ui32.exe": {
+    "name": "Wallpaper Engine"
+  },
+  "wallpaper32.exe": {
+    "name": "Wallpaper Engine"
+  },
+  "wallpaper64.exe": {
+    "name": "Wallpaper Engine"
+  },
+  "wallpaperengine.exe": {
+    "name": "Wallpaper Engine"
+  },
+  "taskmgr.exe": {
+    "name": "Task Manager",
+    "category": "system"
+  },
+  "regedit.exe": {
+    "name": "Registry Editor",
+    "category": "system"
+  },
+  "mmc.exe": {
+    "name": "Microsoft Management Console",
+    "category": "system"
+  },
+  "control.exe": {
+    "name": "Control Panel",
+    "category": "system"
+  },
+  "system": {
+    "name": "System",
+    "category": "system"
+  },
+  "searchhost.exe": {
+    "name": "Windows Search",
+    "category": "system"
+  },
+  "smss.exe": {
+    "name": "Session Manager",
+    "category": "system"
+  },
+  "wininit.exe": {
+    "name": "Windows Initialization",
+    "category": "system"
+  },
+  "services.exe": {
+    "name": "Service Control Manager",
+    "category": "system"
+  },
+  "lsass.exe": {
+    "name": "Local Security Authority",
+    "category": "system"
+  },
+  "svchost.exe": {
+    "name": "Service Host",
+    "category": "system"
+  },
+  "shellhost.exe": {
+    "name": "Windows Shell Host",
+    "category": "system"
+  },
+  "sihost.exe": {
+    "name": "Shell Infrastructure Host",
+    "category": "system"
+  },
+  "shellexperiencehost.exe": {
+    "name": "Windows Shell",
+    "category": "system"
+  },
+  "consent.exe": {
+    "name": "UAC Prompt",
+    "category": "system"
+  },
+  "pickerhost.exe": {
+    "name": "Picker Host",
+    "category": "system"
+  },
+  "openwith.exe": {
+    "name": "Open With",
+    "category": "system"
+  },
+  "startmenuexperiencehost.exe": {
+    "name": "Start Menu Experience Host",
+    "category": "system"
+  },
+  "applicationframehost.exe": {
+    "name": "Application Frame Host",
+    "category": "system"
+  },
+  "textinputhost.exe": {
+    "name": "Text Input Host",
+    "category": "system"
+  },
+  "runtimebroker.exe": {
+    "name": "Runtime Broker",
+    "category": "system"
+  },
+  "taskhostw.exe": {
+    "name": "Task Host",
+    "category": "system"
+  },
+  "lockapp.exe": {
+    "name": "Lock Screen",
+    "category": "system"
+  },
+  "logonui.exe": {
+    "name": "Logon UI",
+    "category": "system"
+  },
+  "dwm.exe": {
+    "name": "Desktop Window Manager",
+    "category": "system"
+  },
+  "csrss.exe": {
+    "name": "Client Server Runtime Process",
+    "category": "system"
+  },
+  "gameinputsvc.exe": {
+    "name": "GameInput Host Service",
+    "category": "system"
+  },
+  "fontdrvhost.exe": {
+    "name": "Usermode Font Driver Host",
+    "category": "system"
+  },
+  "wuauclt.exe": {
+    "name": "Windows Update AutoUpdate Client",
+    "category": "system"
+  },
+  "usoclient.exe": {
+    "name": "Update Session Orchestrator Client",
+    "category": "system"
+  },
+  "patina.exe": {
+    "name": "Patina"
+  },
+  "patina": {
+    "name": "Patina"
+  },
+  "time_tracker.exe": {
+    "name": "Patina"
+  },
+  "time_tracker": {
+    "name": "Patina"
+  },
+  "time-tracker.exe": {
+    "name": "Patina"
+  },
+  "time-tracker": {
+    "name": "Patina"
+  },
+  "timetracker.exe": {
+    "name": "Patina"
+  },
+  "timetracker": {
+    "name": "Patina"
+  },
+  "time tracker.exe": {
+    "name": "Patina"
+  },
+  "time tracker": {
+    "name": "Patina"
+  },
+  "uninstall.exe": {
+    "name": "卸载程序",
+    "category": "system"
+  },
+  "unins000.exe": {
+    "name": "卸载程序",
+    "category": "system"
+  }
+}

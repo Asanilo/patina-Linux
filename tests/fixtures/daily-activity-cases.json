@@ -1,0 +1,53 @@
+[
+  {
+    "name": "native crosses day boundaries",
+    "boundaries": [0, 100, 200], "sampledAt": 200,
+    "records": [{"key":"native","origin":"native","startTime":20,"endTime":180}],
+    "excludedKeys": [], "expectedDaily": [80,80], "expectedLegacy": [80,80]
+  },
+  {
+    "name": "open native stops at the fixed sample time",
+    "boundaries": [0,100,200], "sampledAt": 130,
+    "records": [{"key":"native","origin":"native","startTime":50,"endTime":null}],
+    "excludedKeys": [], "expectedDaily": [50,30], "expectedLegacy": [50,30]
+  },
+  {
+    "name": "excluded native still masks imported exact activity",
+    "boundaries": [0,100,200], "sampledAt": 200,
+    "records": [
+      {"key":"import","origin":"import_exact","startTime":0,"endTime":100},
+      {"key":"native","origin":"native","startTime":0,"endTime":50}
+    ],
+    "excludedKeys": ["native"], "expectedDaily": [50,0], "expectedLegacy": [100,0]
+  },
+  {
+    "name": "unlocated bucket quantity is prorated rather than positioned at window start",
+    "boundaries": [0,100,200], "sampledAt": 200,
+    "records": [{"key":"bucket","origin":"import_bucket","startTime":0,"endTime":80,"capacityEndTime":200}],
+    "excludedKeys": [], "expectedDaily": [40,40], "expectedLegacy": [80,0]
+  },
+  {
+    "name": "bucket capacity is resolved within each day after exact activity",
+    "boundaries": [0,100,200], "sampledAt": 200,
+    "records": [
+      {"key":"native","origin":"native","startTime":0,"endTime":100},
+      {"key":"bucket","origin":"import_bucket","startTime":0,"endTime":100,"capacityEndTime":200}
+    ],
+    "excludedKeys": [], "expectedDaily": [100,50], "expectedLegacy": [200,0]
+  },
+  {
+    "name": "same-start imported exact tie keeps input order before exclusion",
+    "boundaries": [0,100,200], "sampledAt": 200,
+    "records": [
+      {"key":"first","origin":"import_exact","startTime":0,"endTime":200},
+      {"key":"second","origin":"import_exact","startTime":0,"endTime":200}
+    ],
+    "excludedKeys": ["first"], "expectedDaily": [0,0], "expectedLegacy": [100,100]
+  },
+  {
+    "name": "short and long calendar days retain their full durations",
+    "boundaries": [0,82800000,172800000], "sampledAt": 172800000,
+    "records": [{"key":"native","origin":"native","startTime":0,"endTime":172800000}],
+    "excludedKeys": [], "expectedDaily": [82800000,90000000], "expectedLegacy": [82800000,90000000]
+  }
+]

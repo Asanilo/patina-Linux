@@ -4,6 +4,7 @@ pub mod app_mappings;
 pub mod app_settings;
 pub mod backup_restore;
 pub mod classification_settings;
+pub mod daily_activity;
 pub mod icon_cache;
 pub mod scheduled_backup;
 pub mod session_title_samples;

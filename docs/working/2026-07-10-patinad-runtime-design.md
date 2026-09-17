@@ -3,6 +3,113 @@
 > 状态：Stage 0 至 Stage 2H.2、Stage 2H.3a systemd 诊断、Stage 2H.3b typed daemon client、Stage 2H.3c 写侧 owner 收口，以及 Stage 2H.3d.1/2 和 2H.3d.3a-d 默认 owner 交接均已完成自动验证；Stage 2H.3d.4a-e 已补齐交接诊断、显式重试、登录偏好应用、安全回滚后端和 Quiet Pro 设置控件，当前进入 daemon-backed DEB 实机验证。
 > 生命周期：本设计是当前 `patinad` 实施依据；后台接管稳定完成后移入 `docs/archive/`。
 
+### 当前执行焦点（2026-09-18）
+
+- 按用户要求暂停悬浮窗闪烁、边缘吸附及相关扩展开发。原生 Wayland 目前为自由拖动的小窗口，不宣称支持屏幕边缘吸附；已有生命周期自动测试不能替代真实拖动和视觉验收。
+- 下一可发布功能阶段为 **Data 热力图低内存查询**，范围和发布门槛以 [路线文档当前快照](../roadmap-and-prioritization.md#56-当前实施主线patinad) 为准。共享统计语义、读取预算、后端聚合、Desktop/daemon 适配、隔离 debug 整链路与 beta.17 成品检查均已完成，下一步经用户确认后安装验收。前台 WebKit 占用仍是后续独立问题。
+- 本地源码和 DEB 候选为 beta.17，包含本次热力图功能，不能把此前 beta.16 包当作新功能包。2026-09-18 只读查询 GitHub 确认最新预发布为 beta.12，最新稳定版为 1.8.4；本轮不安装、不推送、不公开发布。
+- 下文保留阶段证据与历史限制，不以早期“下一步”覆盖本节执行焦点。
+
+#### 日聚合第一步（2026-09-17，未发布）
+
+- 已编写共享仓储 `daily_activity` 和只读 `GET /api/v1/heatmap`，覆盖三个 API surface 与字段级 OpenAPI。单一 SQLite read transaction、逐日紧凑 facts、固定 active 采样时间；复用领域优先级和小时桶分配算法，排除在优先级处理后执行，不传输标题或 URL。
+- 预算明确为最多 378 天、每进程一个查询、30 秒仓储超时、每日 20,000 facts、20,000 排除设置、app key 最多 1,024 UTF-8 字节。超限失败，不截断统计或回退全量读取。SQLite 排序及实际峰值内存仍需实验确认，不能仅凭 Vec 上限宣称端到端内存达标。
+- 发现客户端兼容门槛：原桌面 `shouldTrackProcess` 还有临时进程、安装器与标题相关过滤，现有 API compiler 没有完全相同的语义；前端小时桶还会转换成区间，按日切分不一定等同于领域按日分配。下一步先补共享 fixture 和差异判定，再决定迁移位置，不能直接替换并静默改变历史统计。
+- 本步骤结束时 Desktop 热力图、53 周明细缓存、Tauri adapter 尚未切换，不能宣称桌面内存已下降。版本保持 beta.16，不出包、不安装、不推送。
+- 验证：`npm run check` 与 `npm run check:rust` 分别通过，覆盖完整检查链；Rust 587 passed / 7 ignored，Clippy `-D warnings` 通过，浏览器 smoke 31 项通过，前端构建和 bundle 预算通过。新增六项 Rust 测试覆盖聚合对照、排除顺序、23/25 小时边界、active 截止、空库、预算失败、三个 surface 的路由和日期参数校验。没有执行生产数据库查询或安装操作。
+- 环境记录：沙箱内发布脚本子进程输出及 loopback bind 测试受限，沙箱外复核通过；浏览器 smoke 留有一次临时 profile 清理 `ENOTEMPTY` 警告，不把临时目录清理声明为通过。真实 DST 时区端到端、SQLite 查询计划及 Desktop/WebKit/daemon PSS/USS 对照仍未验收。
+
+#### 日聚合第二步：桌面缓存收口（2026-09-17，未发布）
+
+- Desktop 的热力图 snapshot、两项 LRU 缓存、页面 state 和首屏预热改为持有 `date + duration` 日汇总，不再保留整年 session 数组。最近范围 371 项，单年范围最多 378 项；其余趋势页面缓存不属于本次改动。
+- 同范围的页面查询与预热复用一个 pending 请求；清理缓存时递增 generation，迟到结果不能重新填充缓存，旧任务结束也不能移除新任务。暂时仍通过既有 SQLite adapter 查询明细，只有查询结束后的驻留数据收敛，SQLite/JSON/IPC 瞬时峰值尚未消除。
+- 热力图使用下一本地日期的午夜作为 day end，不再固定加 24 小时；年份周数按日历日期差计算。读取的 session 先裁剪到显示范围，避免对超长范围无意义遍历。此处修复夏令时漏计/重计，不改变安装器等历史进程过滤、现有热力图排除设置行为或小时桶位置语义。
+- `daily-activity-cases.json` 由 Rust 和 TypeScript 共用，记录 7 组按日优先级/排除/active 截止/桶分配场景，并显式记录旧桌面结果。13 组桌面进程过滤用例保留 metadata 敏感规则，不能用 tracking 写侧的 `should_track` 替代：两者原有职责和过滤集合不同。
+- 已确定迁移差异：旧热力图不应用用户 app exclusion；跨午夜小时桶先按整段范围分配、再伪装成桶起点的连续区间，新 API 则按每日窗口分配。后端接管前必须完成历史过滤的读侧迁移，并明确这些修正的兼容行为，不能仅按总量碰巧一致验收。
+- 本步骤的 5 万条合成 session 测试验证日汇总无原对象引用、序列化长度不到原明细的 1%；这只是结构与编码体量检查，不是 Desktop/WebKit 的 PSS/USS 实测。新增 UTC、新加坡、平壤、纽约和 Lord Howe 的隔离 TZ 测试，覆盖 23/25 小时、半小时 DST 和历史时区回退时年份多出一周的问题。
+- Rust 时区回归发现 Apia 被跳过日期的午夜仍可能被底层转换接受，已添加 UTC timestamp → Local round-trip 验证，明确拒绝不存在的午夜，不改为无声归一到下一天。
+- 验证：完整检查链的前端部分通过，包含 31 项浏览器 smoke、构建及 bundle 预算；Rust 首次运行由新增 Apia 用例暴露问题，修正后 `npm run check:rust` 通过（589 passed / 7 ignored，Clippy `-D warnings` 通过）。共享 7 组日聚合 fixture、13 组桌面过滤用例、30 项 Data read-model 测试通过；补充平壤用例后 `npm run test:data-range` 复核通过。尚未进行真实生产数据的内存验收。
+- 下一步仍是后端统计规则对齐与客户端 adapter，而非发布或恢复悬浮窗专项。本地版本仍为 beta.16，未生成新 DEB、安装或推送。
+
+#### 日聚合第三步：历史过滤迁移（2026-09-17，未发布）
+
+- 新增领域读侧 `activity_read_policy`，与实时 tracking 过滤保持独立；日聚合在优先级分配后应用其判定。没有改写其他 summary endpoint 或追踪写入规则。
+- 原有 117 项内置映射提取为 `src/shared/classification/defaultMappings.json`，TypeScript 导入、Rust 编译期嵌入同一份静态兼容目录。791 组共享 golden fixture 覆盖别名、大小写、引号、安装器、版本后缀、特殊空白及标题条件，防止双实现漂移。
+- 每日紧凑 facts 仅保留是否计入的判定；只对 metadata 敏感的 exe 在同一事务内逐行查询 app name/title，不将标题加入 UNION 排序或长期缓存。app name 上限 1,024 UTF-8 字节、title 上限 16,384 字节，超限拒绝，不截断分类后继续统计。
+- 尚未切换 Desktop adapter。下一步收口用户排除/别名和导入桶分配差异，再接共享聚合入口；随后以查询计划及隔离 PSS/USS 测量验收，不把规则迁移视为内存收益实测。
+- 本步骤不改悬浮窗、不访问生产数据库、不打包安装、不提交推送，版本仍为 beta.16。
+- 验证：`npm run check:full` 通过，含前端全部检查、31 项浏览器 smoke、构建与 bundle 预算；Rust 591 passed / 7 ignored，Clippy `-D warnings` 通过。共享 791 组过滤案例在两端均通过；仓储测试覆盖标题条件过滤、普通应用的大标题不参与读取、敏感 metadata 超限拒绝。浏览器临时 profile 清理仍有 `ENOTEMPTY` 警告，未宣称该清理问题已解决。
+
+#### 日聚合第四步：排除与别名收口（2026-09-17，未发布）
+
+- 核对真实写入链后发现，前三步的排除读取只看旧 `__app_excluded`，会漏掉设置页及 API 当前写入的 `__app_override`。已修正日聚合仓储，不改追踪写入、不迁移数据库，也不顺带扩展其他 summary endpoint。
+- `activity_read_policy::canonical_executable` 与前端共用 598 组别名 fixture；记录 exe、override key 与 legacy key 使用相同 canonical identity。历史过滤仍由原有 791 组 fixture 校验。
+- 当前 override 优先于旧排除字段，只有 literal `track: false` 且未 `enabled: false` 时排除。显式禁用当前 override 不恢复陈旧 legacy 排除。不存在当前 override 时兼容旧 boolean；当前 alias 决策冲突、JSON 损坏或不是 object 时整次失败，不用数据库偶然行序决定时长，不自动修复设置。
+- 设置预算改为两类 key 合计最多 20,000 项，key 最多 1,024 UTF-8 字节、value 最多 16,384 字节。所有读取仍在同一 snapshot 内，超限不截断结果。
+- 相对旧 Desktop 热力图，迁移明确包含两项统计修正：应用排除设置实际生效；无精确位置的小时桶按每日交集比例分配，不再假定活动从桶起点连续发生。共享 fixture 保留新旧差异，仓储回归覆盖现代 override 排除的本机记录仍抑制导入记录，以及跨边界 bucket 的比例结果。
+- 下一执行步为 typed daemon client、embedded 共用仓储的薄 command，以及前端日汇总 adapter。需要显式呈现旧 daemon/超限/查询失败，不能静默回退到旧的整年明细查询；接入后再做查询计划、响应体积、时延和 PSS/USS 验收。
+- 当前未切换 Desktop 查询、未做内存实测、未改悬浮窗、未出包安装或提交推送，版本仍为 beta.16。其他 summary endpoint 的现代 override 一致性是独立遗留缺口，不声明本次修复覆盖所有统计接口。
+- 验证：`npm run check:full` 通过，包含前端测试、浏览器 smoke、构建和 bundle 预算，Rust 594 passed / 7 ignored，Clippy `-D warnings` 通过；791 组过滤、598 组别名与 7 组日聚合 fixture 对照通过。新增回归覆盖当前 API 写入后的排除读取、alias 合并、legacy 优先级、disabled override、损坏/冲突/超限设置、读取不修改设置及跨边界桶分配。`git diff --check` 通过。
+
+#### 日聚合第五步：桌面接入（2026-09-17，未发布）
+
+- 开发版 Data 热力图与首屏预热改走 `dailyActivityRepository`，经 `cmd_get_daily_activity` 在 daemon 模式转发 typed client，embedded 模式调用同一日聚合仓储。前端生产 loader 不再调用 `getSessionSummariesInRange`，其他趋势页面仍保持原读取链路。
+- `domain/daily_activity.rs` 持有 DTO 与严格本地日历日期解析，HTTP handler 和 IPC command 共用，避免两套 DST 规则。typed client 对本请求使用 18 秒超时、保持 64 KiB 响应上限和 Bearer 认证；服务端仍为 15 秒 handler / 30 秒仓储预算。错误不会切换到 Desktop 的数据库查询。
+- 前端对 1–378 天的响应逐日校验边界、数量与安全整数，拒绝时区不一致、缺天、负时长及非法采样时间。最早活动时间与 totals 从同一次 snapshot 更新；cache key 包含边界 timestamp。
+- 查询失败时不展示零值或旧图冒充新结果，显示错误和图标重试按钮；旧 daemon 的 404 显示更新/重启提示。保留已有 Quiet Pro tokens，未改正常页面布局。旧 bootstrap 因 `heatmapReadVersion: 2` 失效，避免沿用旧排除/小时桶语义。
+- 当前只是源码功能接入。下一步执行同一合成数据上的查询计划、响应体积、耗时及 Desktop/WebKit/daemon 峰值 PSS/USS 对照；验收后才组装下一个 DEB 候选。不对已安装版本作变更，版本仍为 beta.16，未提交或推送。
+- 验证：`npm run check:full` 通过，Rust 595 passed / 7 ignored、Clippy `-D warnings` 通过；33 项 Data read-model 测试、32 项真实浏览器 smoke、前端构建和 bundle 预算通过。新增 HTTP transport 测试覆盖认证 header、参数拒绝、404/401/非法 JSON/响应大小上限；前端覆盖残缺和错位响应、重试、旧缓存失效及 DST adapter。
+- 另以 `PATINA_UI_SCREENSHOTS_DIR=/tmp` 运行浏览器 smoke，复核 1280/760 宽度的热力图错误状态截图与日期跳转/重试流程，无水平溢出或控件重叠。这些使用隔离数据和 Tauri mock，不替代原生 WebKit 与真实 daemon 的整链路手工验收。临时浏览器 profile 清理仍有 `ENOTEMPTY` 警告，未声明已修复。
+
+#### 日聚合第六步：查询级性能验证（2026-09-17，未发布）
+
+- 新增 `npm run perf:daily-activity`，仅在 `/tmp/patina-daily-bench-*` 中生成 50,000 条本机合成 session（每条 60 秒，约 1 KiB 标题），查询 365 天。无导入事实和网页数据，不与早期 50k session + 网页实验混作同一基准。独立只读进程对照真实旧 SQL/JSON 参考路径与日聚合；不读取正式数据、不启动追踪或桌面服务。
+- 首轮发现日聚合耗时 10,857ms：SQLite 按 start_time 索引逐日回读带标题的数据页。改用现有 native/import-exact 覆盖索引，小时桶改为双边界索引查找，无新 schema/index 迁移。完整 UNION 查询计划加入普通回归测试；覆盖索引仍逐日扫描，未证明多年份或大量导入数据的时延达标，SQLite 临时排序仍需纳入整链路测量。
+- 修正后两轮日聚合分别为 3,613ms / 3,750ms，通过 5 秒、64 KiB 响应和 64 MiB 采样 USS 增量预算。最后一轮旧明细响应 64,688,895 bytes、USS 增量约 287.7 MiB；日聚合响应 25,531 bytes、USS 增量约 5.4 MiB。两端总时长均为 3,000,000,000ms，quick_check 为 ok，数据库读取前后 SHA256 不变。旧路径耗时在 3.17–4.50 秒波动，不宣称新路径稳定快于旧路径。
+- 证据：首轮 `/tmp/patina-daily-bench-U1uui8`；修正后 `/tmp/patina-daily-bench-ngIFYv`；最终 runner `/tmp/patina-daily-bench-lr9Rnq/summary.json`。最终测试二进制 SHA256 为 `de500e0e383a0085a8f2bf0fa6133a89f317a2a80159e5ca2c64a2ebf5e1a266`，合成数据库 SHA256 为 `2e9eae3ad966d7aa54664aebc022e0ba9c707b7c0c437e7209bfdf89b9ae2162`。
+- 这是 debug 查询进程的 10ms 采样，不是精确分配峰值，不包含 Tauri IPC、HTTP、JS、WebKit 或 daemon host；旧参考路径不精确复刻 `tauri-plugin-sql` 内部。查询级门槛通过不等于用户桌面已降低相同内存。下一步仍是隔离 Desktop/WebKit/daemon 整链路峰值、产品内热力图与日期跳转验收，再决定 DEB 候选。
+- 验证：`npm run check:full` 通过，Rust 596 passed / 8 ignored（新增 benchmark 为显式运行的 ignored test），Clippy `-D warnings`、32 项浏览器 smoke、前端构建和 bundle 预算通过；benchmark 最后一轮 exit 0，脚本语法及 `git diff --check` 通过。浏览器临时 profile 清理仍有 `ENOTEMPTY` 警告，不声明已解决。
+- 版本保持 beta.16，未改悬浮窗、未打包安装或提交推送。
+
+#### 日聚合第七步：真实 React/WebKit/daemon 链路（2026-09-17，未发布）
+
+- 新增显式 `npm run perf:heatmap-desktop`。两个独立 debug 测试进程运行生产 Desktop bootstrap（daemon-client preview）与真实 daemon runtime，加载实际构建的 React，走真实 Tauri IPC 和 HTTP typed client，不 mock 日聚合结果。私有 Local HOME/XDG/D-Bus、随机端口；只借用 Wayland 显示服务。50,000 条合成 native session 移到当前最近 348 天内，tracking 暂停，音频/网页桥接及登录偏好关闭，不读取正式活动。
+- 最终 `/tmp/patina-heatmap-test-Aiu9xQ/result.json` 为 exit 0 / passed，原生测试耗时 346.97 秒。首次/重开均收到 371 天、25,906 bytes 的 IPC JSON，总时长 3,000,000,000ms，耗时 3,256ms / 3,203ms。两轮热力图和双击昨日格子进入 History、显示合成应用通过；无水平溢出，捕获的 JS error/unhandled rejection 均为空。不替代截图或视觉闪烁验收。
+- 沿用实际五分钟销毁计时，不手动 trim；关闭后 WebProcess PID 545529 退出，重开为 554530。Desktop PID 545393、daemon PID 545298 保持不变。正常 SIGINT 退出 daemon 后，sessions 仍为 50,000，总量不变，quick_check=ok、foreign_key_check 为空。
+
+| 阶段观测（MiB，非整机占用） | Desktop + WebKit PSS / USS | daemon PSS / USS |
+| --- | --- | --- |
+| 首次 Dashboard | 347.0 / 279.5 | 40.5 / 24.3 |
+| 首次热力图加载后 | 503.2 / 434.3 | 41.1 / 24.8 |
+| 销毁确认后四秒 | 98.5 / 63.8 | 41.0 / 24.2 |
+| 重开 Dashboard | 300.8 / 232.8 | 40.8 / 24.2 |
+| 重开热力图加载后 | 428.7 / 359.4 | 41.1 / 24.4 |
+
+- 表格使用事件前最后一个完整样本（销毁行为用 `destroyed.json` 后四秒）；首轮 Data 加载区间 Desktop 组采样峰值约 531.0 MiB PSS / 462.2 MiB USS，daemon 约 41.1 / 24.8。Desktop 主进程从 Dashboard 到热力图 USS 仅增加约 2.3 MiB，前台增量主要在 WebProcess；这不能进一步归因为某个组件或泄漏。约 250ms 非原子采样、不含无法归属的辅助进程；test executable 与 release 二进制不同，daemon 的基线不能直接与历史 release 数字比较。未做同配置旧明细 UI 对照，不声称整机改善百分比或全部内存问题解决。
+- 编译证据：测试二进制 SHA256 `df64e9ba9f21babbb8b44c7f8eb4b3e9cafe193afbe53c9ad674b306c4bc5add`，前端 index SHA256 `542484da209966e751e49914be0d02e2e8176381f296b9ba388cf8fe1dcd8190`。1182 个样本、两轮页面报告、完整性报告和进程日志保留在该私有目录；临时进程与 D-Bus 已收尾，不删除合成证据。
+- 验收发现并修复主窗口通知插件初始化缺少 `notification:allow-is-permission-granted` 的未处理错误，只开放读取权限状态，不开放发送或申请权限，并增加 capability 回归测试。早期尝试另修正测试 profile、debug 固定 1420 URL 和只读 invoke 的观测方式；`F3qSfu` 在首轮 UI 通过后主动中止，以便将 runner 的正常退出信号对齐包内 `KillSignal=SIGINT`，不把中止实验算完整通过。
+- 完整检查链的前端部分通过（32 项浏览器 smoke、构建及 bundle 预算）；Rust 边界检查首次拦住测试入口直接 SQL，随后将造数/校验移入 `data/repositories/daily_activity/desktop_fixture.rs`，没有放宽规则。修正后 `npm run check:rust` 通过：598 passed / 9 ignored，Clippy `-D warnings` 通过；新增 fixture roundtrip 检查禁用的外部来源、行数与总量。原生证据采于此测试辅助函数归属调整前，调整后不重复未改变的五分钟窗口链路。脚本语法与 `git diff --check` 通过。
+- 隔离 portal 缺少 PipeWire/window-list 的警告与原生 `gtk_widget_get_scale_factor` critical 仍可见，未声明已修复。下一步为 release 成品/候选门禁及安装验收，前台 WebKit 占用、多年份/大量导入数据、真实追踪连续性与长期多轮测试仍需独立验证。当前版本保持 beta.16，未打包、安装、提交或推送。
+
+#### 日聚合第八步：源码发布门禁收口（2026-09-18，未发布）
+
+- 当前工作树的 `npm run release:check` 完整 exit 0：版本文件校验、前端检查、32 项浏览器 smoke、构建及 bundle 预算、Rust 边界、598 passed / 9 ignored、Clippy `-D warnings`、GNOME/Chromium 扩展检查、Firefox 签名 XPI 校验及当前版本 changelog 校验全部通过。日志 `/tmp/patina-release-check-20260918-unrestricted.log`；9 项 ignored 专项不由此命令执行，上一节原生实测证据仍单独保留。
+- 初次沙箱运行在时区子进程创建处报 `EPERM`，获准后在沙箱外重跑完整门禁通过，没有放宽检查。浏览器临时 profile 清理仍报 `ENOTEMPTY` 警告，不宣称临时目录清理已修复。
+- `CHANGELOG.md` 的 `Unreleased` 已补热力图功能、兼容行为与通知权限修复；清除路线快照中已过期的“下一步接入/整链路验收”提示。版本仍为 beta.16，版本化 changelog 校验针对 beta.16，不代表未来候选版本的发布说明已验证。
+- 本轮未生成新 DEB、未安装、未修改生产数据库或服务、未提交或推送。`HEAD` 仍为 `2c60d88`，相对本地远端跟踪引用领先四个提交，热力图工作仍未提交；未刷新远端发布状态。
+- 后续候选验收顺序：确定新 beta 版本并同步版本文件和完整发布范围说明；在获准的候选构建/发布流程中生成匹配版本 Desktop + patinad 的 DEB；运行 `release:verify-daemon-deb` 检查成品。安装另行确认，不把旧 beta.16 包当作包含本次热力图的新包。
+- 安装后核对 Desktop/daemon 版本一致，再验证热力图最近范围与年份切换、双击日期进入 History、排除规则生效、关闭/重开与后台持续追踪；以同一真实数据记录分组 PSS/USS，不要求用户仅凭单进程 RSS 降幅判断。生产数据上的验证保持只读，排除设置变更及故障注入优先放在隔离 profile。大规模导入/多年份、长期运行和前台 WebKit 内存仍未完成验收，不阻塞已界定的查询优化进入下一 beta 测试。
+
+#### 日聚合第九步：beta.17 DEB 候选（2026-09-18，未安装/未发布）
+
+- 版本文件统一为 `1.9.0-beta.17`，Cargo.lock 仅更新本项目版本，未升级依赖。GitHub 只读查询确认最近公开预发布是 beta.12；beta.17 changelog 因而包含 beta.13–16 的启动、窗口回收与 Wayland 兼容修复，以及本次热力图改动，不将暂停的闪烁专项宣称为完成。
+- 新版本 `npm run release:check` 完整 exit 0，598 passed / 9 ignored、32 项浏览器 smoke、Clippy、前端构建与预算、版本/changelog 和扩展检查均通过；本轮未再出现浏览器 profile 清理警告，但没有对该偶发问题作修复声明。日志 `/tmp/patina-beta17-release-check.log`。未重复未改变的五分钟原生专项，第七步证据仍独立有效。
+- 本地候选使用明确的 `createUpdaterArtifacts:false` 覆盖构建，仅用于人工安装测试；不读取签名私钥、不生成 updater 清单或签名，也不改变正式发布配置。构建日志 `/tmp/patina-beta17-build.log`，`release:verify-daemon-deb` 检查通过。
+- 成品：`src-tauri/target/release/bundle/deb/Patina_1.9.0-beta.17_amd64.deb`，25,817,176 bytes（约 24.6 MiB）；SHA-256 `d0b54b6e54ed9a880817c27beeef9a343755215dcba62873a457be363b95061a`。包名仍为 `patina`，安装将升级现有同名包，不是并行产品。
+- 解包后逐字节核对两份 executable：`patinad` 与本次 release 构建完全一致；Desktop 仅允许 Tauri 将 `__TAURI_BUNDLE_TYPE_VAR_UNK` 改成 `__TAURI_BUNDLE_TYPE_VAR_DEB` 的三字节差异。首轮原始哈希严格比较因此中止，核对依赖源码与实际字节后才调整测试，并非忽略未知差异。包内 Desktop SHA-256 `520f5feb1c05dcd88006432adc7f8aeea3aeeb95388de3d34895cd11bacae4c6`，daemon 为 `e79e80e8e5f0c61e4369bc6e22846868ac6f43a6a60e5f1e18fd30bf1d2482b9`。
+- 使用解出的 release daemon、私有 HOME/XDG、显式 Local 空库和随机 loopback 端口，不启动 tracking，不使用真实 D-Bus/systemd。版本为 beta.17，Token 文件 0600，未认证 heatmap 为 401，反向日期为 400，合法两天汇总为 200/202 bytes/零时长，OpenAPI 包含 heatmap。SIGINT 后 exit 0，所有测试进程结束。证据 `/tmp/patina-beta17-package-I4u6Up/result.json`；一次性脚本 `/tmp/patina-beta17-package-smoke.mjs`。
+- 当前成品尚未安装，未证明已安装 Desktop/daemon 已同步升级，也未重新测量 release UI 内存。下一步按第八步清单进行安装确认、双版本诊断、真实热力图/History、关闭重开与后台持续追踪验收。没有操作生产数据库、安装服务或公开 Release。
+
 ## 1. 目标
 
 把当前由 Tauri desktop 拥有的后台追踪主链渐进迁入本地 daemon，使关闭桌面 UI 后仍能可靠记录，并让本机浏览器 UI、桌面客户端和未来 TUI / CLI 复用同一运行状态。

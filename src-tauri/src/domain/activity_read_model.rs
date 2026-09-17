@@ -438,4 +438,61 @@ mod tests {
             assert_eq!(actual, fixture.expected_duration_by_key, "{}", fixture.name);
         }
     }
+
+    #[test]
+    fn shared_daily_fixture_matches_calendar_scoped_contributions() {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct DailyRecord {
+            key: String,
+            origin: String,
+            start_time: i64,
+            end_time: Option<i64>,
+            capacity_end_time: Option<i64>,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct DailyFixture {
+            name: String,
+            boundaries: Vec<i64>,
+            sampled_at: i64,
+            records: Vec<DailyRecord>,
+            excluded_keys: Vec<String>,
+            expected_daily: Vec<i64>,
+        }
+        let fixtures: Vec<DailyFixture> = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/daily-activity-cases.json"
+        ))
+        .unwrap();
+        for fixture in fixtures {
+            let records: Vec<_> = fixture
+                .records
+                .into_iter()
+                .map(|record| OwnedActivityRange {
+                    origin: match record.origin.as_str() {
+                        "native" => ActivityOrigin::Native,
+                        "import_exact" => ActivityOrigin::ImportExact,
+                        "import_bucket" => ActivityOrigin::ImportBucket,
+                        value => panic!("unsupported fixture origin: {value}"),
+                    },
+                    start_ms: record.start_time,
+                    end_ms: record.end_time.unwrap_or(fixture.sampled_at),
+                    capacity_end_ms: record.capacity_end_time,
+                    value: record.key,
+                })
+                .collect();
+            let actual: Vec<i64> = fixture
+                .boundaries
+                .windows(2)
+                .map(|day| {
+                    summarize_activity_range(&records, day[0], day[1])
+                        .into_iter()
+                        .filter(|item| !fixture.excluded_keys.contains(&item.value))
+                        .map(|item| item.duration_ms)
+                        .sum()
+                })
+                .collect();
+            assert_eq!(actual, fixture.expected_daily, "{}", fixture.name);
+        }
+    }
 }

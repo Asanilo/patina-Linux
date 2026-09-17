@@ -155,6 +155,22 @@ function tauriStubFor(path: string) {
       }
 
       export async function invoke(command, payload = {}) {
+        if (command === "cmd_get_daily_activity") {
+          globalThis.__PATINA_SMOKE_HEATMAP_CALLS = (globalThis.__PATINA_SMOKE_HEATMAP_CALLS ?? 0) + 1;
+          if (globalThis.__PATINA_SMOKE_HEATMAP_ERROR) throw new Error(globalThis.__PATINA_SMOKE_HEATMAP_ERROR);
+          const days = [];
+          const end = new Date(payload.to + "T00:00:00");
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          yesterday.setHours(0, 0, 0, 0);
+          let cursor = new Date(payload.from + "T00:00:00");
+          while (cursor < end) {
+            const next = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
+            days.push({ start_ms: cursor.getTime(), end_ms: next.getTime(), active_ms: cursor.getTime() === yesterday.getTime() ? 3600000 : 0 });
+            cursor = next;
+          }
+          return { sampled_at_ms: Date.now(), earliest_start_ms: yesterday.getTime(), days };
+        }
         if (command === "cmd_get_daemon_service_diagnostics") {
           return globalThis.__PATINA_SMOKE_DAEMON ?? null;
         }
@@ -3266,6 +3282,31 @@ try {
       sessionId,
       `document.body.innerText.includes(${jsonString(COPY["zh-CN"].date.yesterday)})`,
     );
+  });
+
+  await runTest("heatmap reports unsupported daemon and recovers through explicit retry", async () => {
+    await evaluate(client!, sessionId, `
+      globalThis.__PATINA_SMOKE_HEATMAP_ERROR = 'heatmap-unsupported';
+      document.querySelector('[aria-label="数据"]').click();
+    `);
+    await waitForExpression(client!, sessionId, `document.querySelector('.data-heatmap-panel [role="alert"]')?.textContent.includes('后台服务不支持')`);
+    assert.equal(await evaluate(client!, sessionId, `Boolean(document.querySelector('.data-heatmap-panel .data-heatmap-calendar'))`), false);
+    for (const width of [1280, 760]) {
+      await client!.command("Emulation.setDeviceMetricsOverride", { width, height: 820, deviceScaleFactor: 1, mobile: false }, sessionId);
+      await evaluate(client!, sessionId, `document.querySelector('.data-heatmap-panel [role="alert"]').scrollIntoView({block:'center'})`);
+      assert.equal(await evaluate(client!, sessionId, `document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1`), true);
+      if (process.env.PATINA_UI_SCREENSHOTS_DIR) {
+        const shot = await client!.command("Page.captureScreenshot", { format: "png" }, sessionId);
+        writeFileSync(join(process.env.PATINA_UI_SCREENSHOTS_DIR, `heatmap-error-${width}.png`), Buffer.from(String(shot.data), "base64"));
+      }
+    }
+    const previous = await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_HEATMAP_CALLS`);
+    await evaluate(client!, sessionId, `
+      globalThis.__PATINA_SMOKE_HEATMAP_ERROR = null;
+      document.querySelector('[aria-label="重试读取热力图"]').click();
+    `);
+    await waitForExpression(client!, sessionId, `Boolean(document.querySelector('.data-heatmap-calendar')) && !document.querySelector('.data-heatmap-panel [role="alert"]')`);
+    assert.ok(Number(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_HEATMAP_CALLS`)) > Number(previous));
   });
 
   await runTest("English history title chips do not crowd the duration column", async () => {

@@ -4,9 +4,9 @@ This repository uses `Quiet Pro` as the only long-term UI design baseline.
 
 This file is the top-level collaboration entry point for repository-aware agents.
 
-These instructions apply to all UI work unless the user gives an explicit task-specific override.
+These instructions apply to repository work; UI sections apply when UI is touched. Explicit task-specific user instructions take precedence.
 
-## Always Read First
+## Documentation Routing
 
 - Use `docs/README.md` as the documentation map.
 - Domain terminology must follow `CONTEXT.md`.
@@ -18,6 +18,16 @@ These instructions apply to all UI work unless the user gives an explicit task-s
 - Stable-period issue fixes and boundary triage must follow `docs/issue-fix-boundary-guardrails.md`.
 - Versioning, changelog, and release work must follow `docs/versioning-and-release-policy.md`.
 - Treat the top-level long-lived docs under `docs/` as the current source of truth.
+- Read the documentation map and task-relevant references first; do not reload every long document for each small change. Use the active working document for execution evidence, with its latest status taking precedence over historical progress entries.
+
+## Execution And Communication
+
+- Check the current branch, working tree and existing implementation before planning new work; do not duplicate completed features.
+- Continue authorized work through implementation and verification. Routine reversible choices do not require repeated confirmation; ask when missing information materially changes scope, product behavior or data safety.
+- Reassessing an ownership boundary means choosing and documenting the owner, not automatically stopping for permission. Escalate genuine unresolved decisions.
+- Default to one agent. Use subagents only when the user requests them or explicitly approves their cost for the current task.
+- Keep updates concise and evidence-based. Distinguish implemented, automatically tested, manually verified, packaged, pushed and publicly released states.
+- A user-paused feature stays deferred until resumed; do not let optional polish block the next agreed release milestone.
 
 ## Quiet Pro Baseline
 
@@ -66,6 +76,7 @@ These instructions apply to all UI work unless the user gives an explicit task-s
 - Do not reintroduce exited root layers such as `src/lib/` or `src/types/`.
 - Treat compatibility shells and forwarding layers as explicit exceptions that should stay thin.
 - Treat files under `docs/archive/` as historical context, not the default source of truth.
+- Follow the current `patinad` roadmap: the daemon owns background tracking and runtime writes; Desktop and future browser/TUI clients use supported boundaries. Do not expand parallel embedded and daemon implementations without a migration need.
 
 ## Product And Priority Direction
 
@@ -85,12 +96,14 @@ These instructions apply to all UI work unless the user gives an explicit task-s
 
 - For release work, keep version files, Git tags, GitHub Release titles, and updater artifacts consistent.
 - Do not skip the minimum validation bar for architecture-affecting or release-affecting changes.
-- The default minimum frontend validation bar is `npm test`, `npm run test:replay`, and `npm run build`.
+- Follow the validation matrix in `docs/issue-fix-boundary-guardrails.md`: `npm run check` for frontend delivery, `npm run check:full` for architecture/Rust runtime work, and release-policy gates for releases. Documentation-only edits need relevant consistency checks, not a full application rebuild.
+- After required checks pass, repeat or broaden them only for new changes, failures or unresolved risks. Native lifecycle tests validate lifecycle, not full React behavior or user-observed flicker.
+- Do not bump versions or build a DEB for every patch; group work into an agreed test candidate or releasable milestone. Installation and public release are separate actions.
 - Treat code quality, software performance, and reliability/validation as related but different concerns; do not optimize one by accidentally damaging the others.
 
 ## GitHub Push And Issue Rules
 
-- This is a personal repository. When the user asks to push changes to the repository, default to committing the confirmed scope and pushing directly to `origin/main`.
+- When asked to push, use the current user-authorized branch and verify its upstream. The ongoing daemon migration stays on `feature/patinad-daemon`; do not switch, merge or push it into `main` implicitly. Use `origin/main` when the confirmed task is on main.
 - Do not create a branch or pull request unless the user explicitly asks for one.
 - Do not use issue-closing keywords such as `Closes`, `Fixes`, or `Resolves` in commits, changelog entries, pull request descriptions, or GitHub comments unless the user explicitly asks to close the issue.
 - When a change relates to an issue, reference it without changing its state, for example with `Refs #3` or a Markdown issue link.

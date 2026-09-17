@@ -1,11 +1,8 @@
 import { AppClassification } from "../../../shared/classification/appClassification.ts";
 import type { SessionRange } from "../../../shared/lib/sessionReadCompiler.ts";
 import { getUiLocale, UI_TEXT } from "../../../shared/copy/uiText.ts";
-import {
-  getEarliestSessionStartTime,
-  getSessionSummariesInRange,
-  type AggregateSessionRecord,
-} from "../../../platform/persistence/sessionReadRepository.ts";
+import type { AggregateSessionRecord } from "../../../platform/persistence/sessionReadRepository.ts";
+import { getDailyActivity } from "../../../platform/persistence/dailyActivityRepository.ts";
 import {
   buildDataDayRanges,
   buildDataMonthRanges,
@@ -125,19 +122,28 @@ export interface HeatmapRange {
 
 export interface DataHeatmapSnapshot {
   earliestStartTime: number | null;
-  sessions: AggregateSessionRecord[];
+  days: HeatmapDayTotal[];
   range: HeatmapRange;
   cacheKey: string;
 }
 
+export interface HeatmapDayTotal {
+  date: string;
+  duration: number;
+}
+
 export interface DataHeatmapDependencies {
-  getEarliestSessionStartTime: () => Promise<number | null>;
-  getSessionsInRange: (startMs: number, endMs: number) => Promise<AggregateSessionRecord[]>;
+  getDailyActivity: (startMs: number, endMs: number) => Promise<{
+    earliestStartTime: number | null;
+    days: HeatmapDayTotal[];
+  }>;
 }
 
 const RECENT_HEATMAP_WEEK_COUNT = 53;
-const HEATMAP_SESSION_CACHE_LIMIT = 2;
-const heatmapSessionCache = new Map<string, AggregateSessionRecord[]>();
+const HEATMAP_DAY_CACHE_LIMIT = 2;
+const heatmapDayCache = new Map<string, HeatmapDayTotal[]>();
+const pendingHeatmapReads = new Map<string, Promise<DataHeatmapSnapshot>>();
+let heatmapCacheGeneration = 0;
 let earliestSessionStartTimeCache: number | null | undefined;
 
 export interface CompiledDataSession extends AggregateSessionRecord {
@@ -597,18 +603,18 @@ export function buildDataAppTrendViewModel(
 
 async function resolveDefaultDataHeatmapDependencies(): Promise<DataHeatmapDependencies> {
   return {
-    getEarliestSessionStartTime,
-    getSessionsInRange: getSessionSummariesInRange,
+    getDailyActivity,
   };
 }
 
 export function resetDataReadModelCacheForTests() {
-  heatmapSessionCache.clear();
-  earliestSessionStartTimeCache = undefined;
+  clearDataReadModelCache();
 }
 
 export function clearDataReadModelCache() {
-  heatmapSessionCache.clear();
+  heatmapCacheGeneration += 1;
+  heatmapDayCache.clear();
+  pendingHeatmapReads.clear();
   earliestSessionStartTimeCache = undefined;
 }
 
@@ -639,33 +645,34 @@ export function getHeatmapRange(selection: HeatmapSelection, nowMs: number): Hea
   return {
     start: heatmapStart,
     end: heatmapEnd,
-    weekCount: Math.ceil((heatmapEnd.getTime() - heatmapStart.getTime()) / (7 * 24 * 60 * 60 * 1000)),
+    weekCount: Math.round((Date.UTC(heatmapEnd.getFullYear(), heatmapEnd.getMonth(), heatmapEnd.getDate())
+      - Date.UTC(heatmapStart.getFullYear(), heatmapStart.getMonth(), heatmapStart.getDate())) / (7 * 24 * 60 * 60 * 1000)),
   };
 }
 
 export function getHeatmapSelectionKey(selection: HeatmapSelection, nowMs: number) {
   const range = getHeatmapRange(selection, nowMs);
-  return `${selection}:${toDateKey(range.start)}:${toDateKey(range.end)}`;
+  return `${selection}:${range.start.getTime()}:${range.end.getTime()}`;
 }
 
-function setHeatmapSessionCache(cacheKey: string, sessions: AggregateSessionRecord[]) {
-  heatmapSessionCache.delete(cacheKey);
-  heatmapSessionCache.set(cacheKey, sessions);
+function setHeatmapDayCache(cacheKey: string, days: HeatmapDayTotal[]) {
+  heatmapDayCache.delete(cacheKey);
+  heatmapDayCache.set(cacheKey, days);
 
-  while (heatmapSessionCache.size > HEATMAP_SESSION_CACHE_LIMIT) {
-    const oldestKey = heatmapSessionCache.keys().next().value;
+  while (heatmapDayCache.size > HEATMAP_DAY_CACHE_LIMIT) {
+    const oldestKey = heatmapDayCache.keys().next().value;
     if (!oldestKey) break;
-    heatmapSessionCache.delete(oldestKey);
+    heatmapDayCache.delete(oldestKey);
   }
 }
 
-export function getCachedDataHeatmapSessions(selection: HeatmapSelection, nowMs: number) {
+export function getCachedDataHeatmapDays(selection: HeatmapSelection, nowMs: number) {
   const cacheKey = getHeatmapSelectionKey(selection, nowMs);
-  const sessions = heatmapSessionCache.get(cacheKey);
-  if (!sessions) return undefined;
+  const days = heatmapDayCache.get(cacheKey);
+  if (!days) return undefined;
 
-  setHeatmapSessionCache(cacheKey, sessions);
-  return sessions;
+  setHeatmapDayCache(cacheKey, days);
+  return days;
 }
 
 export function buildYearOptions(earliestStartTime: number | null, currentYear: number) {
@@ -682,8 +689,15 @@ export function buildActivityHeatmap(
   selection: HeatmapSelection,
   nowMs: number,
 ): HeatmapWeek[] {
-  const { start: heatmapStart, weekCount } = getHeatmapRange(selection, nowMs);
-  const todayStart = startOfLocalDay(new Date(nowMs));
+  return buildDailyActivityHeatmap(aggregateHeatmapDays(sessions, selection, nowMs), selection, nowMs);
+}
+
+export function aggregateHeatmapDays(
+  sessions: AggregateSessionRecord[],
+  selection: HeatmapSelection,
+  nowMs: number,
+): HeatmapDayTotal[] {
+  const { start: heatmapStart, end: heatmapEnd, weekCount } = getHeatmapRange(selection, nowMs);
   const dayBuckets = new Map<string, number>();
 
   for (let dayIndex = 0; dayIndex < weekCount * 7; dayIndex += 1) {
@@ -691,14 +705,15 @@ export function buildActivityHeatmap(
   }
 
   for (const session of sessions) {
-    const sessionStart = session.startTime;
-    const sessionEnd = session.endTime ?? nowMs;
+    const sessionStart = Math.max(session.startTime, heatmapStart.getTime());
+    const sessionEnd = Math.min(session.endTime ?? nowMs, heatmapEnd.getTime());
     if (sessionEnd <= sessionStart) continue;
 
     let cursor = startOfLocalDay(new Date(sessionStart));
     while (cursor.getTime() < sessionEnd) {
       const dayStart = cursor.getTime();
-      const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+      const nextDay = addDays(cursor, 1);
+      const dayEnd = nextDay.getTime();
       const clippedStart = Math.max(sessionStart, dayStart);
       const clippedEnd = Math.min(sessionEnd, dayEnd);
       const key = toDateKey(cursor);
@@ -708,11 +723,22 @@ export function buildActivityHeatmap(
         dayBuckets.set(key, previous + clippedEnd - clippedStart);
       }
 
-      cursor = addDays(cursor, 1);
+      cursor = nextDay;
     }
   }
 
-  const maxDuration = Math.max(1, ...Array.from(dayBuckets.values()));
+  return Array.from(dayBuckets, ([date, duration]) => ({ date, duration }));
+}
+
+export function buildDailyActivityHeatmap(
+  days: HeatmapDayTotal[],
+  selection: HeatmapSelection,
+  nowMs: number,
+): HeatmapWeek[] {
+  const { start: heatmapStart, weekCount } = getHeatmapRange(selection, nowMs);
+  const todayStart = startOfLocalDay(new Date(nowMs));
+  const dayBuckets = new Map(days.map((day) => [day.date, day.duration]));
+  const maxDuration = Math.max(1, ...dayBuckets.values());
 
   return Array.from({ length: weekCount }, (_, weekIndex) => {
     const weekStart = addDays(heatmapStart, weekIndex * 7);
@@ -741,48 +767,45 @@ export function buildActivityHeatmap(
   });
 }
 
-export async function loadDataHeatmapSnapshot(
+export function loadDataHeatmapSnapshot(
   selection: HeatmapSelection,
   nowMs: number = Date.now(),
   deps?: DataHeatmapDependencies,
 ): Promise<DataHeatmapSnapshot> {
-  const resolvedDeps = deps ?? await resolveDefaultDataHeatmapDependencies();
   const range = getHeatmapRange(selection, nowMs);
   const cacheKey = getHeatmapSelectionKey(selection, nowMs);
-  const earliestStartTimePromise = earliestSessionStartTimeCache === undefined
-    ? resolvedDeps.getEarliestSessionStartTime()
-    : Promise.resolve(earliestSessionStartTimeCache);
-
-  const [earliestStartTime, sessions] = await Promise.all([
-    earliestStartTimePromise,
-    resolvedDeps.getSessionsInRange(range.start.getTime(), range.end.getTime()),
-  ]);
-
-  earliestSessionStartTimeCache = earliestStartTime;
-  setHeatmapSessionCache(cacheKey, sessions);
-
-  return {
-    earliestStartTime,
-    sessions,
-    range,
-    cacheKey,
-  };
+  const existing = pendingHeatmapReads.get(cacheKey);
+  if (existing) return existing;
+  const generation = heatmapCacheGeneration;
+  const pending = (async () => {
+    const resolvedDeps = deps ?? await resolveDefaultDataHeatmapDependencies();
+    const { earliestStartTime, days } = await resolvedDeps.getDailyActivity(range.start.getTime(), range.end.getTime());
+    if (generation === heatmapCacheGeneration) {
+      earliestSessionStartTimeCache = earliestStartTime;
+      setHeatmapDayCache(cacheKey, days);
+    }
+    return { earliestStartTime, days, range, cacheKey };
+  })().finally(() => {
+    if (pendingHeatmapReads.get(cacheKey) === pending) pendingHeatmapReads.delete(cacheKey);
+  });
+  pendingHeatmapReads.set(cacheKey, pending);
+  return pending;
 }
 
-export function getDataHeatmapSessionCacheSizeForTests(): number {
-  return heatmapSessionCache.size;
+export function getDataHeatmapDayCacheSizeForTests(): number {
+  return heatmapDayCache.size;
 }
 
 export async function prewarmRecentDataHeatmapCache(
   nowMs: number = Date.now(),
   deps?: DataHeatmapDependencies,
 ): Promise<DataHeatmapSnapshot> {
-  const cachedSessions = getCachedDataHeatmapSessions("recent", nowMs);
-  if (cachedSessions && earliestSessionStartTimeCache !== undefined) {
+  const cachedDays = getCachedDataHeatmapDays("recent", nowMs);
+  if (cachedDays && earliestSessionStartTimeCache !== undefined) {
     const range = getHeatmapRange("recent", nowMs);
     return {
       earliestStartTime: earliestSessionStartTimeCache,
-      sessions: cachedSessions,
+      days: cachedDays,
       range,
       cacheKey: getHeatmapSelectionKey("recent", nowMs),
     };

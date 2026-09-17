@@ -8,19 +8,19 @@ import {
   useRef,
   useState,
 } from "react";
-import { BarChart3, CalendarDays, ChevronLeft, ChevronRight, Clock3 } from "lucide-react";
+import { BarChart3, CalendarDays, ChevronLeft, ChevronRight, Clock3, RefreshCw } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import { UI_TEXT } from "../../../shared/copy/uiText.ts";
 import type { AppLanguage } from "../../../shared/settings/appSettings.ts";
 import {
   buildDataTrendViewModel,
-  buildActivityHeatmap,
+  buildDailyActivityHeatmap,
   buildYearOptions,
-  getCachedDataHeatmapSessions,
+  getCachedDataHeatmapDays,
   getCachedEarliestSessionStartTime,
   type DataAppTrendViewModel,
   type DataTrendViewModel,
-  type AggregateSessionRecord,
+  type HeatmapDayTotal,
   type HeatmapWeek,
   type HeatmapSelection,
   loadDataHeatmapSnapshot,
@@ -124,7 +124,7 @@ export default function Data({
   const [selectedTrendRange, setSelectedTrendRange] = useState<DataTrendRangeSelection>({ kind: "rolling", days: 7 });
   const [selectedAppTrendRange, setSelectedAppTrendRange] = useState<DataTrendRangeSelection>({ kind: "rolling", days: 7 });
   const [currentAppTrendViewModel, setCurrentAppTrendViewModel] = useState<DataAppTrendViewModel | null>(null);
-  const initialCachedHeatmapSessions = getCachedDataHeatmapSessions("recent", Date.now());
+  const initialCachedHeatmapDays = getCachedDataHeatmapDays("recent", Date.now());
   const [bootstrapSnapshot, setBootstrapSnapshot] = useState<DataBootstrapSnapshot | null>(
     () => getCachedDataBootstrapSnapshot(),
   );
@@ -143,13 +143,15 @@ export default function Data({
   const [earliestStartTime, setEarliestStartTime] = useState<number | null>(
     getCachedEarliestSessionStartTime() ?? null,
   );
-  const [yearSessions, setYearSessions] = useState<AggregateSessionRecord[]>(
-    () => initialCachedHeatmapSessions ?? [],
+  const [heatmapDays, setHeatmapDays] = useState<HeatmapDayTotal[]>(
+    () => initialCachedHeatmapDays ?? [],
   );
-  const [yearSessionsView, setYearSessionsView] = useState<HeatmapSelection | null>(
-    initialCachedHeatmapSessions ? "recent" : null,
+  const [heatmapDaysView, setHeatmapDaysView] = useState<HeatmapSelection | null>(
+    initialCachedHeatmapDays ? "recent" : null,
   );
-  const [heatmapLoading, setHeatmapLoading] = useState(!initialCachedHeatmapSessions);
+  const [heatmapLoading, setHeatmapLoading] = useState(!initialCachedHeatmapDays);
+  const [heatmapError, setHeatmapError] = useState<"unsupported" | "failed" | null>(null);
+  const [heatmapRetry, setHeatmapRetry] = useState(0);
   const overviewTrendChart = useDataChartInitialDimension("overviewTrend");
   const nowMs = overviewTrend.nowMs;
   const lastTrendViewModelRef = useRef<{
@@ -158,9 +160,9 @@ export default function Data({
   } | null>(null);
   const lastHeatmapRowsRef = useRef<{
     selection: HeatmapSelection;
-    rows: ReturnType<typeof buildActivityHeatmap>;
+    rows: ReturnType<typeof buildDailyActivityHeatmap>;
   } | null>(null);
-  const hasFetchedHeatmapOnceRef = useRef(Boolean(initialCachedHeatmapSessions));
+  const hasFetchedHeatmapOnceRef = useRef(Boolean(initialCachedHeatmapDays));
   const activeTrendDateRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -190,11 +192,11 @@ export default function Data({
     let cancelled = false;
     const loadYear = async () => {
       const nowForRange = Date.now();
-      const cachedSessions = getCachedDataHeatmapSessions(selectedHeatmapView, nowForRange);
+      const cachedDays = getCachedDataHeatmapDays(selectedHeatmapView, nowForRange);
 
-      if (cachedSessions) {
-        setYearSessions(cachedSessions);
-        setYearSessionsView(selectedHeatmapView);
+      if (cachedDays) {
+        setHeatmapDays(cachedDays);
+        setHeatmapDaysView(selectedHeatmapView);
         hasFetchedHeatmapOnceRef.current = true;
         setHeatmapLoading(false);
       } else {
@@ -206,8 +208,9 @@ export default function Data({
         if (cancelled) return;
 
         setEarliestStartTime(snapshot.earliestStartTime);
-        setYearSessions(snapshot.sessions);
-        setYearSessionsView(selectedHeatmapView);
+        setHeatmapDays(snapshot.days);
+        setHeatmapDaysView(selectedHeatmapView);
+        setHeatmapError(null);
         hasFetchedHeatmapOnceRef.current = true;
 
         if (snapshot.earliestStartTime) {
@@ -215,6 +218,10 @@ export default function Data({
           if (selectedHeatmapView !== "recent" && selectedHeatmapView < earliestYear) {
             setSelectedHeatmapView(earliestYear);
           }
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setHeatmapError(String(error).includes("heatmap-unsupported") ? "unsupported" : "failed");
         }
       } finally {
         if (!cancelled) {
@@ -227,7 +234,7 @@ export default function Data({
     return () => {
       cancelled = true;
     };
-  }, [selectedHeatmapView, refreshKey]);
+  }, [selectedHeatmapView, refreshKey, heatmapRetry]);
 
   const trendViewModel = useMemo(() => {
     if (!overviewTrend.snapshot) return null;
@@ -256,9 +263,9 @@ export default function Data({
     ? matchingBootstrapSnapshot.appTrendViewModel
     : null;
   const heatmapRows = useMemo(() => (
-    buildActivityHeatmap(yearSessions, selectedHeatmapView, nowMs)
-  ), [nowMs, selectedHeatmapView, yearSessions]);
-  const hasHeatmapRowsForSelectedView = yearSessionsView === selectedHeatmapView;
+    buildDailyActivityHeatmap(heatmapDays, selectedHeatmapView, nowMs)
+  ), [nowMs, selectedHeatmapView, heatmapDays]);
+  const hasHeatmapRowsForSelectedView = heatmapDaysView === selectedHeatmapView;
   if (!heatmapLoading && hasHeatmapRowsForSelectedView) {
     lastHeatmapRowsRef.current = {
       selection: selectedHeatmapView,
@@ -269,7 +276,7 @@ export default function Data({
     ? matchingBootstrapSnapshot.heatmapRows
     : null;
   const heatmapPlaceholderRows = useMemo(() => (
-    buildActivityHeatmap([], selectedHeatmapView, nowMs)
+    buildDailyActivityHeatmap([], selectedHeatmapView, nowMs)
   ), [nowMs, selectedHeatmapView]);
   const canUseBootstrapHeatmap = Boolean(bootstrapHeatmapRows && (heatmapLoading || !hasHeatmapRowsForSelectedView));
   const visibleHeatmapRows = !heatmapLoading && hasHeatmapRowsForSelectedView
@@ -342,7 +349,7 @@ export default function Data({
   };
   useEffect(() => {
     if (!trendViewModel || !currentAppTrendViewModel) return;
-    if (heatmapLoading || yearSessionsView !== selectedHeatmapView) return;
+    if (heatmapLoading || heatmapError || heatmapDaysView !== selectedHeatmapView) return;
     if (!overviewTrend.snapshot || !appTrend.snapshot) return;
 
     const snapshot: DataBootstrapSnapshot = {
@@ -365,13 +372,14 @@ export default function Data({
     currentAppTrendViewModel,
     earliestStartTime,
     heatmapLoading,
+    heatmapError,
     heatmapRows,
     mappingVersion,
     overviewTrend.snapshot,
     selectedHeatmapView,
     trendViewModel,
     uiLanguage,
-    yearSessionsView,
+    heatmapDaysView,
   ]);
 
   return (
@@ -521,7 +529,18 @@ export default function Data({
             </div>
           </div>
 
-          <div
+          {heatmapError ? (
+            <div className="mt-5 flex min-h-40 items-center justify-center gap-3" role="alert">
+              <span className="text-sm text-[var(--qp-text-secondary)]">
+                {heatmapError === "unsupported" ? UI_TEXT.data.heatmapUnsupported : UI_TEXT.data.heatmapLoadFailed}
+              </span>
+              <button type="button" className="qp-control h-8 w-8 shrink-0"
+                title={UI_TEXT.data.heatmapRetry} aria-label={UI_TEXT.data.heatmapRetry}
+                disabled={heatmapLoading} onClick={() => setHeatmapRetry((value) => value + 1)}>
+                <RefreshCw size={14} />
+              </button>
+            </div>
+          ) : <div
             className="data-heatmap data-heatmap-calendar mt-5"
           >
               <div className="data-heatmap-content">
@@ -605,7 +624,7 @@ export default function Data({
                     </div>
                   </div>
               </div>
-            </div>
+            </div>}
         </div>
       </div>
 

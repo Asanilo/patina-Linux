@@ -157,6 +157,22 @@
 
 ### 5.6 当前实施主线：`patinad`
 
+#### 当前快照与下一个发布阶段（2026-09-18）
+
+本节快照优先于下方按日期保留的历史进度。daemon/runtime、客户端接管、systemd 和主要写侧功能已有实现；当前处于 Stage 2H.3d 的 daemon-backed DEB beta 验收与发布收口，尚非稳定版。源码及本地 DEB 候选为 `1.9.0-beta.17`，成品门禁已通过，尚待安装验收；2026-09-18 只读查询确认最新公开预发布仍为 beta.12，稳定版为 1.8.4。本地候选不代表已推送、已安装或已公开发布，详细证据见 runtime working 文档。
+
+- **暂停悬浮窗专项**：按用户要求暂停闪烁、左右吸附和 GNOME compositor provider 开发。现有原生 Wayland 行为是自由拖动的小窗口；beta.16 自动及原生生命周期回归通过，不代表闪烁/吸附实机验收通过。该可选功能不阻塞下述聚合阶段，数据安全或崩溃问题除外。
+- **下一可发布阶段：Data 热力图低内存查询**。提供共享后端按本地日期聚合入口及 Desktop/daemon 适配，前端不再拉取或缓存 53 周逐 session 明细。保持本机记录优先、导入桶分配、排除、分类、active cutoff 和日期边界语义。
+- **本阶段进展**：已有界共享日聚合仓储及 `/api/v1/heatmap` 只读入口；开发版 Desktop 热力图已通过薄 command 接 typed daemon client / embedded 共享仓储，不再拉取整年 session 明细。缓存、页面 state 与预热只持有紧凑日汇总，前端检查完整本地日期边界。历史进程过滤与别名归一已迁入 Rust，以 791 组过滤和 598 组别名 fixture 对照前端；日聚合读取当前 override 与旧排除字段，并在优先级分配后过滤。明确修正旧热力图漏用用户排除和把小时桶伪装成连续区间的行为；旧缓存版本失效。旧 daemon、查询失败或响应不完整时显示错误并允许重试，不回退整年明细。
+- **查询级验收**：新增可复现的 `perf:daily-activity`，50,000 条合成 native session 对照暴露并修正逐日回读标题页的查询计划问题，复用既有覆盖索引，无 schema 迁移。日聚合响应约 24.9 KiB、耗时 3.6–3.8 秒、采样 USS 增量约 5 MiB，通过本场景预算；相同数据旧 SQL/JSON 参考路径约 61.7 MiB 响应、288 MiB USS 增量。结果一致且数据库哈希未变。该 debug 查询进程实验不含 WebKit、IPC 和 daemon host，也未覆盖多年份/大量导入数据；下方另列真实链路验收，不将查询级数字解释为整个桌面的收益。
+- **发布门槛**：新旧结果对照与跨日/DST/导入/排除/active 测试通过；在相同合成数据上记录 Desktop/WebKit/daemon 峰值 PSS/USS、响应大小和查询耗时；实现明确的读取与并发预算，不把峰值简单转移到 daemon；完成产品内热力图及日期跳转验收和 DEB release gate。达标后形成一个 DEB beta，版本号到出包时确定。
+- **真实链路进展**：`perf:heatmap-desktop` 已以私有合成 Local profile 跑通真实 React/WebKit → IPC → daemon、五分钟销毁与重开，两轮汇总和 History 跳转通过，数据完整性不变。首次热力图后 Desktop + WebKit PSS 约 503 MiB，销毁后约 98.5 MiB；daemon 未出现同量级增长。主进程数据传输开销已收敛，但前台 WebProcess 仍为主要内存来源；这只是 debug 成品页面的一轮实验，不是同配置旧 UI 对照、release 包或长期追踪验收。下一步完成 release 候选门禁，不回头扩大悬浮窗专项。
+- **候选发布门禁（2026-09-18）**：beta.17 的完整 `release:check` 通过，含 598 项 Rust 测试、32 项浏览器 smoke、构建预算及扩展/签名 XPI 检查。累计变更已写入 beta.17 changelog；Desktop + daemon DEB 已构建，通过包内容检查和解包后 release daemon 的隔离鉴权、日期与热力图冒烟测试。下一步经用户确认后安装并验证双端版本、真实统计及后台持续追踪；不把空库冒烟替代真实追踪或 release UI 内存验收。包路径、哈希和限制见 runtime working 文档第九步。
+- **后续独立阶段**：分类候选及其他趋势聚合、流式备份、Widget 独立入口。关闭 Desktop 进程仅留 daemon/轻量托盘属于另一个架构决策，当前没有实施；Widget 入口拆分随悬浮窗专项暂停。
+- **稳定版剩余门槛**：活动网页跨挂起、剩余安装/恢复故障矩阵、真实数据长期运行，以及 AppImage 兼容或明确退役迁移。浏览器 UI、TUI、KDE/wlroots 与 Flatpak 继续按后续路线推进。
+
+#### 实施顺序与历史进度
+
 `patinad` 是当前唯一的架构实施主线。Linux `main` 作为已发布桌面产品的稳定功能基线，在 daemon-backed beta 完成前不再单独扩展一条持续追平 Windows 上游的功能线。上游改动只作为定期审查输入，满足以下条件之一时才进入当前实施序列：
 
 - 修复计时正确性、数据安全、隐私或安全边界问题
