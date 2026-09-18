@@ -134,7 +134,22 @@ export async function exportBackupWithPickerWithDeps(
   return deps.exportBackup(selectedPath);
 }
 
-export async function prepareBackupRestoreWithDeps(
+const pendingRestorePreparations = new WeakMap<PrepareBackupRestoreDeps, Promise<BackupRestorePreparation | null>>();
+
+export function prepareBackupRestoreWithDeps(
+  initialPath: string | undefined,
+  deps: PrepareBackupRestoreDeps,
+): Promise<BackupRestorePreparation | null> {
+  const pending = pendingRestorePreparations.get(deps);
+  if (pending) return pending;
+  const request = loadBackupRestorePreparation(initialPath, deps).finally(() => {
+    if (pendingRestorePreparations.get(deps) === request) pendingRestorePreparations.delete(deps);
+  });
+  pendingRestorePreparations.set(deps, request);
+  return request;
+}
+
+async function loadBackupRestorePreparation(
   initialPath: string | undefined,
   deps: PrepareBackupRestoreDeps,
 ): Promise<BackupRestorePreparation | null> {

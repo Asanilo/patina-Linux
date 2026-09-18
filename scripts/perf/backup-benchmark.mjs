@@ -8,7 +8,8 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const modes = ["legacy-export", "export", "legacy-preview", "preview"];
+const release = process.argv.includes("--release");
+const modes = ["legacy-export", "export", "legacy-preview", "preview-only", "sha256", "preview"];
 if (process.platform !== "linux") throw new Error("This benchmark requires Linux /proc");
 async function sha256(file) {
   const hasher = createHash("sha256");
@@ -20,7 +21,7 @@ await chmod(root, 0o700);
 await writeFile(path.join(root, "marker"), "backup-benchmark\n", { flag: "wx", mode: 0o600 });
 console.log(`Backup benchmark evidence: ${root}`);
 let binary;
-const build = spawn("cargo", ["test", "--manifest-path", "src-tauri/Cargo.toml", "--lib", "--no-run", "--message-format=json"], {
+const build = spawn("cargo", ["test", ...(release ? ["--release"] : []), "--manifest-path", "src-tauri/Cargo.toml", "--lib", "--no-run", "--message-format=json"], {
   cwd: repo, stdio: ["ignore", "pipe", "inherit"],
 });
 const built = new Promise((resolve, reject) => { build.once("error", reject); build.once("exit", resolve); });
@@ -33,7 +34,7 @@ for await (const line of createInterface({ input: build.stdout })) {
 if (await built !== 0 || !binary) throw new Error("Could not compile benchmark");
 const hash = await sha256(binary);
 let fixtureHash;
-for (const mode of ["seed", ...modes]) {
+for (const mode of ["seed", ...modes, "responsiveness"]) {
   const child = spawn(binary, ["data::backup::benchmark::worker", "--exact", "--ignored", "--nocapture", "--test-threads=1"], {
     cwd: root, stdio: "inherit", env: {
       PATH: process.env.PATH, LANG: "C.UTF-8", TZ: "UTC",
@@ -58,14 +59,16 @@ for (const mode of modes) {
   }
   results.push({ mode, elapsed_ms: result.elapsed_ms, records: result.records, baseline: result.baseline, sampled_peak: peak, after: result.after });
 }
-const budgets = { elapsed_ms: 30000, sampled_uss_growth_bytes: 64 * 1024 * 1024 };
-const passed = results.filter(result => ["export", "preview"].includes(result.mode)).every(result =>
+const budgets = { elapsed_ms: release ? 5000 : 30000, sampled_uss_growth_bytes: 64 * 1024 * 1024 };
+const responsiveness = JSON.parse(await readFile(path.join(root, "responsiveness.json"), "utf8"));
+const passed = responsiveness.passed && results.filter(result => ["export", "preview", "preview-only"].includes(result.mode)).every(result =>
   result.elapsed_ms <= budgets.elapsed_ms && result.records === 50000
   && result.sampled_peak.uss_bytes !== null && result.baseline.uss_bytes !== null
   && result.sampled_peak.uss_bytes - result.baseline.uss_bytes <= budgets.sampled_uss_growth_bytes);
 const report = { binary, sha256: hash, fixture_sha256: fixtureHash,
-  scope: "Isolated debug worker; synthetic 50000 rows; not Desktop or restore transaction peak",
-  budgets, passed, results };
+  profile: release ? "release" : "debug",
+  scope: "Isolated worker; synthetic 50000 rows; not Desktop or restore transaction peak",
+  budgets, passed, results, responsiveness };
 await writeFile(path.join(root, "summary.json"), JSON.stringify(report, null, 2), { flag: "wx", mode: 0o600 });
 console.log(JSON.stringify(report, null, 2));
 if (!passed) process.exitCode = 1;

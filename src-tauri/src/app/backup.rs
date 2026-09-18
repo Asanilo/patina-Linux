@@ -25,12 +25,8 @@ pub(crate) async fn stage_backup_for_daemon(
     if source.as_os_str().is_empty() {
         return Err("backup path cannot be empty".to_string());
     }
-    let source_for_inspection = source.clone();
-    let (_, expected_sha256, expected_size_bytes) = tokio::task::spawn_blocking(move || {
-        backup::inspect_restore_archive(&source_for_inspection)
-    })
-    .await
-    .map_err(|error| format!("backup inspection task failed: {error}"))??;
+    let (_, expected_sha256, expected_size_bytes) =
+        backup::inspect_restore_archive_async(&source).await?;
     let storage_paths = crate::platform::storage_paths::resolve_storage_paths(app)?;
     let staging_root = storage_paths.backup_restore_staging_dir;
     let staging_root_for_copy = staging_root.clone();

@@ -781,6 +781,45 @@ await runTest("prepareBackupRestoreWithDeps builds a summary for compatible prev
   assert.ok(preparation?.previewSummary.includes("42"));
 });
 
+await runTest("restore preparation coalesces duplicate picker and preview requests without caching results", async () => {
+  let picks = 0;
+  let previews = 0;
+  let release!: (path: string | null) => void;
+  const deps = {
+    pickBackupFile: () => { picks += 1; return new Promise<string | null>((resolve) => { release = resolve; }); },
+    previewBackup: async () => { previews += 1; return buildPreview(); },
+  };
+  const first = prepareBackupRestoreWithDeps(undefined, deps);
+  const duplicate = prepareBackupRestoreWithDeps(undefined, deps);
+  assert.equal(first, duplicate);
+  assert.equal(picks, 1);
+  release("/tmp/fixture.zip");
+  await first;
+  assert.equal(previews, 1);
+  const cancelled = prepareBackupRestoreWithDeps(undefined, deps);
+  release(null);
+  assert.equal(await cancelled, null);
+  assert.equal(picks, 2);
+  const fresh = prepareBackupRestoreWithDeps(undefined, deps);
+  release("/tmp/fixture.zip");
+  await fresh;
+  assert.equal(previews, 2);
+});
+
+await runTest("restore preparation releases failed requests for explicit retry", async () => {
+  let attempts = 0;
+  const deps = {
+    pickBackupFile: async () => "/tmp/fixture.zip",
+    previewBackup: async () => {
+      if (++attempts === 1) throw new Error("invalid archive");
+      return buildPreview();
+    },
+  };
+  await assert.rejects(prepareBackupRestoreWithDeps(undefined, deps), /invalid archive/);
+  assert.ok(await prepareBackupRestoreWithDeps(undefined, deps));
+  assert.equal(attempts, 2);
+});
+
 await runTest("runBackupExportFlow normalizes the initial path and stores the exported path", async () => {
   let receivedInitialPath: string | undefined;
   let storedPath = "";

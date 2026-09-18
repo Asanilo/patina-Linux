@@ -44,7 +44,10 @@ fn worker() {
         "legacy-export",
         "export",
         "legacy-preview",
-        "preview"
+        "preview",
+        "preview-only",
+        "sha256",
+        "responsiveness"
     ]
     .contains(&mode.as_str()));
     tauri::async_runtime::block_on(async {
@@ -60,6 +63,10 @@ fn worker() {
                 .await
                 .unwrap();
             pool.close().await;
+            return;
+        }
+        if mode == "responsiveness" {
+            measure_responsiveness(&root).await;
             return;
         }
         let pool = SqlitePoolOptions::new()
@@ -105,6 +112,18 @@ fn worker() {
                 std::hint::black_box(&payload);
                 payload.preview().session_count
             }
+            "preview-only" => {
+                let path = root.join("fixture.zip");
+                preview::decode(&mut open_backup_archive(&path).unwrap(), &path)
+                    .unwrap()
+                    .session_count
+            }
+            "sha256" => {
+                let path = root.join("fixture.zip");
+                let (_, bytes) = fingerprint_backup_file(File::open(&path).unwrap()).unwrap();
+                assert_eq!(bytes, fs::metadata(path).unwrap().len());
+                0
+            }
             _ => {
                 inspect_restore_archive(&root.join("fixture.zip"))
                     .unwrap()
@@ -116,7 +135,7 @@ fn worker() {
         std::thread::sleep(Duration::from_millis(50));
         stop.store(true, Ordering::Relaxed);
         sampler.join().unwrap();
-        assert_eq!(count, 50_000);
+        assert_eq!(count, if mode == "sha256" { 0 } else { 50_000 });
         if mode.ends_with("export") {
             assert_eq!(
                 inspect_restore_archive(&target).unwrap().0.session_count,
@@ -137,4 +156,81 @@ fn worker() {
         );
         pool.close().await;
     });
+}
+
+async fn measure_responsiveness(root: &Path) {
+    use crate::data::repositories::tracker_settings::{
+        TRACKER_LAST_HEARTBEAT_KEY, TRACKER_LAST_SUCCESSFUL_SAMPLE_KEY,
+    };
+    use crate::data::tracking_runtime::TrackingRuntimeDataStore;
+    let pool = open_prepared_sqlite_pool_at_path(&root.join("live.db"), true)
+        .await
+        .unwrap();
+    let data = TrackingRuntimeDataStore::new(pool.clone());
+    let started_at = now_ms_i64();
+    data.start_session("Fixture", "fixture", "start", started_at, started_at)
+        .await
+        .unwrap();
+    let archive = root.join("fixture.zip").to_string_lossy().into_owned();
+    let requests = async {
+        let results = tokio::join!(
+            preview_backup(archive.clone()),
+            preview_backup(archive.clone()),
+            preview_backup(archive)
+        );
+        for result in [results.0, results.1, results.2] {
+            assert_eq!(result.unwrap().session_count, 50_000);
+        }
+    };
+    tokio::pin!(requests);
+    let mut interval = tokio::time::interval(Duration::from_millis(10));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let started = Instant::now();
+    let mut last = Instant::now();
+    let mut max_gap_ms = 0;
+    let mut ticks = 0;
+    loop {
+        tokio::select! {
+            () = &mut requests => break,
+            _ = interval.tick() => {
+                max_gap_ms = max_gap_ms.max(last.elapsed().as_millis());
+                last = Instant::now();
+                ticks += 1;
+                let timestamp = now_ms_i64();
+                data.save_tracker_timestamp(TRACKER_LAST_HEARTBEAT_KEY, timestamp).await.unwrap();
+                data.save_tracker_timestamp(TRACKER_LAST_SUCCESSFUL_SAMPLE_KEY, timestamp).await.unwrap();
+                data.refresh_active_session_metadata("fixture", &format!("tick {ticks}"), timestamp).await.unwrap();
+            }
+        }
+    }
+    max_gap_ms = max_gap_ms.max(last.elapsed().as_millis());
+    let elapsed_ms = started.elapsed().as_millis();
+    data.end_active_sessions(now_ms_i64()).await.unwrap();
+    let duration: i64 = sqlx::query_scalar("SELECT duration FROM sessions LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let samples: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM session_title_samples")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let integrity: String = sqlx::query_scalar("PRAGMA quick_check")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let passed = ticks >= 10
+        && max_gap_ms <= 250
+        && duration > 0
+        && samples == ticks + 1
+        && integrity == "ok";
+    write_new(
+        &root.join("responsiveness.json"),
+        json!({
+            "scope": "Three asynchronous previews plus real tracking datastore writes; no GNOME provider, daemon service or GUI",
+            "elapsed_ms": elapsed_ms, "ticks": ticks, "max_tick_gap_ms": max_gap_ms,
+            "session_duration_ms": duration, "title_samples": samples, "integrity": integrity, "passed": passed,
+        }),
+    );
+    pool.close().await;
+    assert!(passed, "see responsiveness.json");
 }

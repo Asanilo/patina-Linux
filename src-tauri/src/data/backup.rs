@@ -22,6 +22,7 @@ use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 #[cfg(all(test, target_os = "linux"))]
 mod benchmark;
+mod inspection;
 mod preview;
 mod streaming;
 
@@ -926,9 +927,9 @@ pub(crate) async fn inspect_restore_archive_async(
     backup_path: &Path,
 ) -> Result<(BackupPreview, String, u64), String> {
     let path = backup_path.to_path_buf();
-    tauri::async_runtime::spawn_blocking(move || inspect_restore_archive(&path))
+    inspection::GATE
+        .run(move || inspect_restore_archive(&path))
         .await
-        .map_err(|error| format!("backup inspection worker failed: {error}"))?
 }
 
 pub async fn restore_backup(
@@ -956,6 +957,11 @@ pub(crate) fn inspect_restore_archive(
     let mut file = archive.into_inner();
     file.seek(SeekFrom::Start(0))
         .map_err(|error| error.to_string())?;
+    let (hash, size_bytes) = fingerprint_backup_file(file)?;
+    Ok((preview, hash, size_bytes))
+}
+
+fn fingerprint_backup_file(mut file: File) -> Result<(String, u64), String> {
     let mut hasher = Sha256::new();
     let mut size_bytes = 0_u64;
     let mut buffer = [0_u8; 64 * 1024];
@@ -974,7 +980,7 @@ pub(crate) fn inspect_restore_archive(
         }
         hasher.update(&buffer[..count]);
     }
-    Ok((preview, format!("{:x}", hasher.finalize()), size_bytes))
+    Ok((format!("{:x}", hasher.finalize()), size_bytes))
 }
 
 pub(crate) async fn restore_backup_from_path(
@@ -1244,11 +1250,9 @@ pub async fn preview_backup(backup_path: String) -> Result<BackupPreview, String
         return Err("backup path cannot be empty".to_string());
     }
 
-    tauri::async_runtime::spawn_blocking(move || {
-        preview::decode(&mut open_backup_archive(&backup_path)?, &backup_path)
-    })
-    .await
-    .map_err(|error| format!("backup preview worker failed: {error}"))?
+    inspection::GATE
+        .run(move || preview::decode(&mut open_backup_archive(&backup_path)?, &backup_path))
+        .await
 }
 
 #[cfg(test)]

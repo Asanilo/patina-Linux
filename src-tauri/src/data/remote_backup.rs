@@ -543,12 +543,7 @@ async fn stage_webdav_backup_with_client(
             crate::domain::backup::MAX_BACKUP_ARCHIVE_BYTES,
         )
         .await?;
-    let local_path_for_inspection = local_path.clone();
-    let (preview, _, size_bytes) = tokio::task::spawn_blocking(move || {
-        backup::inspect_restore_archive(&local_path_for_inspection)
-    })
-    .await
-    .map_err(|error| format!("remote backup inspection task failed: {error}"))??;
+    let (preview, _, size_bytes) = backup::inspect_restore_archive_async(&local_path).await?;
     validate_downloaded_entry(entry, &preview, size_bytes)?;
 
     let staging_root = restore_staging_dir.to_path_buf();

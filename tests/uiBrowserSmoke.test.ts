@@ -155,6 +155,21 @@ function tauriStubFor(path: string) {
       }
 
       export async function invoke(command, payload = {}) {
+        if (command === "cmd_pick_backup_file") {
+          window.__backupPickCalls = (window.__backupPickCalls || 0) + 1;
+          return "/tmp/synthetic-backup.zip";
+        }
+        if (command === "cmd_preview_backup") {
+          window.__backupPreviewCalls = (window.__backupPreviewCalls || 0) + 1;
+          await new Promise((resolve) => { window.__finishBackupPreview = resolve; });
+          return { version: 1, exported_at_ms: 1000, schema_version: 10, app_version: "test",
+            restore_supported: true, restore_message: "supported", session_count: 50000,
+            title_sample_count: 0, setting_count: 0, icon_cache_count: 0 };
+        }
+        if (command === "cmd_restore_backup") {
+          window.__backupRestoreCalls = (window.__backupRestoreCalls || 0) + 1;
+          throw new Error("browser test must never restore data");
+        }
         if (command === "cmd_get_observed_apps") {
           globalThis.__PATINA_SMOKE_OBSERVED_CALLS = (globalThis.__PATINA_SMOKE_OBSERVED_CALLS ?? 0) + 1;
           if (globalThis.__PATINA_SMOKE_OBSERVED_ERROR) throw new Error(globalThis.__PATINA_SMOKE_OBSERVED_ERROR);
@@ -1751,6 +1766,27 @@ try {
     await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_FINISH_RELOAD()`);
     await waitForExpression(client!, sessionId, `!document.body.innerText.includes("版本不一致") && !${reload}`);
     await client!.command("Emulation.setDeviceMetricsOverride", {width:1280, height:800, deviceScaleFactor:1, mobile:false}, sessionId);
+  });
+
+  await runTest("backup preview stays responsive and disables repeated restore actions", async () => {
+    await evaluate(client!, sessionId, `document.querySelector('[aria-label="设置"]').click()`);
+    await waitForExpression(client!, sessionId, `document.body.innerText.includes("备份与恢复")`);
+    await evaluate(client!, sessionId, `(() => {
+      window.__backupUiTicks = 0;
+      window.__backupUiTimer = setInterval(() => window.__backupUiTicks++, 10);
+      const button = Array.from(document.querySelectorAll("button")).find(node => node.textContent?.trim() === "恢复");
+      button.click(); button.click();
+    })()`);
+    await waitForExpression(client!, sessionId, `typeof window.__finishBackupPreview === "function"`);
+    await delay(150);
+    assert.equal(await evaluate(client!, sessionId, `window.__backupPickCalls === 1 && window.__backupPreviewCalls === 1`), true);
+    assert.equal(await evaluate(client!, sessionId, `window.__backupUiTicks >= 2`), true);
+    assert.equal(await evaluate(client!, sessionId, `Array.from(document.querySelectorAll("button")).some(node => node.textContent?.trim() === "恢复中..." && node.disabled)`), true);
+    await evaluate(client!, sessionId, `clearInterval(window.__backupUiTimer); window.__finishBackupPreview()`);
+    await waitForExpression(client!, sessionId, `document.querySelector('[role="dialog"]')?.textContent?.includes("恢复策略") === true`);
+    await evaluate(client!, sessionId, `Array.from(document.querySelector('[role="dialog"]').querySelectorAll("button")).find(node => node.textContent?.trim() === "取消").click()`);
+    await waitForExpression(client!, sessionId, `document.querySelector('[role="dialog"]') === null`);
+    assert.equal(await evaluate(client!, sessionId, `(window.__backupRestoreCalls || 0) === 0`), true);
   });
 
   await runTest("settings remote backup panel opens WebDAV config dialog without narrow overflow", async () => {
