@@ -13,7 +13,7 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, XAxis, YAxis } fro
 import { UI_TEXT } from "../../../shared/copy/uiText.ts";
 import type { AppLanguage } from "../../../shared/settings/appSettings.ts";
 import {
-  buildDataTrendViewModel,
+  buildDailyDataTrendViewModel,
   buildDailyActivityHeatmap,
   buildYearOptions,
   getCachedDataHeatmapDays,
@@ -42,7 +42,9 @@ import {
   formatDuration,
 } from "../../history/services/historyFormatting";
 import { resolveTrendDateFromChartEvent } from "../services/dataChartInteraction.ts";
-import type { DataTrendSnapshot } from "../services/dataTrendSnapshot.ts";
+import { getCachedDataTrendSnapshot, type DataTrendSnapshot } from "../services/dataTrendSnapshot.ts";
+import { getCachedDataOverviewSnapshot, loadDataOverviewSnapshot } from "../services/dataOverviewSnapshot.ts";
+import { getDataOverviewCopy } from "../services/dataOverviewCopy.ts";
 import type { DataTrendRangeSelection } from "../services/dataTrendRange.ts";
 import { useDataTrendSnapshot } from "../hooks/useDataTrendSnapshot.ts";
 import { useDataChartInitialDimension } from "../hooks/useDataChartInitialDimension.ts";
@@ -122,6 +124,8 @@ export default function Data({
   const today = new Date();
   const currentYear = today.getFullYear();
   const [selectedTrendRange, setSelectedTrendRange] = useState<DataTrendRangeSelection>({ kind: "rolling", days: 7 });
+  const [overviewRetry, setOverviewRetry] = useState(0);
+  const overviewCopy = getDataOverviewCopy(uiLanguage);
   const [selectedAppTrendRange, setSelectedAppTrendRange] = useState<DataTrendRangeSelection>({ kind: "rolling", days: 7 });
   const [currentAppTrendViewModel, setCurrentAppTrendViewModel] = useState<DataAppTrendViewModel | null>(null);
   const initialCachedHeatmapDays = getCachedDataHeatmapDays("recent", Date.now());
@@ -130,13 +134,15 @@ export default function Data({
   );
   const overviewTrend = useDataTrendSnapshot({
     selection: selectedTrendRange,
-    refreshKey,
-    loadSnapshot: loadDataTrendSnapshot,
+    refreshKey: refreshKey + mappingVersion + overviewRetry,
+    loadSnapshot: loadDataOverviewSnapshot,
+    getCachedSnapshot: getCachedDataOverviewSnapshot,
   });
   const appTrend = useDataTrendSnapshot({
     selection: selectedAppTrendRange,
     refreshKey,
     loadSnapshot: loadDataTrendSnapshot,
+    getCachedSnapshot: getCachedDataTrendSnapshot,
   });
   const [selectedHeatmapView, setSelectedHeatmapView] = useState<HeatmapSelection>("recent");
   const [heatmapGranularity, setHeatmapGranularity] = useState<HeatmapGranularity>("daily");
@@ -237,9 +243,9 @@ export default function Data({
   }, [selectedHeatmapView, refreshKey, heatmapRetry]);
 
   const trendViewModel = useMemo(() => {
-    if (!overviewTrend.snapshot) return null;
-    return buildDataTrendViewModel(overviewTrend.snapshot.sessions, overviewTrend.snapshot.range, overviewTrend.nowMs);
-  }, [mappingVersion, overviewTrend.nowMs, overviewTrend.snapshot]);
+    if (!overviewTrend.snapshot || overviewTrend.snapshot.range.cacheKey !== overviewTrend.resolvedRange.cacheKey) return null;
+    return buildDailyDataTrendViewModel(overviewTrend.snapshot.days, overviewTrend.snapshot.range);
+  }, [overviewTrend.resolvedRange.cacheKey, overviewTrend.snapshot]);
   if (trendViewModel) {
     lastTrendViewModelRef.current = {
       rangeCacheKey: overviewTrend.resolvedRange.cacheKey,
@@ -254,7 +260,7 @@ export default function Data({
   const bootstrapTrendViewModel = matchingBootstrapSnapshot?.overviewRangeCacheKey === overviewTrend.resolvedRange.cacheKey
     ? matchingBootstrapSnapshot.overviewTrendViewModel
     : null;
-  const visibleTrendViewModel = trendViewModel
+  const visibleTrendViewModel = overviewTrend.error ? null : trendViewModel
     ?? (lastTrendViewModelRef.current?.rangeCacheKey === overviewTrend.resolvedRange.cacheKey
       ? lastTrendViewModelRef.current.viewModel
       : null)
@@ -349,7 +355,7 @@ export default function Data({
   };
   useEffect(() => {
     if (!trendViewModel || !currentAppTrendViewModel) return;
-    if (heatmapLoading || heatmapError || heatmapDaysView !== selectedHeatmapView) return;
+    if (heatmapLoading || heatmapError || overviewTrend.error || heatmapDaysView !== selectedHeatmapView) return;
     if (!overviewTrend.snapshot || !appTrend.snapshot) return;
 
     const snapshot: DataBootstrapSnapshot = {
@@ -376,6 +382,7 @@ export default function Data({
     heatmapRows,
     mappingVersion,
     overviewTrend.snapshot,
+    overviewTrend.error,
     selectedHeatmapView,
     trendViewModel,
     uiLanguage,
@@ -416,7 +423,16 @@ export default function Data({
             />
           </div>
           <div className="pt-4">
-            {!visibleTrendViewModel ? (
+            {overviewTrend.error ? (
+              <div role="alert" className="data-trend-chart flex items-center justify-center gap-2 text-xs text-[var(--qp-text-secondary)]">
+                <span>{overviewTrend.error.includes("overview-range-limit") ? overviewCopy.rangeLimit
+                  : overviewTrend.error.includes("heatmap-unsupported") ? overviewCopy.unsupported : overviewCopy.failed}</span>
+                <button type="button" className="qp-control inline-flex h-8 w-8 shrink-0 items-center justify-center" title={overviewCopy.retry} aria-label={overviewCopy.retry}
+                  disabled={overviewTrend.loading} onClick={() => setOverviewRetry(value => value + 1)}>
+                  <RefreshCw size={14} aria-hidden />
+                </button>
+              </div>
+            ) : !visibleTrendViewModel ? (
               <div
                 className="data-trend-chart data-chart-placeholder flex items-center justify-center text-[var(--qp-text-tertiary)] text-xs"
                 aria-hidden="true"

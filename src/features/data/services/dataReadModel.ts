@@ -2,7 +2,6 @@ import { AppClassification } from "../../../shared/classification/appClassificat
 import type { SessionRange } from "../../../shared/lib/sessionReadCompiler.ts";
 import { getUiLocale, UI_TEXT } from "../../../shared/copy/uiText.ts";
 import type { AggregateSessionRecord } from "../../../platform/persistence/sessionReadRepository.ts";
-import { getDailyActivity } from "../../../platform/persistence/dailyActivityRepository.ts";
 import {
   buildDataDayRanges,
   buildDataMonthRanges,
@@ -446,8 +445,33 @@ export function buildDataTrendViewModel(
   const shouldGroupByMonth = range.granularity === "month";
   const summaryRanges = shouldGroupByMonth ? buildDataMonthRanges(range) : dayRanges;
   const summaries = buildDataSummaries(sessions, summaryRanges);
+  return buildOverviewSummary(range, summaries, dayRanges.length);
+}
+
+export function buildDailyDataTrendViewModel(
+  days: HeatmapDayTotal[],
+  range: ResolvedDataTrendRange,
+): DataTrendViewModel {
+  const dayRanges = buildDataDayRanges(range);
+  const ranges = range.granularity === "month" ? buildDataMonthRanges(range) : dayRanges;
+  const summaries = ranges.map(({ startMs, endMs }) => ({
+    date: toDateKey(new Date(startMs)),
+    totalDuration: endMs <= startMs ? 0 : days.reduce((sum, day) => (
+      day.date >= toDateKey(new Date(startMs)) && day.date <= toDateKey(new Date(endMs - 1))
+        ? sum + day.duration : sum
+    ), 0),
+  }));
+  return buildOverviewSummary(range, summaries, dayRanges.length);
+}
+
+function buildOverviewSummary(
+  range: ResolvedDataTrendRange,
+  summaries: Array<{ date: string; totalDuration: number }>,
+  dayCount: number,
+): DataTrendViewModel {
+  const shouldGroupByMonth = range.granularity === "month";
   const totalDuration = summaries.reduce((sum, item) => sum + item.totalDuration, 0);
-  const averageDivisor = Math.max(1, shouldGroupByMonth ? summaries.length : dayRanges.length);
+  const averageDivisor = Math.max(1, shouldGroupByMonth ? summaries.length : dayCount);
   const chartData = summaries.map((item) => ({
     label: shouldGroupByMonth ? formatMonthLabel(item.date.slice(0, 7)) : item.date.slice(5),
     date: shouldGroupByMonth ? null : item.date,
@@ -602,6 +626,7 @@ export function buildDataAppTrendViewModel(
 }
 
 async function resolveDefaultDataHeatmapDependencies(): Promise<DataHeatmapDependencies> {
+  const { getDailyActivity } = await import("../../../platform/persistence/dailyActivityRepository.ts");
   return {
     getDailyActivity,
   };

@@ -123,6 +123,16 @@ await runTest("bootstrap rejects snapshots produced by the legacy heatmap compil
   assert.equal(cleared, true);
 });
 
+await runTest("bootstrap rejects legacy overview totals even with current heatmap version", async () => {
+  let cleared = false;
+  const result = await loadPersistedDataBootstrapSnapshot({
+    loadPayload: async () => JSON.stringify({ ...makeBootstrapSnapshot(), heatmapReadVersion: 2 }),
+    clearPayload: async () => { cleared = true; },
+  });
+  assert.equal(result, null);
+  assert.equal(cleared, true);
+});
+
 function makeSession(overrides: Partial<AggregateSessionRecord>): AggregateSessionRecord {
   return {
     appName: "Cursor",
@@ -643,7 +653,7 @@ await runTest("an obsolete heatmap completion cannot delete a newer pending read
 await runTest("data bootstrap snapshot loads a valid persisted payload into cache", async () => {
   const snapshot = makeBootstrapSnapshot();
   const loaded = await loadPersistedDataBootstrapSnapshot({
-    loadPayload: async () => JSON.stringify({ ...snapshot, heatmapReadVersion: 2 }),
+    loadPayload: async () => JSON.stringify({ ...snapshot, heatmapReadVersion: 2, overviewReadVersion: 1 }),
     savePayload: async () => {
       throw new Error("unexpected save");
     },
@@ -666,7 +676,7 @@ await runTest("data bootstrap snapshot rejects incomplete app options and clears
   let cleared = false;
 
   const loaded = await loadPersistedDataBootstrapSnapshot({
-    loadPayload: async () => JSON.stringify({ ...snapshot, heatmapReadVersion: 2 }),
+    loadPayload: async () => JSON.stringify({ ...snapshot, heatmapReadVersion: 2, overviewReadVersion: 1 }),
     savePayload: async () => {
       throw new Error("unexpected save");
     },
@@ -832,7 +842,7 @@ await runTest("data heavy cache cleanup clears trend and heatmap caches without 
   assert.equal(getDataHeatmapDayCacheSizeForTests(), 0);
   assert.equal((await loadPersistedDataBootstrapSnapshot({
     clearPayload: async () => undefined,
-    loadPayload: async () => JSON.stringify({ ...makeBootstrapSnapshot(), heatmapReadVersion: 2 }),
+    loadPayload: async () => JSON.stringify({ ...makeBootstrapSnapshot(), heatmapReadVersion: 2, overviewReadVersion: 1 }),
     savePayload: async () => undefined,
   }))?.overviewRangeCacheKey, "rolling:7:2026-05-02:2026-05-08");
 });

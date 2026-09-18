@@ -2,7 +2,7 @@ import type { AppLanguage } from "../../../shared/settings/appSettings.ts";
 import {
   buildDailyActivityHeatmap,
   buildDataAppTrendViewModel,
-  buildDataTrendViewModel,
+  buildDailyDataTrendViewModel,
   prewarmRecentDataHeatmapCache,
 } from "./dataReadModel.ts";
 import {
@@ -68,10 +68,9 @@ function buildBootstrapSnapshot(
     heatmapSelection: "recent",
     mappingVersion: options.mappingVersion,
     uiLanguage: options.uiLanguage,
-    overviewTrendViewModel: buildDataTrendViewModel(
-      trendSnapshot.sessions,
+    overviewTrendViewModel: buildDailyDataTrendViewModel(
+      heatmapSnapshot.days,
       trendSnapshot.range,
-      trendSnapshot.fetchedAtMs,
     ),
     appTrendViewModel: buildDataAppTrendViewModel(
       trendSnapshot.sessions,

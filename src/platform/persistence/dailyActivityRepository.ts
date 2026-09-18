@@ -5,6 +5,9 @@ export interface DailyActivityRead {
   days: Array<{ date: string; duration: number }>;
 }
 
+// Heatmap and overview share a single-query runtime budget.
+let requestQueue: Promise<unknown> = Promise.resolve();
+
 function dateKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
@@ -37,7 +40,9 @@ export async function getDailyActivity(
     boundaries.push(cursor.getTime());
   }
   if (cursor.getTime() !== endMs) throw new Error("Invalid heatmap day count");
-  const value = await request(dates[0], dateKey(cursor));
+  const response = requestQueue.then(() => request(dates[0], dateKey(cursor)));
+  requestQueue = response.then(() => undefined, () => undefined);
+  const value = await response;
   if (!record(value) || !integer(value.sampled_at_ms)
     || (value.earliest_start_ms !== null && !integer(value.earliest_start_ms))
     || !Array.isArray(value.days) || value.days.length !== dates.length) {

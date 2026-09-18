@@ -3457,6 +3457,27 @@ try {
     assert.ok(Number(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_HEATMAP_CALLS`)) > Number(previous));
   });
 
+  await runTest("overview daily aggregates report unsupported readers and recover on retry", async () => {
+    await waitForExpression(client!, sessionId, `document.querySelector('.data-trend-panel [role="alert"]')?.textContent.includes('请更新后台服务')`);
+    for (const width of [1280, 760]) {
+      await client!.command("Emulation.setDeviceMetricsOverride", { width, height: 820, deviceScaleFactor: 1, mobile: false }, sessionId);
+      await evaluate(client!, sessionId, `document.querySelector('.data-trend-panel').scrollIntoView({block:'start'})`);
+      assert.equal(await evaluate(client!, sessionId, `document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1`), true);
+      if (process.env.PATINA_UI_SCREENSHOTS_DIR) {
+        const shot = await client!.command("Page.captureScreenshot", { format: "png" }, sessionId);
+        writeFileSync(join(process.env.PATINA_UI_SCREENSHOTS_DIR, `overview-error-${width}.png`), Buffer.from(String(shot.data), "base64"));
+      }
+    }
+    const previous = Number(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_HEATMAP_CALLS`));
+    await evaluate(client!, sessionId, `document.querySelector('[aria-label="重试活动趋势"]').click()`);
+    await waitForExpression(client!, sessionId, `!document.querySelector('.data-trend-panel [role="alert"]') && Boolean(document.querySelector('.data-trend-panel .recharts-surface'))`);
+    assert.ok(Number(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_HEATMAP_CALLS`)) > previous);
+    if (process.env.PATINA_UI_SCREENSHOTS_DIR) {
+      const shot = await client!.command("Page.captureScreenshot", { format: "png" }, sessionId);
+      writeFileSync(join(process.env.PATINA_UI_SCREENSHOTS_DIR, "overview-recovered-760.png"), Buffer.from(String(shot.data), "base64"));
+    }
+  });
+
   await runTest("English history title chips do not crowd the duration column", async () => {
     await client!.command("Page.addScriptToEvaluateOnNewDocument", {
       source: "globalThis.__TIME_TRACKER_SMOKE_LANGUAGE = 'en-US';",
