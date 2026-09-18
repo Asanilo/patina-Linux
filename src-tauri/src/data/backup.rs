@@ -13,7 +13,9 @@ use sha2::{Digest, Sha256};
 use sqlx::{Pool, Sqlite};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
-use std::io::{Cursor, Read, Write};
+#[cfg(test)]
+use std::io::Cursor;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Runtime};
 use zip::write::SimpleFileOptions;
@@ -490,12 +492,12 @@ fn encode_backup_archive(payload: &BackupPayload) -> Result<Vec<u8>, String> {
     Ok(buffer)
 }
 
-fn read_zip_entry(
-    archive: &mut ZipArchive<Cursor<Vec<u8>>>,
+fn read_zip_entry<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
     entry_name: &str,
     backup_path: &Path,
 ) -> Result<String, String> {
-    let mut entry = archive.by_name(entry_name).map_err(|error| {
+    let entry = archive.by_name(entry_name).map_err(|error| {
         format!(
             "backup archive `{}` does not contain {entry_name}: {error}",
             backup_path.display()
@@ -507,12 +509,20 @@ fn read_zip_entry(
         ));
     }
     let mut content = String::new();
-    entry.read_to_string(&mut content).map_err(|error| {
-        format!(
-            "failed to read backup archive entry `{entry_name}` from `{}`: {error}",
-            backup_path.display()
-        )
-    })?;
+    entry
+        .take(MAX_BACKUP_ENTRY_BYTES + 1)
+        .read_to_string(&mut content)
+        .map_err(|error| {
+            format!(
+                "failed to read backup archive entry `{entry_name}` from `{}`: {error}",
+                backup_path.display()
+            )
+        })?;
+    if content.len() as u64 > MAX_BACKUP_ENTRY_BYTES {
+        return Err(format!(
+            "backup archive entry `{entry_name}` exceeds the size limit"
+        ));
+    }
     Ok(content)
 }
 
@@ -579,8 +589,8 @@ fn backup_archive_declares_entry(
     !manifest_path.trim().is_empty() || checksums.files.contains_key(entry_name)
 }
 
-fn read_optional_declared_zip_entry(
-    archive: &mut ZipArchive<Cursor<Vec<u8>>>,
+fn read_optional_declared_zip_entry<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
     manifest_path: &str,
     checksums: &BackupArchiveChecksums,
     entry_name: &str,
@@ -593,8 +603,8 @@ fn read_optional_declared_zip_entry(
     Ok(None)
 }
 
-fn decode_structured_backup_archive(
-    archive: &mut ZipArchive<Cursor<Vec<u8>>>,
+fn decode_structured_backup_archive<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
     backup_path: &Path,
 ) -> Result<BackupPayload, String> {
     let manifest_json = read_zip_entry(archive, BACKUP_MANIFEST_ENTRY_NAME, backup_path)?;
@@ -796,15 +806,30 @@ fn read_backup_payload(backup_path: &Path) -> Result<BackupPayload, String> {
             backup_path.display()
         ));
     }
-    let raw_bytes = fs::read(backup_path).map_err(|error| {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // Recheck the opened object, not just the earlier path metadata.
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let mut file = options.open(backup_path).map_err(|error| {
         format!(
             "failed to read backup file `{}`: {error}",
             backup_path.display()
         )
     })?;
-
-    if raw_bytes.starts_with(b"PK") {
-        let mut archive = ZipArchive::new(Cursor::new(raw_bytes)).map_err(|error| {
+    let metadata = file.metadata().map_err(|error| error.to_string())?;
+    if !metadata.is_file() || metadata.len() > MAX_BACKUP_ARCHIVE_BYTES {
+        return Err("opened backup must be a regular file within the archive size limit".into());
+    }
+    let mut prefix = [0; 2];
+    let is_zip = file.read_exact(&mut prefix).is_ok() && &prefix == b"PK";
+    if is_zip {
+        file.seek(SeekFrom::Start(0))
+            .map_err(|error| error.to_string())?;
+        let mut archive = ZipArchive::new(file).map_err(|error| {
             format!(
                 "failed to read backup archive `{}`: {error}",
                 backup_path.display()
@@ -828,8 +853,8 @@ fn read_backup_payload(backup_path: &Path) -> Result<BackupPayload, String> {
     ))
 }
 
-fn validate_backup_archive_limits(
-    archive: &mut ZipArchive<Cursor<Vec<u8>>>,
+fn validate_backup_archive_limits<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
     backup_path: &Path,
 ) -> Result<(), String> {
     if archive.len() > MAX_BACKUP_ARCHIVE_ENTRIES {
@@ -1365,6 +1390,46 @@ mod tests {
             backup_file_name_for_timestamp("20260515-213045"),
             "Patina-backup-20260515-213045.zip"
         );
+    }
+
+    #[test]
+    fn disk_archive_reader_preserves_payload_and_rejects_corruption() {
+        let path = temp_backup_path("disk-reader");
+        let payload = payload_with_bound_web_activity();
+        let mut bytes = encode_backup_archive(&payload).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        let actual = read_backup_payload(&path).unwrap();
+        assert_eq!(
+            serde_json::to_value(actual).unwrap(),
+            serde_json::to_value(&payload).unwrap()
+        );
+        let offset = bytes
+            .windows(b"Example".len())
+            .position(|part| part == b"Example")
+            .unwrap();
+        bytes[offset] = b'X';
+        fs::write(&path, &bytes).unwrap();
+        assert!(read_backup_payload(&path).is_err());
+        fs::write(&path, b"PK").unwrap();
+        assert!(read_backup_payload(&path).is_err());
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn disk_archive_reader_rejects_nonregular_and_oversized_files() {
+        let path = temp_backup_path("disk-limits");
+        fs::create_dir(&path).unwrap();
+        assert!(read_backup_payload(&path)
+            .unwrap_err()
+            .contains("regular file"));
+        fs::remove_dir(&path).unwrap();
+        let file = File::create(&path).unwrap();
+        file.set_len(MAX_BACKUP_ARCHIVE_BYTES + 1).unwrap();
+        drop(file);
+        assert!(read_backup_payload(&path)
+            .unwrap_err()
+            .contains("size limit"));
+        fs::remove_file(path).unwrap();
     }
 
     #[test]
