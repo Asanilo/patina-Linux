@@ -27,6 +27,33 @@ pub async fn cmd_get_observed_apps<R: Runtime>(
 }
 
 #[tauri::command]
+pub async fn cmd_get_daily_apps<R: Runtime>(
+    from: String,
+    to: String,
+    app: AppHandle<R>,
+) -> Result<crate::domain::daily_activity::DailyAppActivitySnapshot, String> {
+    let boundaries = crate::domain::daily_activity::local_day_boundaries(&from, &to)?;
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        return client
+            .daily_apps(&from, &to)
+            .await
+            .map_err(|error| match error {
+                crate::platform::daemon_client::PatinadClientError::Http {
+                    status: 404, ..
+                } => "daily-apps-unsupported".to_string(),
+                error => error.to_string(),
+            });
+    }
+    let pool = sqlite_pool::wait_for_sqlite_pool(&app).await?;
+    crate::data::repositories::daily_activity::load_daily_apps(
+        &pool,
+        &boundaries,
+        crate::app::runtime::now_ms() as i64,
+    )
+    .await
+}
+
+#[tauri::command]
 pub async fn cmd_get_daily_activity<R: Runtime>(
     from: String,
     to: String,

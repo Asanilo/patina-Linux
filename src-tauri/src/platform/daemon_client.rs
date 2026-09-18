@@ -749,6 +749,22 @@ impl PatinadClient {
         .await
     }
 
+    pub async fn daily_apps(
+        &self,
+        from: &str,
+        to: &str,
+    ) -> Result<crate::domain::daily_activity::DailyAppActivitySnapshot, PatinadClientError> {
+        crate::domain::daily_activity::local_day_boundaries(from, to)
+            .map_err(PatinadClientError::InvalidConfiguration)?;
+        self.get_json_with_limits(
+            &format!("/api/v1/activity/daily-apps?from={from}&to={to}"),
+            "daily applications",
+            Duration::from_secs(35),
+            crate::domain::daily_activity::MAX_DAILY_APPS_RESPONSE_BYTES,
+        )
+        .await
+    }
+
     pub async fn daily_activity(
         &self,
         from: &str,
@@ -1058,6 +1074,72 @@ mod tests {
     use crate::engine::api::types::{
         AvailabilityCapability, OwnedRuntimeCapability, ProtocolCapability, WriteApiCapability,
     };
+
+    #[tokio::test]
+    async fn daily_apps_transport_has_scoped_budget_and_no_old_daemon_fallback() {
+        use crate::domain::daily_activity::{
+            DailyAppActivityDay, DailyAppActivitySnapshot, DailyAppTotal,
+            MAX_DAILY_APPS_RESPONSE_BYTES,
+        };
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let boundaries =
+            crate::domain::daily_activity::local_day_boundaries("2026-01-01", "2026-01-02")
+                .unwrap();
+        let data = DailyAppActivitySnapshot {
+            sampled_at_ms: boundaries[1],
+            days: vec![DailyAppActivityDay {
+                start_ms: boundaries[0],
+                end_ms: boundaries[1],
+                active_ms: 2000,
+                apps: (0..2000)
+                    .map(|index| DailyAppTotal {
+                        app_key: format!("fixture-app-{index:04}"),
+                        active_ms: 1,
+                    })
+                    .collect(),
+            }],
+        };
+        let encoded = serde_json::to_string(&ApiResponse { data: data.clone() }).unwrap();
+        assert!(encoded.len() > MAX_RESPONSE_BYTES);
+        for (status, body, error) in [
+            (200, encoded, None),
+            (404, "{}".into(), Some("http-error")),
+            (401, "{}".into(), Some("unauthorized")),
+            (200, "{}".into(), Some("invalid-response")),
+            (
+                200,
+                "x".repeat(MAX_DAILY_APPS_RESPONSE_BYTES + 1),
+                Some("response-too-large"),
+            ),
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let client =
+                PatinadClient::new(listener.local_addr().unwrap().port(), "fixture-token").unwrap();
+            let server = tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                let mut chunk = [0; 1024];
+                while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                    let count = socket.read(&mut chunk).await.unwrap();
+                    assert!(count > 0 && request.len() < 8192);
+                    request.extend_from_slice(&chunk[..count]);
+                }
+                let request = String::from_utf8(request).unwrap().to_lowercase();
+                assert!(request
+                    .starts_with("get /api/v1/activity/daily-apps?from=2026-01-01&to=2026-01-02 "));
+                assert!(request.contains("authorization: bearer fixture-token\r\n"));
+                let response = format!("HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+                let _ = socket.write_all(response.as_bytes()).await;
+            });
+            let result = client.daily_apps("2026-01-01", "2026-01-02").await;
+            if let Some(error) = error {
+                assert_eq!(result.unwrap_err().code(), error);
+            } else {
+                assert_eq!(result.unwrap(), data);
+            }
+            server.await.unwrap();
+        }
+    }
 
     #[tokio::test]
     async fn observed_apps_transport_has_its_own_budget_and_propagates_old_daemon_errors() {

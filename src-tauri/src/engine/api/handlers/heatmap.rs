@@ -1,4 +1,4 @@
-use crate::data::repositories::daily_activity::load_daily_activity;
+use crate::data::repositories::daily_activity::{load_daily_activity, load_daily_apps};
 use crate::domain::daily_activity::local_day_boundaries;
 use crate::engine::api::context::ApiRuntimeContext;
 use crate::engine::api::types::{ApiError, ApiResponse, RouteResponse};
@@ -21,6 +21,20 @@ fn error_response(status: u16, error: ApiError) -> RouteResponse {
     RouteResponse {
         status,
         body: serde_json::to_value(error).unwrap_or_default(),
+    }
+}
+
+pub async fn get_daily_apps(context: &ApiRuntimeContext, query: Option<&str>) -> RouteResponse {
+    let boundaries = match parse_boundaries(query) {
+        Ok(boundaries) => boundaries,
+        Err(message) => return error_response(400, ApiError::bad_request(&message)),
+    };
+    match load_daily_apps(context.pool(), &boundaries, context.now_ms()).await {
+        Ok(data) => RouteResponse {
+            status: 200,
+            body: serde_json::to_value(ApiResponse { data }).unwrap_or_default(),
+        },
+        Err(message) => error_response(500, ApiError::internal(&message)),
     }
 }
 

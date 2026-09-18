@@ -1,6 +1,29 @@
 use chrono::{Local, NaiveDate, TimeZone};
 
 pub const MAX_DAILY_ACTIVITY_DAYS: usize = 378;
+pub const MAX_DAILY_ACTIVITY_APPS: usize = 4096;
+pub const MAX_DAILY_ACTIVITY_APP_ROWS: usize = 50_000;
+pub const MAX_DAILY_APPS_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DailyAppTotal {
+    pub app_key: String,
+    pub active_ms: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DailyAppActivityDay {
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub active_ms: i64,
+    pub apps: Vec<DailyAppTotal>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DailyAppActivitySnapshot {
+    pub sampled_at_ms: i64,
+    pub days: Vec<DailyAppActivityDay>,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DailyActivityTotal {

@@ -269,6 +269,15 @@ fn paths(surface: ApiSurface) -> Value {
     });
     let object = paths.as_object_mut().expect("OpenAPI paths object");
     object.insert(
+        "/api/v1/activity/daily-apps".to_string(),
+        json!({"get": get_operation_with_parameters(
+            "Bounded daily totals grouped by canonical executable in the runtime host local timezone. Same precedence, exclusions and day boundaries as heatmap. All positive application totals, not only top_app; keys are not display names or categories. No titles, URLs or session intervals. At most 378 days, 4096 keys, 50000 day/app rows and 4 MiB response. Shares heatmap single-query and 30-second budgets; busy or exceeded budgets return 500 without partial data.",
+            "DailyAppsResponse",
+            vec![required_query_param("from", "string", "Inclusive local date, strictly YYYY-MM-DD."),
+                 required_query_param("to", "string", "Exclusive local date, strictly YYYY-MM-DD.")],
+        )}),
+    );
+    object.insert(
         "/api/v1/classification/observed-apps".to_string(),
         json!({"get": get_operation_with_parameters(
             "Bounded classification evidence grouped by raw executable. Native/import precedence precedes UI filtering. Includes excluded apps; no titles or URLs. At most 366 days, 50000 facts, 8 MiB metadata and 4096 apps; budget errors return no partial data. last_seen_ms is the latest resolved start, not the last heartbeat; bucket starts are not exact observation times.",
@@ -941,6 +950,33 @@ fn schemas() -> Value {
             ("end_ms", integer_schema()),
             ("active_ms", integer_schema()),
         ]),
+    );
+    schemas.insert(
+        "DailyAppTotal".to_string(),
+        object_schema(vec![
+            ("app_key", json!({"type":"string", "maxLength":1024, "description":"Canonical executable key, not a display name. Sorted lexicographically per day; aliases are merged."})),
+            ("active_ms", json!({"type":"integer", "format":"int64", "minimum":1})),
+        ]),
+    );
+    schemas.insert(
+        "DailyAppsDay".to_string(),
+        object_schema(vec![
+            ("start_ms", integer_schema()),
+            ("end_ms", integer_schema()),
+            ("active_ms", json!({"type":"integer", "format":"int64", "minimum":0, "description":"Sum of apps.active_ms. Native overlap may exceed elapsed wall time."})),
+            ("apps", json!({"type":"array", "maxItems":4096, "items":schema_ref("DailyAppTotal")})),
+        ]),
+    );
+    schemas.insert(
+        "DailyAppsData".to_string(),
+        object_schema(vec![
+            ("sampled_at_ms", integer_schema()),
+            ("days", json!({"type":"array", "minItems":1, "maxItems":378, "items":schema_ref("DailyAppsDay")})),
+        ]),
+    );
+    schemas.insert(
+        "DailyAppsResponse".to_string(),
+        envelope(schema_ref("DailyAppsData")),
     );
     schemas.insert(
         "HeatmapData".to_string(),

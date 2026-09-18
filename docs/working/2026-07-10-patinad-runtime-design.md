@@ -5,7 +5,8 @@
 
 ### 当前执行焦点（2026-09-19）
 
-- 最新桌面批次：Data 概览图表、预热和缓存已改用后端日总量；应用/分类趋势继续旧明细路径，不能宣称整个 Data 页已低内存化。当前仍未出包、安装或推送；实现边界和验证记录见下节。
+- 最新应用趋势基础批次：共享日仓储已提供每日所有规范化应用总量，HTTP/OpenAPI、typed daemon client、Desktop command 和前端校验适配器均已接通；尚未替换应用/分类图表的明细路径。下一步需要显示名/分类元数据及真实页面接线，不把 `app_key` 当作显示名，也不伪造会话区间。
+- 上一轮概览批次：Data 概览图表、预热和缓存已改用后端日总量；应用/分类趋势继续旧明细路径，不能宣称整个 Data 页已低内存化。当前仍未出包、安装或推送；实现边界和验证记录见下节。
 - 上一批趋势基础：HTTP `/api/v1/trend` 接入热力图共享的有界日读取，修复跨 DST 午夜边界；Desktop 趋势缓存增加失效 generation 和请求身份检查。本批在此基础上继续概览界面接线，应用/分类趋势与旧分类全历史迁移仍待处理。具体 owner、预算和证据见下节。
 - 最新批次已推进到完整恢复：补 Merge/Replace 大库峰值及晚期失败回滚测量，并复用流式条目读取器去掉原始 JSON 副本，单事务安全边界保持。上批预览、并发调度与页面响应验证仍有效。详见下节最新对照与限制；当前未出包、安装或推送，后续继续剩余聚合及 AppImage 验证，多表恢复与成品长期体验仍需验收。
 
@@ -18,6 +19,16 @@
 - 下一可发布功能阶段为 **Data 热力图低内存查询**，范围和发布门槛以 [路线文档当前快照](../roadmap-and-prioritization.md#56-当前实施主线patinad) 为准。共享统计语义、读取预算、后端聚合、Desktop/daemon 适配、隔离 debug 整链路与 beta.17 成品检查均已完成；安装后 Data/History、只读 API、关闭回收和用户重开确认已通过，但用户发现窄窗口滚动缺陷。该布局问题已修源码并通过前端回归，尚未包含在已安装 beta.17 中。前台 WebKit 占用仍是后续独立问题。
 - 用户安装的版本仍为 beta.17，安装后只读、Data/History、关闭回收和用户重开确认通过。当前 beta.18 已将窄窗口修复与低耗延迟设置合为本地 DEB 候选，成品检查通过，尚未升级用户安装版本。2026-09-18 前次只读查询 GitHub 确认最新预发布为 beta.12，最新稳定版为 1.8.4，本轮没有重新查询或操作远端；本批独立收口到现有 daemon 分支，不推送或公开发布。
 - 下文保留阶段证据与历史限制，不以早期“下一步”覆盖本节执行焦点。
+
+#### 每日全应用聚合契约（2026-09-19，未出包）
+
+- 新增只读 `/api/v1/activity/daily-apps?from=YYYY-MM-DD&to=YYYY-MM-DD`，三个 API surface 共用 `data/repositories/daily_activity`；command/HTTP 只做边界解析和转发。响应保留完整日期、日总量与所有正时长应用，并按规范化键排序；不是原 `/trend` 的每日第一名列表。既有 native/import 优先级、小时桶分配、排除与元数据敏感过滤仍由共享领域逻辑持有。
+- 单 SQLite snapshot 逐日读事实，沿用单并发、30 秒仓储超时和 20,000 facts/day；HTTP handler 仍为 15 秒。新增整个范围最多 4,096 canonical apps、50,000 day/app rows、4 MiB 编码响应（计入 JSON 转义及 envelope 预留）。所有预算失败均返回错误，不截断、不改写存储、不回退全量事实。预算不代表 SQLite/OS 总内存硬上限。
+- typed daemon client 仅该 endpoint 允许 4 MiB 响应、35 秒请求期限；其他 endpoint 限制不变。`cmd_get_daily_apps` 在 daemon 模式不会因错误回读 Desktop SQLite，404 映射为明确 unsupported。前端 `dailyAppsRepository` 复用本地午夜校验与 daily-read 队列，校验日期完整性、应用键去重、UTF-8 长度、正整数时长、日合计及总应用/条目预算；尚未在图表中调用。
+- 有意不传原始应用名、分类标签、标题、URL、会话 ID。显示名偏好与别名选择仍须接续既有 Desktop 命名规则；不能仅用 canonical key 替换旧名称后宣称 UI 兼容。MCP 文档明确无专用工具，当前可通过已认证 HTTP 调用。
+- `node scripts/perf/daily-activity-benchmark.mjs --daily-apps` 使用私有 `/tmp` 合成库、50,000 条单应用 native facts、30 天范围。新旧每日应用矩阵完全一致，总量 500,000,000 ms，响应均为 3,806 bytes；数据库哈希在两次只读查询前后不变。旧全量领域快照 6,500 ms / USS 峰值增量约 371.6 MiB，新逐日应用聚合 1,190 ms / 6.5 MiB，通过本 fixture 的 5 秒/64 KiB/64 MiB 增量预算。证据 `/tmp/patina-daily-bench-fSe0qy/summary.json`，库哈希 `2b6038f8f0d75379c6e0ee0bf459c6f3adf442e2aa28a60d69423bf4c8f37ea8`。
+- 此对照是 debug 查询进程，不含 Desktop/WebKit/IPC 或真实用户库；旧参考是 Rust 全量快照聚合，不是改造前完整 React 图表测量。多应用别名、排除遮盖导入、37 ms active cutoff、空日、aggregate/JSON 转义预算和 transport 错误另由自动测试验证，不能据此宣称任意大库的峰值都只有 6.5 MiB。
+- `npm run check:full` 通过：626 项 Rust 测试通过、11 项 opt-in 忽略，37 项浏览器回归通过，Clippy `-D warnings`、架构检查和 bundle 预算通过；index gzip 73.22 KiB、总 JS gzip 360.97 KiB。初次失败是 Desktop endpoint 数量断言尚未更新，补齐只读 surface 断言后复验通过。新接口字段级 OpenAPI、curl 示例与 MCP 可用范围同步；没有 bump、出包、安装、推送或公开发布。
 
 #### Data 概览接通日汇总（2026-09-19，未出包）
 

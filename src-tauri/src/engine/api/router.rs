@@ -41,6 +41,9 @@ pub(crate) async fn route_request(
         ("GET", "/api/v1/summary/week") => handlers::sessions::get_summary_week(context).await,
         ("GET", "/api/v1/trend") => handlers::trend::get_trend(context, query).await,
         ("GET", "/api/v1/heatmap") => handlers::heatmap::get_heatmap(context, query).await,
+        ("GET", "/api/v1/activity/daily-apps") => {
+            handlers::heatmap::get_daily_apps(context, query).await
+        }
         ("GET", "/api/v1/classification/observed-apps") => {
             handlers::observed_apps::get_observed_apps(context, query).await
         }

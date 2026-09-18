@@ -58,7 +58,9 @@ fn query_worker() {
         "observed-legacy",
         "observed",
         "trend",
-        "trend-legacy"
+        "trend-legacy",
+        "apps",
+        "apps-legacy"
     ]
     .contains(&mode.as_str()));
     let trend = std::env::var("PATINA_DAILY_BENCH_TREND").as_deref() == Ok("1");
@@ -151,7 +153,51 @@ fn query_worker() {
         });
         let baseline = crate::platform::linux::resource::current_process_resource_snapshot();
         let started = Instant::now();
-        let output: Result<(usize, i64), String> = if mode == "trend" || mode == "trend-legacy" {
+        let output: Result<(usize, i64), String> = if mode == "apps" || mode == "apps-legacy" {
+            let days = if mode == "apps" {
+                load_daily_apps(&pool, &boundaries, end).await.unwrap().days
+            } else {
+                let snapshot = crate::data::repositories::activity_read_model::load_snapshot(
+                    &pool, START, end, end,
+                )
+                .await
+                .unwrap();
+                boundaries
+                    .windows(2)
+                    .map(|day| {
+                        let mut totals = std::collections::BTreeMap::<String, i64>::new();
+                        for item in snapshot.contributions(day[0], day[1]) {
+                            if item.duration_ms > 0 {
+                                *totals
+                                    .entry(activity_read_policy::canonical_executable(
+                                        &item.value.exe_name,
+                                    ))
+                                    .or_default() += item.duration_ms;
+                            }
+                        }
+                        DailyAppActivityDay {
+                            start_ms: day[0],
+                            end_ms: day[1],
+                            active_ms: totals.values().sum(),
+                            apps: totals
+                                .into_iter()
+                                .map(|(app_key, active_ms)| DailyAppTotal { app_key, active_ms })
+                                .collect(),
+                        }
+                    })
+                    .collect()
+            };
+            let total = days.iter().map(|day| day.active_ms).sum();
+            write_new(&root.join(format!("{mode}-days.json")), json!(&days));
+            Ok((
+                serde_json::to_vec(
+                    &json!({"data": DailyAppActivitySnapshot { sampled_at_ms: end, days }}),
+                )
+                .unwrap()
+                .len(),
+                total,
+            ))
+        } else if mode == "trend" || mode == "trend-legacy" {
             let mut days = Vec::new();
             if mode == "trend" {
                 let snapshot = load_daily_trend(&pool, &boundaries, end).await.unwrap();

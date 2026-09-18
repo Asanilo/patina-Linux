@@ -178,6 +178,7 @@ fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Build
         commands::daemon_service::cmd_set_background_tracking_at_login,
         commands::persistence::cmd_reopen_sqlite_pool,
         commands::persistence::cmd_get_daily_activity,
+        commands::persistence::cmd_get_daily_apps,
         commands::persistence::cmd_get_observed_apps,
         commands::persistence::cmd_delete_tracking_data_before,
         commands::persistence::cmd_clear_all_window_titles,

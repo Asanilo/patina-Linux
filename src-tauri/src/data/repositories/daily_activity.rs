@@ -5,7 +5,9 @@ use crate::domain::activity_read_model::{
 };
 use crate::domain::activity_read_policy;
 use crate::domain::daily_activity::{
-    DailyActivitySnapshot, DailyActivityTotal, MAX_DAILY_ACTIVITY_DAYS,
+    DailyActivitySnapshot, DailyActivityTotal, DailyAppActivityDay, DailyAppActivitySnapshot,
+    DailyAppTotal, MAX_DAILY_ACTIVITY_APPS, MAX_DAILY_ACTIVITY_APP_ROWS, MAX_DAILY_ACTIVITY_DAYS,
+    MAX_DAILY_APPS_RESPONSE_BYTES,
 };
 use futures_util::TryStreamExt;
 use sqlx::{Row, SqliteConnection, SqlitePool};
@@ -25,6 +27,14 @@ static DAILY_ACTIVITY_QUERY: Semaphore = Semaphore::const_new(1);
 pub struct DailyActivityTrend {
     pub activity: DailyActivitySnapshot,
     pub top_apps: Vec<Option<String>>,
+    app_days: Vec<DailyAppActivityDay>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ReadMode {
+    Totals,
+    TopApp,
+    Applications,
 }
 
 #[derive(Clone, Debug)]
@@ -60,7 +70,7 @@ pub async fn load_daily_activity(
     sampled_at_ms: i64,
 ) -> Result<DailyActivitySnapshot, String> {
     Ok(
-        load_bounded_snapshot(pool, day_boundaries, sampled_at_ms, false)
+        load_bounded_snapshot(pool, day_boundaries, sampled_at_ms, ReadMode::Totals)
             .await?
             .activity,
     )
@@ -71,14 +81,27 @@ pub async fn load_daily_trend(
     day_boundaries: &[i64],
     sampled_at_ms: i64,
 ) -> Result<DailyActivityTrend, String> {
-    load_bounded_snapshot(pool, day_boundaries, sampled_at_ms, true).await
+    load_bounded_snapshot(pool, day_boundaries, sampled_at_ms, ReadMode::TopApp).await
+}
+
+pub async fn load_daily_apps(
+    pool: &SqlitePool,
+    day_boundaries: &[i64],
+    sampled_at_ms: i64,
+) -> Result<DailyAppActivitySnapshot, String> {
+    let snapshot =
+        load_bounded_snapshot(pool, day_boundaries, sampled_at_ms, ReadMode::Applications).await?;
+    Ok(DailyAppActivitySnapshot {
+        sampled_at_ms,
+        days: snapshot.app_days,
+    })
 }
 
 async fn load_bounded_snapshot(
     pool: &SqlitePool,
     day_boundaries: &[i64],
     sampled_at_ms: i64,
-    retain_apps: bool,
+    mode: ReadMode,
 ) -> Result<DailyActivityTrend, String> {
     validate_boundaries(day_boundaries)?;
     let _permit = DAILY_ACTIVITY_QUERY
@@ -86,7 +109,7 @@ async fn load_bounded_snapshot(
         .map_err(|_| "daily activity query is busy".to_string())?;
     tokio::time::timeout(
         QUERY_TIMEOUT,
-        load_snapshot_with_apps(pool, day_boundaries, sampled_at_ms, retain_apps),
+        load_snapshot_with_apps(pool, day_boundaries, sampled_at_ms, mode),
     )
     .await
     .map_err(|_| "daily activity query exceeded its time budget".to_string())?
@@ -114,7 +137,7 @@ async fn load_snapshot(
     sampled_at_ms: i64,
 ) -> Result<DailyActivitySnapshot, String> {
     Ok(
-        load_snapshot_with_apps(pool, boundaries, sampled_at_ms, false)
+        load_snapshot_with_apps(pool, boundaries, sampled_at_ms, ReadMode::Totals)
             .await?
             .activity,
     )
@@ -124,7 +147,7 @@ async fn load_snapshot_with_apps(
     pool: &SqlitePool,
     boundaries: &[i64],
     sampled_at_ms: i64,
-    retain_apps: bool,
+    mode: ReadMode,
 ) -> Result<DailyActivityTrend, String> {
     let mut transaction = pool.begin().await.map_err(query_error)?;
     let excluded = load_excluded_apps(&mut transaction).await?;
@@ -140,6 +163,11 @@ async fn load_snapshot_with_apps(
     .map_err(query_error)?;
     let mut days = Vec::with_capacity(boundaries.len() - 1);
     let mut top_apps = Vec::with_capacity(boundaries.len() - 1);
+    let mut app_days = Vec::new();
+    let mut app_keys = HashSet::new();
+    let mut app_rows = 0;
+    // Reserve envelope/date overhead; encoded day bytes include escaped app keys.
+    let mut response_bytes = 1024;
     for day in boundaries.windows(2) {
         let records = load_day_facts(
             &mut transaction,
@@ -148,7 +176,7 @@ async fn load_snapshot_with_apps(
             sampled_at_ms,
             &excluded,
             MAX_FACTS_PER_DAY,
-            retain_apps,
+            mode != ReadMode::Totals,
         )
         .await?;
         // Excluded native activity must still suppress overlapping imported facts.
@@ -174,6 +202,38 @@ async fn load_snapshot_with_apps(
                 .max_by(|(left, a), (right, b)| a.cmp(b).then_with(|| right.cmp(left)))
                 .map(|(app, _)| app.to_string()),
         );
+        if mode == ReadMode::Applications {
+            if app_totals.keys().any(|key| key.len() > MAX_APP_KEY_BYTES) {
+                return Err("daily application canonical key exceeds budget".into());
+            }
+            app_rows += app_totals.len();
+            app_keys.extend(app_totals.keys().cloned());
+            if app_rows > MAX_DAILY_ACTIVITY_APP_ROWS || app_keys.len() > MAX_DAILY_ACTIVITY_APPS {
+                return Err("daily application aggregate count exceeds budget".into());
+            }
+            let mut apps: Vec<_> = app_totals
+                .into_iter()
+                .map(|(app, active_ms)| DailyAppTotal {
+                    app_key: app.to_string(),
+                    active_ms,
+                })
+                .collect();
+            apps.sort_unstable_by(|a, b| a.app_key.cmp(&b.app_key));
+            let entry = DailyAppActivityDay {
+                start_ms: day[0],
+                end_ms: day[1],
+                active_ms,
+                apps,
+            };
+            response_bytes += serde_json::to_vec(&entry)
+                .map_err(|error| error.to_string())?
+                .len()
+                + 1;
+            if response_bytes > MAX_DAILY_APPS_RESPONSE_BYTES {
+                return Err("daily application response exceeds budget".into());
+            }
+            app_days.push(entry);
+        }
         days.push(DailyActivityTotal {
             start_ms: day[0],
             end_ms: day[1],
@@ -188,6 +248,7 @@ async fn load_snapshot_with_apps(
             days,
         },
         top_apps,
+        app_days,
     })
 }
 
@@ -371,6 +432,121 @@ mod tests {
     }
 
     #[test]
+    fn application_totals_merge_aliases_keep_all_apps_and_match_heatmap() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup().await;
+            native(&pool, " STEAMWEBHELPER.EXE ", 0, Some(1000)).await;
+            native(&pool, "steam.exe", 1000, Some(2000)).await;
+            native(&pool, "zen", HOUR_MS - 1000, Some(HOUR_MS + 1000)).await;
+            native(&pool, "live", 2 * HOUR_MS, None).await;
+            sqlx::query("UPDATE sessions SET window_title = ?")
+                .bind("secret title".repeat(2000))
+                .execute(&pool)
+                .await
+                .unwrap();
+            let boundaries = [0, HOUR_MS, 2 * HOUR_MS, 3 * HOUR_MS, 4 * HOUR_MS];
+            let result = load_snapshot_with_apps(
+                &pool,
+                &boundaries,
+                2 * HOUR_MS + 37,
+                ReadMode::Applications,
+            )
+            .await
+            .unwrap();
+            let reference = load_snapshot(&pool, &boundaries, 2 * HOUR_MS + 37)
+                .await
+                .unwrap();
+            for (day, total) in result.app_days.iter().zip(reference.days) {
+                assert_eq!(day.active_ms, total.active_ms);
+                assert_eq!(
+                    day.apps.iter().map(|app| app.active_ms).sum::<i64>(),
+                    total.active_ms
+                );
+                assert!(day
+                    .apps
+                    .windows(2)
+                    .all(|pair| pair[0].app_key < pair[1].app_key));
+            }
+            assert_eq!(
+                result.app_days[0].apps,
+                vec![
+                    DailyAppTotal {
+                        app_key: "steam.exe".into(),
+                        active_ms: 2000
+                    },
+                    DailyAppTotal {
+                        app_key: "zen".into(),
+                        active_ms: 1000
+                    },
+                ]
+            );
+            assert_eq!(result.app_days[2].apps[0].active_ms, 37);
+            assert!(result.app_days[3].apps.is_empty());
+            assert!(!serde_json::to_string(&result.app_days)
+                .unwrap()
+                .contains("secret title"));
+        });
+    }
+
+    #[test]
+    fn application_aggregate_budgets_fail_without_partial_results() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup().await;
+            pool.execute("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<4097) INSERT INTO sessions(app_name,exe_name,start_time,end_time,duration) SELECT 'App','app-'||i,0,1000,1000 FROM n").await.unwrap();
+            assert!(
+                load_snapshot_with_apps(&pool, &[0, HOUR_MS], HOUR_MS, ReadMode::Applications)
+                    .await
+                    .unwrap_err()
+                    .contains("count exceeds")
+            );
+            // Compact keys can hit the day/app count independently of the byte budget.
+            pool.execute("DELETE FROM sessions").await.unwrap();
+            sqlx::query("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<200) INSERT INTO sessions(app_name,exe_name,start_time,end_time,duration) SELECT 'App','app-'||i,0,?,? FROM n")
+                .bind(251 * HOUR_MS).bind(251 * HOUR_MS).execute(&pool).await.unwrap();
+            let boundaries: Vec<_> = (0..=251).map(|n| n * HOUR_MS).collect();
+            assert!(load_snapshot_with_apps(
+                &pool,
+                &boundaries,
+                251 * HOUR_MS,
+                ReadMode::Applications
+            )
+            .await
+            .unwrap_err()
+            .contains("count exceeds"));
+            pool.execute("DELETE FROM sessions").await.unwrap();
+            // JSON escaping counts toward the response budget, not only UTF-8 key bytes.
+            let key = format!("app{}-", "\"".repeat(990));
+            sqlx::query("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<1000) INSERT INTO sessions(app_name,exe_name,start_time,end_time,duration) SELECT 'App',?||i,0,?,? FROM n")
+                .bind(key).bind(4 * HOUR_MS).bind(4 * HOUR_MS).execute(&pool).await.unwrap();
+            assert!(load_snapshot_with_apps(
+                &pool,
+                &[0, HOUR_MS, 2 * HOUR_MS, 3 * HOUR_MS, 4 * HOUR_MS],
+                4 * HOUR_MS,
+                ReadMode::Applications
+            )
+            .await
+            .unwrap_err()
+            .contains("response exceeds"));
+            assert_eq!(
+                sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM sessions")
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap(),
+                1000
+            );
+            pool.execute("DELETE FROM sessions").await.unwrap();
+            // Unicode lowercasing may expand a raw key that was within budget.
+            native(&pool, &"\u{0130}".repeat(500), 0, Some(1000)).await;
+            assert!(
+                load_snapshot_with_apps(&pool, &[0, HOUR_MS], HOUR_MS, ReadMode::Applications)
+                    .await
+                    .unwrap_err()
+                    .contains("canonical key exceeds")
+            );
+        });
+    }
+
+    #[test]
     fn trend_reuses_daily_policy_without_retaining_titles_and_has_stable_ties() {
         tauri::async_runtime::block_on(async {
             let pool = setup().await;
@@ -383,14 +559,18 @@ mod tests {
                 .execute(&pool)
                 .await
                 .unwrap();
-            let snapshot =
-                load_snapshot_with_apps(&pool, &[0, HOUR_MS, 2 * HOUR_MS], 2 * HOUR_MS, true)
-                    .await
-                    .unwrap();
+            let snapshot = load_snapshot_with_apps(
+                &pool,
+                &[0, HOUR_MS, 2 * HOUR_MS],
+                2 * HOUR_MS,
+                ReadMode::TopApp,
+            )
+            .await
+            .unwrap();
             assert_eq!(snapshot.top_apps, vec![Some("steam.exe".into()), None]);
             assert_eq!(snapshot.activity.days[0].active_ms, 5000);
             pool.execute("INSERT INTO settings(key,value) VALUES ('__app_override::steam.exe','{\"track\":false}')").await.unwrap();
-            let snapshot = load_snapshot_with_apps(&pool, &[0, HOUR_MS], HOUR_MS, true)
+            let snapshot = load_snapshot_with_apps(&pool, &[0, HOUR_MS], HOUR_MS, ReadMode::TopApp)
                 .await
                 .unwrap();
             assert_eq!(snapshot.top_apps, vec![Some("alpha".into())]);
@@ -453,6 +633,9 @@ mod tests {
             let boundaries = [0, HOUR_MS / 2, HOUR_MS, 3 * HOUR_MS, 4 * HOUR_MS];
             let sampled = 2 * HOUR_MS + 5000;
             let result = load_snapshot(&pool, &boundaries, sampled).await.unwrap();
+            let apps = load_snapshot_with_apps(&pool, &boundaries, sampled, ReadMode::Applications)
+                .await
+                .unwrap();
             let reference = activity_read_model::load_snapshot(&pool, 0, 4 * HOUR_MS, sampled)
                 .await
                 .unwrap();
@@ -467,6 +650,29 @@ mod tests {
                     .map(|item| item.duration_ms)
                     .sum();
                 assert_eq!(day.active_ms, expected);
+                let app_day = apps
+                    .app_days
+                    .iter()
+                    .find(|app_day| app_day.start_ms == day.start_ms)
+                    .unwrap();
+                let mut expected_apps = std::collections::BTreeMap::<String, i64>::new();
+                for item in reference.contributions(day.start_ms, day.end_ms) {
+                    if item.duration_ms > 0 && !semantics.is_excluded(&item.value.exe_name) {
+                        *expected_apps
+                            .entry(activity_read_policy::canonical_executable(
+                                &item.value.exe_name,
+                            ))
+                            .or_default() += item.duration_ms;
+                    }
+                }
+                assert_eq!(
+                    app_day
+                        .apps
+                        .iter()
+                        .map(|app| (app.app_key.clone(), app.active_ms))
+                        .collect::<std::collections::BTreeMap<_, _>>(),
+                    expected_apps
+                );
             }
             assert_eq!(result.earliest_start_ms, Some(0));
             assert_eq!(result.sampled_at_ms, sampled);
@@ -540,6 +746,10 @@ mod tests {
                 .await
                 .unwrap_err()
                 .contains("busy"));
+            assert!(load_daily_apps(&pool, &[0, HOUR_MS], HOUR_MS)
+                .await
+                .unwrap_err()
+                .contains("busy"));
             drop(_permit);
             use chrono::TimeZone;
             struct FixedClock(i64);
@@ -578,6 +788,33 @@ mod tests {
                 assert_eq!(response.status, 200, "{:?}", response.body);
                 assert_eq!(response.body["data"]["days"].as_array().unwrap().len(), 2);
                 assert_eq!(response.body["data"]["days"][0]["active_ms"], 0);
+                for (query, status) in [
+                    ("from=2026-01-01&to=2026-01-03", 200),
+                    ("from=2026-01-01&to=2026-01-03&from=2026-01-02", 400),
+                    ("from=2026-01-01&to=2026-01-03&timezone=UTC", 400),
+                ] {
+                    let response = crate::engine::api::router::route_request(
+                        crate::engine::api::router::ApiRequest {
+                            method: "GET".into(),
+                            path: "/api/v1/activity/daily-apps".into(),
+                            query: Some(query.into()),
+                            body: Vec::new(),
+                        },
+                        &context,
+                        surface,
+                    )
+                    .await;
+                    assert_eq!(response.status, status, "{:?}", response.body);
+                    if status == 200 {
+                        let days = response.body["data"]["days"].as_array().unwrap();
+                        assert_eq!(days.len(), 2);
+                        assert_eq!(days[0]["apps"], serde_json::json!([]));
+                        assert_eq!(
+                            days[1]["apps"],
+                            serde_json::json!([{"app_key":"fixture","active_ms":1000}])
+                        );
+                    }
+                }
                 for (period, count) in [("week", 7), ("month", 30)] {
                     let response = crate::engine::api::router::route_request(
                         crate::engine::api::router::ApiRequest {
