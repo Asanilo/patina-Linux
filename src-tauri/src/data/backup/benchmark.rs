@@ -47,7 +47,11 @@ fn worker() {
         "preview",
         "preview-only",
         "sha256",
-        "responsiveness"
+        "responsiveness",
+        "restore-replace",
+        "restore-merge",
+        "rollback-replace",
+        "rollback-merge"
     ]
     .contains(&mode.as_str()));
     tauri::async_runtime::block_on(async {
@@ -78,6 +82,24 @@ fn worker() {
             )
             .await
             .unwrap();
+        let restore_pool = if mode.starts_with("restore-") || mode.starts_with("rollback-") {
+            let target = open_prepared_sqlite_pool_at_path(&root.join(format!("{mode}.db")), true)
+                .await
+                .unwrap();
+            sqlx::query("INSERT INTO sessions(app_name,exe_name,window_title,start_time,end_time,duration) VALUES ('Baseline','baseline','keep',-2000,-1000,1000)")
+                .execute(&target).await.unwrap();
+            sqlx::query("INSERT INTO settings(key,value) VALUES ('benchmark_baseline','keep')")
+                .execute(&target)
+                .await
+                .unwrap();
+            if mode.starts_with("rollback-") {
+                sqlx::query("CREATE TRIGGER fail_last_session BEFORE INSERT ON sessions WHEN NEW.exe_name='fixture' AND NEW.start_time=2999940000 BEGIN SELECT RAISE(ABORT, 'benchmark injected late failure'); END")
+                    .execute(&target).await.unwrap();
+            }
+            Some(target)
+        } else {
+            None
+        };
         let stop = Arc::new(AtomicBool::new(false));
         let samples = Arc::new(Mutex::new(Vec::new()));
         let thread_stop = stop.clone();
@@ -95,6 +117,29 @@ fn worker() {
         let started = Instant::now();
         let target = root.join(format!("{mode}.zip"));
         let count = match mode.as_str() {
+            mode if mode.starts_with("restore-") || mode.starts_with("rollback-") => {
+                let target = restore_pool.as_ref().unwrap();
+                let strategy = if mode.ends_with("merge") {
+                    RestoreStrategy::Merge
+                } else {
+                    RestoreStrategy::Replace
+                };
+                let result = restore_backup_from_path(
+                    target,
+                    &root.join("fixture.zip"),
+                    strategy,
+                    4_000_000_000,
+                )
+                .await;
+                if mode.starts_with("rollback-") {
+                    assert!(result
+                        .unwrap_err()
+                        .contains("benchmark injected late failure"));
+                } else {
+                    result.unwrap();
+                }
+                50_000
+            }
             "legacy-export" => {
                 let payload = load_backup_payload_from_pool(&pool).await.unwrap();
                 let bytes = encode_backup_archive(&payload).unwrap();
@@ -135,6 +180,48 @@ fn worker() {
         std::thread::sleep(Duration::from_millis(50));
         stop.store(true, Ordering::Relaxed);
         sampler.join().unwrap();
+        if let Some(target) = restore_pool {
+            let expected = if mode.starts_with("rollback-") {
+                1
+            } else if mode.ends_with("merge") {
+                50_001
+            } else {
+                50_000
+            };
+            let actual: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sessions")
+                .fetch_one(&target)
+                .await
+                .unwrap();
+            assert_eq!(actual, expected);
+            if mode.starts_with("restore-") {
+                let total: i64 = sqlx::query_scalar(
+                    "SELECT SUM(duration) FROM sessions WHERE exe_name='fixture'",
+                )
+                .fetch_one(&target)
+                .await
+                .unwrap();
+                assert_eq!(total, 1_500_000_000);
+            }
+            let baseline_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sessions WHERE exe_name='baseline' AND window_title='keep' AND start_time=-2000 AND end_time=-1000 AND duration=1000").fetch_one(&target).await.unwrap();
+            assert_eq!(
+                baseline_count,
+                if mode == "restore-replace" { 0 } else { 1 }
+            );
+            if mode.starts_with("rollback-") || mode.ends_with("merge") {
+                let setting: String =
+                    sqlx::query_scalar("SELECT value FROM settings WHERE key='benchmark_baseline'")
+                        .fetch_one(&target)
+                        .await
+                        .unwrap();
+                assert_eq!(setting, "keep");
+            }
+            let integrity: String = sqlx::query_scalar("PRAGMA quick_check")
+                .fetch_one(&target)
+                .await
+                .unwrap();
+            assert_eq!(integrity, "ok");
+            target.close().await;
+        }
         assert_eq!(count, if mode == "sha256" { 0 } else { 50_000 });
         if mode.ends_with("export") {
             assert_eq!(

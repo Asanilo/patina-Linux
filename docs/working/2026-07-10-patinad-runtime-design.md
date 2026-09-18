@@ -5,7 +5,7 @@
 
 ### 当前执行焦点（2026-09-19）
 
-- 最新批次完成 release 预览分阶段测量、同进程异步校验串行化、重复预览合并，以及隔离追踪写入/浏览器响应验证。release 合成库预览约 0.42 秒，含 SHA-256 约 0.48 秒；不能将此前 debug 约 7 秒当作安装版延迟。详见下节。当前仍未出包、安装或推送，后续优先测完整恢复峰值与失败边界，再继续剩余聚合及 AppImage 验证。
+- 最新批次已推进到完整恢复：补 Merge/Replace 大库峰值及晚期失败回滚测量，并复用流式条目读取器去掉原始 JSON 副本，单事务安全边界保持。上批预览、并发调度与页面响应验证仍有效。详见下节最新对照与限制；当前未出包、安装或推送，后续继续剩余聚合及 AppImage 验证，多表恢复与成品长期体验仍需验收。
 
 - 2026-09-19 本批合并推进流式预览、定时/WebDAV 校验接入、故障/并发快照测试和大库查询进程对照；不再每个补丁单独请求继续。以下最新批次状态优先于历史段落中的“尚未流式预览”等限制。
 
@@ -16,6 +16,17 @@
 - 下一可发布功能阶段为 **Data 热力图低内存查询**，范围和发布门槛以 [路线文档当前快照](../roadmap-and-prioritization.md#56-当前实施主线patinad) 为准。共享统计语义、读取预算、后端聚合、Desktop/daemon 适配、隔离 debug 整链路与 beta.17 成品检查均已完成；安装后 Data/History、只读 API、关闭回收和用户重开确认已通过，但用户发现窄窗口滚动缺陷。该布局问题已修源码并通过前端回归，尚未包含在已安装 beta.17 中。前台 WebKit 占用仍是后续独立问题。
 - 用户安装的版本仍为 beta.17，安装后只读、Data/History、关闭回收和用户重开确认通过。当前 beta.18 已将窄窗口修复与低耗延迟设置合为本地 DEB 候选，成品检查通过，尚未升级用户安装版本。2026-09-18 前次只读查询 GitHub 确认最新预发布为 beta.12，最新稳定版为 1.8.4，本轮没有重新查询或操作远端；本批独立收口到现有 daemon 分支，不推送或公开发布。
 - 下文保留阶段证据与历史限制，不以早期“下一步”覆盖本节执行焦点。
+
+#### 完整恢复测量与读取优化（2026-09-19，未出包）
+
+- 本批先补 `restore-replace`、`restore-merge`、`rollback-replace`、`rollback-merge` 四种隔离 worker。每次新建目标库，预存一个不同的会话与设置；从 50,000 条合成会话的磁盘 ZIP 走实际 `restore_backup_from_path`，计时和采样包含完整解析、规范化、ID map 与事务写入。成功检查总条数、原记录保留/替换和 quick_check；失败由 SQLite trigger 在最后一条会话写入时注入 ABORT，验证前 49,999 条未留下部分恢复、原会话与设置保留。报告 `records=50000` 是输入规模，不是失败案例的提交条数。
+- 修改前证据 `/tmp/patina-backup-bench-PkBIaw/summary.json`：Replace 2,373 ms / USS 增量约 121.7 MiB，Merge 4,164 ms / 125.0 MiB；两种晚期失败均回滚通过。release 测试二进制 SHA-256 `0fbcda7ea506b4a8b9718a54746c431de1c49cb4fb7243b7e1cdca60b9df5c18`。这是单一会话表为主的合成归档，不等同于多表用户大库、服务重启恢复或断电保证。
+- owner 判断：CRC/长度限制/JSON 读取属于 `data/backup` 的归档编解码，而非 preview 特有能力。将已有读取器移入内部 `backup/reader`，预览计数与完整 payload 共用，不新增跨层共享设施。完整恢复不再先构造整段条目 JSON；checksums 元数据仍有完整读取，最终 payload 和 ID map 仍与数据规模相关。
+- 不改恢复格式、Merge/Replace 规则、主机配置保留、receipt、预约或单事务边界；全部归档解析与校验成功前不进入写事务。新增 checksum 有效但 JSON 后仍有额外文档的拒绝用例，两种恢复策略均不得部分写入。多个错误并存时首个错误提示可能变化，不能因此接受损坏数据。
+- 最终 release 证据 `/tmp/patina-backup-bench-3zDGaM/summary.json`，二进制 SHA-256 `4f3290a3a65f0cd3b1fc866866fca7f11b6a5d1b912e0fca81c798a9436a45fb`，fixture SHA-256 `81c676c12fa6730b7f23adc0e6b6c95492c7e4c7713767584f5df7f8041b7191`，源库哈希保持。Replace 2,777 ms / USS 增量 68.0 MiB；Merge 4,479 ms / 67.6 MiB。成功恢复 50,000 条输入记录，总时长均为 1,500,000,000 ms；Merge 另保留原会话。两种末条失败耗时 2,665/3,526 ms，USS 增量均约 65.8 MiB，原记录/设置和 quick_check 通过。
+- 中间对照 `/tmp/patina-backup-bench-OelbUb/summary.json` 测得 Replace 4,016 ms、Merge 6,006 ms，USS 增量同为约 68 MiB；不隐去耗时波动。两次使用相同生成规则而非逐字节相同归档，不能把单轮时间差精确归因于解析器。流式解析降低内存，但比 `from_str` 更耗 CPU；这批不承诺恢复加速。报告的 5 秒/64 MiB 预算仅应用于导出/预览，恢复是观测项目，不因 `passed=true` 宣称其已通过相同预算。
+- `legacy-preview` 模式代表“完整 payload 再取预览”的对照，现在也复用新读取器，不是冻结的旧版二进制；改前后比较使用上列两份独立证据。最终预览约 529 ms，含 SHA-256 约 605 ms；异步连续预览时隔离追踪 65 次 tick、最大间隔 34 ms，数据库完整性通过。剩余完整 payload/ID map、多表峰值、磁盘故障、崩溃 receipt 与真实 systemd 恢复体验仍需独立验证，不宣称恢复链路恒定内存或稳定版门槛全部完成。
+- 初轮 Rust 检查在受限环境因回环监听 `PermissionDenied` 失败，授权本机监听后通过。读取优化后 `npm run check:full` 退出 0：621 项 Rust 测试通过、11 项 opt-in 忽略，36 项浏览器回归、Clippy `-D warnings`、边界和构建预算通过；浏览器临时 profile 仍有既有 `ENOTEMPTY` 清理警告。晚期损坏用例新增尾随 JSON，两种策略均拒绝。release worker 的恢复总时长断言另行执行，不以默认忽略测试的编译代替运行。不修改用户已安装 beta.18、生产数据库或 systemd 服务，不构建新 DEB。
 
 #### 备份预览调度与 release 验证（2026-09-19，未出包）
 

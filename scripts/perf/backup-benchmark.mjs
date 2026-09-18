@@ -9,7 +9,7 @@ import { createReadStream } from "node:fs";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const release = process.argv.includes("--release");
-const modes = ["legacy-export", "export", "legacy-preview", "preview-only", "sha256", "preview"];
+const modes = ["legacy-export", "export", "legacy-preview", "preview-only", "sha256", "preview", "restore-replace", "restore-merge", "rollback-replace", "rollback-merge"];
 if (process.platform !== "linux") throw new Error("This benchmark requires Linux /proc");
 async function sha256(file) {
   const hasher = createHash("sha256");
@@ -67,7 +67,7 @@ const passed = responsiveness.passed && results.filter(result => ["export", "pre
   && result.sampled_peak.uss_bytes - result.baseline.uss_bytes <= budgets.sampled_uss_growth_bytes);
 const report = { binary, sha256: hash, fixture_sha256: fixtureHash,
   profile: release ? "release" : "debug",
-  scope: "Isolated worker; synthetic 50000 rows; not Desktop or restore transaction peak",
+  scope: "Isolated worker; synthetic 50000 rows; includes restore transactions, not Desktop or systemd maintenance; restore measurements are observational, not subject to preview memory budget",
   budgets, passed, results, responsiveness };
 await writeFile(path.join(root, "summary.json"), JSON.stringify(report, null, 2), { flag: "wx", mode: 0o600 });
 console.log(JSON.stringify(report, null, 2));

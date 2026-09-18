@@ -24,7 +24,9 @@ use zip::{CompressionMethod, ZipArchive, ZipWriter};
 mod benchmark;
 mod inspection;
 mod preview;
+mod reader;
 mod streaming;
+use reader::checked as read_checked_zip_entry;
 
 const BACKUP_FILE_EXT: &str = "zip";
 const BACKUP_FORMAT: &str = "PatinaBackup";
@@ -572,18 +574,6 @@ fn verify_backup_checksums(
     }
 
     Ok(())
-}
-
-fn read_checked_zip_entry<R: Read + Seek, T: serde::de::DeserializeOwned>(
-    archive: &mut ZipArchive<R>,
-    checksums: &BackupArchiveChecksums,
-    entry_name: &str,
-    backup_path: &Path,
-) -> Result<T, String> {
-    // The raw JSON belongs to this call and is released before the next entry.
-    let json = read_zip_entry(archive, entry_name, backup_path)?;
-    verify_backup_checksums(checksums, &[(entry_name, &json)], backup_path)?;
-    parse_json(&json, backup_path, entry_name)
 }
 
 fn read_optional_checked_zip_entry<R: Read + Seek, T: serde::de::DeserializeOwned + Default>(
@@ -1413,7 +1403,13 @@ mod tests {
             pool.execute("INSERT INTO settings(key,value) VALUES('keep','original')")
                 .await
                 .unwrap();
-            for failure in ["checksum", "missing-checksum", "invalid-json", "algorithm"] {
+            for failure in [
+                "checksum",
+                "missing-checksum",
+                "invalid-json",
+                "trailing-json",
+                "algorithm",
+            ] {
                 let path = temp_backup_path(failure);
                 let bytes = encode_backup_archive(&payload_with_bound_web_activity()).unwrap();
                 let mut source = ZipArchive::new(Cursor::new(bytes)).unwrap();
@@ -1438,6 +1434,13 @@ mod tests {
                         checksums
                             .files
                             .insert(BACKUP_IMPORT_ACTIVITY_ENTRY_NAME.into(), checksum("{"));
+                    }
+                    "trailing-json" => {
+                        let json = entries.get_mut(BACKUP_IMPORT_ACTIVITY_ENTRY_NAME).unwrap();
+                        json.push_str(" {}");
+                        checksums
+                            .files
+                            .insert(BACKUP_IMPORT_ACTIVITY_ENTRY_NAME.into(), checksum(json));
                     }
                     _ => checksums.algorithm = "unsupported".into(),
                 }
