@@ -609,11 +609,13 @@ Schema:
 
 Current behavior:
 
-- Uses local date buckets.
+- Uses local date buckets, resolving each midnight separately across daylight-saving changes. Exactly at midnight, today's point has zero activity and `top_app: null`.
 - Combines native sessions, imported exact sessions, and imported hour buckets with the same precedence as summary endpoints.
 - Splits exact facts at local midnight and counts the active native session until current time.
 - Keeps imported hour buckets aggregate-only.
-- Omits apps marked excluded.
+- Shares the heatmap's historical process filtering and current app-override/legacy exclusion policy; excluded native facts still suppress overlapping imports before filtering.
+- `top_app` uses the canonical executable key (aliases are merged). Equal totals use lexicographically smallest key; empty days return `null`. This corrects the earlier raw lower-case key behavior.
+- Reads one SQLite snapshot, retaining one day's compact facts at a time. Trend and heatmap share one query permit, a 30-second async query timeout, 20,000 facts/day and bounded metadata. Busy, invalid metadata or budget failures return HTTP 500 with an error, never partial totals or a full-history fallback. This is not a fixed process-memory guarantee.
 - Returns one point per day with:
   - `date`
   - `active_ms`

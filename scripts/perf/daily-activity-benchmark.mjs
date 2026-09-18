@@ -9,7 +9,9 @@ import { createReadStream } from "node:fs";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const observed = process.argv.includes("--observed-apps");
-const modes = observed ? ["observed-legacy", "observed"] : ["legacy", "daily"];
+const trend = process.argv.includes("--trend");
+if (trend && observed) throw new Error("Choose one benchmark mode");
+const modes = trend ? ["trend-legacy", "trend"] : observed ? ["observed-legacy", "observed"] : ["legacy", "daily"];
 if (process.platform !== "linux") throw new Error("This benchmark requires Linux /proc");
 async function sha256(file) {
   const hasher = createHash("sha256");
@@ -40,6 +42,7 @@ for (const mode of ["seed", ...modes]) {
       PATH: process.env.PATH, LANG: "C.UTF-8", TZ: "UTC",
       HOME: root, XDG_DATA_HOME: root, XDG_CONFIG_HOME: root, XDG_CACHE_HOME: root,
       PATINA_DAILY_BENCH_ROOT: root, PATINA_DAILY_BENCH_MODE: mode,
+      PATINA_DAILY_BENCH_TREND: trend ? "1" : "0",
     },
   });
   const timer = setTimeout(() => child.kill("SIGKILL"), 120_000);
@@ -50,6 +53,11 @@ for (const mode of ["seed", ...modes]) {
   fixtureHash = currentHash;
 }
 const results = [];
+if (trend) {
+  const legacyDays = JSON.parse(await readFile(path.join(root, "trend-legacy-days.json"), "utf8"));
+  const boundedDays = JSON.parse(await readFile(path.join(root, "trend-days.json"), "utf8"));
+  if (JSON.stringify(legacyDays) !== JSON.stringify(boundedDays)) throw new Error("Trend daily totals or top apps differ");
+}
 for (const mode of modes) {
   const result = JSON.parse(await readFile(path.join(root, `${mode}.json`), "utf8"));
   const peak = {};
@@ -59,13 +67,13 @@ for (const mode of modes) {
   }
   results.push({ mode, elapsed_ms: result.elapsed_ms, result: result.result, baseline: result.baseline, sampled_peak: peak, after: result.after });
 }
-const daily = results.find(result => result.mode === (observed ? "observed" : "daily"));
+const daily = results.find(result => result.mode === (trend ? "trend" : observed ? "observed" : "daily"));
 const budgets = { elapsed_ms: 5000, response_bytes: 64 * 1024, sampled_uss_growth_bytes: 64 * 1024 * 1024 };
 const passed = daily.elapsed_ms <= budgets.elapsed_ms
   && daily.result.Ok?.[0] <= budgets.response_bytes
   && daily.sampled_peak.uss_bytes !== null && daily.baseline.uss_bytes !== null
   && daily.sampled_peak.uss_bytes - daily.baseline.uss_bytes <= budgets.sampled_uss_growth_bytes;
-const report = { binary, sha256: hash, fixture_sha256: fixtureHash, scope: "Debug query-worker comparison, not Desktop/WebKit/daemon end-to-end acceptance", budgets, passed, results };
+const report = { binary, sha256: hash, fixture_sha256: fixtureHash, scope: "Debug query-worker comparison, not Desktop/WebKit/daemon end-to-end acceptance", ...(trend ? { daily_totals_and_top_apps_equal: true } : {}), budgets, passed, results };
 await writeFile(path.join(root, "summary.json"), JSON.stringify(report, null, 2), { flag: "wx", mode: 0o600 });
 console.log(JSON.stringify(report, null, 2));
 if (!passed) process.exitCode = 1;

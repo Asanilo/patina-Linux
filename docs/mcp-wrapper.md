@@ -173,6 +173,8 @@ Before restart, call `get_daemon_service` and record its `instance_id`. A succes
 
 Summary and trend tools apply `native > import_exact > import_bucket` precedence. Imported hour buckets remain aggregate-only and never appear in `query_sessions`; use summaries or trend for totals that include them.
 
+`get_activity_trend` now uses the bounded heatmap reader and its current exclusion/process-filter policy. Days follow local DST boundaries and `top_app` is a canonical executable key, with aliases merged. Trend and heatmap share one query permit; busy/budget failures propagate as errors, not partial totals. The tool arguments and response shape are unchanged; see the [HTTP trend contract](api-index.md#get-apiv1trend) for limits.
+
 ### Errors
 
 - Invalid tool names or missing required arguments return JSON-RPC `-32602` errors.

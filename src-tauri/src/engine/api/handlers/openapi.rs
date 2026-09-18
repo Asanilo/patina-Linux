@@ -94,7 +94,7 @@ fn paths(surface: ApiSurface) -> Value {
         },
         "/api/v1/trend": {
             "get": get_operation_with_parameters(
-                "Daily activity trend across native and imported facts for week or month.",
+                "Bounded local-calendar daily trend for week/month, with heatmap filtering and canonical top-app aliases. Resolves DST midnights independently; empty days have null top_app. Shares heatmap query concurrency and budgets; busy or exceeded budgets return 500 without partial data.",
                 "TrendResponse",
                 vec![
                     query_param("period", "string", "Optional period. Supported values: week, month."),

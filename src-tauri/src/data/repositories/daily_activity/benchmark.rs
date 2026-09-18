@@ -51,7 +51,19 @@ fn write_new(path: &Path, value: serde_json::Value) {
 fn query_worker() {
     let root = root();
     let mode = std::env::var("PATINA_DAILY_BENCH_MODE").unwrap();
-    assert!(["seed", "legacy", "daily", "observed-legacy", "observed"].contains(&mode.as_str()));
+    assert!([
+        "seed",
+        "legacy",
+        "daily",
+        "observed-legacy",
+        "observed",
+        "trend",
+        "trend-legacy"
+    ]
+    .contains(&mode.as_str()));
+    let trend = std::env::var("PATINA_DAILY_BENCH_TREND").as_deref() == Ok("1");
+    let day_count = if trend { 30 } else { 365 };
+    let row_duration = if trend { 10_000 } else { 60_000 };
     tauri::async_runtime::block_on(async {
         let database = root.join("fixture.db");
         if mode == "seed" {
@@ -60,13 +72,13 @@ fn query_worker() {
                 .await
                 .unwrap();
             // 1 KiB synthetic titles recreate transfer volume without copying private data.
-            sqlx::query("WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i < ?) INSERT INTO sessions(app_name,exe_name,window_title,start_time,end_time,duration) SELECT 'Fixture App', 'fixture-app', ?, ? + i * 600000, ? + i * 600000 + 60000, 60000 FROM n")
-                .bind(ROWS - 1).bind("Synthetic fixture title ".repeat(45)).bind(START).bind(START)
+            sqlx::query("WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i < ?) INSERT INTO sessions(app_name,exe_name,window_title,start_time,end_time,duration) SELECT 'Fixture App', 'fixture-app', ?, ? + i * ?, ? + i * ? + ?, ? FROM n")
+                .bind(ROWS - 1).bind("Synthetic fixture title ".repeat(45)).bind(START).bind(if trend {50_000} else {600_000}).bind(START).bind(if trend {50_000} else {600_000}).bind(row_duration).bind(row_duration)
                 .execute(&pool).await.unwrap();
             pool.close().await;
             write_new(
                 &root.join("fixture.json"),
-                json!({"rows": ROWS, "start_ms": START, "days": 365, "expected_ms": ROWS * 60000}),
+                json!({"rows": ROWS, "start_ms": START, "days": day_count, "expected_ms": ROWS * row_duration}),
             );
             return;
         }
@@ -80,7 +92,8 @@ fn query_worker() {
             )
             .await
             .unwrap();
-        let boundaries: Vec<i64> = (0..=365).map(|day| START + day * DAY).collect();
+        let boundaries: Vec<i64> = (0..=day_count).map(|day| START + day * DAY).collect();
+        let end = *boundaries.last().unwrap();
         // Extract the actual legacy SQL so benchmark drift is detected instead of guessed.
         let source =
             include_str!("../../../../../src/platform/persistence/sessionReadRepository.ts");
@@ -89,20 +102,10 @@ fn query_worker() {
             .nth(1)
             .unwrap();
         let legacy_sql = function.split('`').nth(1).unwrap();
-        let legacy_values = [
-            boundaries[365],
-            boundaries[365],
-            boundaries[365],
-            boundaries[365],
-            START,
-            boundaries[365],
-            START,
-            boundaries[365],
-            START,
-        ];
+        let legacy_values = [end, end, end, end, START, end, START, end, START];
         let mut plans = Vec::new();
-        let from = boundaries[182];
-        let to = boundaries[183];
+        let from = boundaries[day_count as usize / 2];
+        let to = boundaries[day_count as usize / 2 + 1];
         for (name, sql, values) in [
             ("legacy-full", legacy_sql, legacy_values.to_vec()),
             (
@@ -148,12 +151,49 @@ fn query_worker() {
         });
         let baseline = crate::platform::linux::resource::current_process_resource_snapshot();
         let started = Instant::now();
-        let output: Result<(usize, i64), String> = if mode == "observed" {
+        let output: Result<(usize, i64), String> = if mode == "trend" || mode == "trend-legacy" {
+            let mut days = Vec::new();
+            if mode == "trend" {
+                let snapshot = load_daily_trend(&pool, &boundaries, end).await.unwrap();
+                for (day, top) in snapshot.activity.days.iter().zip(snapshot.top_apps) {
+                    days.push((day.start_ms, day.active_ms, top));
+                }
+            } else {
+                let snapshot = crate::data::repositories::activity_read_model::load_snapshot(
+                    &pool, START, end, end,
+                )
+                .await
+                .unwrap();
+                for day in boundaries.windows(2) {
+                    let mut totals = HashMap::<String, i64>::new();
+                    for item in snapshot.contributions(day[0], day[1]) {
+                        *totals
+                            .entry(item.value.exe_name.trim().to_ascii_lowercase())
+                            .or_default() += item.duration_ms;
+                    }
+                    let top = totals
+                        .iter()
+                        .max_by(|(a, x), (b, y)| x.cmp(y).then_with(|| b.cmp(a)))
+                        .map(|(key, _)| key.clone());
+                    days.push((day[0], totals.values().sum(), top));
+                }
+            }
+            for (_, total, top) in &days {
+                assert_eq!(
+                    top.as_deref(),
+                    if *total > 0 {
+                        Some("fixture-app")
+                    } else {
+                        None
+                    }
+                );
+            }
+            let total = days.iter().map(|(_, total, _)| total).sum();
+            write_new(&root.join(format!("{mode}-days.json")), json!(&days));
+            Ok((serde_json::to_vec(&days).unwrap().len(), total))
+        } else if mode == "observed" {
             let stats = crate::data::repositories::observed_apps::load_observed_apps(
-                &pool,
-                START,
-                boundaries[365],
-                boundaries[365],
+                &pool, START, end, end,
             )
             .await
             .unwrap();
@@ -190,7 +230,7 @@ fn query_worker() {
             std::hint::black_box((&values, &encoded));
             Ok((encoded.len(), total))
         } else if mode == "daily" {
-            match load_daily_activity(&pool, &boundaries, boundaries[365]).await {
+            match load_daily_activity(&pool, &boundaries, end).await {
                 Ok(snapshot) => {
                     let total = snapshot.days.iter().map(|day| day.active_ms).sum();
                     let encoded = serde_json::to_vec(&json!({"data": snapshot})).unwrap();
@@ -248,6 +288,6 @@ fn query_worker() {
             }),
         );
         pool.close().await;
-        assert_eq!(output.unwrap().1, ROWS * 60000);
+        assert_eq!(output.unwrap().1, ROWS * row_duration);
     });
 }

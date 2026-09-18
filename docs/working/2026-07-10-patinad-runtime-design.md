@@ -5,6 +5,7 @@
 
 ### 当前执行焦点（2026-09-19）
 
+- 最新批次进入趋势：HTTP `/api/v1/trend` 接入热力图共享的有界日读取，修复跨 DST 午夜边界；Desktop 趋势缓存增加失效 generation 和请求身份检查。此项不等于 Data 趋势界面已改用后端汇总，旧分类全历史迁移也仍待处理。具体 owner、预算和证据见下节。
 - 最新批次已推进到完整恢复：补 Merge/Replace 大库峰值及晚期失败回滚测量，并复用流式条目读取器去掉原始 JSON 副本，单事务安全边界保持。上批预览、并发调度与页面响应验证仍有效。详见下节最新对照与限制；当前未出包、安装或推送，后续继续剩余聚合及 AppImage 验证，多表恢复与成品长期体验仍需验收。
 
 - 2026-09-19 本批合并推进流式预览、定时/WebDAV 校验接入、故障/并发快照测试和大库查询进程对照；不再每个补丁单独请求继续。以下最新批次状态优先于历史段落中的“尚未流式预览”等限制。
@@ -16,6 +17,17 @@
 - 下一可发布功能阶段为 **Data 热力图低内存查询**，范围和发布门槛以 [路线文档当前快照](../roadmap-and-prioritization.md#56-当前实施主线patinad) 为准。共享统计语义、读取预算、后端聚合、Desktop/daemon 适配、隔离 debug 整链路与 beta.17 成品检查均已完成；安装后 Data/History、只读 API、关闭回收和用户重开确认已通过，但用户发现窄窗口滚动缺陷。该布局问题已修源码并通过前端回归，尚未包含在已安装 beta.17 中。前台 WebKit 占用仍是后续独立问题。
 - 用户安装的版本仍为 beta.17，安装后只读、Data/History、关闭回收和用户重开确认通过。当前 beta.18 已将窄窗口修复与低耗延迟设置合为本地 DEB 候选，成品检查通过，尚未升级用户安装版本。2026-09-18 前次只读查询 GitHub 确认最新预发布为 beta.12，最新稳定版为 1.8.4，本轮没有重新查询或操作远端；本批独立收口到现有 daemon 分支，不推送或公开发布。
 - 下文保留阶段证据与历史限制，不以早期“下一步”覆盖本节执行焦点。
+
+#### HTTP 趋势有界读取与桌面缓存竞态（2026-09-19，未出包）
+
+- 现状核对：`dataTrendSnapshot` 仍读取 `getSessionSummariesInRange` 并缓存逐会话结果，旧分类首次迁移仍读取全历史 observed stats；不能复用仅支持近期范围的候选 API 后就宣称全历史迁移完成。本批先收口 HTTP 趋势自身的无界读取，不增加另一套桌面专用统计语义。
+- owner：`data/repositories/daily_activity` 同时编译日总量和可选 top app；handler 只解析范围和映射响应。继续在单个 SQLite snapshot 中逐日读取，热力图不保留 app 名称，趋势只保留当前日规范化 exe（Arc 避免编译贡献时重复复制）；标题不进入保留 facts，仅需要分类元数据的进程逐条受限读取。每日日总量与 top app 共同遵循既有 native/import 优先级、进程过滤和当前排除设置。
+- 预算沿用共享日查询：进程内热力图/趋势合计一个许可、30 秒异步 timeout、20,000 facts/day、每个 exe 1,024 bytes、设置/单条分类元数据预算。不扩大输入限额，不返回截断汇总；忙、预算或元数据错误沿用 HTTP 500。总计 7/30 个输出点，top_app 以 canonical exe 合并并以字典序打破同量 tie；这是对旧 raw lower-case / 只读旧排除字段行为的显式修正，已更新 API/OpenAPI 文案。
+- 本地日期不再将当前固定 UTC offset 用于整个历史范围：每个 midnight 由本地时区独立解析，拒绝不存在的午夜。恰好午夜时最后一天输出 0/null，前一日到 midnight 封口。隔离 TZ 子进程覆盖 UTC、Singapore、New York 的 23/25 小时天，不修改并行测试进程的时区。三个 API surface 覆盖周/月、active 截止及午夜空点；仓储覆盖别名、当前排除、长标题不传输、top app tie 和共享 busy 许可。
+- 前端 cache generation 阻止清理前发出的旧请求写回缓存，promise 身份检查阻止旧请求 finally 删除同 key 的新请求。旧调用者仍收到自己的结果，不宣称取消数据库查询；已有页面生命周期负责忽略过期 UI 结果。本批不改变日期选择、缓存条数或展开网页趋势迁移。
+- `node scripts/perf/daily-activity-benchmark.mjs --trend` 对照 30 天/50,000 条合成 native facts（每条约 1 KiB 标题）：最终旧 snapshot/contribution 路径 9,248 ms、采样 USS 增量约 371.3 MiB；新日查询 1,303 ms、增量约 6.1 MiB。30 个日边界/日总量/top app 逐项相等，总时长 500,000,000 ms；比较用的紧凑结果编码均为 1,155 bytes，不是 HTTP wire size。新路径通过本 fixture 的 5 秒/64 KiB/64 MiB 预算。证据 `/tmp/patina-daily-bench-DkSH7e/summary.json`，debug 测试二进制 SHA-256 `223fcd69dd94358d577dde71d9919a496f96bc4e4c9f7d8c8b9b9ffd3d13e2c8`，源库哈希 `59720b3dd9d74c6532e0cc3ab94e30287913e34dabe94314c72ee0f549755b5b` 保持不变。此前对照 `/tmp/patina-daily-bench-ghJFwT/summary.json` 旧/新耗时 7,599/1,319 ms，说明耗时有波动。不是 release、桌面 IPC/WebKit 或真实 HTTP 整链路验收，也不覆盖所有导入分布的峰值。
+- 共享热力图仓储的 365 天/50,000 条复测通过：`/tmp/patina-daily-bench-cRcVGt/summary.json` 中日查询 3,520 ms、25,531 bytes、采样 USS 增量约 5.8 MiB，总时长与旧明细一致，源库哈希不变；本 fixture 未出现新增 app 状态导致的显著热力图内存回归。
+- `npm run check:full` 退出 0：623 项 Rust 测试通过、11 项 opt-in 忽略，36 项浏览器回归、Clippy `-D warnings` 及架构/构建预算通过。index gzip 73.21 KiB、总 JS gzip 359.69 KiB，预算未提高。随后增强的逐日对照已实际运行通过，不只编译忽略测试。已安装 beta.18、生产数据库和服务不变，无新包或推送。
 
 #### 完整恢复测量与读取优化（2026-09-19，未出包）
 

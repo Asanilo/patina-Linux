@@ -113,4 +113,26 @@ await runTest("trend snapshot cache keeps a small LRU set", async () => {
   assert.equal(getDataTrendSnapshotCacheSizeForTests(), 4);
 });
 
+await runTest("invalidated trend reads cannot refill caches or evict a newer pending request", async () => {
+  let calls = 0;
+  const resolvers: Array<() => void> = [];
+  const deps = { getSessionSummariesInRange: () => {
+    calls += 1;
+    return new Promise<[]>(resolve => resolvers.push(() => resolve([])));
+  } };
+  const selection = { kind: "rolling", days: 7 } as const;
+  const old = loadDataTrendSnapshot(selection, nowMs, deps);
+  clearDataTrendSnapshotCache();
+  const fresh = loadDataTrendSnapshot(selection, nowMs, deps);
+  resolvers[0]();
+  await old;
+  assert.equal(getDataTrendSnapshotCacheSizeForTests(), 0);
+  const deduped = loadDataTrendSnapshot(selection, nowMs, deps);
+  assert.equal(calls, 2);
+  resolvers[1]();
+  const [a, b] = await Promise.all([fresh, deduped]);
+  assert.equal(a.sessions, b.sessions);
+  assert.equal(getCachedDataTrendSnapshot(a.range)?.sessions, a.sessions);
+});
+
 console.log(`Passed ${passed} data trend range tests`);

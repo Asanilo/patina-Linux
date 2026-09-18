@@ -1,9 +1,10 @@
-use crate::data::repositories::activity_read_model;
+use crate::data::repositories::daily_activity::load_daily_trend;
 use crate::engine::api::context::ApiRuntimeContext;
 use crate::engine::api::types::{
     ApiError, ApiResponse, RouteResponse, TrendDataPoint, TrendResponse,
 };
-use chrono::{Datelike, TimeZone};
+use chrono::TimeZone;
+#[cfg(test)]
 use std::collections::HashMap;
 
 pub async fn get_trend(context: &ApiRuntimeContext, query: Option<&str>) -> RouteResponse {
@@ -14,8 +15,7 @@ pub async fn get_trend(context: &ApiRuntimeContext, query: Option<&str>) -> Rout
         chrono::Local
             .timestamp_millis_opt(context.now_ms())
             .single()
-            .unwrap_or_else(chrono::Local::now)
-            .fixed_offset(),
+            .unwrap_or_else(chrono::Local::now),
     ) {
         Ok(range) => range,
         Err(message) => {
@@ -28,20 +28,17 @@ pub async fn get_trend(context: &ApiRuntimeContext, query: Option<&str>) -> Rout
 
     let pool = context.pool();
 
-    let snapshot =
-        match activity_read_model::load_snapshot(pool, range.from_ms, range.to_ms, range.to_ms)
-            .await
-        {
-            Ok(snapshot) => snapshot,
-            Err(error) => {
-                return RouteResponse {
-                    status: 500,
-                    body: serde_json::to_value(ApiError::internal(&error)).unwrap_or_default(),
-                };
-            }
-        };
-    let app_semantics = match activity_read_model::load_app_semantics(pool).await {
-        Ok(semantics) => semantics,
+    let mut boundaries = range
+        .day_starts
+        .iter()
+        .map(|day| day.timestamp_millis())
+        .collect::<Vec<_>>();
+    // Exactly at midnight the last day is empty; never send a zero-length day to the reader.
+    if boundaries.last() != Some(&range.to_ms) {
+        boundaries.push(range.to_ms);
+    }
+    let snapshot = match load_daily_trend(pool, &boundaries, range.to_ms).await {
+        Ok(snapshot) => snapshot,
         Err(error) => {
             return RouteResponse {
                 status: 500,
@@ -49,30 +46,31 @@ pub async fn get_trend(context: &ApiRuntimeContext, query: Option<&str>) -> Rout
             };
         }
     };
-    let daily_contributions = range
+    let data_points = range
         .day_starts
         .iter()
-        .map(|day_start| {
-            let day_start_ms = day_start.timestamp_millis();
-            let day_end_ms = (*day_start + chrono::Duration::days(1))
-                .timestamp_millis()
-                .min(range.to_ms);
-            snapshot
-                .contributions(day_start_ms, day_end_ms)
-                .into_iter()
-                .filter(|contribution| !app_semantics.is_excluded(&contribution.value.exe_name))
-                .map(|contribution| TrendContributionInput {
-                    exe_name: contribution.value.exe_name,
-                    duration_ms: contribution.duration_ms,
-                })
-                .collect()
+        .enumerate()
+        .map(|(index, day_start)| TrendDataPoint {
+            date: day_start.format("%Y-%m-%d").to_string(),
+            active_ms: snapshot
+                .activity
+                .days
+                .get(index)
+                .map_or(0, |day| day.active_ms),
+            top_app: snapshot.top_apps.get(index).cloned().flatten(),
         })
         .collect();
 
     RouteResponse {
         status: 200,
         body: serde_json::to_value(ApiResponse {
-            data: build_daily_trend(range, daily_contributions),
+            data: TrendResponse {
+                period: range.period,
+                granularity: range.granularity,
+                from_ms: range.from_ms,
+                to_ms: range.to_ms,
+                data_points,
+            },
         })
         .unwrap_or_default(),
     }
@@ -93,6 +91,7 @@ struct TrendRange {
     day_starts: Vec<chrono::DateTime<chrono::FixedOffset>>,
 }
 
+#[cfg(test)]
 #[derive(Clone, Debug)]
 struct TrendContributionInput {
     exe_name: String,
@@ -120,10 +119,10 @@ fn parse_trend_query(query: Option<&str>) -> TrendQuery {
     params
 }
 
-fn resolve_trend_range(
+fn resolve_trend_range<T: TimeZone>(
     period: Option<&str>,
     granularity: Option<&str>,
-    now: chrono::DateTime<chrono::FixedOffset>,
+    now: chrono::DateTime<T>,
 ) -> Result<TrendRange, &'static str> {
     let period = period.unwrap_or("week");
     let granularity = granularity.unwrap_or("day");
@@ -138,26 +137,34 @@ fn resolve_trend_range(
         _ => return Err("unsupported period"),
     };
 
-    let today_start = now
-        .offset()
-        .clone()
-        .with_ymd_and_hms(now.year(), now.month(), now.day(), 0, 0, 0)
-        .single()
-        .unwrap_or(now);
-    let range_start = today_start - chrono::Duration::days(day_count - 1);
+    let first_date = now
+        .date_naive()
+        .checked_sub_days(chrono::Days::new(day_count - 1))
+        .ok_or("trend date range overflow")?;
+    let timezone = now.timezone();
     let day_starts = (0..day_count)
-        .map(|offset_days| range_start + chrono::Duration::days(offset_days))
-        .collect::<Vec<_>>();
+        .map(|offset_days| {
+            let date = first_date
+                .checked_add_days(chrono::Days::new(offset_days))
+                .ok_or("trend date range overflow")?;
+            timezone
+                .from_local_datetime(&date.and_hms_opt(0, 0, 0).unwrap())
+                .earliest()
+                .map(|day| day.fixed_offset())
+                .ok_or("trend range contains a nonexistent local midnight")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(TrendRange {
         period: period.to_string(),
         granularity: granularity.to_string(),
-        from_ms: range_start.timestamp_millis(),
+        from_ms: day_starts[0].timestamp_millis(),
         to_ms: now.timestamp_millis(),
         day_starts,
     })
 }
 
+#[cfg(test)]
 fn build_daily_trend(
     range: TrendRange,
     daily_contributions: Vec<Vec<TrendContributionInput>>,
@@ -192,10 +199,12 @@ fn build_daily_trend(
     }
 }
 
+#[cfg(test)]
 fn normalize_app_key(exe_name: &str) -> String {
     exe_name.trim().to_ascii_lowercase()
 }
 
+#[cfg(test)]
 fn resolve_top_app(app_totals: &HashMap<String, i64>) -> Option<String> {
     app_totals
         .iter()
@@ -273,6 +282,42 @@ mod tests {
             .unwrap();
         assert_eq!(today.active_ms, 40 * 60 * 1000);
         assert_eq!(today.top_app.as_deref(), Some("obsidian"));
+    }
+
+    #[test]
+    fn trend_resolves_each_local_midnight_across_dst() {
+        const CHILD: &str = "PATINA_TREND_CALENDAR_TEST";
+        if let Ok(zone) = std::env::var(CHILD) {
+            let cases = if zone == "America/New_York" {
+                vec![(2026, 3, 9, 23), (2026, 11, 2, 25)]
+            } else {
+                vec![(2026, 3, 9, 24), (2026, 11, 2, 24)]
+            };
+            for (year, month, day, hours) in cases {
+                let now = chrono::Local
+                    .with_ymd_and_hms(year, month, day, 0, 0, 0)
+                    .unwrap();
+                let range = resolve_trend_range(Some("week"), None, now).unwrap();
+                assert_eq!(range.day_starts.len(), 7);
+                assert_eq!(
+                    range.day_starts[6].timestamp_millis() - range.day_starts[5].timestamp_millis(),
+                    hours * 3_600_000
+                );
+                assert_eq!(range.day_starts[6].timestamp_millis(), range.to_ms);
+            }
+            return;
+        }
+        for zone in ["UTC", "Asia/Singapore", "America/New_York"] {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "engine::api::handlers::trend::tests::trend_resolves_each_local_midnight_across_dst"])
+                .env(CHILD,zone).env("TZ",zone).output().unwrap();
+            assert!(
+                output.status.success(),
+                "{zone}: {} {}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
     }
 
     #[test]
