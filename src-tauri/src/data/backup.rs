@@ -20,6 +20,9 @@ use tauri::{AppHandle, Runtime};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
+#[cfg(all(test, target_os = "linux"))]
+mod benchmark;
+mod preview;
 mod streaming;
 
 const BACKUP_FILE_EXT: &str = "zip";
@@ -705,6 +708,10 @@ fn decode_structured_backup_archive<R: Read + Seek>(
 }
 
 fn read_backup_payload(backup_path: &Path) -> Result<BackupPayload, String> {
+    decode_structured_backup_archive(&mut open_backup_archive(backup_path)?, backup_path)
+}
+
+fn open_backup_archive(backup_path: &Path) -> Result<ZipArchive<File>, String> {
     let metadata = fs::symlink_metadata(backup_path).map_err(|error| {
         format!(
             "failed to inspect backup file `{}`: {error}",
@@ -761,7 +768,7 @@ fn read_backup_payload(backup_path: &Path) -> Result<BackupPayload, String> {
         validate_backup_archive_limits(&mut archive, backup_path)?;
 
         if archive.by_name(BACKUP_MANIFEST_ENTRY_NAME).is_ok() {
-            return decode_structured_backup_archive(&mut archive, backup_path);
+            return Ok(archive);
         }
 
         return Err(format!(
@@ -908,6 +915,22 @@ pub fn validate_scheduled_snapshot(target_path: &Path) -> Result<(String, u64), 
     Ok((hash, size))
 }
 
+pub async fn validate_scheduled_snapshot_async(
+    target_path: &Path,
+) -> Result<(String, u64), String> {
+    let (_, hash, size) = inspect_restore_archive_async(target_path).await?;
+    Ok((hash, size))
+}
+
+pub(crate) async fn inspect_restore_archive_async(
+    backup_path: &Path,
+) -> Result<(BackupPreview, String, u64), String> {
+    let path = backup_path.to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || inspect_restore_archive(&path))
+        .await
+        .map_err(|error| format!("backup inspection worker failed: {error}"))?
+}
+
 pub async fn restore_backup(
     backup_path: String,
     app: AppHandle,
@@ -925,17 +948,14 @@ pub async fn restore_backup(
 pub(crate) fn inspect_restore_archive(
     backup_path: &Path,
 ) -> Result<(BackupPreview, String, u64), String> {
-    let payload = read_backup_payload(backup_path)?;
-    let restore_safety = payload.restore_safety();
-    if !restore_safety.supported {
-        return Err(restore_safety.message);
+    let mut archive = open_backup_archive(backup_path)?;
+    let preview = preview::decode(&mut archive, backup_path)?;
+    if !preview.restore_supported {
+        return Err(preview.restore_message);
     }
-    let mut file = File::open(backup_path).map_err(|error| {
-        format!(
-            "failed to read backup archive `{}`: {error}",
-            backup_path.display()
-        )
-    })?;
+    let mut file = archive.into_inner();
+    file.seek(SeekFrom::Start(0))
+        .map_err(|error| error.to_string())?;
     let mut hasher = Sha256::new();
     let mut size_bytes = 0_u64;
     let mut buffer = [0_u8; 64 * 1024];
@@ -954,11 +974,7 @@ pub(crate) fn inspect_restore_archive(
         }
         hasher.update(&buffer[..count]);
     }
-    Ok((
-        payload.preview(),
-        format!("{:x}", hasher.finalize()),
-        size_bytes,
-    ))
+    Ok((preview, format!("{:x}", hasher.finalize()), size_bytes))
 }
 
 pub(crate) async fn restore_backup_from_path(
@@ -1228,9 +1244,11 @@ pub async fn preview_backup(backup_path: String) -> Result<BackupPreview, String
         return Err("backup path cannot be empty".to_string());
     }
 
-    let payload = read_backup_payload(&backup_path)?;
-
-    Ok(payload.preview())
+    tauri::async_runtime::spawn_blocking(move || {
+        preview::decode(&mut open_backup_archive(&backup_path)?, &backup_path)
+    })
+    .await
+    .map_err(|error| format!("backup preview worker failed: {error}"))?
 }
 
 #[cfg(test)]
@@ -1277,6 +1295,23 @@ mod tests {
             let expected = load_backup_payload_from_pool(&pool).await.unwrap();
             export_backup_from_pool(&pool, &target).await.unwrap();
             let mut actual = read_backup_payload(&target).unwrap();
+            let preview =
+                preview::decode(&mut open_backup_archive(&target).unwrap(), &target).unwrap();
+            let async_preview = preview_backup(target.to_string_lossy().into_owned())
+                .await
+                .unwrap();
+            assert_eq!(
+                serde_json::to_value(&preview).unwrap(),
+                serde_json::to_value(async_preview).unwrap()
+            );
+            let (_, hash, size) = inspect_restore_archive_async(&target).await.unwrap();
+            let bytes = fs::read(&target).unwrap();
+            assert_eq!(hash, format!("{:x}", Sha256::digest(&bytes)));
+            assert_eq!(size, bytes.len() as u64);
+            assert_eq!(
+                serde_json::to_value(&preview).unwrap(),
+                serde_json::to_value(actual.preview()).unwrap()
+            );
             actual.meta = expected.meta.clone();
             assert_eq!(
                 serde_json::to_value(&actual).unwrap(),
@@ -1288,6 +1323,33 @@ mod tests {
                 Err(CreateNewBackupError::AlreadyExists)
             ));
             assert_eq!(fs::read(&target).unwrap(), original);
+            let directory_target = root.join("existing-directory");
+            fs::create_dir(&directory_target).unwrap();
+            fs::write(directory_target.join("keep"), b"unrelated").unwrap();
+            assert!(export_backup_from_pool(&pool, &directory_target)
+                .await
+                .is_err());
+            assert_eq!(
+                fs::read(directory_target.join("keep")).unwrap(),
+                b"unrelated"
+            );
+            fs::remove_file(directory_target.join("keep")).unwrap();
+            fs::remove_dir(directory_target).unwrap();
+            #[cfg(unix)]
+            {
+                let link = root.join("scheduled-link.zip");
+                std::os::unix::fs::symlink(&target, &link).unwrap();
+                assert!(matches!(
+                    export_scheduled_backup_create_new(&pool, &link).await,
+                    Err(CreateNewBackupError::AlreadyExists)
+                ));
+                assert_eq!(fs::read(&target).unwrap(), original);
+                assert!(fs::symlink_metadata(&link)
+                    .unwrap()
+                    .file_type()
+                    .is_symlink());
+                fs::remove_file(link).unwrap();
+            }
             pool.execute("DROP TABLE tool_daily_stats").await.unwrap();
             assert!(export_backup_from_pool(&pool, &target).await.is_err());
             assert_eq!(fs::read(&target).unwrap(), original);
@@ -1391,6 +1453,10 @@ mod tests {
                     archive.write_all(json.as_bytes()).unwrap();
                 }
                 archive.finish().unwrap();
+                assert!(
+                    preview::decode(&mut open_backup_archive(&path).unwrap(), &path).is_err(),
+                    "preview accepted {failure}"
+                );
                 for strategy in [RestoreStrategy::Replace, RestoreStrategy::Merge] {
                     assert!(
                         restore_backup_from_path(&pool, &path, strategy, 6000)
@@ -1413,6 +1479,63 @@ mod tests {
                 fs::remove_file(path).unwrap();
             }
             pool.close().await;
+        });
+    }
+
+    #[test]
+    fn concurrent_writes_do_not_mix_export_snapshot_tables() {
+        tauri::async_runtime::block_on(async {
+            let root = temp_backup_path("snapshot").with_extension("dir");
+            fs::create_dir(&root).unwrap();
+            let pool = crate::data::sqlite_pool::open_prepared_sqlite_pool_at_path(
+                &root.join("fixture.db"),
+                true,
+            )
+            .await
+            .unwrap();
+            pool.execute("INSERT INTO sessions(app_name,exe_name,start_time,end_time,duration) VALUES('0','fixture',0,1,1); INSERT INTO settings(key,value) VALUES('snapshot_generation','0');").await.unwrap();
+            let writer_pool = pool.clone();
+            let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+            let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let writer_stop = stop.clone();
+            let writer = tokio::spawn(async move {
+                let mut generation = 0;
+                ready_tx.send(()).unwrap();
+                while !writer_stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    generation += 1;
+                    let mut tx = writer_pool.begin().await.unwrap();
+                    sqlx::query("UPDATE sessions SET app_name=?")
+                        .bind(generation.to_string())
+                        .execute(&mut *tx)
+                        .await
+                        .unwrap();
+                    sqlx::query("UPDATE settings SET value=? WHERE key='snapshot_generation'")
+                        .bind(generation.to_string())
+                        .execute(&mut *tx)
+                        .await
+                        .unwrap();
+                    tx.commit().await.unwrap();
+                    tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+                }
+                generation
+            });
+            ready_rx.await.unwrap();
+            for i in 0..10 {
+                let target = root.join(format!("{i}.zip"));
+                export_backup_from_pool(&pool, &target).await.unwrap();
+                let payload = read_backup_payload(&target).unwrap();
+                let value = &payload
+                    .settings
+                    .iter()
+                    .find(|row| row.key == "snapshot_generation")
+                    .unwrap()
+                    .value;
+                assert_eq!(&payload.sessions[0].app_name, value);
+            }
+            stop.store(true, std::sync::atomic::Ordering::Relaxed);
+            assert!(writer.await.unwrap() > 0);
+            pool.close().await;
+            fs::remove_dir_all(root).unwrap();
         });
     }
 
@@ -1739,6 +1862,11 @@ mod tests {
         let decoded = decode_structured_backup_archive(&mut zip, Path::new("backup.zip")).unwrap();
 
         assert!(decoded.title_samples.is_empty());
+        let preview = preview::decode(&mut zip, Path::new("backup.zip")).unwrap();
+        assert_eq!(
+            serde_json::to_value(preview).unwrap(),
+            serde_json::to_value(decoded.preview()).unwrap()
+        );
     }
 
     #[test]
@@ -1978,7 +2106,7 @@ mod tests {
         pool
     }
 
-    fn payload_with_bound_web_activity() -> BackupPayload {
+    pub(super) fn payload_with_bound_web_activity() -> BackupPayload {
         BackupPayload {
             version: CURRENT_BACKUP_VERSION,
             meta: BackupMeta {

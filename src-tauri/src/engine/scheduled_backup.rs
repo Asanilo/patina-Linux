@@ -190,7 +190,7 @@ async fn execute_claimed(
                     now_ms,
                 )
                 .await?;
-                match backup::validate_scheduled_snapshot(&candidate) {
+                match backup::validate_scheduled_snapshot_async(&candidate).await {
                     Ok((hash, size)) => {
                         repository::mark_succeeded(pool, &run.run_key, &hash, size, now_ms).await?;
                         apply_retention(pool, config, now_ms).await;
@@ -233,7 +233,7 @@ async fn reconcile_running_run(
 ) -> Result<(), String> {
     let path = PathBuf::from(&run.target_path);
     if path.is_file() {
-        match backup::validate_scheduled_snapshot(&path) {
+        match backup::validate_scheduled_snapshot_async(&path).await {
             Ok((hash, size)) => {
                 repository::mark_succeeded(pool, &run.run_key, &hash, size, now_ms).await?;
                 apply_retention(pool, config, now_ms).await;

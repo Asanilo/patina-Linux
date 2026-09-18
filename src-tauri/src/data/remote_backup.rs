@@ -365,7 +365,7 @@ pub async fn upload_webdav_backup_from_pool(
     let local_path = temp_dir.join(&file_name);
     let _temp_guard = TempBackupGuard::new(local_path.clone());
     backup::export_backup_from_pool(pool, &local_path).await?;
-    let (preview, _, size_bytes) = backup::inspect_restore_archive(&local_path)?;
+    let (preview, _, size_bytes) = backup::inspect_restore_archive_async(&local_path).await?;
     let remote_path = remote_path(&config.remote_dir, &file_name);
 
     client.upload_file(&local_path, &remote_path).await?;
@@ -467,7 +467,7 @@ pub async fn download_webdav_backup(
         .await?;
     let temp_guard = TempBackupGuard::new(local_path.clone());
     let local_path_string = local_path.to_string_lossy().to_string();
-    let (preview, _, size_bytes) = backup::inspect_restore_archive(&local_path)?;
+    let (preview, _, size_bytes) = backup::inspect_restore_archive_async(&local_path).await?;
     validate_downloaded_entry(entry, &preview, size_bytes)?;
     temp_guard.persist();
     Ok(RemoteBackupDownloadResult {

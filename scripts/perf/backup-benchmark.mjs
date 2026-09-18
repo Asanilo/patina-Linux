@@ -1,0 +1,71 @@
+// Explicit opt-in query-worker evidence, never production profile discovery.
+import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
+import { mkdtemp, writeFile, readFile, chmod } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+
+const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const modes = ["legacy-export", "export", "legacy-preview", "preview"];
+if (process.platform !== "linux") throw new Error("This benchmark requires Linux /proc");
+async function sha256(file) {
+  const hasher = createHash("sha256");
+  for await (const chunk of createReadStream(file)) hasher.update(chunk);
+  return hasher.digest("hex");
+}
+const root = await mkdtemp("/tmp/patina-backup-bench-");
+await chmod(root, 0o700);
+await writeFile(path.join(root, "marker"), "backup-benchmark\n", { flag: "wx", mode: 0o600 });
+console.log(`Backup benchmark evidence: ${root}`);
+let binary;
+const build = spawn("cargo", ["test", "--manifest-path", "src-tauri/Cargo.toml", "--lib", "--no-run", "--message-format=json"], {
+  cwd: repo, stdio: ["ignore", "pipe", "inherit"],
+});
+const built = new Promise((resolve, reject) => { build.once("error", reject); build.once("exit", resolve); });
+for await (const line of createInterface({ input: build.stdout })) {
+  let event;
+  try { event = JSON.parse(line); } catch { continue; }
+  if (event.reason === "compiler-artifact" && event.target.name === "patina_lib" && event.profile.test) binary = event.executable;
+  if (event.reason === "compiler-message" && event.message.rendered) process.stderr.write(event.message.rendered);
+}
+if (await built !== 0 || !binary) throw new Error("Could not compile benchmark");
+const hash = await sha256(binary);
+let fixtureHash;
+for (const mode of ["seed", ...modes]) {
+  const child = spawn(binary, ["data::backup::benchmark::worker", "--exact", "--ignored", "--nocapture", "--test-threads=1"], {
+    cwd: root, stdio: "inherit", env: {
+      PATH: process.env.PATH, LANG: "C.UTF-8", TZ: "UTC",
+      HOME: root, XDG_DATA_HOME: root, XDG_CONFIG_HOME: root, XDG_CACHE_HOME: root,
+      PATINA_BACKUP_BENCH_ROOT: root, PATINA_BACKUP_BENCH_MODE: mode,
+    },
+  });
+  const timer = setTimeout(() => child.kill("SIGKILL"), 120_000);
+  const code = await new Promise((resolve, reject) => { child.once("error", reject); child.once("exit", resolve); }).finally(() => clearTimeout(timer));
+  if (code !== 0) throw new Error(`${mode} failed; partial evidence kept at ${root}`);
+  const currentHash = await sha256(path.join(root, "fixture.db"));
+  if (fixtureHash && fixtureHash !== currentHash) throw new Error("Read-only benchmark changed the fixture database");
+  fixtureHash = currentHash;
+}
+const results = [];
+for (const mode of modes) {
+  const result = JSON.parse(await readFile(path.join(root, `${mode}.json`), "utf8"));
+  const peak = {};
+  for (const field of ["rss_bytes", "pss_bytes", "uss_bytes"]) {
+    const values = result.samples.map(sample => sample[field]);
+    peak[field] = values.length && values.every(value => value !== null) ? Math.max(...values) : null;
+  }
+  results.push({ mode, elapsed_ms: result.elapsed_ms, records: result.records, baseline: result.baseline, sampled_peak: peak, after: result.after });
+}
+const budgets = { elapsed_ms: 30000, sampled_uss_growth_bytes: 64 * 1024 * 1024 };
+const passed = results.filter(result => ["export", "preview"].includes(result.mode)).every(result =>
+  result.elapsed_ms <= budgets.elapsed_ms && result.records === 50000
+  && result.sampled_peak.uss_bytes !== null && result.baseline.uss_bytes !== null
+  && result.sampled_peak.uss_bytes - result.baseline.uss_bytes <= budgets.sampled_uss_growth_bytes);
+const report = { binary, sha256: hash, fixture_sha256: fixtureHash,
+  scope: "Isolated debug worker; synthetic 50000 rows; not Desktop or restore transaction peak",
+  budgets, passed, results };
+await writeFile(path.join(root, "summary.json"), JSON.stringify(report, null, 2), { flag: "wx", mode: 0o600 });
+console.log(JSON.stringify(report, null, 2));
+if (!passed) process.exitCode = 1;

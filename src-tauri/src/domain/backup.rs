@@ -235,55 +235,60 @@ pub struct BackupRestoreSafety {
     pub supported: bool,
 }
 
-impl BackupPayload {
-    pub fn restore_safety(&self) -> BackupRestoreSafety {
-        if self.version > CURRENT_BACKUP_VERSION {
-            return BackupRestoreSafety {
+pub fn restore_safety(version: u32, schema_version: u32) -> BackupRestoreSafety {
+    if version > CURRENT_BACKUP_VERSION {
+        return BackupRestoreSafety {
                 message_key: "backup.restore.versionTooNew",
-                message_args: vec![self.version.to_string(), CURRENT_BACKUP_VERSION.to_string()],
+                message_args: vec![version.to_string(), CURRENT_BACKUP_VERSION.to_string()],
                 message: format!(
                     "Backup format version {} is newer than the supported version {}. Upgrade the app before restoring.",
-                    self.version, CURRENT_BACKUP_VERSION
+                    version, CURRENT_BACKUP_VERSION
                 ),
                 supported: false,
             };
-        }
+    }
 
-        if self.version < CURRENT_BACKUP_VERSION {
-            return BackupRestoreSafety {
+    if version < CURRENT_BACKUP_VERSION {
+        return BackupRestoreSafety {
                 message_key: "backup.restore.versionTooOld",
-                message_args: vec![self.version.to_string(), CURRENT_BACKUP_VERSION.to_string()],
+                message_args: vec![version.to_string(), CURRENT_BACKUP_VERSION.to_string()],
                 message: format!(
                     "Backup format version {} is older than the supported version {}. Restore it with 0.6.6 first, then export a current zip backup.",
-                    self.version, CURRENT_BACKUP_VERSION
+                    version, CURRENT_BACKUP_VERSION
                 ),
                 supported: false,
             };
-        }
+    }
 
-        if self.meta.schema_version > CURRENT_BACKUP_SCHEMA_VERSION {
-            return BackupRestoreSafety {
+    if schema_version > CURRENT_BACKUP_SCHEMA_VERSION {
+        return BackupRestoreSafety {
                 message_key: "backup.restore.schemaTooNew",
                 message_args: vec![
-                    self.meta.schema_version.to_string(),
+                    schema_version.to_string(),
                     CURRENT_BACKUP_SCHEMA_VERSION.to_string(),
                 ],
                 message: format!(
                     "Backup schema version {} is newer than the supported version {}. Upgrade the app before restoring.",
-                    self.meta.schema_version, CURRENT_BACKUP_SCHEMA_VERSION
+                    schema_version, CURRENT_BACKUP_SCHEMA_VERSION
                 ),
                 supported: false,
             };
-        }
-
-        BackupRestoreSafety {
-            message_key: "backup.restore.supported",
-            message_args: Vec::new(),
-            message: "This backup can be restored by the current version.".to_string(),
-            supported: true,
-        }
     }
 
+    BackupRestoreSafety {
+        message_key: "backup.restore.supported",
+        message_args: Vec::new(),
+        message: "This backup can be restored by the current version.".to_string(),
+        supported: true,
+    }
+}
+
+impl BackupPayload {
+    pub fn restore_safety(&self) -> BackupRestoreSafety {
+        restore_safety(self.version, self.meta.schema_version)
+    }
+
+    #[cfg(test)]
     pub fn preview(&self) -> BackupPreview {
         let restore_safety = self.restore_safety();
 
