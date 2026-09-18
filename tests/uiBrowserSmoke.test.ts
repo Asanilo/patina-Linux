@@ -1666,6 +1666,43 @@ try {
     await waitForExpression(client!, sessionId, "!document.querySelector('.settings-color-scheme-list')");
   });
 
+  await runTest("background delay persists, cancels drafts and stays disabled when optimization is off", async () => {
+    const delay = "document.querySelector('#background-optimization-delay')";
+    const toggle = `document.querySelector('[aria-label="${COPY["zh-CN"].accessibility.settings.toggleBackgroundOptimization}"]')`;
+    const clickSettingsButton = async (label: string) => {
+      await evaluate(client!, sessionId, `Array.from(document.querySelectorAll('button')).find(node => node.textContent.trim() === ${jsonString(label)} && !node.disabled).click()`);
+    };
+    const setDelay = async (value: number) => {
+      await evaluate(client!, sessionId, `(() => {
+        const input = ${delay};
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '${value}');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      })()`);
+      await waitForExpression(client!, sessionId, `${delay}.value === '${value}'`);
+    };
+    assert.equal(await evaluate(client!, sessionId, `${delay}.disabled`), true);
+    assert.equal(await evaluate(client!, sessionId, `${delay}.value`), "5");
+    await evaluate(client!, sessionId, `${toggle}.click()`);
+    await waitForExpression(client!, sessionId, `!${delay}.disabled`);
+    await setDelay(1);
+    await clickSettingsButton(COPY["zh-CN"].settings.cancel);
+    await waitForExpression(client!, sessionId, `${delay}.disabled && ${delay}.value === '5'`);
+    await evaluate(client!, sessionId, `${toggle}.click()`);
+    await setDelay(1);
+    await clickSettingsButton(COPY["zh-CN"].settings.save);
+    await waitForExpression(client!, sessionId, `JSON.parse(localStorage.getItem('__time_tracker_smoke_settings')).background_optimization_delay_minutes === '1'`);
+    await evaluate(client!, sessionId, `${toggle}.click()`);
+    await clickSettingsButton(COPY["zh-CN"].settings.save);
+    await waitForExpression(client!, sessionId, `JSON.parse(localStorage.getItem('__time_tracker_smoke_settings')).background_optimization === '0'`);
+    assert.equal(await evaluate(client!, sessionId, `${delay}.value`), "1");
+    assert.equal(await evaluate(client!, sessionId, `${delay}.disabled`), true);
+    await evaluate(client!, sessionId, `globalThis.__PATINA_DELAY_BEFORE_RELOAD = true`);
+    await client!.command("Page.reload", {}, sessionId);
+    await waitForExpression(client!, sessionId, `!globalThis.__PATINA_DELAY_BEFORE_RELOAD && Boolean(document.querySelector('[aria-label="设置"]'))`);
+    await evaluate(client!, sessionId, `document.querySelector('[aria-label="设置"]').click()`);
+    await waitForExpression(client!, sessionId, `${delay}?.value === '1' && ${delay}.disabled`);
+  });
+
   await runTest("daemon reload requires confirmation and waits for verified completion", async () => {
     await evaluate(client!, sessionId, `
       globalThis.__PATINA_SMOKE_DAEMON = {
@@ -3284,7 +3321,48 @@ try {
     );
   });
 
+  await runTest("heatmap keeps horizontal scrolling inside narrow and resized panels", async () => {
+    await evaluate(client!, sessionId, `document.querySelector('[aria-label="数据"]').click()`);
+    await waitForExpression(client!, sessionId, `Boolean(document.querySelector('.data-heatmap-weeks'))`);
+    for (const width of [1280, 901, 900, 760, 600, 390, 1280]) {
+      await client!.command("Emulation.setDeviceMetricsOverride", {
+        width, height: 820, deviceScaleFactor: 1, mobile: false,
+      }, sessionId);
+      await evaluate(client!, sessionId, `new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+      const dimensions = await evaluate(client!, sessionId, `(() => {
+        const viewport = document.querySelector('.data-heatmap-scroll');
+        const content = document.querySelector('.data-heatmap-content');
+        const calendar = document.querySelector('.data-heatmap-body');
+        const rect = viewport.getBoundingClientRect();
+        const parent = content.getBoundingClientRect();
+        viewport.scrollLeft = viewport.scrollWidth;
+        return { width: rect.width, parentWidth: parent.width,
+          right: rect.right, parentRight: parent.right,
+          scrollWidth: viewport.scrollWidth, clientWidth: viewport.clientWidth,
+          scrollLeft: viewport.scrollLeft, calendarWidth: calendar.getBoundingClientRect().width,
+          weekdayWidth: document.querySelector('.data-heatmap-weekdays').getBoundingClientRect().width,
+          firstWeekLeft: document.querySelector('.data-heatmap-week').getBoundingClientRect().left,
+          firstMonthLeft: document.querySelector('.data-heatmap-months span:nth-child(2)').getBoundingClientRect().left };
+      })()`) as Record<string, number>;
+      assert.ok(dimensions.width <= dimensions.parentWidth + 1, `${width}: scroll viewport escapes panel ${JSON.stringify(dimensions)}`);
+      assert.ok(dimensions.right <= dimensions.parentRight + 1, `${width}: scroll viewport is clipped`);
+      assert.equal(dimensions.weekdayWidth, 28, `${width}: weekday labels must not shrink`);
+      assert.ok(Math.abs(dimensions.firstWeekLeft - dimensions.firstMonthLeft) <= 1, `${width}: months and days must align`);
+      if (width <= 900) {
+        assert.ok(dimensions.scrollWidth > dimensions.clientWidth, `${width}: expected internal horizontal overflow`);
+        assert.ok(dimensions.scrollLeft > 0, `${width}: final weeks must be reachable`);
+      }
+      await evaluate(client!, sessionId, `document.querySelector('.data-heatmap-panel').scrollIntoView({block:'center'})`);
+      if (process.env.PATINA_UI_SCREENSHOTS_DIR) {
+        const shot = await client!.command("Page.captureScreenshot", { format: "png" }, sessionId);
+        writeFileSync(join(process.env.PATINA_UI_SCREENSHOTS_DIR, `heatmap-scroll-${width}.png`), Buffer.from(String(shot.data), "base64"));
+      }
+    }
+  });
+
   await runTest("heatmap reports unsupported daemon and recovers through explicit retry", async () => {
+    await evaluate(client!, sessionId, `document.querySelector('[aria-label="历史"]').click()`);
+    await waitForExpression(client!, sessionId, `document.querySelector('[aria-label="历史"]')?.className.includes('qp-nav-item-active')`);
     await evaluate(client!, sessionId, `
       globalThis.__PATINA_SMOKE_HEATMAP_ERROR = 'heatmap-unsupported';
       document.querySelector('[aria-label="数据"]').click();

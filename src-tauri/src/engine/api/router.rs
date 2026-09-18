@@ -751,6 +751,35 @@ mod tests {
         )
         .await;
         assert_eq!(app_settings.status, 200);
+        for (value, status) in [
+            ("1", 200),
+            ("60", 200),
+            ("0", 400),
+            ("61", 400),
+            ("1.5", 400),
+        ] {
+            assert_eq!(
+                route(
+                    &context,
+                    surface,
+                    "POST",
+                    "/api/v1/settings/app",
+                    serde_json::json!({"mutations": [{
+                        "key": "background_optimization_delay_minutes", "value": value
+                    }]}),
+                )
+                .await
+                .status,
+                status
+            );
+        }
+        assert_eq!(
+            crate::data::repositories::app_settings::load_desktop_behavior_settings(&pool)
+                .await
+                .unwrap()
+                .background_optimization_delay_minutes,
+            60,
+        );
         assert_eq!(
             crate::data::repositories::tracker_settings::load_setting_value(&pool, "theme_mode")
                 .await

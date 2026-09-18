@@ -1,6 +1,7 @@
 import { MonitorCog } from "lucide-react";
 import QuietSwitch from "../../../shared/components/QuietSwitch";
 import { UI_TEXT } from "../../../shared/copy/uiText.ts";
+import { BACKGROUND_OPTIMIZATION_DELAY_RANGE } from "../../../shared/settings/appSettings.ts";
 
 type SettingsResidentPanelProps = {
   minimizeToWidgetChecked: boolean;
@@ -9,6 +10,8 @@ type SettingsResidentPanelProps = {
   onCloseToTrayChange: (nextChecked: boolean) => void;
   backgroundOptimizationChecked: boolean;
   onBackgroundOptimizationChange: (nextChecked: boolean) => void;
+  backgroundOptimizationDelayMinutes: number;
+  onBackgroundOptimizationDelayChange: (minutes: number) => void;
   launchAtLoginChecked: boolean;
   onLaunchAtLoginChange: (nextChecked: boolean) => void;
   startMinimizedChecked: boolean;
@@ -23,6 +26,8 @@ export default function SettingsResidentPanel({
   onCloseToTrayChange,
   backgroundOptimizationChecked,
   onBackgroundOptimizationChange,
+  backgroundOptimizationDelayMinutes,
+  onBackgroundOptimizationDelayChange,
   launchAtLoginChecked,
   onLaunchAtLoginChange,
   startMinimizedChecked,
@@ -115,6 +120,31 @@ export default function SettingsResidentPanel({
               onChange={onBackgroundOptimizationChange}
               ariaLabel={UI_TEXT.accessibility.settings.toggleBackgroundOptimization}
             />
+          </div>
+        </div>
+
+        <div>
+          <label htmlFor="background-optimization-delay" className="text-[11px] font-semibold text-[var(--qp-text-tertiary)]">
+            {UI_TEXT.settings.backgroundOptimizationDelayLabel}
+          </label>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex w-full max-w-[260px] items-center gap-3">
+              <input
+                id="background-optimization-delay"
+                type="range"
+                min={BACKGROUND_OPTIMIZATION_DELAY_RANGE.min}
+                max={BACKGROUND_OPTIMIZATION_DELAY_RANGE.max}
+                step={1}
+                value={backgroundOptimizationDelayMinutes}
+                disabled={!backgroundOptimizationChecked}
+                onChange={(event) => onBackgroundOptimizationDelayChange(Number(event.target.value))}
+                aria-valuetext={UI_TEXT.settings.minuteValue(backgroundOptimizationDelayMinutes)}
+                className="h-6 min-w-0 flex-1 accent-[var(--qp-accent-default)] disabled:cursor-not-allowed disabled:opacity-50"
+              />
+              <output htmlFor="background-optimization-delay" className="w-20 shrink-0 text-right text-xs tabular-nums text-[var(--qp-text-secondary)]">
+                {UI_TEXT.settings.minuteValue(backgroundOptimizationDelayMinutes)}
+              </output>
+            </div>
           </div>
         </div>
       </div>

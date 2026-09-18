@@ -58,6 +58,7 @@ export interface ReleaseDefaultSettingsProfile {
   backgroundTrackingAtLogin: boolean;
   startMinimized: boolean;
   backgroundOptimization: boolean;
+  backgroundOptimizationDelayMinutes: number;
   audioParticipationEnabled: boolean;
   onboardingCompleted: boolean;
   webActivityEnabled: boolean;
@@ -89,6 +90,7 @@ export const RELEASE_DEFAULT_SETTINGS: ReleaseDefaultSettingsProfile = {
   backgroundTrackingAtLogin: true,
   startMinimized: true,
   backgroundOptimization: false,
+  backgroundOptimizationDelayMinutes: 5,
   audioParticipationEnabled: true,
   onboardingCompleted: true,
   webActivityEnabled: false,

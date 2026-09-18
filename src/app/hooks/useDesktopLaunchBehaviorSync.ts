@@ -25,6 +25,9 @@ export function useDesktopLaunchBehaviorSync(appSettings: AppSettings, enabled: 
 
   useEffect(() => {
     if (!enabled) return;
-    void setBackgroundOptimization(appSettings.backgroundOptimization).catch(console.warn);
-  }, [appSettings.backgroundOptimization, enabled]);
+    void setBackgroundOptimization(
+      appSettings.backgroundOptimization,
+      appSettings.backgroundOptimizationDelayMinutes,
+    ).catch(console.warn);
+  }, [appSettings.backgroundOptimization, appSettings.backgroundOptimizationDelayMinutes, enabled]);
 }

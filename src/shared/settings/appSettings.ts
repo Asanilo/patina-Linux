@@ -53,6 +53,7 @@ export interface AppSettings {
   backgroundTrackingAtLogin: boolean;
   startMinimized: boolean;
   backgroundOptimization: boolean;
+  backgroundOptimizationDelayMinutes: number;
   audioParticipationEnabled: boolean;
   onboardingCompleted: boolean;
   webActivityEnabled: boolean;
@@ -70,3 +71,5 @@ export interface AppSettings {
 export const DEFAULT_SETTINGS: AppSettings = {
   ...RELEASE_DEFAULT_SETTINGS,
 };
+
+export const BACKGROUND_OPTIMIZATION_DELAY_RANGE = { min: 1, max: 60 } as const;

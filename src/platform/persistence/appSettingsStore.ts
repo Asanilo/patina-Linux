@@ -8,6 +8,7 @@ import {
 import { executeWriteBatch, type SqlWriteOperation } from "./sqlite.ts";
 import {
   DEFAULT_SETTINGS,
+  BACKGROUND_OPTIMIZATION_DELAY_RANGE,
   type AppLanguage,
   type AppSettings,
   type CloseBehavior,
@@ -47,6 +48,7 @@ type RawAppSettingsKey =
   | "background_tracking_at_login"
   | "start_minimized"
   | "background_optimization"
+  | "background_optimization_delay_minutes"
   | "audio_participation_enabled"
   | "onboarding_completed"
   | "web_activity_enabled"
@@ -77,6 +79,7 @@ const APP_SETTINGS_RAW_KEYS: Record<keyof AppSettings, RawAppSettingsKey> = {
   backgroundTrackingAtLogin: "background_tracking_at_login",
   startMinimized: "start_minimized",
   backgroundOptimization: "background_optimization",
+  backgroundOptimizationDelayMinutes: "background_optimization_delay_minutes",
   audioParticipationEnabled: "audio_participation_enabled",
   onboardingCompleted: "onboarding_completed",
   webActivityEnabled: "web_activity_enabled",
@@ -310,6 +313,11 @@ export function normalizeSettingsRecord(record: Record<string, string | undefine
     backgroundOptimization: parseBooleanSetting(
       record.background_optimization,
       DEFAULT_SETTINGS.backgroundOptimization,
+    ),
+    backgroundOptimizationDelayMinutes: normalizeIntegerRangeValue(
+      record.background_optimization_delay_minutes?.trim().match(/^\d+$/)?.[0],
+      DEFAULT_SETTINGS.backgroundOptimizationDelayMinutes,
+      BACKGROUND_OPTIMIZATION_DELAY_RANGE,
     ),
     audioParticipationEnabled: parseBooleanSetting(
       record.audio_participation_enabled,

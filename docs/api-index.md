@@ -62,7 +62,7 @@ Current caveats:
 | `/api/v1/summary/range` | `GET` | Implemented | Caller-provided millisecond range summary |
 | `/api/v1/summary/week` | `GET` | Implemented | Local-week summary |
 | `/api/v1/trend` | `GET` | Partial | Daily activity trend for week/month |
-| `/api/v1/heatmap` | `GET` | Development branch | Bounded local-calendar daily totals; used by the development Desktop heatmap |
+| `/api/v1/heatmap` | `GET` | Beta.17 candidate | Bounded local-calendar daily totals; used by Desktop heatmap |
 | `/api/v1/web-activity` | `GET` | Implemented | Browser activity segment query |
 | `/api/v1/ai/activity-context` | `GET` | Implemented | Aggregated diagnostics, active session, summaries, and recent web activity for external AI analysis |
 | `/api/v1/apps` | `GET` | Implemented | Known apps from native and imported facts |
@@ -626,7 +626,7 @@ Known gaps:
 
 ### `GET /api/v1/heatmap`
 
-Development-branch endpoint, available on Desktop, read-only daemon and tracking daemon API surfaces. Uses the same Bearer authentication as other reads. The development Desktop heatmap now uses this daily read contract; it is not included in the previously published beta.12 package.
+Available in the beta.17 candidate on Desktop, read-only daemon and tracking daemon API surfaces. Uses the same Bearer authentication as other reads. The beta.17 Desktop heatmap uses this daily read contract; it is not included in the previously published beta.12 package. Candidate installation is distinct from public release.
 
 ```bash
 curl -H "Authorization: Bearer $PATINA_API_TOKEN" \
@@ -659,7 +659,7 @@ Exclusion keys and recorded executable names use the same canonical aliases as t
 
 Classification metadata is fetched only for metadata-sensitive executable names, one row at a time within the same snapshot. Limits are 1,024 UTF-8 bytes for the app name and 16,384 for the title; over-budget metadata rejects the query instead of silently truncating classification. Titles are not retained in daily facts or included in the ordered fact query.
 
-The historical filter and canonical aliases have shared Rust/TypeScript contract fixtures. Relative to the legacy Desktop heatmap, two intentional corrections are pinned in fixtures: user-excluded apps no longer count, and unlocated hourly bucket quantities are prorated within each local day rather than placed as a synthetic continuous interval at the bucket start. Native/import priority is resolved before filtering. These rules apply to the development Desktop heatmap, not already installed packages. It has no dedicated MCP tool yet; authenticated HTTP is available.
+The historical filter and canonical aliases have shared Rust/TypeScript contract fixtures. Relative to the legacy Desktop heatmap, two intentional corrections are pinned in fixtures: user-excluded apps no longer count, and unlocated hourly bucket quantities are prorated within each local day rather than placed as a synthetic continuous interval at the bucket start. Native/import priority is resolved before filtering. These rules apply after upgrading to beta.17, not to older installations. It has no dedicated MCP tool yet; authenticated HTTP is available.
 
 Desktop transport: `cmd_get_daily_activity {from, to}` forwards through the typed daemon client when daemon-owned, otherwise uses the same bounded repository. The daemon client keeps credentials in Rust, allows 18 seconds for this read only, and retains the 64 KiB response cap. No daemon error falls back to Desktop SQLite. The frontend validates every returned day against its requested local-calendar boundaries, rejects incomplete/misaligned/invalid numeric results, and displays an error with retry. A daemon `404` gets an explicit upgrade/restart notice. Bootstrap payloads carry `heatmapReadVersion: 2`; legacy cached charts are discarded.
 
@@ -1343,6 +1343,8 @@ Schema:
 ```
 
 Only non-resource preferences such as appearance, language, timeline display, desktop window behavior, Desktop launch-at-login, and remote-status configuration are accepted. The host-owned `background_tracking_at_login` preference is deliberately rejected until the dedicated systemd service transition endpoint and rollback state machine are available. Tracker pause/AFK, audio, browser bridge, local API, and daemon service settings are also rejected here so live resources and persistence cannot diverge. No current MCP tool can change daemon login activation.
+
+Desktop preference introduced in the beta.18 candidate: `background_optimization_delay_minutes` accepts a string containing a whole number from `1` to `60` (minutes). Missing or invalid legacy stored values read as `5`; invalid new writes reject the entire batch with `400`. The value is retained when `background_optimization` is disabled. This endpoint only persists the preference; it does not directly operate Desktop windows. Desktop loads it on startup/settings refresh and applies window lifecycle changes through its local command. It does not change tracking, Widget idle retention, taskbar minimization, or the separate Data/History return-home timeout. Preparing a candidate does not make this field available in older installed packages.
 
 ### `POST /api/v1/data/cleanup`
 

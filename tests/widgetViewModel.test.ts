@@ -29,6 +29,7 @@ const BASE_SETTINGS: AppSettings = {
   backgroundTrackingAtLogin: true,
   startMinimized: true,
   backgroundOptimization: false,
+  backgroundOptimizationDelayMinutes: 5,
   onboardingCompleted: true,
   webActivityEnabled: false,
   webActivityPort: 12345,

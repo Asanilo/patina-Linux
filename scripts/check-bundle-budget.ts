@@ -20,7 +20,8 @@ const CHUNK_BUDGETS = [
   { label: "ui-shared", pattern: /^ui-.*\.js$/, gzipKiB: 2 },
   { label: "data-destination", pattern: /^DataDestinationTrendPanel-.*\.js$/, gzipKiB: 7 },
   { label: "data", pattern: /^Data-.*\.js$/, gzipKiB: 11 },
-  { label: "index", pattern: /^index-.*\.js$/, gzipKiB: 73 },
+  // Background delay preference adds persistence/runtime wiring: measured 73.04 KiB.
+  { label: "index", pattern: /^index-.*\.js$/, gzipKiB: 73.25 },
 ] as const;
 
 const FEATURE_OTHER_CHUNKS_GZIP_BUDGET_KI_B = 70;

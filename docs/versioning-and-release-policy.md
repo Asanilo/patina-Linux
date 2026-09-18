@@ -22,7 +22,7 @@
 
 截至当前发布线：
 
-- 代码版本为 `1.9.0-beta.17`
+- 代码版本为 `1.9.0-beta.18`
 - 稳定发布线为 `1.x`
 - 仓库已进入公开稳定阶段，后续版本按标准 `SemVer` 管理
 - 默认通过推送 `vX.Y.Z` / `vX.Y.Z-prerelease` 版本 tag 自动触发 GitHub Actions 工作流 [prepare-release.yml](../.github/workflows/prepare-release.yml) 中的 `Publish Linux Release` 流程；必要时也可手动触发已有 tag 的发布流程补跑
@@ -343,7 +343,7 @@ Linux 发布资产契约：
 - 如果任何必需 Linux 软件包或其配对签名缺失、为空，`prepare-linux-release-assets` 必须失败。
 - `npm run test:release` 必须持续覆盖 workflow bundle 请求、`.deb` 准备逻辑和 Linux-only updater manifest。
 
-以上双包资产契约适用于当前稳定发布线。首个 daemon-backed beta 是窄例外：Release 只要求 `.deb`、`.deb.sig` 对应签名内容、DEB updater target 与扩展资产，不得生成或上传一个无法稳定拥有 systemd service 的 AppImage。进入该 beta 实施前，release 脚本、workflow、测试和 README 必须一起切换到明确的 DEB-only contract。daemon-backed 稳定版发布前，必须先完成 AppImage 的版本化 daemon extraction 与原子更新，或提供不会让现有 AppImage 客户端循环更新、下载错误包或静默失去支持的退役迁移。
+以上双包资产契约适用于当前稳定发布线。首个 daemon-backed beta 是窄例外：Release 只要求 `.deb`、`.deb.sig` 对应签名内容、DEB updater target 与扩展资产，不得生成或上传一个无法稳定拥有 systemd service 的 AppImage。进入该 beta 实施前，release 脚本、workflow、测试和 README 必须一起切换到明确的 DEB-only contract。用户于 2026-09-18 确认继续支持 AppImage：daemon-backed 稳定版发布前，必须完成其版本化 daemon 持久解包、稳定服务路径、原子更新及失败恢复，并验证旧 AppImage 客户端不会循环更新、下载错误包或静默失去支持。当前不执行退役迁移；本项通过前维持 DEB-only beta，不恢复 AppImage 发布。
 
 GitHub Release 中的浏览器扩展附件使用带扩展版本号的稳定命名模式：
 

@@ -11,6 +11,7 @@ const LAUNCH_AT_LOGIN_KEY: &str = "launch_at_login";
 const BACKGROUND_TRACKING_AT_LOGIN_KEY: &str = "background_tracking_at_login";
 const START_MINIMIZED_KEY: &str = "start_minimized";
 const BACKGROUND_OPTIMIZATION_KEY: &str = "background_optimization";
+const BACKGROUND_OPTIMIZATION_DELAY_MINUTES_KEY: &str = "background_optimization_delay_minutes";
 const AUDIO_PARTICIPATION_ENABLED_KEY: &str = "audio_participation_enabled";
 const WEB_ACTIVITY_ENABLED_KEY: &str = "web_activity_enabled";
 const WEB_ACTIVITY_PORT_KEY: &str = "web_activity_port";
@@ -33,13 +34,14 @@ pub struct AppSettingMutation {
 pub async fn load_desktop_behavior_settings(
     pool: &Pool<Sqlite>,
 ) -> Result<DesktopBehaviorSettings, sqlx::Error> {
-    let rows = sqlx::query("SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?, ?, ?)")
+    let rows = sqlx::query("SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?, ?, ?, ?)")
         .bind(CLOSE_BEHAVIOR_KEY)
         .bind(MINIMIZE_BEHAVIOR_KEY)
         .bind(LAUNCH_AT_LOGIN_KEY)
         .bind(BACKGROUND_TRACKING_AT_LOGIN_KEY)
         .bind(START_MINIMIZED_KEY)
         .bind(BACKGROUND_OPTIMIZATION_KEY)
+        .bind(BACKGROUND_OPTIMIZATION_DELAY_MINUTES_KEY)
         .fetch_all(pool)
         .await?;
 
@@ -49,6 +51,7 @@ pub async fn load_desktop_behavior_settings(
     let mut background_tracking_at_login_raw: Option<String> = None;
     let mut start_minimized_raw: Option<String> = None;
     let mut background_optimization_raw: Option<String> = None;
+    let mut background_optimization_delay_minutes_raw: Option<String> = None;
 
     for row in rows {
         let key: String = row.get("key");
@@ -71,6 +74,9 @@ pub async fn load_desktop_behavior_settings(
             BACKGROUND_OPTIMIZATION_KEY => {
                 background_optimization_raw = Some(value);
             }
+            BACKGROUND_OPTIMIZATION_DELAY_MINUTES_KEY => {
+                background_optimization_delay_minutes_raw = Some(value);
+            }
             _ => {}
         }
     }
@@ -82,6 +88,7 @@ pub async fn load_desktop_behavior_settings(
         background_tracking_at_login_raw.as_deref(),
         start_minimized_raw.as_deref(),
         background_optimization_raw.as_deref(),
+        background_optimization_delay_minutes_raw.as_deref(),
     ))
 }
 
@@ -211,6 +218,9 @@ fn validate_app_setting_mutation(mutation: &AppSettingMutation) -> Result<(), St
         ));
     }
 
+    if mutation.key == BACKGROUND_OPTIMIZATION_DELAY_MINUTES_KEY {
+        crate::domain::settings::parse_background_optimization_delay_minutes(&mutation.value)?;
+    }
     Ok(())
 }
 
@@ -233,6 +243,7 @@ fn is_allowed_app_setting_key(key: &str) -> bool {
             | "background_tracking_at_login"
             | "start_minimized"
             | "background_optimization"
+            | "background_optimization_delay_minutes"
             | "audio_participation_enabled"
             | "onboarding_completed"
             | "web_activity_enabled"
@@ -611,6 +622,45 @@ mod tests {
 
             let settings = load_desktop_behavior_settings(&pool).await.unwrap();
             assert!(settings.should_optimize_background_resources());
+            assert_eq!(settings.background_optimization_delay_minutes, 5);
+        });
+    }
+
+    #[test]
+    fn background_delay_persists_and_invalid_batch_does_not_partially_commit() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            let delay = |value: &str| AppSettingMutation {
+                key: "background_optimization_delay_minutes".to_string(),
+                value: value.to_string(),
+            };
+            commit_app_setting_mutations(&pool, &[delay("1")])
+                .await
+                .unwrap();
+            assert_eq!(
+                load_desktop_behavior_settings(&pool)
+                    .await
+                    .unwrap()
+                    .background_optimization_delay_minutes,
+                1
+            );
+            for invalid in ["0", "61", "-1", "1.5", "NaN"] {
+                assert!(commit_app_setting_mutations(
+                    &pool,
+                    &[
+                        AppSettingMutation {
+                            key: "background_optimization".into(),
+                            value: "1".into()
+                        },
+                        delay(invalid),
+                    ]
+                )
+                .await
+                .is_err());
+                let settings = load_desktop_behavior_settings(&pool).await.unwrap();
+                assert_eq!(settings.background_optimization_delay_minutes, 1);
+                assert!(!settings.background_optimization);
+            }
         });
     }
 

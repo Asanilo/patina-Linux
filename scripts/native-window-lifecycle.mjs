@@ -8,6 +8,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const args = process.argv.slice(2);
+if (args.some(arg => arg !== "--background-delay") || args.length > 1) {
+  throw new Error("Usage: node scripts/native-window-lifecycle.mjs [--background-delay]");
+}
+const delayTest = args.includes("--background-delay");
+const testName = delayTest ? "native_background_delay" : "native_window_lifecycle";
 if (process.platform !== "linux" || !process.env.WAYLAND_DISPLAY || !process.env.XDG_RUNTIME_DIR) {
   throw new Error("Run from a Linux Wayland session; no X11 fallback is used.");
 }
@@ -43,9 +49,9 @@ const env = {
   PATINA_NATIVE_TEST_ROOT: root,
   PATINA_NATIVE_TEST_URL: `http://127.0.0.1:${server.address().port}`,
 };
-console.log(`Native evidence: ${root} (about eleven minutes; no production runtime)`);
+console.log(`Native evidence: ${root} (${delayTest ? "about five" : "about eleven"} minutes; no production runtime)`);
 const log = createWriteStream(path.join(root, "native.log"), { flags: "wx", mode: 0o600 });
-const child = spawn("dbus-run-session", ["--", binary, "app::native_window_tests::native_window_lifecycle", "--exact", "--ignored", "--nocapture", "--test-threads=1"], {
+const child = spawn("dbus-run-session", ["--", binary, `app::native_window_tests::${testName}`, "--exact", "--ignored", "--nocapture", "--test-threads=1"], {
   cwd: root, env, detached: true, stdio: ["ignore", "pipe", "pipe"],
 });
 let timedOut = false;
@@ -68,5 +74,5 @@ try {
   server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
   await new Promise(resolve => log.end(resolve));
 }
-await writeFile(path.join(root, "result.json"), JSON.stringify({ binary, code, timedOut, passed: code === 0 && !timedOut }, null, 2), { mode: 0o600 });
+await writeFile(path.join(root, "result.json"), JSON.stringify({ binary, testName, code, timedOut, passed: code === 0 && !timedOut }, null, 2), { mode: 0o600 });
 if (code !== 0 || timedOut) process.exitCode = 1;

@@ -100,6 +100,7 @@ interface AppSettings {
   backgroundTrackingAtLogin: boolean;
   startMinimized: boolean;
   backgroundOptimization: boolean;
+  backgroundOptimizationDelayMinutes: number;
   audioParticipationEnabled: boolean;
   onboardingCompleted: boolean;
   webActivityEnabled: boolean;
@@ -133,6 +134,7 @@ const BASE_SETTINGS: AppSettings = {
   backgroundTrackingAtLogin: false,
   startMinimized: false,
   backgroundOptimization: false,
+  backgroundOptimizationDelayMinutes: 5,
   audioParticipationEnabled: true,
   onboardingCompleted: false,
   webActivityEnabled: false,
@@ -476,6 +478,16 @@ await runTest("saveSettingsPageStateWithDeps preserves remote push switch while 
     remoteStatusBridgeEnabled: true,
     remoteStatusBridgeToken: "remote-token",
   });
+});
+
+await runTest("background delay uses bounded whole minutes with legacy fallback", () => {
+  assert.equal(normalizeSettingsRecord({}).backgroundOptimizationDelayMinutes, 5);
+  for (const raw of ["0", "61", "-1", "1.5", "NaN", "", "1e1", "+5", "999999999999"]) {
+    assert.equal(normalizeSettingsRecord({ background_optimization_delay_minutes: raw }).backgroundOptimizationDelayMinutes, 5, raw);
+  }
+  for (const minutes of [1, 5, 60]) {
+    assert.equal(normalizeSettingsRecord({ background_optimization_delay_minutes: String(minutes) }).backgroundOptimizationDelayMinutes, minutes);
+  }
 });
 
 await runTest("normalizeSettingsRecord accepts current minimize behavior values", () => {

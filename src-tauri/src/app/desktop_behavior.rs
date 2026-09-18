@@ -96,11 +96,15 @@ pub(crate) fn set_launch_behavior<R: Runtime>(
     Ok(())
 }
 
-pub(crate) fn set_background_optimization(
+pub(crate) fn set_background_optimization<R: Runtime + 'static>(
+    app: &AppHandle<R>,
     state: &DesktopBehaviorState,
     background_optimization: bool,
+    delay_minutes: Option<u32>,
 ) {
-    let _ = state.update_background_optimization(background_optimization);
+    if state.update_background_resource_policy(background_optimization, delay_minutes) {
+        main_window::reset_background_destroy_timer(app);
+    }
 }
 
 pub(crate) async fn sync_desktop_behavior_from_storage<R: Runtime>(

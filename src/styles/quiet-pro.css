@@ -1245,6 +1245,8 @@
 .data-heatmap-scroll {
   flex: 1 1 auto;
   min-width: 0;
+  width: 100%;
+  max-width: 100%;
   overflow-x: auto;
   overflow-anchor: none;
   padding-bottom: 2px;
@@ -1274,8 +1276,9 @@
 
 .data-heatmap-body {
   display: flex;
+  width: max-content;
   align-items: flex-start;
-  gap: 5px;
+  gap: var(--data-heatmap-cell-gap);
 }
 
 .data-heatmap-weekdays {

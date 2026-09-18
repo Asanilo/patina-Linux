@@ -73,10 +73,22 @@ pub fn cmd_set_launch_behavior(
 #[tauri::command]
 pub fn cmd_set_background_optimization(
     background_optimization: bool,
-    desktop_behavior_state: State<DesktopBehaviorState>,
+    delay_minutes: Option<u32>,
+    app: AppHandle,
 ) -> Result<(), String> {
-    desktop_behavior::set_background_optimization(&desktop_behavior_state, background_optimization);
-    Ok(())
+    if let Some(minutes) = delay_minutes {
+        crate::domain::settings::parse_background_optimization_delay_minutes(&minutes.to_string())?;
+    }
+    let handle = app.clone();
+    app.run_on_main_thread(move || {
+        desktop_behavior::set_background_optimization(
+            &handle,
+            &handle.state::<DesktopBehaviorState>(),
+            background_optimization,
+            delay_minutes,
+        );
+    })
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

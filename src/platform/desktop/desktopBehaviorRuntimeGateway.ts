@@ -18,6 +18,6 @@ export async function setLaunchBehavior(
   await invoke("cmd_set_launch_behavior", { launchAtLogin, startMinimized });
 }
 
-export async function setBackgroundOptimization(backgroundOptimization: boolean): Promise<void> {
-  await invoke("cmd_set_background_optimization", { backgroundOptimization });
+export async function setBackgroundOptimization(backgroundOptimization: boolean, delayMinutes: number): Promise<void> {
+  await invoke("cmd_set_background_optimization", { backgroundOptimization, delayMinutes });
 }

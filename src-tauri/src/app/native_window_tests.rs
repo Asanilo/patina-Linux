@@ -65,6 +65,97 @@ fn make_main(app: &tauri::AppHandle) {
 #[test]
 #[ignore = "real Wayland windows and two five-minute waits; use scripts/native-window-lifecycle.mjs"]
 fn native_window_lifecycle() {
+    run_native_window_test(false);
+}
+
+#[test]
+#[ignore = "real Wayland timers; use scripts/native-window-lifecycle.mjs --background-delay"]
+fn native_background_delay() {
+    run_native_window_test(true);
+}
+
+async fn apply_background_policy(app: &tauri::AppHandle, enabled: bool, minutes: u32) {
+    crate::commands::settings::cmd_set_background_optimization(enabled, Some(minutes), app.clone())
+        .unwrap();
+    for _ in 0..100 {
+        let policy = app.state::<DesktopBehaviorState>().snapshot();
+        if policy.background_optimization == enabled
+            && policy.background_optimization_delay_minutes == minutes
+        {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("background policy was not applied on the UI thread");
+}
+
+fn hide_main(app: &tauri::AppHandle) {
+    let window = app.get_webview_window("main").unwrap();
+    main_window::hide_main_window_for_background(app, &window.as_ref().window());
+}
+
+async fn verify_background_delay(app: &tauri::AppHandle) {
+    make_main(app);
+    apply_background_policy(app, true, 1).await;
+    hide_main(app);
+    tokio::time::sleep(Duration::from_secs(20)).await;
+    main_window::show_main_window(app);
+    tokio::time::sleep(Duration::from_secs(45)).await;
+    assert!(app
+        .get_webview_window("main")
+        .unwrap()
+        .is_visible()
+        .unwrap());
+    eprintln!("NATIVE delay-reopen-cancelled-one-minute-timer");
+
+    hide_main(app);
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    apply_background_policy(app, false, 1).await;
+    tokio::time::sleep(Duration::from_secs(65)).await;
+    assert!(!app
+        .get_webview_window("main")
+        .unwrap()
+        .is_visible()
+        .unwrap());
+    eprintln!("NATIVE delay-disabled-preserved-hidden-main");
+
+    apply_background_policy(app, true, 1).await;
+    tokio::time::sleep(Duration::from_secs(20)).await;
+    apply_background_policy(app, true, 2).await;
+    tokio::time::sleep(Duration::from_secs(45)).await;
+    assert!(!app
+        .get_webview_window("main")
+        .unwrap()
+        .is_visible()
+        .unwrap());
+    assert_eq!(
+        app.state::<background_resource_reclaimer::BackgroundResourceReclaimerState>()
+            .reclaim_attempt_count(),
+        0
+    );
+    eprintln!("NATIVE delay-longer-policy-invalidated-old-timer");
+
+    apply_background_policy(app, true, 1).await;
+    tokio::time::sleep(Duration::from_secs(65)).await;
+    wait_window(app, "main", false).await;
+    assert_eq!(
+        app.state::<background_resource_reclaimer::BackgroundResourceReclaimerState>()
+            .reclaim_attempt_count(),
+        1
+    );
+    eprintln!("NATIVE delay-one-minute-destroyed-and-reclaimed");
+    make_main(app);
+    assert!(app
+        .get_webview_window("main")
+        .unwrap()
+        .is_visible()
+        .unwrap());
+    eprintln!("NATIVE delay-main-recreated-after-reclaim");
+    app.get_webview_window("main").unwrap().destroy().unwrap();
+    wait_window(app, "main", false).await;
+}
+
+fn run_native_window_test(delay_test: bool) {
     let root = isolated_root();
     assert_eq!(std::env::var("GDK_BACKEND").unwrap(), "wayland");
     let pool = tauri::async_runtime::block_on(open_prepared_sqlite_pool_at_path(
@@ -106,6 +197,14 @@ fn native_window_lifecycle() {
             tauri::async_runtime::spawn(async move {
                 let worker_app = handle.clone();
                 let worker = tauri::async_runtime::spawn(async move {
+                    if delay_test {
+                        verify_background_delay(&worker_app).await;
+                        crate::data::repositories::backup_restore::test_support::assert_integrity(&pool).await;
+                        assert!(crate::data::repositories::backup_restore::test_support::session_names(&pool).await.is_empty());
+                        pool.close().await;
+                        eprintln!("NATIVE delay-fixture-unchanged");
+                        return;
+                    }
                     desktop_behavior::sync_desktop_behavior_from_storage(
                         worker_app.clone(),
                         true,

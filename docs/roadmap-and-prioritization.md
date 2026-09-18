@@ -159,17 +159,32 @@
 
 #### 当前快照与下一个发布阶段（2026-09-18）
 
-本节快照优先于下方按日期保留的历史进度。daemon/runtime、客户端接管、systemd 和主要写侧功能已有实现；当前处于 Stage 2H.3d 的 daemon-backed DEB beta 验收与发布收口，尚非稳定版。源码及本地 DEB 候选为 `1.9.0-beta.17`，成品门禁已通过，尚待安装验收；2026-09-18 只读查询确认最新公开预发布仍为 beta.12，稳定版为 1.8.4。本地候选不代表已推送、已安装或已公开发布，详细证据见 runtime working 文档。
+本节快照优先于下方按日期保留的历史进度。daemon/runtime、客户端接管、systemd 和主要写侧功能已有实现；当前处于 Stage 2H.3d 的 daemon-backed DEB beta 验收与发布收口，尚非稳定版。用户安装版本为 `1.9.0-beta.17`，安装后只读、核心页面与关闭重开验收通过；当前源码已准备 beta.18，包含窄窗口布局修复和低耗延迟设置，release gate 与隔离原生计时测试通过，成品状态见 runtime working 文档。2026-09-18 前次只读查询确认最新公开预发布为 beta.12，稳定版为 1.8.4，本轮未重新查询或操作远端。安装候选不代表已推送或已公开发布。
 
 - **暂停悬浮窗专项**：按用户要求暂停闪烁、左右吸附和 GNOME compositor provider 开发。现有原生 Wayland 行为是自由拖动的小窗口；beta.16 自动及原生生命周期回归通过，不代表闪烁/吸附实机验收通过。该可选功能不阻塞下述聚合阶段，数据安全或崩溃问题除外。
 - **下一可发布阶段：Data 热力图低内存查询**。提供共享后端按本地日期聚合入口及 Desktop/daemon 适配，前端不再拉取或缓存 53 周逐 session 明细。保持本机记录优先、导入桶分配、排除、分类、active cutoff 和日期边界语义。
 - **本阶段进展**：已有界共享日聚合仓储及 `/api/v1/heatmap` 只读入口；开发版 Desktop 热力图已通过薄 command 接 typed daemon client / embedded 共享仓储，不再拉取整年 session 明细。缓存、页面 state 与预热只持有紧凑日汇总，前端检查完整本地日期边界。历史进程过滤与别名归一已迁入 Rust，以 791 组过滤和 598 组别名 fixture 对照前端；日聚合读取当前 override 与旧排除字段，并在优先级分配后过滤。明确修正旧热力图漏用用户排除和把小时桶伪装成连续区间的行为；旧缓存版本失效。旧 daemon、查询失败或响应不完整时显示错误并允许重试，不回退整年明细。
 - **查询级验收**：新增可复现的 `perf:daily-activity`，50,000 条合成 native session 对照暴露并修正逐日回读标题页的查询计划问题，复用既有覆盖索引，无 schema 迁移。日聚合响应约 24.9 KiB、耗时 3.6–3.8 秒、采样 USS 增量约 5 MiB，通过本场景预算；相同数据旧 SQL/JSON 参考路径约 61.7 MiB 响应、288 MiB USS 增量。结果一致且数据库哈希未变。该 debug 查询进程实验不含 WebKit、IPC 和 daemon host，也未覆盖多年份/大量导入数据；下方另列真实链路验收，不将查询级数字解释为整个桌面的收益。
-- **发布门槛**：新旧结果对照与跨日/DST/导入/排除/active 测试通过；在相同合成数据上记录 Desktop/WebKit/daemon 峰值 PSS/USS、响应大小和查询耗时；实现明确的读取与并发预算，不把峰值简单转移到 daemon；完成产品内热力图及日期跳转验收和 DEB release gate。达标后形成一个 DEB beta，版本号到出包时确定。
-- **真实链路进展**：`perf:heatmap-desktop` 已以私有合成 Local profile 跑通真实 React/WebKit → IPC → daemon、五分钟销毁与重开，两轮汇总和 History 跳转通过，数据完整性不变。首次热力图后 Desktop + WebKit PSS 约 503 MiB，销毁后约 98.5 MiB；daemon 未出现同量级增长。主进程数据传输开销已收敛，但前台 WebProcess 仍为主要内存来源；这只是 debug 成品页面的一轮实验，不是同配置旧 UI 对照、release 包或长期追踪验收。下一步完成 release 候选门禁，不回头扩大悬浮窗专项。
-- **候选发布门禁（2026-09-18）**：beta.17 的完整 `release:check` 通过，含 598 项 Rust 测试、32 项浏览器 smoke、构建预算及扩展/签名 XPI 检查。累计变更已写入 beta.17 changelog；Desktop + daemon DEB 已构建，通过包内容检查和解包后 release daemon 的隔离鉴权、日期与热力图冒烟测试。下一步经用户确认后安装并验证双端版本、真实统计及后台持续追踪；不把空库冒烟替代真实追踪或 release UI 内存验收。包路径、哈希和限制见 runtime working 文档第九步。
+- **发布门槛**：新旧结果对照与跨日/DST/导入/排除/active 测试通过；在相同合成数据上记录 Desktop/WebKit/daemon 峰值 PSS/USS、响应大小和查询耗时；实现明确的读取与并发预算，不把峰值简单转移到 daemon；完成产品内热力图及日期跳转验收和 DEB release gate。beta.17 已完成下述候选及安装核心验收，反馈修复与低耗延迟设置合为下一候选，版本号到出包时确定。
+- **真实链路进展**：`perf:heatmap-desktop` 已以私有合成 Local profile 跑通真实 React/WebKit → IPC → daemon、五分钟销毁与重开，两轮汇总和 History 跳转通过，数据完整性不变。首次热力图后 Desktop + WebKit PSS 约 503 MiB，销毁后约 98.5 MiB；daemon 未出现同量级增长。主进程数据传输开销已收敛，但前台 WebProcess 仍为主要内存来源；这只是 debug 成品页面的一轮实验，不是同配置旧 UI 对照、release 包或长期追踪验收。后续候选及安装证据见下，不回头扩大悬浮窗专项。
+- **候选发布门禁（2026-09-18）**：beta.17 的完整 `release:check` 通过，含 598 项 Rust 测试、32 项浏览器 smoke、构建预算及扩展/签名 XPI 检查。累计变更已写入 beta.17 changelog；Desktop + daemon DEB 已构建，通过包内容检查和解包后 release daemon 的隔离鉴权、日期与热力图冒烟测试。用户已安装，双端版本、真实统计及后台持续追踪验证见下；不把空库冒烟替代真实追踪或 release UI 内存验收。包路径、哈希和限制见 runtime working 文档第九步。
+- **安装后验收（2026-09-18）**：运行中的 Desktop/daemon 哈希与 beta.17 成品一致，服务、追踪、数据库与凭据检查通过。真实 371 天热力图约 23.9 KiB/1.12 秒，已结束日期的单日/范围结果一致，查询期间采样继续推进；用户确认 Data 热力图与 History 日期跳转正常，关闭及重开结果见下。前台桌面组 PSS 约 600 MiB，其中 WebProcess 约 441 MiB，daemon 约 19 MiB；这是观测，不是对比基准或泄漏判定。证据见 runtime working 文档第十步。
+- **当前小批桌面偏好**：“低耗后台延迟”已接通设置持久化与 Desktop 生命周期，支持 1–60 整分钟，默认保留 5 分钟。归 Desktop 所有，不改变 daemon 追踪，不与 Data/History 返回首页或 Widget 闲置销毁阈值捆绑。已与窄窗口修复组成 beta.18 本地 DEB，完整 `release:check`、成品检查和解包 daemon 冒烟通过，含 603 项 Rust 测试、34 项浏览器回归及构建预算。独立 Wayland 原生测试确认一分钟回收、提前重开取消、关闭开关与改长延迟均正确；仍待安装后的真实页面与持续追踪确认，未公开发布。
+- **重开与窄窗口反馈**：用户确认 beta.17 重开后 Dashboard/当前活动/Data 正常，同时发现窄窗口热力图裁切与滚动缺陷。已限制滚动视口宽度、保留内部完整日历并对齐列间距；390–1280px 浏览器回归与完整 `npm run check` 通过。该修复仍为未打包源码，已安装 beta.17 不会实时更新，后续随低耗后台延迟设置组合验收；不扩展到其他页面的移动适配或悬浮窗专项。
+- **关闭到后台验收**：用户关闭到托盘后，330 秒只读观察通过，67 次采样持续推进；旧页面进程退出，Desktop/daemon PID 与启动身份未变。桌面组 PSS 回收后约 109.5 MiB、daemon 约 19 MiB；数据库复核通过，systemd 重启计数未增加。用户随后确认重开功能正常，不扩大为长期内存或完整稳定版验收。
 - **后续独立阶段**：分类候选及其他趋势聚合、流式备份、Widget 独立入口。关闭 Desktop 进程仅留 daemon/轻量托盘属于另一个架构决策，当前没有实施；Widget 入口拆分随悬浮窗专项暂停。
-- **稳定版剩余门槛**：活动网页跨挂起、剩余安装/恢复故障矩阵、真实数据长期运行，以及 AppImage 兼容或明确退役迁移。浏览器 UI、TUI、KDE/wlroots 与 Flatpak 继续按后续路线推进。
+- **稳定版剩余门槛**：活动网页跨挂起、剩余安装/恢复故障矩阵、真实数据长期运行，以及 AppImage 兼容。用户已确认继续支持 AppImage，不执行 DEB-only 退役；必须完成版本化 daemon 持久解包、稳定服务路径、原子升级与失败恢复，才恢复 daemon-backed AppImage 发布。浏览器 UI、TUI、KDE/wlroots 与 Flatpak 继续按后续路线推进。
+
+#### 已授权的浏览器 UI 前执行范围（2026-09-18）
+
+用户已同意推进本机浏览器 UI 之前的全部任务，不再逐个请求开发授权；仍按小批实现与验证，不能把这一授权解释为已完成验收或可自动改动日常环境。
+
+1. **当前候选交付**：低耗延迟与窄窗口修复合为下一 DEB 候选；先补独立 HOME/XDG/D-Bus 的一分钟原生计时测试，再完成 release gate 与成品校验。安装、生产服务重启和公开 tag 发布与开发构建分开。
+2. **稳定性补验**：补活动网页跨挂起与剩余安装/恢复故障矩阵；隔离环境能验证的自动推进，真实挂起、登录与长期运行保留人工证据，不自动挂起用户电脑。
+3. **后续内存功能**：分类候选及其他趋势有界聚合，再到流式备份；每批独立验证统计语义、读取峰值与失败安全，不继续扩大本次候选。
+4. **AppImage 兼容专项**：继续支持；先明确 DEB/AppImage 并存时唯一 daemon owner 和更新事务，再实现持久解包、服务绑定、签名验证后的切换/回退及旧客户端更新测试。当前 DEB-only beta 契约保持到该专项验收通过，不直接把打包 target 改成 AppImage 就宣称支持完成。
+
+追踪错误、数据损坏与恢复失败可随时打断上述顺序；本机浏览器 UI、TUI、Flatpak、KDE/wlroots 与悬浮窗专项不纳入这一轮授权范围。
 
 #### 实施顺序与历史进度
 
@@ -245,7 +260,7 @@ beta.14 本地候选已完成：原生 GTK/WebKit 回归运行 626.64 秒通过�
 16. 用一个 `patina` 产品包同时安装 Patina Desktop、`patinad` 和 systemd user unit；首次桌面启动在用户会话中迁移旧 XDG autostart 并启用后台服务，把“后台追踪随登录启动”与“桌面客户端随登录打开”拆成独立设置。
 17. 首个 daemon-backed DEB 先发布为 beta，验证关闭 UI 后持续记录、登录启动、崩溃重启、锁屏、睡眠、浏览器活动、升级、卸载和数据保留；该 beta 只发布 DEB，不发布无法稳定安装 service owner 的 AppImage。embedded runtime 至少保留一个稳定版本作为显式开发回滚路径。
 18. beta 验收后让完整 monorepo 脱离 Windows 上游 fork network，保留 Git 历史、MIT 许可与 attribution；不拆分独立 `patinad` 仓库。
-19. daemon-backed 稳定版发布前，必须单独决定并验证 AppImage 的版本化 daemon extraction 与原子更新，或设计对现有 AppImage 用户明确且不循环更新的退役迁移；不能让 DEB-only stable 悄悄破坏既有 updater contract。
+19. daemon-backed 稳定版发布前，按已确认的继续支持方向，独立实现并验证 AppImage 的版本化 daemon extraction、稳定服务路径、原子更新和失败恢复；不能让 DEB-only stable 悄悄破坏既有 updater contract。
 20. daemon 稳定后建立只读本机浏览器 UI，先覆盖 Dashboard、History、当前会话和诊断；使用 same-origin HttpOnly session，不向前端 JavaScript 暴露长期 API Token。
 21. 浏览器只读路径稳定后再开放受控写操作；MCP、CLI 和 Agent 继续使用 Bearer Token，并与浏览器 UI 复用同一业务 API 契约而非同一认证方式。
 22. 之后开发 TUI / CLI 并开始 KDE Wayland 适配；桌面端是否从 Tauri 迁往 GPUI、是否拆 Cargo workspace，只按实测资源、构建和独立打包收益评估。

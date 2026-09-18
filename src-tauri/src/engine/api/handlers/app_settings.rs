@@ -65,6 +65,7 @@ fn is_non_resource_setting(key: &str) -> bool {
             | "launch_at_login"
             | "start_minimized"
             | "background_optimization"
+            | "background_optimization_delay_minutes"
             | "onboarding_completed"
             | "remote_status_bridge_enabled"
             | "remote_status_bridge_url"

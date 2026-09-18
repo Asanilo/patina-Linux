@@ -16,7 +16,6 @@ const MAIN_WINDOW_WIDTH: f64 = 1100.0;
 const MAIN_WINDOW_HEIGHT: f64 = 736.0;
 const MAIN_WINDOW_MIN_WIDTH: f64 = 900.0;
 const MAIN_WINDOW_MIN_HEIGHT: f64 = 636.0;
-const MAIN_WINDOW_DESTROY_AFTER_BACKGROUND_SECS: u64 = 5 * 60;
 
 pub(crate) fn show_main_window<R: Runtime + 'static>(app: &AppHandle<R>) {
     app.state::<MainWindowLifecycleState>().show();
@@ -130,43 +129,85 @@ fn schedule_main_window_destroy_after_background<R: Runtime + 'static>(
     app: AppHandle<R>,
     hide_generation: u64,
 ) {
+    let delay = background_destroy_delay(app.state::<DesktopBehaviorState>().snapshot());
     tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(Duration::from_secs(
-            MAIN_WINDOW_DESTROY_AFTER_BACKGROUND_SECS,
-        ))
-        .await;
-
-        if !app
-            .state::<DesktopBehaviorState>()
-            .snapshot()
-            .should_optimize_background_resources()
+        tokio::time::sleep(delay).await;
+        let handle = app.clone();
+        // Keep the final visibility/generation check and destruction on the UI thread.
+        if let Err(error) =
+            app.run_on_main_thread(move || destroy_hidden_main_window(&handle, hide_generation))
         {
-            return;
-        }
-
-        let lifecycle = app.state::<MainWindowLifecycleState>();
-        if !lifecycle.should_destroy_hidden_window(hide_generation) {
-            return;
-        }
-
-        let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
-            return;
-        };
-
-        if window.is_visible().unwrap_or(false) {
-            return;
-        }
-
-        if let Err(error) = window.destroy() {
-            eprintln!("[main-window] failed to destroy idle main window: {error}");
+            eprintln!("[main-window] failed to dispatch idle main window destruction: {error}");
         }
     });
+}
+
+fn background_destroy_delay(
+    settings: crate::domain::settings::DesktopBehaviorSettings,
+) -> Duration {
+    Duration::from_secs(u64::from(settings.background_optimization_delay_minutes) * 60)
+}
+
+pub(crate) fn reset_background_destroy_timer<R: Runtime + 'static>(app: &AppHandle<R>) {
+    let generation = app.state::<MainWindowLifecycleState>().reset_hidden_timer();
+    if let Some(generation) = generation {
+        if app.get_webview_window(MAIN_WINDOW_LABEL).is_some()
+            && app
+                .state::<DesktopBehaviorState>()
+                .snapshot()
+                .should_optimize_background_resources()
+        {
+            schedule_main_window_destroy_after_background(app.clone(), generation);
+        }
+    }
+}
+
+fn destroy_hidden_main_window<R: Runtime>(app: &AppHandle<R>, hide_generation: u64) {
+    if !app
+        .state::<DesktopBehaviorState>()
+        .snapshot()
+        .should_optimize_background_resources()
+    {
+        return;
+    }
+
+    let lifecycle = app.state::<MainWindowLifecycleState>();
+    if !lifecycle.should_destroy_hidden_window(hide_generation) {
+        return;
+    }
+
+    let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+        return;
+    };
+
+    if window.is_visible().unwrap_or(false) {
+        return;
+    }
+
+    if let Err(error) = window.destroy() {
+        eprintln!("[main-window] failed to destroy idle main window: {error}");
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::main_window_url;
     use tauri::WebviewUrl;
+
+    #[test]
+    fn background_destroy_delay_uses_minutes_and_preserves_five_minute_default() {
+        let settings = crate::domain::settings::DesktopBehaviorSettings::default();
+        assert_eq!(super::background_destroy_delay(settings).as_secs(), 300);
+        for minutes in [1, 15, 60] {
+            assert_eq!(
+                super::background_destroy_delay(
+                    settings.with_background_optimization_delay_minutes(minutes),
+                )
+                .as_secs(),
+                u64::from(minutes) * 60
+            );
+        }
+    }
 
     #[test]
     fn main_window_url_uses_dev_server_in_debug_builds() {

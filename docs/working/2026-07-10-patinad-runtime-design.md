@@ -5,10 +5,32 @@
 
 ### 当前执行焦点（2026-09-18）
 
+- 用户已授权逐批推进本机浏览器 UI 前的候选交付、稳定性补验、有界聚合、流式备份及 AppImage 兼容，顺序以路线文档的新授权范围为准。AppImage 已选择继续支持，不退役；实现与验收未完成前仍只交付 daemon-backed DEB beta，不自动改动生产服务或挂起用户电脑。
 - 按用户要求暂停悬浮窗闪烁、边缘吸附及相关扩展开发。原生 Wayland 目前为自由拖动的小窗口，不宣称支持屏幕边缘吸附；已有生命周期自动测试不能替代真实拖动和视觉验收。
-- 下一可发布功能阶段为 **Data 热力图低内存查询**，范围和发布门槛以 [路线文档当前快照](../roadmap-and-prioritization.md#56-当前实施主线patinad) 为准。共享统计语义、读取预算、后端聚合、Desktop/daemon 适配、隔离 debug 整链路与 beta.17 成品检查均已完成，下一步经用户确认后安装验收。前台 WebKit 占用仍是后续独立问题。
-- 本地源码和 DEB 候选为 beta.17，包含本次热力图功能，不能把此前 beta.16 包当作新功能包。2026-09-18 只读查询 GitHub 确认最新预发布为 beta.12，最新稳定版为 1.8.4；本轮不安装、不推送、不公开发布。
+- 下一可发布功能阶段为 **Data 热力图低内存查询**，范围和发布门槛以 [路线文档当前快照](../roadmap-and-prioritization.md#56-当前实施主线patinad) 为准。共享统计语义、读取预算、后端聚合、Desktop/daemon 适配、隔离 debug 整链路与 beta.17 成品检查均已完成；安装后 Data/History、只读 API、关闭回收和用户重开确认已通过，但用户发现窄窗口滚动缺陷。该布局问题已修源码并通过前端回归，尚未包含在已安装 beta.17 中。前台 WebKit 占用仍是后续独立问题。
+- 用户安装的版本仍为 beta.17，安装后只读、Data/History、关闭回收和用户重开确认通过。当前 beta.18 已将窄窗口修复与低耗延迟设置合为本地 DEB 候选，成品检查通过，尚未升级用户安装版本。2026-09-18 前次只读查询 GitHub 确认最新预发布为 beta.12，最新稳定版为 1.8.4，本轮没有重新查询或操作远端；本批独立收口到现有 daemon 分支，不推送或公开发布。
 - 下文保留阶段证据与历史限制，不以早期“下一步”覆盖本节执行焦点。
+
+#### beta.18 候选与原生计时验证（2026-09-18）
+
+- 新增既有 runner 的 `--background-delay` 模式，使用私有 HOME/XDG/D-Bus、空合成数据库和静态页面；不启动 tracking、不控制生产服务、不访问用户数据。
+- `node scripts/native-window-lifecycle.mjs --background-delay` 实测通过，耗时 263.48 秒，退出码 0。确认一分钟隐藏期间提前重开不会被旧 timer 销毁；隐藏后关闭低耗开关保留主窗口；改长延迟使旧 timer 失效；改回一分钟后自动销毁并回收一次；随后可以重新建窗，数据库完整且无 session 写入。证据 `/tmp/patina-window-test-KA41xS/result.json` 与 `native.log`，runner 已结束并清理私有进程组。
+- 原生测试二进制编译时版本仍为 beta.17，与最终 beta.18 的生命周期实现一致；不把它描述成安装版或完整 React 测试。隔离 portal 仍有缺少 PipeWire 等警告。持续追踪、实际产品页面与用户环境多轮操作仍在安装验收范围内。
+- 版本文件统一为 beta.18，Cargo.lock 只修改本项目版本，未更新依赖。完整 `release:check` 退出码 0：603 项 Rust 测试通过、10 项 opt-in 忽略、34 项浏览器回归、Clippy、构建预算、扩展与签名 XPI 检查通过。日志 `/tmp/patina-beta18-release-check.log`。
+- 本地未签名 DEB 已构建，构建命令显式 `createUpdaterArtifacts:false` 且清除签名环境变量，不读取私钥、不生成 updater 清单。成品为 `src-tauri/target/release/bundle/deb/Patina_1.9.0-beta.18_amd64.deb`，25,833,602 bytes；SHA-256 `1e20c36c22ca8850c73294fc1d15cb4787200a4287d4a0ba7d863654b32a4e6e`。`release:verify-daemon-deb` 通过，构建日志 `/tmp/patina-beta18-build.log`。
+- 解包逐字节核对 daemon 与 release 构建一致；Desktop 仅允许 Tauri 的 `UNK` → `DEB` bundle marker 差异。包内 Desktop SHA-256 `eb0d6fec97255ef693f9e15c2aca637e4937de747a1f7d8a2794c87969edf1c7`，daemon SHA-256 `a4ac4057a08329e3c04206a74aa898d4ca04cd30e099a9ff92da94bf627022c7`。
+- 实际解包 daemon 使用全新临时 HOME/XDG、Local 空库和随机端口，不启用 tracking：capability 版本为 beta.18、tracking owned=false、Token 文件 0600；未认证 heatmap 返回 401，反向区间 400，两天合法响应 200/202 bytes/零时长，SIGINT 后退出码 0。结果 `/tmp/patina-beta18-package-LABL8q/result.json`。未操作生产服务或数据，未验证已安装版本；不把空库冒烟当作持续追踪验收。
+- 下一批按已授权路线继续稳定性补验、分类/趋势有界聚合、流式备份与 AppImage 兼容；不以等待人工安装为由重新请求每一项开发授权。本候选人工验收仍需设置一分钟后关闭到托盘、提前重开取消、持续追踪和真实 Data/History 页面确认。
+
+#### 当前小批：低耗后台延迟（2026-09-18，未出包）
+
+- 在 Desktop 常驻设置内增加“低耗后台延迟”滑块，范围 1–60 整分钟，默认 5 分钟；复用现有保存/取消流程与设置事务。低耗开关关闭时控件禁用但保留数值。中文/英文同步。
+- 持久化键为 `background_optimization_delay_minutes`。Rust 写侧严格拒绝越界、非整数；旧配置缺失或损坏读取默认 5 分钟。daemon 仅作为设置数据 owner 持久化此偏好，不新增追踪策略；Desktop 启动加载或设置刷新后经本地命令应用。
+- 隐藏主窗口按设置等待；重开使旧 generation 失效。运行时应用新的低耗开关/延迟会使原计时失效，若仍隐藏且开启低耗则从应用时重新等待完整时长；最终检查和销毁放在 UI 线程，避免检查后与重开交错。相同设置重复同步不重置计时。
+- 不改变最小化到任务栏的行为、Widget 闲置保留时间、Data/History 五分钟返回首页策略、默认低耗开关或 daemon 追踪。悬浮窗专项继续暂停。
+- 复用现有整数范围解析，没有引入依赖。入口压缩体积 74,798 字节（73.04 KiB），超过旧 73 KiB 上限 46 字节；因新增设置持久化/运行时字段与文案，将入口预算明确调整为 73.25 KiB，总 JS 预算保持 370 KiB，实测总量 358.65 KiB。没有为满足体积预算移除校验或改变加载架构。
+- 隔离浏览器截图确认 1280/760px 控件可读、无重叠，测试预览 `http://127.0.0.1:1422` 只用假数据，不连接生产库或 daemon。自动测试不等于真实 GTK/WebKit 定时回收验证；下一候选仍需测试一分钟关闭回收、提前重开取消，以及后台持续追踪。此前 beta.17 的五分钟安装验证不能冒充新时长验证。
+- 最终 `npm run check:full` 通过：603 项 Rust 测试通过、9 项 opt-in 测试忽略，34 项浏览器 smoke 通过，Clippy `-D warnings`、构建及预算通过。单元覆盖默认值/边界、非法事务不部分提交、API 写侧、策略锁内更新与生命周期 generation；浏览器覆盖保存/取消/禁用保留/刷新恢复。日志 `/tmp/patina-background-delay-final-full.log`；保留浏览器临时 profile 清理 `ENOTEMPTY` 警告，不宣称清理测试通过。源码版本仍为 beta.17，用户安装的包不含本批改动，未提交、推送、构建新 DEB 或安装。
 
 #### 日聚合第一步（2026-09-17，未发布）
 
@@ -109,6 +131,26 @@
 - 解包后逐字节核对两份 executable：`patinad` 与本次 release 构建完全一致；Desktop 仅允许 Tauri 将 `__TAURI_BUNDLE_TYPE_VAR_UNK` 改成 `__TAURI_BUNDLE_TYPE_VAR_DEB` 的三字节差异。首轮原始哈希严格比较因此中止，核对依赖源码与实际字节后才调整测试，并非忽略未知差异。包内 Desktop SHA-256 `520f5feb1c05dcd88006432adc7f8aeea3aeeb95388de3d34895cd11bacae4c6`，daemon 为 `e79e80e8e5f0c61e4369bc6e22846868ac6f43a6a60e5f1e18fd30bf1d2482b9`。
 - 使用解出的 release daemon、私有 HOME/XDG、显式 Local 空库和随机 loopback 端口，不启动 tracking，不使用真实 D-Bus/systemd。版本为 beta.17，Token 文件 0600，未认证 heatmap 为 401，反向日期为 400，合法两天汇总为 200/202 bytes/零时长，OpenAPI 包含 heatmap。SIGINT 后 exit 0，所有测试进程结束。证据 `/tmp/patina-beta17-package-I4u6Up/result.json`；一次性脚本 `/tmp/patina-beta17-package-smoke.mjs`。
 - 当前成品尚未安装，未证明已安装 Desktop/daemon 已同步升级，也未重新测量 release UI 内存。下一步按第八步清单进行安装确认、双版本诊断、真实热力图/History、关闭重开与后台持续追踪验收。没有操作生产数据库、安装服务或公开 Release。
+
+#### 日聚合第十步：安装后的只读验收（2026-09-18，人工流程未完成）
+
+- 用户报告已安装 beta.17。只读 `release:inspect-installed-patinad --phase managed --expected-version 1.9.0-beta.17` exit 0；包版本正确、systemd active/running、owner 交接 completed、lease PID 与服务 PID 一致，API 与 tracking/browser bridge ready，数据库 quick_check=ok，Token 为当前用户 0600 普通文件。证据 `/tmp/patina-beta17-installed-20260918.json`。`NRestarts=1` 仅为本次基线，不能据此判断本轮发生崩溃。
+- `/proc/PID/exe` 哈希确认正在运行的 Desktop PID 867872 与 daemon PID 868600 均为第九步候选中的二进制，不仅是磁盘安装了新文件。没有自动重启、启停服务、改设置或写入测试数据。
+- 用真实 Production 数据作一次有界 371 天 heatmap GET：200、24,429 bytes（约 23.9 KiB）、1,118ms；连续日期与非负整数校验通过，87 天有数据，昨日单日查询与范围中对应日期结果一致。前后 current 的采样时间推进，tracking active、probe ok。该一致性检查不是与另一套独立统计实现的全量对照。
+- 安装后两次非原子分组内存快照：Desktop + WebKit PSS 约 594.6 → 604.5 MiB，daemon 约 18.7 → 18.9 MiB。后一个样本中 Desktop 主进程约 151.2 MiB，WebProcess 约 440.8 MiB，NetworkProcess 约 12.6 MiB。期间用户可能操作页面，因此不能把前后差额归因于 API 查询，也不是峰值、泄漏证明或新旧版本对照。证据 `/tmp/patina-beta17-live-check.json`，一次性只读脚本 `/tmp/patina-beta17-live-check.mjs`；不输出标题、URL 或 Token。
+- 用户已确认 Data 热力图正常加载，双击活动日期能跳转对应 History。只读设置确认 `background_optimization=1`，关闭/最小化字段未持久化，按领域默认值为 Tray/Widget；用户随后确认已使用主窗口关闭按钮隐藏到托盘，而不是最小化或退出。
+- 关闭后进行 330 秒只读观察，67 次 current 查询全部成功、采样时间持续推进；Desktop 与 daemon PID/启动身份保持不变，旧 WebProcess 确认退出，最终无页面进程。桌面组观测 PSS 从回收前约 717 MiB 降至 109.5 MiB，USS 89.4 MiB；daemon PSS 19.0 MiB。监测启动晚于用户点击关闭，不能用脚本开始到进程退出的间隔替代产品五分钟计时。证据 `/tmp/patina-beta17-closed-monitor.json`；不证明每个 tracker tick 或所有 AFK/崩溃场景。
+- 关闭后 managed 复核 exit 0，服务 PID 868600 和 NRestarts=1 与基线一致，数据库 quick_check=ok。两次安装采集之间 sessions 51,060→51,080、web segments 70,751→70,763，记录继续产生，计数不等于精确无丢失证明。证据 `/tmp/patina-beta17-after-close-20260918.json`。已请用户从托盘重开并确认 Dashboard/当前活动/Data；尚待结果。
+- 用户要求下一批增加可自定义的“低耗后台延迟”，默认保持五分钟，支持较短测试选项；已记录到路线文档的桌面偏好阶段。本轮不改设置、计时或产品代码，以免污染安装验收。
+
+#### 安装反馈：窄窗口热力图（2026-09-18，修复未出包）
+
+- 用户确认从托盘重开后 Dashboard、当前活动和 Data 均正常，同时报告横向分辨率较小时热力图滚动条消失。此反馈完成核心重开人工流程，但不能把窄窗口 UI 验收同时记为通过。
+- 复现为 900px 及以下 CSS 断点将 `.data-heatmap-content` 改成 column，配合 `align-items:flex-start` 使未限定宽度的滚动元素被全年日历撑宽，再被 paint containment 裁切。隔离 Playwright/实际 CSS 在 900px 下测得父宽 788px、滚动区域宽 825px、只能滚动 2px；不是 daemon 查询失败。
+- 在原样式 owner 中为滚动视口加 `width/max-width:100%`，日历 body 保持 `max-content`，并使用已有 gap 变量统一月份和日期列。没有缩小格子、增加新控件或改查询语义。相同 CSS 复现页修正后视口为 788px，可滚动 39px 到末尾；完整 React 页面回归覆盖 390/600/760/900/901/1280px 与缩窄后恢复。
+- 新增浏览器回归校验视口边界、可滚动范围、星期列宽及月/日对齐；原始代码先在月份列错位断言失败，断点撑宽另由隔离 CSS 复现证实。补测试后发现相邻错误恢复测试依赖上一页为 History，已让其自行进入该前置状态，不修改产品行为来迁就测试。
+- 最终 `npm run check` exit 0，33 项浏览器 smoke、前端构建及 bundle 预算通过。日志 `/tmp/patina-heatmap-scroll-check-final.log`；浏览器临时 profile 清理仍有 `ENOTEMPTY` 警告，未声明解决。截图 `/tmp/heatmap-scroll-{width}.png`；另用 Playwright 真实横向 wheel 和末尾日期 dblclick 验证 History 导航，截图 `/tmp/patina-heatmap-fixed-760.png`。仅验证热力图区，不宣称整个产品的 390px 移动适配或原生 WebKit 安装验收完成。
+- 本轮只改 CSS/测试/文档，未重建 DEB、未安装、未提交或推送。临时预览 `http://127.0.0.1:1422` 复用现有 smoke 假数据与真实 React/CSS，不连接生产数据库或 daemon。下一批仍为用户要求的“低耗后台延迟”设置，届时再合并成候选验收，不为这几行 CSS 单独发包。
 
 ## 1. 目标
 

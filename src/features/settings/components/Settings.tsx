@@ -212,6 +212,10 @@ export default function Settings({
               );
             }}
             backgroundOptimizationChecked={draftSettings.backgroundOptimization}
+            backgroundOptimizationDelayMinutes={draftSettings.backgroundOptimizationDelayMinutes}
+            onBackgroundOptimizationDelayChange={(minutes) => {
+              handleChange("backgroundOptimizationDelayMinutes", minutes);
+            }}
             onBackgroundOptimizationChange={(nextChecked) => {
               handleChange("backgroundOptimization", nextChecked);
             }}

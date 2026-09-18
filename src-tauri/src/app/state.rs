@@ -70,6 +70,7 @@ impl DesktopBehaviorState {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn update_background_optimization(
         &self,
         background_optimization: bool,
@@ -85,6 +86,25 @@ impl DesktopBehaviorState {
                 *guard
             }
         }
+    }
+
+    pub(crate) fn update_background_resource_policy(
+        &self,
+        enabled: bool,
+        delay_minutes: Option<u32>,
+    ) -> bool {
+        let mut guard = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let next = guard
+            .with_background_optimization(enabled)
+            .with_background_optimization_delay_minutes(
+                delay_minutes.unwrap_or(guard.background_optimization_delay_minutes),
+            );
+        let changed = next != *guard;
+        *guard = next;
+        changed
     }
 
     pub(crate) fn replace(&self, next: DesktopBehaviorSettings) -> DesktopBehaviorSettings {
@@ -129,6 +149,15 @@ struct MainWindowLifecycle {
 }
 
 impl MainWindowLifecycleState {
+    pub(crate) fn reset_hidden_timer(&self) -> Option<u64> {
+        let mut guard = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        guard.hide_generation = guard.hide_generation.wrapping_add(1);
+        (!guard.desired_visible).then_some(guard.hide_generation)
+    }
+
     pub(crate) fn show(&self) {
         match self.inner.lock() {
             Ok(mut guard) => {
@@ -282,6 +311,36 @@ impl WidgetWindowLifecycleState {
 #[cfg(test)]
 mod tests {
     use super::{MainWindowLifecycleState, WidgetShowCompletion, WidgetWindowLifecycleState};
+
+    #[test]
+    fn background_policy_reports_only_changes_and_preserves_other_desktop_preferences() {
+        let state = super::DesktopBehaviorState::default();
+        state.update_launch(false, false);
+        assert!(state.update_background_resource_policy(true, Some(1)));
+        assert!(!state.update_background_resource_policy(true, Some(1)));
+        assert!(state.update_background_resource_policy(false, None));
+        let snapshot = state.snapshot();
+        assert!(!snapshot.background_optimization);
+        assert_eq!(snapshot.background_optimization_delay_minutes, 1);
+        assert!(!snapshot.launch_at_login);
+        assert!(!snapshot.start_minimized);
+    }
+
+    #[test]
+    fn background_policy_changes_invalidate_old_timers_and_reopen_cancels_new_timer() {
+        let lifecycle = MainWindowLifecycleState::default();
+        lifecycle.show();
+        assert_eq!(lifecycle.reset_hidden_timer(), None);
+        let old = lifecycle.hide();
+        let rescheduled = lifecycle.reset_hidden_timer().unwrap();
+        assert!(!lifecycle.should_destroy_hidden_window(old));
+        assert!(lifecycle.should_destroy_hidden_window(rescheduled));
+        lifecycle.show();
+        assert!(!lifecycle.should_destroy_hidden_window(rescheduled));
+        let next_hide = lifecycle.hide();
+        assert!(!lifecycle.should_destroy_hidden_window(rescheduled));
+        assert!(lifecycle.should_destroy_hidden_window(next_hide));
+    }
 
     #[test]
     fn main_window_lifecycle_cancels_stale_destroy_after_show() {

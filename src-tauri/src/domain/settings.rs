@@ -4,6 +4,8 @@ pub const DEFAULT_LAUNCH_AT_LOGIN: bool = true;
 pub const DEFAULT_BACKGROUND_TRACKING_AT_LOGIN: bool = true;
 pub const DEFAULT_START_MINIMIZED: bool = true;
 pub const DEFAULT_BACKGROUND_OPTIMIZATION: bool = false;
+pub const DEFAULT_BACKGROUND_OPTIMIZATION_DELAY_MINUTES: u32 = 5;
+pub const MAX_BACKGROUND_OPTIMIZATION_DELAY_MINUTES: u32 = 60;
 pub const DEFAULT_AUDIO_PARTICIPATION_ENABLED: bool = true;
 pub const DEFAULT_WEB_ACTIVITY_ENABLED: bool = false;
 pub const DEFAULT_WEB_ACTIVITY_PORT: u16 = 12_345;
@@ -43,6 +45,7 @@ pub struct DesktopBehaviorSettings {
     pub background_tracking_at_login: bool,
     pub start_minimized: bool,
     pub background_optimization: bool,
+    pub background_optimization_delay_minutes: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -241,6 +244,7 @@ impl Default for DesktopBehaviorSettings {
             background_tracking_at_login: DEFAULT_BACKGROUND_TRACKING_AT_LOGIN,
             start_minimized: DEFAULT_START_MINIMIZED,
             background_optimization: DEFAULT_BACKGROUND_OPTIMIZATION,
+            background_optimization_delay_minutes: DEFAULT_BACKGROUND_OPTIMIZATION_DELAY_MINUTES,
         }
     }
 }
@@ -294,6 +298,7 @@ impl DesktopBehaviorSettings {
         background_tracking_at_login: Option<&str>,
         start_minimized: Option<&str>,
         background_optimization: Option<&str>,
+        background_optimization_delay_minutes: Option<&str>,
     ) -> Self {
         let close_behavior = close_behavior.map(parse_close_behavior).unwrap_or_default();
         let minimize_behavior = minimize_behavior
@@ -317,6 +322,18 @@ impl DesktopBehaviorSettings {
             .with_launch_behavior(launch_at_login, start_minimized)
             .with_background_tracking_at_login(background_tracking_at_login)
             .with_background_optimization(background_optimization)
+            .with_background_optimization_delay_minutes(
+                background_optimization_delay_minutes
+                    .and_then(|raw| parse_background_optimization_delay_minutes(raw).ok())
+                    .unwrap_or(DEFAULT_BACKGROUND_OPTIMIZATION_DELAY_MINUTES),
+            )
+    }
+
+    pub fn with_background_optimization_delay_minutes(self, minutes: u32) -> Self {
+        Self {
+            background_optimization_delay_minutes: minutes,
+            ..self
+        }
     }
 
     pub fn should_keep_tray_visible(self) -> bool {
@@ -330,6 +347,19 @@ impl DesktopBehaviorSettings {
     pub fn should_optimize_background_resources(self) -> bool {
         self.background_optimization
     }
+}
+
+pub fn parse_background_optimization_delay_minutes(raw: &str) -> Result<u32, String> {
+    let raw = raw.trim();
+    let minutes = raw
+        .parse::<u32>()
+        .ok()
+        .filter(|_| raw.bytes().all(|byte| byte.is_ascii_digit()));
+    minutes
+        .filter(|value| (1..=MAX_BACKGROUND_OPTIMIZATION_DELAY_MINUTES).contains(value))
+        .ok_or_else(|| {
+            "background_optimization_delay_minutes must be an integer from 1 to 60".to_string()
+        })
 }
 
 pub fn parse_close_behavior(raw: &str) -> CloseBehavior {
@@ -547,7 +577,7 @@ mod tests {
     #[test]
     fn from_storage_values_applies_defaults_and_domain_parsing() {
         let defaults =
-            DesktopBehaviorSettings::from_storage_values(None, None, None, None, None, None);
+            DesktopBehaviorSettings::from_storage_values(None, None, None, None, None, None, None);
         assert_eq!(defaults, DesktopBehaviorSettings::default());
 
         let merged = DesktopBehaviorSettings::from_storage_values(
@@ -557,6 +587,7 @@ mod tests {
             None,
             Some("invalid"),
             Some("yes"),
+            Some("1"),
         );
         assert_eq!(merged.close_behavior, CloseBehavior::Tray);
         assert_eq!(merged.minimize_behavior, MinimizeBehavior::Widget);
@@ -564,6 +595,43 @@ mod tests {
         assert!(!merged.background_tracking_at_login);
         assert_eq!(merged.start_minimized, DEFAULT_START_MINIMIZED);
         assert!(merged.background_optimization);
+        assert_eq!(merged.background_optimization_delay_minutes, 1);
+    }
+
+    #[test]
+    fn background_delay_rejects_invalid_writes_and_falls_back_for_legacy_storage() {
+        for raw in [
+            "0",
+            "61",
+            "-1",
+            "1.5",
+            "NaN",
+            "",
+            "1e1",
+            "+5",
+            "999999999999",
+        ] {
+            assert!(
+                super::parse_background_optimization_delay_minutes(raw).is_err(),
+                "{raw}"
+            );
+            let settings = DesktopBehaviorSettings::from_storage_values(
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(raw),
+            );
+            assert_eq!(settings.background_optimization_delay_minutes, 5);
+        }
+        for (raw, minutes) in [("1", 1), ("60", 60), (" 05 ", 5)] {
+            assert_eq!(
+                super::parse_background_optimization_delay_minutes(raw).unwrap(),
+                minutes
+            );
+        }
     }
 
     #[test]
