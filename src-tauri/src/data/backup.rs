@@ -1,10 +1,9 @@
 use crate::data::repositories;
 use crate::data::sqlite_pool::wait_for_sqlite_pool;
 use crate::domain::backup::{
-    BackupIconCache, BackupImportBatch, BackupImportExactSession, BackupImportTimeBucket,
-    BackupMeta, BackupPayload, BackupPreview, BackupSession, BackupSetting, BackupTitleSample,
-    BackupWebActivitySegment, RestoreStrategy, CURRENT_BACKUP_SCHEMA_VERSION,
-    CURRENT_BACKUP_VERSION, MAX_BACKUP_ARCHIVE_BYTES,
+    BackupImportBatch, BackupImportExactSession, BackupImportTimeBucket, BackupMeta, BackupPayload,
+    BackupPreview, RestoreStrategy, CURRENT_BACKUP_SCHEMA_VERSION, CURRENT_BACKUP_VERSION,
+    MAX_BACKUP_ARCHIVE_BYTES,
 };
 use crate::platform::storage_paths;
 use crc32fast::Hasher;
@@ -571,51 +570,43 @@ fn verify_backup_checksums(
     Ok(())
 }
 
-fn backup_archive_declares_title_samples(
-    manifest: &BackupArchiveManifest,
-    checksums: &BackupArchiveChecksums,
-) -> bool {
-    !manifest.files.title_samples.trim().is_empty()
-        || checksums
-            .files
-            .contains_key(BACKUP_TITLE_SAMPLES_ENTRY_NAME)
-}
-
-fn backup_archive_declares_entry(
-    manifest_path: &str,
+fn read_checked_zip_entry<R: Read + Seek, T: serde::de::DeserializeOwned>(
+    archive: &mut ZipArchive<R>,
     checksums: &BackupArchiveChecksums,
     entry_name: &str,
-) -> bool {
-    !manifest_path.trim().is_empty() || checksums.files.contains_key(entry_name)
+    backup_path: &Path,
+) -> Result<T, String> {
+    // The raw JSON belongs to this call and is released before the next entry.
+    let json = read_zip_entry(archive, entry_name, backup_path)?;
+    verify_backup_checksums(checksums, &[(entry_name, &json)], backup_path)?;
+    parse_json(&json, backup_path, entry_name)
 }
 
-fn read_optional_declared_zip_entry<R: Read + Seek>(
+fn read_optional_checked_zip_entry<R: Read + Seek, T: serde::de::DeserializeOwned + Default>(
     archive: &mut ZipArchive<R>,
     manifest_path: &str,
     checksums: &BackupArchiveChecksums,
     entry_name: &str,
     backup_path: &Path,
-) -> Result<Option<String>, String> {
-    if backup_archive_declares_entry(manifest_path, checksums, entry_name) {
-        return read_zip_entry(archive, entry_name, backup_path).map(Some);
+) -> Result<T, String> {
+    if !manifest_path.trim().is_empty() || checksums.files.contains_key(entry_name) {
+        read_checked_zip_entry(archive, checksums, entry_name, backup_path)
+    } else {
+        Ok(T::default())
     }
-
-    Ok(None)
 }
 
 fn decode_structured_backup_archive<R: Read + Seek>(
     archive: &mut ZipArchive<R>,
     backup_path: &Path,
 ) -> Result<BackupPayload, String> {
-    let manifest_json = read_zip_entry(archive, BACKUP_MANIFEST_ENTRY_NAME, backup_path)?;
-    let sessions_json = read_zip_entry(archive, BACKUP_SESSIONS_ENTRY_NAME, backup_path)?;
-    let settings_json = read_zip_entry(archive, BACKUP_SETTINGS_ENTRY_NAME, backup_path)?;
-    let icon_cache_json = read_zip_entry(archive, BACKUP_ICON_CACHE_ENTRY_NAME, backup_path)?;
-    let checksums_json = read_zip_entry(archive, BACKUP_CHECKSUMS_ENTRY_NAME, backup_path)?;
-
-    let checksums =
-        parse_json::<BackupArchiveChecksums>(&checksums_json, backup_path, "checksums")?;
-    let manifest = parse_json::<BackupArchiveManifest>(&manifest_json, backup_path, "manifest")?;
+    let checksums: BackupArchiveChecksums = parse_json(
+        &read_zip_entry(archive, BACKUP_CHECKSUMS_ENTRY_NAME, backup_path)?,
+        backup_path,
+        "checksums",
+    )?;
+    let manifest: BackupArchiveManifest =
+        read_checked_zip_entry(archive, &checksums, BACKUP_MANIFEST_ENTRY_NAME, backup_path)?;
     if manifest.format != BACKUP_FORMAT {
         return Err(format!(
             "backup archive `{}` has unsupported format `{}`",
@@ -623,140 +614,72 @@ fn decode_structured_backup_archive<R: Read + Seek>(
             manifest.format
         ));
     }
-    let title_samples_json = if backup_archive_declares_title_samples(&manifest, &checksums) {
-        Some(read_zip_entry(
-            archive,
-            BACKUP_TITLE_SAMPLES_ENTRY_NAME,
-            backup_path,
-        )?)
-    } else {
-        None
-    };
-    let tool_reminders_json = read_optional_declared_zip_entry(
+    let sessions =
+        read_checked_zip_entry(archive, &checksums, BACKUP_SESSIONS_ENTRY_NAME, backup_path)?;
+    let settings =
+        read_checked_zip_entry(archive, &checksums, BACKUP_SETTINGS_ENTRY_NAME, backup_path)?;
+    let icon_cache = read_checked_zip_entry(
         archive,
-        &manifest.files.tool_reminders,
         &checksums,
-        BACKUP_TOOL_REMINDERS_ENTRY_NAME,
+        BACKUP_ICON_CACHE_ENTRY_NAME,
         backup_path,
     )?;
-    let tool_timers_json = read_optional_declared_zip_entry(
+    let title_samples = read_optional_checked_zip_entry(
         archive,
-        &manifest.files.tool_timers,
+        &manifest.files.title_samples,
         &checksums,
-        BACKUP_TOOL_TIMERS_ENTRY_NAME,
+        BACKUP_TITLE_SAMPLES_ENTRY_NAME,
         backup_path,
     )?;
-    let tool_timer_laps_json = read_optional_declared_zip_entry(
-        archive,
-        &manifest.files.tool_timer_laps,
-        &checksums,
-        BACKUP_TOOL_TIMER_LAPS_ENTRY_NAME,
-        backup_path,
-    )?;
-    let tool_pomodoro_runs_json = read_optional_declared_zip_entry(
-        archive,
-        &manifest.files.tool_pomodoro_runs,
-        &checksums,
-        BACKUP_TOOL_POMODORO_RUNS_ENTRY_NAME,
-        backup_path,
-    )?;
-    let tool_daily_stats_json = read_optional_declared_zip_entry(
-        archive,
-        &manifest.files.tool_daily_stats,
-        &checksums,
-        BACKUP_TOOL_DAILY_STATS_ENTRY_NAME,
-        backup_path,
-    )?;
-    let web_activity_segments_json = read_optional_declared_zip_entry(
+    let web_activity_segments = read_optional_checked_zip_entry(
         archive,
         &manifest.files.web_activity_segments,
         &checksums,
         BACKUP_WEB_ACTIVITY_SEGMENTS_ENTRY_NAME,
         backup_path,
     )?;
-    let import_activity_json = read_optional_declared_zip_entry(
+    let tool_reminders = read_optional_checked_zip_entry(
+        archive,
+        &manifest.files.tool_reminders,
+        &checksums,
+        BACKUP_TOOL_REMINDERS_ENTRY_NAME,
+        backup_path,
+    )?;
+    let tool_timers = read_optional_checked_zip_entry(
+        archive,
+        &manifest.files.tool_timers,
+        &checksums,
+        BACKUP_TOOL_TIMERS_ENTRY_NAME,
+        backup_path,
+    )?;
+    let tool_timer_laps = read_optional_checked_zip_entry(
+        archive,
+        &manifest.files.tool_timer_laps,
+        &checksums,
+        BACKUP_TOOL_TIMER_LAPS_ENTRY_NAME,
+        backup_path,
+    )?;
+    let tool_pomodoro_runs = read_optional_checked_zip_entry(
+        archive,
+        &manifest.files.tool_pomodoro_runs,
+        &checksums,
+        BACKUP_TOOL_POMODORO_RUNS_ENTRY_NAME,
+        backup_path,
+    )?;
+    let tool_daily_stats = read_optional_checked_zip_entry(
+        archive,
+        &manifest.files.tool_daily_stats,
+        &checksums,
+        BACKUP_TOOL_DAILY_STATS_ENTRY_NAME,
+        backup_path,
+    )?;
+    let import_activity: BackupImportActivity = read_optional_checked_zip_entry(
         archive,
         &manifest.files.import_activity,
         &checksums,
         BACKUP_IMPORT_ACTIVITY_ENTRY_NAME,
         backup_path,
     )?;
-    let mut checksum_entries = vec![
-        (BACKUP_MANIFEST_ENTRY_NAME, manifest_json.as_str()),
-        (BACKUP_SESSIONS_ENTRY_NAME, sessions_json.as_str()),
-        (BACKUP_SETTINGS_ENTRY_NAME, settings_json.as_str()),
-        (BACKUP_ICON_CACHE_ENTRY_NAME, icon_cache_json.as_str()),
-    ];
-    if let Some(web_activity_segments_json) = web_activity_segments_json.as_deref() {
-        checksum_entries.push((
-            BACKUP_WEB_ACTIVITY_SEGMENTS_ENTRY_NAME,
-            web_activity_segments_json,
-        ));
-    }
-    if let Some(title_samples_json) = title_samples_json.as_deref() {
-        checksum_entries.push((BACKUP_TITLE_SAMPLES_ENTRY_NAME, title_samples_json));
-    }
-    if let Some(tool_reminders_json) = tool_reminders_json.as_deref() {
-        checksum_entries.push((BACKUP_TOOL_REMINDERS_ENTRY_NAME, tool_reminders_json));
-    }
-    if let Some(tool_timers_json) = tool_timers_json.as_deref() {
-        checksum_entries.push((BACKUP_TOOL_TIMERS_ENTRY_NAME, tool_timers_json));
-    }
-    if let Some(tool_timer_laps_json) = tool_timer_laps_json.as_deref() {
-        checksum_entries.push((BACKUP_TOOL_TIMER_LAPS_ENTRY_NAME, tool_timer_laps_json));
-    }
-    if let Some(tool_pomodoro_runs_json) = tool_pomodoro_runs_json.as_deref() {
-        checksum_entries.push((
-            BACKUP_TOOL_POMODORO_RUNS_ENTRY_NAME,
-            tool_pomodoro_runs_json,
-        ));
-    }
-    if let Some(tool_daily_stats_json) = tool_daily_stats_json.as_deref() {
-        checksum_entries.push((BACKUP_TOOL_DAILY_STATS_ENTRY_NAME, tool_daily_stats_json));
-    }
-    if let Some(import_activity_json) = import_activity_json.as_deref() {
-        checksum_entries.push((BACKUP_IMPORT_ACTIVITY_ENTRY_NAME, import_activity_json));
-    }
-    verify_backup_checksums(&checksums, &checksum_entries, backup_path)?;
-
-    let sessions = parse_json::<Vec<BackupSession>>(&sessions_json, backup_path, "sessions")?;
-    let title_samples = title_samples_json
-        .map(|json| parse_json::<Vec<BackupTitleSample>>(&json, backup_path, "title samples"))
-        .transpose()?
-        .unwrap_or_default();
-    let settings = parse_json::<Vec<BackupSetting>>(&settings_json, backup_path, "settings")?;
-    let icon_cache =
-        parse_json::<Vec<BackupIconCache>>(&icon_cache_json, backup_path, "icon cache")?;
-    let web_activity_segments = web_activity_segments_json
-        .map(|json| {
-            parse_json::<Vec<BackupWebActivitySegment>>(&json, backup_path, "web activity segments")
-        })
-        .transpose()?
-        .unwrap_or_default();
-    let tool_reminders = tool_reminders_json
-        .map(|json| parse_json(&json, backup_path, "tool reminders"))
-        .transpose()?
-        .unwrap_or_default();
-    let tool_timers = tool_timers_json
-        .map(|json| parse_json(&json, backup_path, "tool timers"))
-        .transpose()?
-        .unwrap_or_default();
-    let tool_timer_laps = tool_timer_laps_json
-        .map(|json| parse_json(&json, backup_path, "tool timer laps"))
-        .transpose()?
-        .unwrap_or_default();
-    let tool_pomodoro_runs = tool_pomodoro_runs_json
-        .map(|json| parse_json(&json, backup_path, "tool pomodoro runs"))
-        .transpose()?
-        .unwrap_or_default();
-    let tool_daily_stats = tool_daily_stats_json
-        .map(|json| parse_json(&json, backup_path, "tool daily stats"))
-        .transpose()?
-        .unwrap_or_default();
-    let import_activity = import_activity_json
-        .map(|json| parse_json::<BackupImportActivity>(&json, backup_path, "imported activity"))
-        .transpose()?
-        .unwrap_or_default();
 
     Ok(BackupPayload {
         version: manifest.backup_version,
@@ -1314,7 +1237,9 @@ pub async fn preview_backup(backup_path: String) -> Result<BackupPreview, String
 mod tests {
     use super::*;
     use crate::data::schema as db_schema;
-    use crate::domain::backup::{BackupIconCache, BackupSession, BackupSetting, BackupTitleSample};
+    use crate::domain::backup::{
+        BackupIconCache, BackupSession, BackupSetting, BackupTitleSample, BackupWebActivitySegment,
+    };
     use sqlx::{Executor, SqlitePool};
 
     #[test]
@@ -1413,6 +1338,82 @@ mod tests {
         fs::write(&path, b"PK").unwrap();
         assert!(read_backup_payload(&path).is_err());
         fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn late_entry_failure_never_changes_restore_target() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            pool.execute("INSERT INTO settings(key,value) VALUES('keep','original')")
+                .await
+                .unwrap();
+            for failure in ["checksum", "missing-checksum", "invalid-json", "algorithm"] {
+                let path = temp_backup_path(failure);
+                let bytes = encode_backup_archive(&payload_with_bound_web_activity()).unwrap();
+                let mut source = ZipArchive::new(Cursor::new(bytes)).unwrap();
+                let mut entries = BTreeMap::new();
+                for index in 0..source.len() {
+                    let mut entry = source.by_index(index).unwrap();
+                    let mut json = String::new();
+                    entry.read_to_string(&mut json).unwrap();
+                    entries.insert(entry.name().to_string(), json);
+                }
+                let mut checksums: BackupArchiveChecksums =
+                    serde_json::from_str(&entries[BACKUP_CHECKSUMS_ENTRY_NAME]).unwrap();
+                match failure {
+                    "checksum" => {
+                        entries.insert(BACKUP_IMPORT_ACTIVITY_ENTRY_NAME.into(), "{}".into());
+                    }
+                    "missing-checksum" => {
+                        checksums.files.remove(BACKUP_IMPORT_ACTIVITY_ENTRY_NAME);
+                    }
+                    "invalid-json" => {
+                        entries.insert(BACKUP_IMPORT_ACTIVITY_ENTRY_NAME.into(), "{".into());
+                        checksums
+                            .files
+                            .insert(BACKUP_IMPORT_ACTIVITY_ENTRY_NAME.into(), checksum("{"));
+                    }
+                    _ => checksums.algorithm = "unsupported".into(),
+                }
+                entries.insert(
+                    BACKUP_CHECKSUMS_ENTRY_NAME.into(),
+                    serde_json::to_string(&checksums).unwrap(),
+                );
+                let mut archive = ZipWriter::new(File::create(&path).unwrap());
+                for (name, json) in entries {
+                    archive
+                        .start_file(
+                            name,
+                            SimpleFileOptions::default()
+                                .compression_method(CompressionMethod::Stored),
+                        )
+                        .unwrap();
+                    archive.write_all(json.as_bytes()).unwrap();
+                }
+                archive.finish().unwrap();
+                for strategy in [RestoreStrategy::Replace, RestoreStrategy::Merge] {
+                    assert!(
+                        restore_backup_from_path(&pool, &path, strategy, 6000)
+                            .await
+                            .is_err(),
+                        "{failure}"
+                    );
+                    let value: String =
+                        sqlx::query_scalar("SELECT value FROM settings WHERE key='keep'")
+                            .fetch_one(&pool)
+                            .await
+                            .unwrap();
+                    assert_eq!(value, "original");
+                    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sessions")
+                        .fetch_one(&pool)
+                        .await
+                        .unwrap();
+                    assert_eq!(count, 0, "{failure} must not partially restore sessions");
+                }
+                fs::remove_file(path).unwrap();
+            }
+            pool.close().await;
+        });
     }
 
     #[test]
