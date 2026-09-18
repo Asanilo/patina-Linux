@@ -14,6 +14,10 @@ pub struct ApiEndpoint {
 const DESKTOP_ENDPOINTS: &[ApiEndpoint] = &[
     ApiEndpoint {
         method: "GET",
+        path: "/api/v1/classification/observed-apps",
+    },
+    ApiEndpoint {
+        method: "GET",
         path: "/api/v1/heatmap",
     },
     ApiEndpoint {
@@ -117,6 +121,10 @@ const DESKTOP_ENDPOINTS: &[ApiEndpoint] = &[
 const DAEMON_READ_ONLY_ENDPOINTS: &[ApiEndpoint] = &[
     ApiEndpoint {
         method: "GET",
+        path: "/api/v1/classification/observed-apps",
+    },
+    ApiEndpoint {
+        method: "GET",
         path: "/api/v1/heatmap",
     },
     ApiEndpoint {
@@ -198,6 +206,10 @@ const DAEMON_READ_ONLY_ENDPOINTS: &[ApiEndpoint] = &[
 ];
 
 const DAEMON_TRACKING_ENDPOINTS: &[ApiEndpoint] = &[
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/classification/observed-apps",
+    },
     ApiEndpoint {
         method: "GET",
         path: "/api/v1/heatmap",
@@ -541,7 +553,9 @@ mod tests {
 
     #[test]
     fn desktop_surface_keeps_shared_client_method_and_path_set() {
-        assert_eq!(ApiSurface::Desktop.endpoints().len(), 25);
+        assert_eq!(ApiSurface::Desktop.endpoints().len(), 26);
+        assert!(ApiSurface::Desktop.allows("GET", "/api/v1/classification/observed-apps"));
+        assert!(!ApiSurface::Desktop.allows("POST", "/api/v1/classification/observed-apps"));
         assert!(ApiSurface::Desktop.allows("GET", "/api/v1/heatmap"));
         assert!(!ApiSurface::Desktop.allows("POST", "/api/v1/heatmap"));
         assert!(ApiSurface::Desktop.allows("GET", "/api/v1/sessions"));

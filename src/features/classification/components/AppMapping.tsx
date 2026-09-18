@@ -38,6 +38,8 @@ export default function AppMapping(props: Props) {
   const {
     dialogs,
     loading,
+    loadError,
+    retryLoad,
     draftState,
     savedState,
     filter,
@@ -105,6 +107,18 @@ export default function AppMapping(props: Props) {
     setObjectMode("app");
   }, [objectMode, webActivityEnabled]);
 
+  const errorNotice = loadError ? (
+    <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-[var(--qp-text-secondary)]">
+      <span>{categoryManagementCopy.loadError}</span>
+      <button type="button" className="qp-control h-8 w-8 shrink-0" title={categoryManagementCopy.retry} aria-label={categoryManagementCopy.retry} onClick={retryLoad} disabled={loading}>
+        <RefreshCw size={14} aria-hidden="true" />
+      </button>
+    </div>
+  ) : null;
+
+  if (loadError && (!draftState || !savedState)) {
+    return <div className="flex h-full items-center justify-center p-4">{errorNotice}</div>;
+  }
   if (loading || !draftState || !savedState) {
     return (
       <div className="h-full flex items-center justify-center gap-2 text-[var(--qp-text-tertiary)]">
@@ -130,6 +144,7 @@ export default function AppMapping(props: Props) {
 
   return (
     <div className="flex h-full min-w-0 flex-col gap-4 md:gap-5 overflow-hidden">
+      {errorNotice}
       <QuietPageHeader
         icon={<Sparkles size={18} />}
         title={UI_TEXT.mapping.title}

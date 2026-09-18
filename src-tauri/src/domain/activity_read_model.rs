@@ -21,6 +21,8 @@ pub struct OwnedActivityRange<T> {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ActivityContribution<T> {
     pub origin: ActivityOrigin,
+    /// Clipped exact start, or scoped bucket start (not an observed position within a bucket).
+    pub start_ms: i64,
     pub duration_ms: i64,
     pub value: T,
 }
@@ -91,6 +93,7 @@ pub fn summarize_activity_range<T: Clone>(
             );
             (duration_ms > 0).then_some(ActivityContribution {
                 origin: candidate.range.origin,
+                start_ms: candidate.range.start_ms.max(from_ms),
                 duration_ms,
                 value: candidate.range.value,
             })
@@ -147,6 +150,7 @@ pub fn summarize_activity_range<T: Clone>(
             if allocated > 0 {
                 contributions.push(ActivityContribution {
                     origin: ActivityOrigin::ImportBucket,
+                    start_ms: scoped_start_ms,
                     duration_ms: allocated,
                     value: candidate.range.value,
                 });

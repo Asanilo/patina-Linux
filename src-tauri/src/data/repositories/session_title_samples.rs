@@ -1,9 +1,10 @@
 use crate::domain::backup::BackupTitleSample;
 #[cfg(test)]
-use sqlx::Pool;
-use sqlx::{Row, Sqlite, Transaction};
+use sqlx::{Pool, Row};
+use sqlx::{Sqlite, Transaction};
 use std::collections::HashMap;
 
+#[cfg(test)]
 pub async fn fetch_all_for_backup<'e, E>(executor: E) -> Result<Vec<BackupTitleSample>, String>
 where
     E: sqlx::Executor<'e, Database = Sqlite>,

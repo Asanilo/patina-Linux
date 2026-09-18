@@ -3,12 +3,17 @@ import { lstat, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+  commandFailureDetail,
   evaluateAcceptanceEvidence,
   parseSystemdProperties,
   summarizeCapabilities,
   summarizeCutoverReservation,
   writeEvidence,
 } from "../scripts/patinad-installed-acceptance.ts";
+
+assert.equal(commandFailureDetail({ stderr: "", message: "command failed" }), "command failed");
+assert.match(commandFailureDetail({ stderr: "", killed: true }), /time limit/);
+assert.equal(commandFailureDetail({ stderr: "database is locked", message: "command failed" }), "database is locked");
 
 function managedEvidence() {
   return {

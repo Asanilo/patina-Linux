@@ -2,6 +2,8 @@ import { getUiTextLanguage } from "../../shared/copy/uiText.ts";
 
 const CATEGORY_MANAGEMENT_COPY = {
   "zh-CN": {
+    loadError: "无法加载分类数据，请确认后台版本一致后重试。",
+    retry: "重试",
     renameTitle: "重命名自定义分类",
     renameDescription: "已使用该分类的应用和网页会显示新名称。",
     renamePlaceholder: "新的分类名称",
@@ -11,6 +13,8 @@ const CATEGORY_MANAGEMENT_COPY = {
     dialogDescription: "新建或管理自定义分类，并调整分类颜色",
   },
   "en-US": {
+    loadError: "Could not load classification data. Check that the runtime version matches, then retry.",
+    retry: "Retry",
     renameTitle: "Rename custom category",
     renameDescription: "Apps and websites using this category will show the new name.",
     renamePlaceholder: "New category name",

@@ -733,6 +733,22 @@ impl PatinadClient {
             .await
     }
 
+    pub async fn observed_apps(
+        &self,
+        from_ms: i64,
+        to_ms: i64,
+    ) -> Result<Vec<crate::domain::observed_apps::ObservedAppStat>, PatinadClientError> {
+        crate::domain::observed_apps::validate_range(from_ms, to_ms)
+            .map_err(PatinadClientError::InvalidConfiguration)?;
+        self.get_json_with_limits(
+            &format!("/api/v1/classification/observed-apps?from_ms={from_ms}&to_ms={to_ms}"),
+            "observed apps",
+            Duration::from_secs(18),
+            crate::domain::observed_apps::MAX_OBSERVED_APPS_RESPONSE_BYTES,
+        )
+        .await
+    }
+
     pub async fn daily_activity(
         &self,
         from: &str,
@@ -754,6 +770,17 @@ impl PatinadClient {
         response_name: &str,
         timeout: Duration,
     ) -> Result<T, PatinadClientError> {
+        self.get_json_with_limits(path, response_name, timeout, MAX_RESPONSE_BYTES)
+            .await
+    }
+
+    async fn get_json_with_limits<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        response_name: &str,
+        timeout: Duration,
+        max_bytes: usize,
+    ) -> Result<T, PatinadClientError> {
         let response = self
             .client
             .get(format!("{}{path}", self.base_url))
@@ -763,7 +790,7 @@ impl PatinadClient {
             .await
             .map_err(map_transport_error)?;
         let status = response.status();
-        let body = read_limited_body(response).await?;
+        let body = read_body_with_limit(response, max_bytes).await?;
 
         if status == StatusCode::UNAUTHORIZED {
             return Err(PatinadClientError::Unauthorized);
@@ -977,9 +1004,16 @@ fn negotiate_tracking_capabilities(
 }
 
 async fn read_limited_body(response: reqwest::Response) -> Result<Vec<u8>, PatinadClientError> {
+    read_body_with_limit(response, MAX_RESPONSE_BYTES).await
+}
+
+async fn read_body_with_limit(
+    response: reqwest::Response,
+    max_bytes: usize,
+) -> Result<Vec<u8>, PatinadClientError> {
     if response
         .content_length()
-        .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
+        .is_some_and(|length| length > max_bytes as u64)
     {
         return Err(PatinadClientError::ResponseTooLarge);
     }
@@ -988,7 +1022,7 @@ async fn read_limited_body(response: reqwest::Response) -> Result<Vec<u8>, Patin
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(map_transport_error)?;
-        if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
+        if body.len().saturating_add(chunk.len()) > max_bytes {
             return Err(PatinadClientError::ResponseTooLarge);
         }
         body.extend_from_slice(&chunk);
@@ -1024,6 +1058,59 @@ mod tests {
     use crate::engine::api::types::{
         AvailabilityCapability, OwnedRuntimeCapability, ProtocolCapability, WriteApiCapability,
     };
+
+    #[tokio::test]
+    async fn observed_apps_transport_has_its_own_budget_and_propagates_old_daemon_errors() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let rows = (0..800)
+            .map(|index| crate::domain::observed_apps::ObservedAppStat {
+                exe_name: format!("app-{index}"),
+                app_name: "Example app".into(),
+                total_duration_ms: 1000,
+                last_seen_ms: 1000,
+            })
+            .collect::<Vec<_>>();
+        let encoded = serde_json::to_string(&ApiResponse { data: rows.clone() }).unwrap();
+        assert!(encoded.len() > MAX_RESPONSE_BYTES);
+        for (status, body, error) in [
+            (200, encoded, None),
+            (404, "{}".into(), Some("http-error")),
+            (401, "{}".into(), Some("unauthorized")),
+            (200, "{}".into(), Some("invalid-response")),
+            (
+                200,
+                "x".repeat(crate::domain::observed_apps::MAX_OBSERVED_APPS_RESPONSE_BYTES + 1),
+                Some("response-too-large"),
+            ),
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let client =
+                PatinadClient::new(listener.local_addr().unwrap().port(), "fixture-token").unwrap();
+            let server = tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                let mut chunk = [0; 1024];
+                while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                    let count = socket.read(&mut chunk).await.unwrap();
+                    assert!(count > 0 && request.len() < 8192);
+                    request.extend_from_slice(&chunk[..count]);
+                }
+                let request = String::from_utf8(request).unwrap().to_lowercase();
+                assert!(request
+                    .starts_with("get /api/v1/classification/observed-apps?from_ms=0&to_ms=3000 "));
+                assert!(request.contains("authorization: bearer fixture-token\r\n"));
+                let response = format!("HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len());
+                let _ = socket.write_all(response.as_bytes()).await;
+            });
+            let result = client.observed_apps(0, 3000).await;
+            if let Some(error) = error {
+                assert_eq!(result.unwrap_err().code(), error);
+            } else {
+                assert_eq!(result.unwrap(), rows);
+            }
+            server.await.unwrap();
+        }
+    }
 
     #[tokio::test]
     async fn daily_activity_transport_is_authenticated_bounded_and_never_falls_back() {

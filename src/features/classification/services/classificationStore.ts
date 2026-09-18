@@ -592,9 +592,10 @@ export async function loadObservedAppCandidates(
   days: number = 30,
   limit: number = 120,
 ): Promise<ObservedAppCandidate[]> {
-  const sinceMs = Date.now() - (Math.max(1, days) * 24 * 60 * 60 * 1000);
   const nowMs = Date.now();
-  const rows = await loadObservedSessionStats(sinceMs, nowMs);
+  const sinceMs = nowMs - (Math.max(1, days) * 24 * 60 * 60 * 1000);
+  const { loadRecentObservedSessionStats } = await import("../../../platform/persistence/observedAppsRepository.ts");
+  const rows = await loadRecentObservedSessionStats(sinceMs, nowMs);
 
   const merged = new Map<string, ObservedAppCandidate>();
 

@@ -5,6 +5,7 @@ pub mod backup;
 pub mod backup_schedule;
 pub mod daily_activity;
 pub mod data_maintenance;
+pub mod observed_apps;
 pub mod remote_backup;
 pub mod settings;
 pub mod storage;

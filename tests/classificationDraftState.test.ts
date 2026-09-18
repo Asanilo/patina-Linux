@@ -862,6 +862,26 @@ await runTest("classification bootstrap sync applies saved process mapper state"
   ProcessMapper.setDeletedCategories([]);
 });
 
+await runTest("classification bootstrap shares pending reads and releases failures for retry", async () => {
+  let calls = 0;
+  let rejectRead!: (error: Error) => void;
+  const deps: ClassificationBootstrapDeps = {
+    loadObservedAppCandidates: () => { calls++; return new Promise((_, reject) => { rejectRead = reject; }); },
+    loadObservedWebDomainCandidates: async () => [], loadAppOverrides: async () => ({}),
+    loadWebDomainOverrides: async () => ({}), loadCategoryColorOverrides: async () => ({}),
+    loadCategoryLabelOverrides: async () => ({}), loadCustomCategories: async () => [], loadDeletedCategories: async () => [],
+  };
+  const first = ClassificationService.loadClassificationBootstrap(deps);
+  const second = ClassificationService.loadClassificationBootstrap(deps);
+  assert.equal(first, second);
+  assert.equal(calls, 1);
+  rejectRead(new Error("query failed"));
+  await assert.rejects(first, /query failed/);
+  deps.loadObservedAppCandidates = async () => { calls++; return []; };
+  assert.deepEqual((await ClassificationService.loadClassificationBootstrap(deps)).observed, []);
+  assert.equal(calls, 2);
+});
+
 await runTest("classification bootstrap keeps app data when optional web reads fail", async () => {
   const observed = [buildCandidate("vscodium.exe", "VSCodium")];
   const deps: ClassificationBootstrapDeps = {

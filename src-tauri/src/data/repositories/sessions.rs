@@ -4,6 +4,7 @@ use crate::domain::tracking::ActiveSessionSnapshot;
 use sqlx::{Pool, Row, Sqlite, Transaction};
 use std::collections::HashMap;
 
+#[cfg(test)]
 pub async fn fetch_all_for_backup<'e, E>(executor: E) -> Result<Vec<BackupSession>, String>
 where
     E: sqlx::Executor<'e, Database = Sqlite>,

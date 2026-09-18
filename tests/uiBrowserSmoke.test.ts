@@ -155,6 +155,11 @@ function tauriStubFor(path: string) {
       }
 
       export async function invoke(command, payload = {}) {
+        if (command === "cmd_get_observed_apps") {
+          globalThis.__PATINA_SMOKE_OBSERVED_CALLS = (globalThis.__PATINA_SMOKE_OBSERVED_CALLS ?? 0) + 1;
+          if (globalThis.__PATINA_SMOKE_OBSERVED_ERROR) throw new Error(globalThis.__PATINA_SMOKE_OBSERVED_ERROR);
+          return [{ exe_name: "zen", app_name: "Zen", total_duration_ms: 60000, last_seen_ms: payload.toMs - 60000 }];
+        }
         if (command === "cmd_get_daily_activity") {
           globalThis.__PATINA_SMOKE_HEATMAP_CALLS = (globalThis.__PATINA_SMOKE_HEATMAP_CALLS ?? 0) + 1;
           if (globalThis.__PATINA_SMOKE_HEATMAP_ERROR) throw new Error(globalThis.__PATINA_SMOKE_HEATMAP_ERROR);
@@ -1975,6 +1980,35 @@ try {
       deviceScaleFactor: 1,
       mobile: false,
     }, sessionId);
+  });
+
+  await runTest("app mapping reports failed candidate reads and retries without a detail fallback", async () => {
+    const firstError = consoleErrors.length;
+    await evaluate(client!, sessionId, `
+      globalThis.__PATINA_SMOKE_OBSERVED_ERROR = 'unsupported daemon';
+      document.querySelector('[aria-label="分类"]').click();
+    `);
+    await waitForExpression(client!, sessionId, `document.querySelector('[role="alert"]')?.textContent.includes('无法加载分类数据')`);
+    const before = await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_OBSERVED_CALLS`);
+    for (const width of [760, 1280]) {
+      await client!.command("Emulation.setDeviceMetricsOverride", { width, height: 820, deviceScaleFactor: 1, mobile: false }, sessionId);
+      assert.equal(await evaluate(client!, sessionId, `document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1`), true);
+      if (process.env.PATINA_UI_SCREENSHOTS_DIR) {
+        const shot = await client!.command("Page.captureScreenshot", { format: "png" }, sessionId);
+        writeFileSync(join(process.env.PATINA_UI_SCREENSHOTS_DIR, `classification-error-${width}.png`), Buffer.from(String(shot.data), "base64"));
+      }
+    }
+    await evaluate(client!, sessionId, `
+      globalThis.__PATINA_SMOKE_OBSERVED_ERROR = null;
+      document.querySelector('[role="alert"] button').click();
+    `);
+    await waitForExpression(client!, sessionId, `!document.querySelector('[role="alert"]') && Boolean(document.querySelector('.qp-select-trigger'))`);
+    assert.ok(Number(await evaluate(client!,sessionId,`globalThis.__PATINA_SMOKE_OBSERVED_CALLS`)) > Number(before));
+    const expectedPrefix = "load app mapping bootstrap failed Error: unsupported daemon\n";
+    assert.ok(consoleErrors.slice(firstError).some((error) => error.startsWith(expectedPrefix)));
+    for (let index = consoleErrors.length - 1; index >= firstError; index--) {
+      if (consoleErrors[index].startsWith(expectedPrefix)) consoleErrors.splice(index, 1);
+    }
   });
 
   await runTest("app mapping only offers explicit manual categories", async () => {

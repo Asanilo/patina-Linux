@@ -17,6 +17,7 @@ const HOST_INTEGRATION_SETTING_KEYS: &[&str] = &[
     "webdav_backup_last_backup_at_ms",
 ];
 
+#[cfg(test)]
 pub async fn fetch_all_for_backup<'e, E>(executor: E) -> Result<Vec<BackupSetting>, String>
 where
     E: sqlx::Executor<'e, Database = Sqlite>,

@@ -25,12 +25,18 @@ function bounded(value: string): string {
   return value.slice(0, MAX_COMMAND_OUTPUT_BYTES).trim();
 }
 
-async function run(command: string, args: string[]) {
+export function commandFailureDetail(error: unknown): string {
+  const failure = error as NodeJS.ErrnoException & { stderr?: string; killed?: boolean };
+  if (failure.killed) return "command exceeded its time limit or was terminated";
+  return bounded(failure.stderr || failure.message || String(error));
+}
+
+async function run(command: string, args: string[], timeout = 5_000) {
   try {
     const result = await execFileAsync(command, args, {
       encoding: "utf8",
       maxBuffer: MAX_COMMAND_OUTPUT_BYTES,
-      timeout: 5_000,
+      timeout,
     });
     return { ok: true, stdout: bounded(result.stdout), stderr: bounded(result.stderr) };
   } catch (error) {
@@ -38,7 +44,7 @@ async function run(command: string, args: string[]) {
     return {
       ok: false,
       stdout: bounded(failure.stdout ?? ""),
-      stderr: bounded(failure.stderr ?? failure.message ?? String(error)),
+      stderr: commandFailureDetail(error),
     };
   }
 }
@@ -317,7 +323,7 @@ async function inspectDatabase(dbPath: string) {
     ".timeout 2000",
     dbPath,
     "PRAGMA quick_check;",
-  ]);
+  ], 30_000);
   const counts = await run("sqlite3", [
     "-readonly",
     "-cmd",

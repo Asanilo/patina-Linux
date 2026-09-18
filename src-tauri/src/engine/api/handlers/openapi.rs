@@ -269,6 +269,15 @@ fn paths(surface: ApiSurface) -> Value {
     });
     let object = paths.as_object_mut().expect("OpenAPI paths object");
     object.insert(
+        "/api/v1/classification/observed-apps".to_string(),
+        json!({"get": get_operation_with_parameters(
+            "Bounded classification evidence grouped by raw executable. Native/import precedence precedes UI filtering. Includes excluded apps; no titles or URLs. At most 366 days, 50000 facts, 8 MiB metadata and 4096 apps; budget errors return no partial data. last_seen_ms is the latest resolved start, not the last heartbeat; bucket starts are not exact observation times.",
+            "ObservedAppsResponse",
+            vec![required_query_param("from_ms", "integer", "Inclusive nonnegative epoch milliseconds."),
+                 required_query_param("to_ms", "integer", "Exclusive epoch milliseconds.")],
+        )}),
+    );
+    object.insert(
         "/api/v1/heatmap".to_string(),
         json!({
             "get": get_operation_with_parameters(
@@ -911,6 +920,19 @@ fn schemas() -> Value {
     schemas.insert(
         "TrendResponse".to_string(),
         envelope(schema_ref("TrendData")),
+    );
+    schemas.insert(
+        "ObservedAppStat".to_string(),
+        object_schema(vec![
+            ("exe_name", string_schema()),
+            ("app_name", string_schema()),
+            ("total_duration_ms", integer_schema()),
+            ("last_seen_ms", integer_schema()),
+        ]),
+    );
+    schemas.insert(
+        "ObservedAppsResponse".to_string(),
+        envelope(array_schema(schema_ref("ObservedAppStat"))),
     );
     schemas.insert(
         "HeatmapDay".to_string(),

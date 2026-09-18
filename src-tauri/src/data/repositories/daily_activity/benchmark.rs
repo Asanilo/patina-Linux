@@ -51,7 +51,7 @@ fn write_new(path: &Path, value: serde_json::Value) {
 fn query_worker() {
     let root = root();
     let mode = std::env::var("PATINA_DAILY_BENCH_MODE").unwrap();
-    assert!(["seed", "legacy", "daily"].contains(&mode.as_str()));
+    assert!(["seed", "legacy", "daily", "observed-legacy", "observed"].contains(&mode.as_str()));
     tauri::async_runtime::block_on(async {
         let database = root.join("fixture.db");
         if mode == "seed" {
@@ -148,7 +148,48 @@ fn query_worker() {
         });
         let baseline = crate::platform::linux::resource::current_process_resource_snapshot();
         let started = Instant::now();
-        let output: Result<(usize, i64), String> = if mode == "daily" {
+        let output: Result<(usize, i64), String> = if mode == "observed" {
+            let stats = crate::data::repositories::observed_apps::load_observed_apps(
+                &pool,
+                START,
+                boundaries[365],
+                boundaries[365],
+            )
+            .await
+            .unwrap();
+            let total = stats.iter().map(|stat| stat.total_duration_ms).sum();
+            let encoded = serde_json::to_vec(&json!({"data": stats})).unwrap();
+            Ok((encoded.len(), total))
+        } else if mode == "observed-legacy" {
+            let source = include_str!(
+                "../../../../../src/platform/persistence/classificationPersistence.ts"
+            );
+            let sql = source
+                .split("export async function loadObservedSessionStats")
+                .nth(1)
+                .unwrap()
+                .split('`')
+                .nth(1)
+                .unwrap();
+            let mut query = sqlx::query(sql);
+            for value in legacy_values {
+                query = query.bind(value);
+            }
+            let rows = query.fetch_all(&pool).await.unwrap();
+            let values: Vec<_> = rows.iter().map(|row| json!({
+                "id": row.get::<i64,_>("id"), "origin": row.get::<String,_>("origin"),
+                "exe_name": row.get::<String,_>("exe_name"), "app_name": row.get::<String,_>("app_name"),
+                "start_time": row.get::<i64,_>("start_time"), "end_time": row.get::<i64,_>("end_time"),
+                "capacity_end_time": row.get::<i64,_>("capacity_end_time"),
+            })).collect();
+            let encoded = serde_json::to_vec(&values).unwrap();
+            let total = rows
+                .iter()
+                .map(|row| row.get::<i64, _>("end_time") - row.get::<i64, _>("start_time"))
+                .sum();
+            std::hint::black_box((&values, &encoded));
+            Ok((encoded.len(), total))
+        } else if mode == "daily" {
             match load_daily_activity(&pool, &boundaries, boundaries[365]).await {
                 Ok(snapshot) => {
                     let total = snapshot.days.iter().map(|day| day.active_ms).sum();

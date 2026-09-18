@@ -63,6 +63,7 @@ Current caveats:
 | `/api/v1/summary/week` | `GET` | Implemented | Local-week summary |
 | `/api/v1/trend` | `GET` | Partial | Daily activity trend for week/month |
 | `/api/v1/heatmap` | `GET` | Beta.17 candidate | Bounded local-calendar daily totals; used by Desktop heatmap |
+| `/api/v1/classification/observed-apps` | `GET` | Unreleased source | Bounded raw executable statistics for classification candidates |
 | `/api/v1/web-activity` | `GET` | Implemented | Browser activity segment query |
 | `/api/v1/ai/activity-context` | `GET` | Implemented | Aggregated diagnostics, active session, summaries, and recent web activity for external AI analysis |
 | `/api/v1/apps` | `GET` | Implemented | Known apps from native and imported facts |
@@ -662,6 +663,44 @@ Classification metadata is fetched only for metadata-sensitive executable names,
 The historical filter and canonical aliases have shared Rust/TypeScript contract fixtures. Relative to the legacy Desktop heatmap, two intentional corrections are pinned in fixtures: user-excluded apps no longer count, and unlocated hourly bucket quantities are prorated within each local day rather than placed as a synthetic continuous interval at the bucket start. Native/import priority is resolved before filtering. These rules apply after upgrading to beta.17, not to older installations. It has no dedicated MCP tool yet; authenticated HTTP is available.
 
 Desktop transport: `cmd_get_daily_activity {from, to}` forwards through the typed daemon client when daemon-owned, otherwise uses the same bounded repository. The daemon client keeps credentials in Rust, allows 18 seconds for this read only, and retains the 64 KiB response cap. No daemon error falls back to Desktop SQLite. The frontend validates every returned day against its requested local-calendar boundaries, rejects incomplete/misaligned/invalid numeric results, and displays an error with retry. A daemon `404` gets an explicit upgrade/restart notice. Bootstrap payloads carry `heatmapReadVersion: 2`; legacy cached charts are discarded.
+
+### `GET /api/v1/classification/observed-apps`
+
+Unreleased source endpoint, available on Desktop, read-only daemon and tracking daemon.
+Bearer authentication is required. This is classification evidence, not a top-app summary:
+excluded apps remain visible so users can change their recording rules.
+
+```bash
+curl -fsS -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  "$PATINA_API_BASE/api/v1/classification/observed-apps?from_ms=1788220800000&to_ms=1790812800000"
+```
+
+Both query parameters are required integer epoch milliseconds. `from_ms` is inclusive,
+`to_ms` exclusive; the range must be nonnegative, increasing and at most 366 days.
+Unknown and duplicate parameters return `400`. Success uses `{ "data": [ ... ] }`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `exe_name` | string | Raw executable, before client alias/case merging |
+| `app_name` | string | Name from the latest resolved start; stable source/id order breaks ties |
+| `total_duration_ms` | integer | Native/import-precedence-resolved duration, before client filtering |
+| `last_seen_ms` | integer | Latest clipped resolved start, not the last heartbeat or end time |
+
+An imported hour bucket has no precise within-hour position; its scoped start is used
+for `last_seen_ms`. Active native rows use one runtime-clock cutoff. Titles and URLs are
+not read or returned. Source/id ordering stabilizes previously unspecified SQL tie order.
+Native zero-duration evidence is retained. Native activity still masks imported activity
+before any client filtering; no user exclusion filter is applied here.
+
+Limits: one query per process, 15-second repository timeout, 50,000 input facts,
+1,024 UTF-8 bytes per name, 8 MiB input metadata, 4,096 raw executables and 1 MiB
+encoded response including the envelope. Busy/budget failures currently return `500`
+with the standard error envelope, never truncated totals. The daemon client grants
+only this endpoint a 1 MiB response budget; other endpoints retain their existing cap.
+Desktop then applies existing canonical aliases, process filters and the candidate limit.
+Old daemon errors are surfaced with retry, without a full-session SQL fallback.
+The legacy full-history auto-classification migration still uses the old reader;
+it is not covered by this endpoint's range budget. No dedicated MCP tool is added yet.
 
 ### `GET /api/v1/web-activity`
 

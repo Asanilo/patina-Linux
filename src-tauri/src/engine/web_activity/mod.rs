@@ -468,6 +468,141 @@ mod tests {
         assert_eq!(events.events().len(), 1);
     }
 
+    #[tokio::test]
+    async fn active_browser_suspend_resume_never_records_the_sleep_interval() {
+        use crate::data::repositories::web_activity::{query_segments, WebActivitySegmentQuery};
+        use crate::engine::tracking::runtime::handle_power_lifecycle_event_with_context;
+        use crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState;
+
+        let pool = setup_test_db().await;
+        commit_app_setting_mutations(
+            &pool,
+            &[
+                AppSettingMutation {
+                    key: "web_activity_enabled".into(),
+                    value: "1".into(),
+                },
+                AppSettingMutation {
+                    key: "web_activity_token".into(),
+                    value: "secret".into(),
+                },
+            ],
+        )
+        .await
+        .unwrap();
+        let tracking = TrackingRuntimeSnapshotState::default();
+        tracking.replace(browser_tracking_snapshot());
+        let state = WebActivityRuntimeState::default();
+        let events = MemoryRuntimeEventSink::default();
+        let context_at = |time| RuntimeContext::new(pool.clone(), Arc::new(FixedClock(time)));
+        start_browser_session(&pool, "zen", 1_000).await;
+        let response = handle_http_request(
+            &context_at(2_000),
+            &state,
+            tracking.snapshot(),
+            &events,
+            active_tab_request("secret"),
+        )
+        .await;
+        assert_eq!(response.status, 200);
+        let captured_before_suspend = tracking.snapshot();
+
+        handle_power_lifecycle_event_with_context(
+            &context_at(5_000),
+            &events,
+            &tracking,
+            "suspend",
+            5_000,
+        )
+        .await
+        .unwrap();
+        // No web event subscriber runs here: the native transaction must seal both records.
+        let query = WebActivitySegmentQuery::default();
+        let rows = query_segments(&pool, &query, 6_000).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            (rows[0].start_time, rows[0].end_time, rows[0].duration),
+            (2_000, Some(5_000), 3_000)
+        );
+
+        // An already captured foreground sample cannot revive a closed native session.
+        let response = handle_http_request(
+            &context_at(6_000),
+            &state,
+            captured_before_suspend,
+            &events,
+            active_tab_request("secret"),
+        )
+        .await;
+        assert_eq!(response.status, 200);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&response.body).unwrap()["changed"],
+            false
+        );
+
+        handle_power_lifecycle_event_with_context(
+            &context_at(15_000),
+            &events,
+            &tracking,
+            "resume",
+            15_000,
+        )
+        .await
+        .unwrap();
+        assert!(!tracking.snapshot().unwrap().status.is_tracking_active);
+        let response = handle_http_request(
+            &context_at(15_500),
+            &state,
+            tracking.snapshot(),
+            &events,
+            active_tab_request("secret"),
+        )
+        .await;
+        assert_eq!(response.status, 200);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&response.body).unwrap()["changed"],
+            false
+        );
+
+        start_browser_session(&pool, "zen", 16_000).await;
+        let mut fresh = browser_tracking_snapshot();
+        fresh.generation = tracking.lifecycle_generation();
+        fresh.sampled_at_ms = 16_000;
+        tracking.replace(fresh);
+        let response = handle_http_request(
+            &context_at(17_000),
+            &state,
+            tracking.snapshot(),
+            &events,
+            active_tab_request("secret"),
+        )
+        .await;
+        assert_eq!(response.status, 200);
+        handle_power_lifecycle_event_with_context(
+            &context_at(20_000),
+            &events,
+            &tracking,
+            "lock",
+            20_000,
+        )
+        .await
+        .unwrap();
+        let rows = query_segments(&pool, &query, 21_000).await.unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_ne!(rows[0].id, rows[1].id);
+        assert_eq!(
+            (rows[0].start_time, rows[0].end_time, rows[0].duration),
+            (17_000, Some(20_000), 3_000)
+        );
+        assert_eq!(
+            (rows[1].start_time, rows[1].end_time, rows[1].duration),
+            (2_000, Some(5_000), 3_000)
+        );
+        assert!(rows
+            .iter()
+            .all(|row| row.end_time.unwrap() <= 5_000 || row.start_time >= 15_000));
+    }
+
     #[test]
     fn inactive_settings_seal_existing_web_segment() {
         tauri::async_runtime::block_on(async {

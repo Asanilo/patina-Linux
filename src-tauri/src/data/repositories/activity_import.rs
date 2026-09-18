@@ -4,9 +4,12 @@ use crate::domain::activity_import::{
 };
 use crate::domain::backup::{BackupImportBatch, BackupImportExactSession, BackupImportTimeBucket};
 use sha2::{Digest, Sha256};
-use sqlx::{Pool, Row, Sqlite, SqliteConnection, Transaction};
+#[cfg(test)]
+use sqlx::SqliteConnection;
+use sqlx::{Pool, Row, Sqlite, Transaction};
 use std::collections::{HashMap, HashSet};
 
+#[cfg(test)]
 pub async fn fetch_all_for_backup(
     connection: &mut SqliteConnection,
 ) -> Result<

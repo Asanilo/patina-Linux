@@ -79,6 +79,7 @@ const defaultClassificationBootstrapDeps: ClassificationBootstrapDeps = {
 };
 
 let warnedWebClassificationFallback = false;
+const pendingBootstraps = new WeakMap<ClassificationBootstrapDeps, Promise<ClassificationBootstrapData>>();
 
 async function loadOptionalWebClassificationData(
   deps: ClassificationBootstrapDeps,
@@ -113,9 +114,17 @@ export class ClassificationService {
     return classificationStore.loadObservedWebDomainCandidates(days, limit);
   }
 
-  static async loadClassificationBootstrap(
+  static loadClassificationBootstrap(
     deps: ClassificationBootstrapDeps = defaultClassificationBootstrapDeps,
   ): Promise<ClassificationBootstrapData> {
+    const existing = pendingBootstraps.get(deps);
+    if (existing) return existing;
+    const pending = this.readClassificationBootstrap(deps).finally(() => pendingBootstraps.delete(deps));
+    pendingBootstraps.set(deps, pending);
+    return pending;
+  }
+
+  private static async readClassificationBootstrap(deps: ClassificationBootstrapDeps): Promise<ClassificationBootstrapData> {
     const [
       observed,
       loadedOverrides,

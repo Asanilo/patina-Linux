@@ -105,6 +105,9 @@ export function useAppMappingState({
   const initialBootstrap = getClassificationBootstrapCache();
   const initialBootstrapRef = useRef(initialBootstrap);
   const [loading, setLoading] = useState(() => !initialBootstrap);
+  const [loadError, setLoadError] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const retryLoad = useCallback(() => setLoadAttempt((attempt) => attempt + 1), []);
   const [candidates, setCandidates] = useState<ObservedAppCandidate[]>(
     () => cloneObservedCandidates(initialBootstrap?.observed ?? []),
   );
@@ -151,6 +154,7 @@ export function useAppMappingState({
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
+      setLoadError(false);
       const hadCacheAtStart = Boolean(initialBootstrapRef.current);
       if (!hadCacheAtStart) {
         setLoading(true);
@@ -160,8 +164,8 @@ export function useAppMappingState({
         const nextObserved = cloneObservedCandidates(bootstrap.observed);
         const nextWebDomainCandidates = cloneObservedWebDomainCandidates(bootstrap.observedWebDomains);
         const nextState = createAppMappingDraftState(bootstrap);
-        setClassificationBootstrapCache(bootstrap);
         if (cancelled) return;
+        setClassificationBootstrapCache(bootstrap);
         setCandidates(nextObserved);
         setWebDomainCandidates(nextWebDomainCandidates);
         if (!hasUnsavedChangesRef.current) {
@@ -175,6 +179,7 @@ export function useAppMappingState({
           skipNextWebNameBlurDomainRef.current = null;
         }
       } catch (error) {
+        if (!cancelled) setLoadError(true);
         console.error("load app mapping bootstrap failed", error);
       } finally {
         if (!cancelled && !hadCacheAtStart) {
@@ -186,7 +191,7 @@ export function useAppMappingState({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadAttempt]);
 
   const draftOverrides = draftState?.overrides ?? {};
   const draftWebDomainOverrides = draftState?.webDomainOverrides ?? {};
@@ -985,6 +990,8 @@ export function useAppMappingState({
   return {
     dialogs,
     loading,
+    loadError,
+    retryLoad,
     draftState,
     savedState,
     filter,

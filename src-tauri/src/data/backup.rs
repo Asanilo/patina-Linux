@@ -19,6 +19,8 @@ use tauri::{AppHandle, Runtime};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
+mod streaming;
+
 const BACKUP_FILE_EXT: &str = "zip";
 const BACKUP_FORMAT: &str = "PatinaBackup";
 const BACKUP_MANIFEST_ENTRY_NAME: &str = "manifest.json";
@@ -85,7 +87,7 @@ struct BackupArchiveFiles {
     import_activity: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 struct BackupArchiveCounts {
     sessions: usize,
     #[serde(default)]
@@ -165,6 +167,7 @@ fn resolve_backup_path<R: Runtime>(
     Ok(path)
 }
 
+#[cfg(test)]
 async fn load_backup_payload_from_pool(pool: &Pool<Sqlite>) -> Result<BackupPayload, String> {
     let mut tx = pool
         .begin()
@@ -300,6 +303,7 @@ fn build_backup_manifest(payload: &BackupPayload) -> BackupArchiveManifest {
     }
 }
 
+#[cfg(test)]
 fn serialize_pretty<T: Serialize>(value: &T, label: &str) -> Result<String, String> {
     serde_json::to_string_pretty(value)
         .map_err(|error| format!("failed to serialize backup {label}: {error}"))
@@ -311,6 +315,7 @@ fn checksum(value: &str) -> String {
     format!("{:08x}", hasher.finalize())
 }
 
+#[cfg(test)]
 fn zip_start_file(
     archive: &mut ZipWriter<Cursor<Vec<u8>>>,
     name: &str,
@@ -321,6 +326,7 @@ fn zip_start_file(
         .map_err(|error| format!("failed to start backup archive entry `{name}`: {error}"))
 }
 
+#[cfg(test)]
 fn zip_write_file(
     archive: &mut ZipWriter<Cursor<Vec<u8>>>,
     name: &str,
@@ -333,6 +339,7 @@ fn zip_write_file(
         .map_err(|error| format!("failed to write backup archive entry `{name}`: {error}"))
 }
 
+#[cfg(test)]
 fn encode_backup_archive(payload: &BackupPayload) -> Result<Vec<u8>, String> {
     let manifest = build_backup_manifest(payload);
     let sessions = serialize_pretty(&payload.sessions, "sessions")?;
@@ -868,6 +875,7 @@ fn validate_backup_archive_limits(
     Ok(())
 }
 
+#[cfg(test)]
 fn write_backup_archive_atomic(target_path: &Path, archive: &[u8]) -> Result<(), String> {
     let parent = target_path.parent().ok_or_else(|| {
         format!(
@@ -932,74 +940,23 @@ pub async fn export_backup_from_pool(
     pool: &Pool<Sqlite>,
     target_path: &Path,
 ) -> Result<(), String> {
-    let payload = load_backup_payload_from_pool(pool).await?;
-    let archive = encode_backup_archive(&payload)?;
-    if archive.len() as u64 > MAX_BACKUP_ARCHIVE_BYTES {
-        return Err("generated backup exceeds the archive size limit".to_string());
-    }
-    write_backup_archive_atomic(target_path, &archive)
+    streaming::export(pool, target_path, false)
+        .await
+        .map_err(|error| match error {
+            CreateNewBackupError::AlreadyExists => "backup target already exists".to_string(),
+            CreateNewBackupError::Failed(message) => message,
+        })
 }
 
 pub async fn export_scheduled_backup_create_new(
     pool: &Pool<Sqlite>,
     target_path: &Path,
 ) -> Result<(), CreateNewBackupError> {
-    let payload = load_backup_payload_from_pool(pool)
-        .await
-        .map_err(CreateNewBackupError::Failed)?;
-    let archive = encode_backup_archive(&payload).map_err(CreateNewBackupError::Failed)?;
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options.open(target_path).map_err(|error| {
-        if error.kind() == std::io::ErrorKind::AlreadyExists {
-            CreateNewBackupError::AlreadyExists
-        } else {
-            CreateNewBackupError::Failed(format!(
-                "failed to create scheduled backup `{}`: {error}",
-                target_path.display()
-            ))
-        }
-    })?;
-
-    if let Err(error) = file.write_all(&archive).and_then(|_| file.sync_all()) {
-        drop(file);
-        let _ = fs::remove_file(target_path);
-        return Err(CreateNewBackupError::Failed(format!(
-            "failed to publish scheduled backup `{}`: {error}",
-            target_path.display()
-        )));
-    }
-    drop(file);
-    #[cfg(unix)]
-    if let Some(parent) = target_path.parent() {
-        File::open(parent)
-            .and_then(|directory| directory.sync_all())
-            .map_err(|error| {
-                CreateNewBackupError::Failed(format!(
-                    "failed to sync scheduled backup directory `{}`: {error}",
-                    parent.display()
-                ))
-            })?;
-    }
-    Ok(())
+    streaming::export(pool, target_path, true).await
 }
 
 pub fn validate_scheduled_snapshot(target_path: &Path) -> Result<(String, u64), String> {
-    read_backup_payload(target_path)?;
-    let bytes = fs::read(target_path).map_err(|error| {
-        format!(
-            "failed to read scheduled backup `{}` for validation: {error}",
-            target_path.display()
-        )
-    })?;
-    let size = u64::try_from(bytes.len())
-        .map_err(|_| "scheduled backup is too large to validate".to_string())?;
-    let hash = format!("{:x}", Sha256::digest(&bytes));
+    let (_, hash, size) = inspect_restore_archive(target_path)?;
     Ok((hash, size))
 }
 
@@ -1334,6 +1291,65 @@ mod tests {
     use crate::data::schema as db_schema;
     use crate::domain::backup::{BackupIconCache, BackupSession, BackupSetting, BackupTitleSample};
     use sqlx::{Executor, SqlitePool};
+
+    #[test]
+    fn streaming_export_matches_legacy_snapshot_and_preserves_existing_targets() {
+        tauri::async_runtime::block_on(async {
+            let root = temp_backup_path("streaming").with_extension("dir");
+            fs::create_dir(&root).unwrap();
+            let target = root.join("backup.zip");
+            let pool = setup_test_db().await;
+            let mut payload = payload_with_bound_web_activity();
+            payload.title_samples.push(BackupTitleSample {
+                id: 1,
+                session_id: 10,
+                title: "quoted \"text\"\n".into(),
+                start_time: 1000,
+                end_time: Some(5000),
+            });
+            payload.settings.push(BackupSetting {
+                key: "language".into(),
+                value: "zh-CN".into(),
+            });
+            payload.icon_cache.push(BackupIconCache {
+                exe_name: "zen".into(),
+                icon_base64: "aWNvbg==".into(),
+                last_updated: None,
+            });
+            restore_backup_payload(&pool, &payload, RestoreStrategy::Replace)
+                .await
+                .unwrap();
+            pool.execute("INSERT INTO tool_reminders VALUES(1,'Reminder',100,50,'scheduled',NULL,NULL);
+                INSERT INTO tool_timers VALUES(1,'stopwatch',NULL,NULL,20,10,NULL,NULL,'running',10,30);
+                INSERT INTO tool_timer_laps VALUES(1,1,1,10,30,20);
+                INSERT INTO tool_pomodoro_runs VALUES(1,'focus','running',1,100,20,50,4,10,NULL,NULL,0,10,30);
+                INSERT INTO tool_daily_stats VALUES('2026-09-18',2,30);").await.unwrap();
+            let expected = load_backup_payload_from_pool(&pool).await.unwrap();
+            export_backup_from_pool(&pool, &target).await.unwrap();
+            let mut actual = read_backup_payload(&target).unwrap();
+            actual.meta = expected.meta.clone();
+            assert_eq!(
+                serde_json::to_value(&actual).unwrap(),
+                serde_json::to_value(&expected).unwrap()
+            );
+            let original = fs::read(&target).unwrap();
+            assert!(matches!(
+                export_scheduled_backup_create_new(&pool, &target).await,
+                Err(CreateNewBackupError::AlreadyExists)
+            ));
+            assert_eq!(fs::read(&target).unwrap(), original);
+            pool.execute("DROP TABLE tool_daily_stats").await.unwrap();
+            assert!(export_backup_from_pool(&pool, &target).await.is_err());
+            assert_eq!(fs::read(&target).unwrap(), original);
+            assert_eq!(
+                fs::read_dir(&root).unwrap().count(),
+                1,
+                "failed staging files must be removed"
+            );
+            pool.close().await;
+            fs::remove_dir_all(root).unwrap();
+        });
+    }
 
     fn temp_backup_path(label: &str) -> PathBuf {
         std::env::temp_dir().join(format!(

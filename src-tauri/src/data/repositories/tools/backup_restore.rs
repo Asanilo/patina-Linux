@@ -2,8 +2,11 @@ use crate::domain::backup::{
     BackupToolDailyStats, BackupToolPomodoroRun, BackupToolReminder, BackupToolTimer,
     BackupToolTimerLap,
 };
-use sqlx::{Row, Sqlite, Transaction};
+#[cfg(test)]
+use sqlx::Row;
+use sqlx::{Sqlite, Transaction};
 
+#[cfg(test)]
 pub async fn fetch_all_reminders_for_backup<'e, E>(
     executor: E,
 ) -> Result<Vec<BackupToolReminder>, String>
@@ -33,6 +36,7 @@ where
         .collect())
 }
 
+#[cfg(test)]
 pub async fn fetch_all_timers_for_backup<'e, E>(executor: E) -> Result<Vec<BackupToolTimer>, String>
 where
     E: sqlx::Executor<'e, Database = Sqlite>,
@@ -65,6 +69,7 @@ where
         .collect())
 }
 
+#[cfg(test)]
 pub async fn fetch_all_timer_laps_for_backup<'e, E>(
     executor: E,
 ) -> Result<Vec<BackupToolTimerLap>, String>
@@ -93,6 +98,7 @@ where
         .collect())
 }
 
+#[cfg(test)]
 pub async fn fetch_all_pomodoro_runs_for_backup<'e, E>(
     executor: E,
 ) -> Result<Vec<BackupToolPomodoroRun>, String>
@@ -131,6 +137,7 @@ where
         .collect())
 }
 
+#[cfg(test)]
 pub async fn fetch_all_daily_stats_for_backup<'e, E>(
     executor: E,
 ) -> Result<Vec<BackupToolDailyStats>, String>

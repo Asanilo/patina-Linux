@@ -503,6 +503,7 @@ mod tests {
     ) -> ActivityContribution<activity_read_model::ActivityFact> {
         ActivityContribution {
             origin: ActivityOrigin::Native,
+            start_ms: 0,
             duration_ms,
             value: activity_read_model::ActivityFact {
                 record_id: 1,

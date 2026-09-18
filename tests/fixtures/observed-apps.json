@@ -1,0 +1,41 @@
+[
+  {
+    "name": "native masks exact and shares bucket capacity",
+    "from": 0, "to": 3600000, "sampled": 3600000,
+    "facts": [
+      {"origin": "native", "exe": "zen", "app": "Zen", "start": 1000, "end": 2000},
+      {"origin": "import_exact", "exe": "editor", "app": "Editor", "start": 0, "end": 3000},
+      {"origin": "import_bucket", "exe": "bucket", "app": "Bucket", "start": 0, "end": 3600000}
+    ],
+    "expected": [
+      {"exe_name": "editor", "app_name": "Editor", "total_duration_ms": 2000, "last_seen_ms": 2000},
+      {"exe_name": "bucket", "app_name": "Bucket", "total_duration_ms": 3597000, "last_seen_ms": 0},
+      {"exe_name": "zen", "app_name": "Zen", "total_duration_ms": 1000, "last_seen_ms": 1000}
+    ]
+  },
+  {
+    "name": "clipped starts latest name raw aliases active and zero evidence",
+    "from": 1000, "to": 10000, "sampled": 9000,
+    "facts": [
+      {"origin": "native", "exe": "zen", "app": "Old", "start": 0, "end": 2000},
+      {"origin": "native", "exe": "ZEN", "app": "Upper", "start": 2000, "end": 3000},
+      {"origin": "native", "exe": "zero", "app": "Zero", "start": 4000, "end": 4000},
+      {"origin": "native", "exe": "zen", "app": "New", "start": 8000, "end": null}
+    ],
+    "expected": [
+      {"exe_name": "zen", "app_name": "New", "total_duration_ms": 2000, "last_seen_ms": 8000},
+      {"exe_name": "ZEN", "app_name": "Upper", "total_duration_ms": 1000, "last_seen_ms": 2000},
+      {"exe_name": "zero", "app_name": "Zero", "total_duration_ms": 0, "last_seen_ms": 4000}
+    ]
+  },
+  {
+    "name": "partial bucket uses capacity not fictitious exact interval",
+    "from": 1800000, "to": 3600000, "sampled": 3600000,
+    "facts": [
+      {"origin": "import_bucket", "exe": "bucket", "app": "Bucket", "start": 0, "end": 1800000}
+    ],
+    "expected": [
+      {"exe_name": "bucket", "app_name": "Bucket", "total_duration_ms": 900000, "last_seen_ms": 1800000}
+    ]
+  }
+]

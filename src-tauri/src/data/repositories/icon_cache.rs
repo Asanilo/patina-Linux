@@ -38,6 +38,7 @@ pub async fn fetch_icon_for_exe(
     Ok(row.map(|row| row.get("icon_base64")))
 }
 
+#[cfg(test)]
 pub async fn fetch_all_for_backup<'e, E>(executor: E) -> Result<Vec<BackupIconCache>, String>
 where
     E: sqlx::Executor<'e, Database = Sqlite>,

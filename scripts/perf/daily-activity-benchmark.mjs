@@ -8,6 +8,8 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const observed = process.argv.includes("--observed-apps");
+const modes = observed ? ["observed-legacy", "observed"] : ["legacy", "daily"];
 if (process.platform !== "linux") throw new Error("This benchmark requires Linux /proc");
 async function sha256(file) {
   const hasher = createHash("sha256");
@@ -32,7 +34,7 @@ for await (const line of createInterface({ input: build.stdout })) {
 if (await built !== 0 || !binary) throw new Error("Could not compile benchmark");
 const hash = await sha256(binary);
 let fixtureHash;
-for (const mode of ["seed", "legacy", "daily"]) {
+for (const mode of ["seed", ...modes]) {
   const child = spawn(binary, ["data::repositories::daily_activity::benchmark::query_worker", "--exact", "--ignored", "--nocapture", "--test-threads=1"], {
     cwd: root, stdio: "inherit", env: {
       PATH: process.env.PATH, LANG: "C.UTF-8", TZ: "UTC",
@@ -48,7 +50,7 @@ for (const mode of ["seed", "legacy", "daily"]) {
   fixtureHash = currentHash;
 }
 const results = [];
-for (const mode of ["legacy", "daily"]) {
+for (const mode of modes) {
   const result = JSON.parse(await readFile(path.join(root, `${mode}.json`), "utf8"));
   const peak = {};
   for (const field of ["rss_bytes", "pss_bytes", "uss_bytes"]) {
@@ -57,7 +59,7 @@ for (const mode of ["legacy", "daily"]) {
   }
   results.push({ mode, elapsed_ms: result.elapsed_ms, result: result.result, baseline: result.baseline, sampled_peak: peak, after: result.after });
 }
-const daily = results.find(result => result.mode === "daily");
+const daily = results.find(result => result.mode === (observed ? "observed" : "daily"));
 const budgets = { elapsed_ms: 5000, response_bytes: 64 * 1024, sampled_uss_growth_bytes: 64 * 1024 * 1024 };
 const passed = daily.elapsed_ms <= budgets.elapsed_ms
   && daily.result.Ok?.[0] <= budgets.response_bytes

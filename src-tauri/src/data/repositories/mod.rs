@@ -6,6 +6,7 @@ pub mod backup_restore;
 pub mod classification_settings;
 pub mod daily_activity;
 pub mod icon_cache;
+pub mod observed_apps;
 pub mod scheduled_backup;
 pub mod session_title_samples;
 pub mod sessions;

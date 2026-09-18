@@ -339,6 +339,7 @@ pub async fn query_segments(
         .collect())
 }
 
+#[cfg(test)]
 pub async fn fetch_all_for_backup<'e, E>(
     executor: E,
 ) -> Result<Vec<BackupWebActivitySegment>, String>

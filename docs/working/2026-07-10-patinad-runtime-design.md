@@ -5,11 +5,45 @@
 
 ### 当前执行焦点（2026-09-18）
 
+- 最新用户确认 beta.18 已安装，并完成真实 Zen 前台网页跨挂起操作；只读边界核对通过，证据见下节。这不代表新延迟、长期运行或剩余故障矩阵全部通过。用户要求先完成分类/趋势有界聚合、流式备份、稳定性和 AppImage 支持再汇总，之后再讨论 GPUI/TUI/浏览器 UI 的顺序。本轮继续单代理、隔离测试，不擅自更新生产服务；下方 beta.17 安装状态为历史记录。
+
 - 用户已授权逐批推进本机浏览器 UI 前的候选交付、稳定性补验、有界聚合、流式备份及 AppImage 兼容，顺序以路线文档的新授权范围为准。AppImage 已选择继续支持，不退役；实现与验收未完成前仍只交付 daemon-backed DEB beta，不自动改动生产服务或挂起用户电脑。
 - 按用户要求暂停悬浮窗闪烁、边缘吸附及相关扩展开发。原生 Wayland 目前为自由拖动的小窗口，不宣称支持屏幕边缘吸附；已有生命周期自动测试不能替代真实拖动和视觉验收。
 - 下一可发布功能阶段为 **Data 热力图低内存查询**，范围和发布门槛以 [路线文档当前快照](../roadmap-and-prioritization.md#56-当前实施主线patinad) 为准。共享统计语义、读取预算、后端聚合、Desktop/daemon 适配、隔离 debug 整链路与 beta.17 成品检查均已完成；安装后 Data/History、只读 API、关闭回收和用户重开确认已通过，但用户发现窄窗口滚动缺陷。该布局问题已修源码并通过前端回归，尚未包含在已安装 beta.17 中。前台 WebKit 占用仍是后续独立问题。
 - 用户安装的版本仍为 beta.17，安装后只读、Data/History、关闭回收和用户重开确认通过。当前 beta.18 已将窄窗口修复与低耗延迟设置合为本地 DEB 候选，成品检查通过，尚未升级用户安装版本。2026-09-18 前次只读查询 GitHub 确认最新预发布为 beta.12，最新稳定版为 1.8.4，本轮没有重新查询或操作远端；本批独立收口到现有 daemon 分支，不推送或公开发布。
 - 下文保留阶段证据与历史限制，不以早期“下一步”覆盖本节执行焦点。
+
+#### 分类候选有界聚合：功能接线（2026-09-18，未出包）
+
+- 查询级新旧对照已通过：`node scripts/perf/daily-activity-benchmark.mjs --observed-apps` 使用 50,000 条合成 native facts，结果总时长同为 3,000,000,000 ms，数据库哈希不变。旧分类 SQL/JSON 参考路径 1,558 ms / 8,338,895 bytes / USS 增量约 110.4 MiB，新查询 695 ms / 122 bytes / USS 增量约 23.2 MiB；通过本 fixture 的 5 秒、64 KiB、64 MiB 增量预算。证据 `/tmp/patina-daily-bench-SZ8vCe/summary.json`。这是 debug 查询进程而非 Desktop/WebKit/IPC 整链路，也不代表多应用、大量导入或所有合法输入的峰值。
+- owner：`data/repositories/observed_apps` 负责单事务紧凑 facts 读取，复用领域 native/import 优先级编译器；`domain/observed_apps` 定义范围与返回契约；HTTP handler、typed daemon client 和 Tauri command 只做适配。Desktop 内置与 daemon 不新增平行统计实现。
+- 新增只读 `/api/v1/classification/observed-apps`，三个 surface 均可用，OpenAPI 与 API docs 同步。日常分类候选只接收 raw exe/app name/总时长/最近片段起点，不传 session 明细或窗口标题。前端仍负责别名合并、进程过滤和最终 120 项限制；被排除应用必须保留，不能误用热力图排除逻辑。
+- 明确预算：最多 366 天、50,000 facts、每个名称 1,024 UTF-8 bytes、累计 metadata 8 MiB、4,096 raw exe、编码响应 1 MiB；进程内一个查询，仓储 timeout 15 秒。超限报错，不返回局部统计、不回退 SQL 明细。仅该 typed endpoint 放宽原有 64 KiB 响应上限到 1 MiB，其他接口不变。SQL 扫描/排序与共享编译器的实际峰值仍需测量，预算不等于已证明 RSS/PSS 上限。
+- `last_seen_ms` 保持旧分类页“最后 resolved start”的含义；桶只表示 scoped start，不伪称准确网页/应用使用位置。raw 大小写保留给前端既有别名流程；native 零时长证据保留。源类型/id 显式排序使原来未定义的 SQL 同时刻 tie-break 稳定，跨语言共享 fixture 验证时长、裁剪、名称、原生遮盖导入和部分小时桶。
+- 分类页加载失败现在显示错误与显式重试，不再因 draft 缺失永久转圈；保留缓存中的草稿。相同 bootstrap 进行中请求合并，避免 React StrictMode 重复请求撞上 daemon 单查询预算，失败后释放以便重试。新查询 adapter 按需加载，分类文案留在 feature，未提高 bundle 预算。
+- 旧版全历史自动分类迁移仍使用原 reader，其他趋势、网页候选和流式备份尚未迁移。本轮不变更安装版本、不出包或推送；新接口不在既有 beta.18 DEB 中。下一步是同数据的新旧查询耗时/峰值与真实 IPC/daemon 验收，再推进其余趋势及备份；不能以小 fixture 或响应缩小代替内存验收。
+- 验证收口：最终 `npm run check` 与 `npm run check:rust` 均退出 0，覆盖完整检查链；611 项 Rust 测试通过、10 项 opt-in 忽略，35 项浏览器回归通过，Clippy `-D warnings` 通过。共享 fixture、50,000 facts 汇总及第 50,001 条拒绝、metadata/响应/应用数预算、三个 API surface、鉴权和旧 daemon 错误、bootstrap 并发合并均有覆盖。初轮失败分别为 fixture 指纹未满足 schema、故障注入日志未从预期错误中区分，以及端点计数断言未更新，均已修正复核；不隐去这些失败。
+- 隔离浏览器失败/重试与 760/1280px 截图通过，截图位于 `/tmp/patina-observed-ui-85KrMD/`，未访问生产数据。最终 index gzip 73.19 KiB、总 JS gzip 359.61 KiB，保持 73.25/370 KiB 原预算；浏览器临时 profile 的既有 `ENOTEMPTY` 清理警告仍存在。50,000 facts 仅证明输出和预算行为，不是峰值内存测量。
+
+#### 流式备份第一步（2026-09-19，未出包）
+
+- owner 保持在 `data/backup`，新增内部 `streaming` 实现，Desktop 与 daemon 复用。单一 SQLite read transaction 下逐行序列化到 64 KiB 缓冲的磁盘 ZIP，不构造整表 Vec、整表 pretty JSON 和最终 ZIP Vec；继续使用原 manifest、entry names、CRC32 和 Stored 格式，不变更备份版本。旧全量导出只保留为测试对照。
+- 进程内一次导出，其他调用异步等待；阻塞文件写入移到 blocking worker。调用方取消后 worker 在后续行/写入及发布前检查取消标记；已开始的原子发布不能承诺可撤回。总 entry/归档预算保持不变，不声称单行或 SQLx 预取内存等于 64 KiB。
+- 临时文件随机命名、`create_new`、0600，同目录完成后 fsync 再发布。人工导出原子 rename；定时导出使用 hard link 保证目标已存在时不覆盖，文件系统不支持时明确失败。失败或取消只清理本次临时文件，不扫描删除目录其他文件。发布后同步目录失败可能报告错误但目标已存在，不能描述为任何错误都未发布。
+- 已补新旧快照字段对照、标题转义/NULL/web-native 关系/Tools 数据、重复定时导出、读取中途失败保留旧文件、取消及字节预算拒绝测试。已有备份读写、恢复事务和权限测试继续保留。
+- 本步完整 `npm run check:full` 退出 0：614 项 Rust 测试通过、10 项 opt-in 忽略，35 项浏览器回归、Clippy `-D warnings`、架构和构建预算通过。index gzip 73.19 KiB、总 JS gzip 359.61 KiB，未提高预算。浏览器临时 profile 的既有 `ENOTEMPTY` 清理警告仍存在；没有以单元测试代替磁盘故障或大库峰值实验。`git diff --check` 通过。
+- 定时备份校验复用现有恢复检查和分块 SHA-256，不再额外读取完整 ZIP 来计算 hash；但恢复解析/预览仍持有完整归档和 payload，尚未实现校验、预览、恢复整链路有界内存。还需补并发写入快照实验、真实取消/磁盘故障、大库峰值及端到端验收，不能将本步标记成流式备份全部完成。当前不改 beta.18 安装版、不出包、不提交推送。
+
+#### 稳定性补验：活动网页跨挂起（2026-09-18）
+
+- 真实 beta.18 补验：用户确认在 Zen 普通网页停留、保持前台挂起、恢复后继续浏览再切走。systemd 日志确认本地时间 23:22:41 至 23:22:49 挂起，检查区间为 `[1789744961000,1789744969000)`；只读查询原生会话、网页片段、标题采样与该区间的重叠数均为 0。未读取标题、域名或 URL。
+- 挂起前最后网页与原生会话于 `1789744958904` 封口，比进入内核挂起提前约 2.1 秒，可能先由锁屏触发；不能将此单次实测当成“没有锁屏的纯 suspend 路径”证明。恢复后原生会话于 `1789744976459`、网页片段于 `1789744986880` 重新开始；与用户反馈共同证明恢复后继续记录。
+- 首轮只读安装验收 `/tmp/patina-beta18-suspend-acceptance.json` 因 5 秒数据库检查失败而退出 1，空 stderr 掩盖原因；独立有界重试 `PRAGMA quick_check` 返回 `ok`。验收脚本现将完整性检查上限放宽到 30 秒，并保留终止/错误消息，不能将无结果描述成数据库损坏。11 项验收测试通过；重跑 `/tmp/patina-beta18-post-suspend-recheck.json` 退出 0，服务、lease PID、API/追踪就绪、Token 0600 和数据库检查通过。`NRestarts=1` 没有挂起前基线，不据此宣称本次重启计数未增加。
+- 该项真实 Zen/systemd 联合验收已完成；长期运行、剩余安装/恢复故障矩阵及 AppImage 兼容仍待完成。流式备份源码正在实现，当前仅 `cargo check` 通过且存在待清理 warnings，尚未完成兼容性/故障测试，也未进入安装包。此前全量测试结果不能覆盖这一在途改动。
+- 新增 `active_browser_suspend_resume_never_records_the_sleep_interval`，通过真实浏览器 HTTP handler、运行时电源事件入口与内存 SQLite 联合验证；使用合成 Zen 上报与注入时钟，不启动生产服务、不访问用户数据、不挂起电脑。
+- 覆盖活跃网页在 suspend 时随 native session 同事务封口，即使网页事件订阅器没有运行也成立；挂起前捕获的前台快照在挂起后到达时不能重新打开旧记录；resume 后尚无新采样时不记录；新 native session 下同一网页产生独立片段，随后 lock 正确封口。两段边界与 duration 精确断言，挂起区间重叠为零。
+- 单项测试及完整 `npm run check:full` 通过（退出码 0）：604 项 Rust 测试通过、10 项 opt-in 忽略，34 项浏览器回归、Clippy `-D warnings` 与构建预算通过。浏览器临时 profile 仍有 `ENOTEMPTY` 清理警告，本轮未修复。只补既有行为的回归覆盖，没有改追踪逻辑；beta.18 成品不重建，未安装、推送或发布。
+- 这不替代真实 systemd 与 Zen 扩展联合验收，也不覆盖任意电源故障、hibernate 或不同硬件。真实活动网页跨 suspend、长期运行与剩余安装故障矩阵仍为稳定版门槛。
 
 #### beta.18 候选与原生计时验证（2026-09-18）
 

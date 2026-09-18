@@ -7,10 +7,11 @@ use sqlx::{Pool, Row, Sqlite, Transaction};
 
 mod backup_restore;
 
+pub use backup_restore::{clear_for_restore, insert_for_restore, insert_missing_for_restore};
+#[cfg(test)]
 pub use backup_restore::{
-    clear_for_restore, fetch_all_daily_stats_for_backup, fetch_all_pomodoro_runs_for_backup,
+    fetch_all_daily_stats_for_backup, fetch_all_pomodoro_runs_for_backup,
     fetch_all_reminders_for_backup, fetch_all_timer_laps_for_backup, fetch_all_timers_for_backup,
-    insert_for_restore, insert_missing_for_restore,
 };
 
 const RECENT_REMINDER_LIMIT: i64 = 16;

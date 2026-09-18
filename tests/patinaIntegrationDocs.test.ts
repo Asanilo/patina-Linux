@@ -17,6 +17,7 @@ const implementedEndpoints = [
   "GET /api/v1/summary/range",
   "GET /api/v1/summary/week",
   "GET /api/v1/trend",
+  "GET /api/v1/classification/observed-apps",
   "GET /api/v1/web-activity",
   "GET /api/v1/ai/activity-context",
   "GET /api/v1/apps",
