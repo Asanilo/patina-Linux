@@ -136,7 +136,7 @@ daemon 分支与稳定 `main` 独立验证。测试包同时包含 Desktop、`pa
 
 安装前先导出并验证一份位于 Patina 数据目录之外的备份。覆盖安装后重新打开桌面端；设置诊断若显示 Desktop/Daemon 版本不同，再显式确认“重新加载后台”。安装软件包不等于运行中的后台已经更新；重新加载会短暂停止记录，不负责下载软件包。
 
-[1.9.0-beta.12](https://github.com/Asanilo/patina-Linux/releases/tag/v1.9.0-beta.12) 已发布为 DEB 预发布，稳定 Latest 仍为 1.8.4。本地 beta.9 已验证 owner 交接、关闭/重开 UI、版本重新加载、回退/再次接管、备份导出、remove/重装数据保留、GNOME 锁屏/挂起和 Zen 重连。独立凭据服务、受控 HTTP 下载和真实 systemd 重启的远端恢复已验证替换、合并与回滚，不等同于第三方 WebDAV/TLS 兼容性验证。桌面内存回收、活动网页跨挂起及剩余安装故障矩阵仍待验证；AppImage 的 daemon 接管/更新方案、Flatpak 与本机浏览器 UI 尚未就绪，不能把这些 beta 边界当成稳定版保证。
+当前 DEB 预发布候选为 **1.9.0-beta.19**，已公开资产以 [Releases](https://github.com/Asanilo/patina-Linux/releases) 为准，稳定 Latest 仍为 1.8.4。本候选包含趋势/分类有界读取、流式备份导出/预览、低耗后台延迟设置和窄窗口热力图修复。之前的安装候选已通过 owner 交接、关闭/重开 UI、备份、锁屏/挂起及 Zen 活动验收；隔离测试还覆盖多表恢复回滚和真实 systemd 远端恢复，不等同于长期稳定性或第三方 WebDAV/TLS 兼容性保证。AppImage 运行时和更新实现已有隔离验证，但完整安装/共存验收未完成，本 beta 只发布 DEB。悬浮窗闪烁/吸附继续暂停，Flatpak 和新增浏览器/TUI 客户端不在本次范围内。
 
 ## Linux 安装包
 

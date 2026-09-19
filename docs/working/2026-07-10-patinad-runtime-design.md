@@ -5,6 +5,8 @@
 
 ### 当前执行焦点（2026-09-19）
 
+- 发布授权更新：用户要求验证后推送并 release。准备 `1.9.0-beta.19` DEB 预发布，版本/锁文件同步，按公开 beta.12 至当前完整范围整理 changelog；beta.13–18 是本地候选沿革。显式查询 `Asanilo/patina-Linux` 确认公开 beta.12、稳定 1.8.4，未使用 gh 默认 upstream 的版本。AppImage 独立验收门槛保留；生产安装与服务不变，最终是否发布成功以 Actions/Release 为准。下方“不推送/不出包”为此前开发批次状态。
+- beta.19 发布前 `npm run release:check` 全部通过：637 Rust passed / 14 ignored、38 浏览器回归、Clippy、release contract、bundle、版本与 changelog、GNOME/Chromium 和 Firefox 已签名扩展检查。另行 Firefox check 通过。浏览器临时 profile 清理仍出现非致命 ENOTEMPTY 警告。正式 DEB 构建、签名和成品检查交给 tag 工作流；本地未替换生产安装，也未读取发布私钥。
 - 最新收口状态：应用/分类趋势 `3d0316f`、全历史迁移 `556c159`、多表备份及内核写失败测试 `65c1440`、AppImage 持久运行时与原子更新 `14e37d9` 已本地提交，尚未推送。随后继续补验首次安装预检与真实 systemd 解析，发现并修复下述问题；以下早期“进行中”保留批次过程，不代表新的功能待办。没有改动安装版、生产服务、版本号或公开发布策略。
 - 多 UI 前的开发范围已经覆盖；尚不能宣布稳定版门槛全部通过。真实 AppImage 首次接管、DEB 共存/切换、登录与正式签名升级，以及最新查询/备份组合候选的长期真实数据体验，仍需独立人工/安装验收。当前 DEB-only beta gate 保留，GPUI/TUI/浏览器 UI 未开始，悬浮窗专项继续暂停。
 
