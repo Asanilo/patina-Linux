@@ -757,7 +757,7 @@ impl PatinadClient {
         crate::domain::daily_activity::local_day_boundaries(from, to)
             .map_err(PatinadClientError::InvalidConfiguration)?;
         self.get_json_with_limits(
-            &format!("/api/v1/activity/daily-apps?from={from}&to={to}"),
+            &format!("/api/v1/activity/daily-apps?from={from}&to={to}&include_names=true"),
             "daily applications",
             Duration::from_secs(35),
             crate::domain::daily_activity::MAX_DAILY_APPS_RESPONSE_BYTES,
@@ -1086,6 +1086,7 @@ mod tests {
             crate::domain::daily_activity::local_day_boundaries("2026-01-01", "2026-01-02")
                 .unwrap();
         let data = DailyAppActivitySnapshot {
+            applications: None,
             sampled_at_ms: boundaries[1],
             days: vec![DailyAppActivityDay {
                 start_ms: boundaries[0],
@@ -1126,7 +1127,7 @@ mod tests {
                 }
                 let request = String::from_utf8(request).unwrap().to_lowercase();
                 assert!(request
-                    .starts_with("get /api/v1/activity/daily-apps?from=2026-01-01&to=2026-01-02 "));
+                    .starts_with("get /api/v1/activity/daily-apps?from=2026-01-01&to=2026-01-02&include_names=true "));
                 assert!(request.contains("authorization: bearer fixture-token\r\n"));
                 let response = format!("HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
                 let _ = socket.write_all(response.as_bytes()).await;

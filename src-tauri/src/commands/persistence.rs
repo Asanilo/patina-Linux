@@ -45,7 +45,7 @@ pub async fn cmd_get_daily_apps<R: Runtime>(
             });
     }
     let pool = sqlite_pool::wait_for_sqlite_pool(&app).await?;
-    crate::data::repositories::daily_activity::load_daily_apps(
+    crate::data::repositories::daily_activity::load_daily_apps_named(
         &pool,
         &boundaries,
         crate::app::runtime::now_ms() as i64,

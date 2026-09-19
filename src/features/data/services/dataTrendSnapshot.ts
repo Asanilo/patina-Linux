@@ -1,7 +1,8 @@
-import { getSessionSummariesInRange } from "../../../platform/persistence/sessionReadRepository.ts";
-import type { AggregateSessionRecord } from "../../../platform/persistence/sessionReadRepository.ts";
+import type { DailyAppsRead } from "../../../platform/persistence/dailyAppsRepository.ts";
 import {
   resolveDataTrendRange,
+  addLocalDays,
+  parseLocalDateKey,
   type DataTrendRangeSelection,
   type ResolvedDataTrendRange,
 } from "./dataTrendRange.ts";
@@ -9,15 +10,15 @@ import {
 export interface DataTrendSnapshot {
   fetchedAtMs: number;
   range: ResolvedDataTrendRange;
-  sessions: AggregateSessionRecord[];
+  activity: DailyAppsRead;
 }
 
 export interface DataTrendSnapshotDependencies {
-  getSessionSummariesInRange: (startMs: number, endMs: number) => Promise<AggregateSessionRecord[]>;
+  getDailyApps: (startMs: number, endMs: number) => Promise<DailyAppsRead>;
 }
 
 const snapshotCache = new Map<string, DataTrendSnapshot>();
-const sessionPromises = new Map<string, Promise<AggregateSessionRecord[]>>();
+const pendingReads = new Map<string, Promise<DailyAppsRead>>();
 const DATA_TREND_SNAPSHOT_CACHE_LIMIT = 4;
 let cacheGeneration = 0;
 
@@ -47,23 +48,29 @@ export function setDataTrendSnapshotCache(snapshot: DataTrendSnapshot): void {
 export function clearDataTrendSnapshotCache(): void {
   cacheGeneration += 1;
   snapshotCache.clear();
-  sessionPromises.clear();
+  pendingReads.clear();
 }
 
 export async function loadDataTrendSnapshot(
   selection: DataTrendRangeSelection,
   nowMs: number = Date.now(),
-  deps: DataTrendSnapshotDependencies = { getSessionSummariesInRange },
+  deps: DataTrendSnapshotDependencies = {
+    getDailyApps: async (start, end) => {
+      const { getDailyApps } = await import("../../../platform/persistence/dailyAppsRepository.ts");
+      return getDailyApps(start, end);
+    }
+  },
 ): Promise<DataTrendSnapshot> {
   const range = resolveDataTrendRange(selection, nowMs);
+  if (range.dayCount < 1 || range.dayCount > 378) throw new Error("overview-range-limit");
   const generation = cacheGeneration;
-  const pending = sessionPromises.get(range.cacheKey);
-  const sessionPromise = pending ?? deps.getSessionSummariesInRange(range.startMs, range.endMs).finally(() => {
-    if (sessionPromises.get(range.cacheKey) === sessionPromise) sessionPromises.delete(range.cacheKey);
+  const pending = pendingReads.get(range.cacheKey);
+  const read = pending ?? deps.getDailyApps(range.startMs, addLocalDays(parseLocalDateKey(range.endDateKey)!, 1).getTime()).finally(() => {
+    if (pendingReads.get(range.cacheKey) === read) pendingReads.delete(range.cacheKey);
   });
-  if (!pending) sessionPromises.set(range.cacheKey, sessionPromise);
-  return sessionPromise.then((sessions) => {
-    const snapshot = { fetchedAtMs: nowMs, range, sessions };
+  if (!pending) pendingReads.set(range.cacheKey, read);
+  return read.then((activity) => {
+    const snapshot = { fetchedAtMs: nowMs, range, activity };
     if (generation === cacheGeneration) setDataTrendSnapshotCache(snapshot);
     return snapshot;
   });

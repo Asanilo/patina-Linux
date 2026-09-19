@@ -1,7 +1,6 @@
 import type { AppLanguage } from "../../../shared/settings/appSettings.ts";
 import {
   buildDailyActivityHeatmap,
-  buildDataAppTrendViewModel,
   buildDailyDataTrendViewModel,
   prewarmRecentDataHeatmapCache,
 } from "./dataReadModel.ts";
@@ -9,6 +8,7 @@ import {
   loadDataTrendSnapshot,
   type DataTrendSnapshot,
 } from "./dataTrendSnapshot.ts";
+import { buildDailyAppTrendViewModel } from "./dataDailyAppReadModel.ts";
 import {
   saveDataBootstrapSnapshot,
   type DataBootstrapSnapshot,
@@ -72,10 +72,9 @@ function buildBootstrapSnapshot(
       heatmapSnapshot.days,
       trendSnapshot.range,
     ),
-    appTrendViewModel: buildDataAppTrendViewModel(
-      trendSnapshot.sessions,
+    appTrendViewModel: buildDailyAppTrendViewModel(
+      trendSnapshot.activity,
       trendSnapshot.range,
-      trendSnapshot.fetchedAtMs,
       null,
     ),
     heatmapRows: buildDailyActivityHeatmap(heatmapSnapshot.days, "recent", nowMs),

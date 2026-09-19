@@ -60,6 +60,7 @@ fn query_worker() {
         "trend",
         "trend-legacy",
         "apps",
+        "apps-named",
         "apps-legacy"
     ]
     .contains(&mode.as_str()));
@@ -153,8 +154,16 @@ fn query_worker() {
         });
         let baseline = crate::platform::linux::resource::current_process_resource_snapshot();
         let started = Instant::now();
-        let output: Result<(usize, i64), String> = if mode == "apps" || mode == "apps-legacy" {
-            let days = if mode == "apps" {
+        let output: Result<(usize, i64), String> = if mode.starts_with("apps") {
+            let mut applications = None;
+            let days = if mode == "apps-named" {
+                let snapshot = load_daily_apps_named(&pool, &boundaries, end)
+                    .await
+                    .unwrap();
+                applications = snapshot.applications;
+                assert_eq!(applications.as_ref().unwrap()[0].app_name, "Fixture App");
+                snapshot.days
+            } else if mode == "apps" {
                 load_daily_apps(&pool, &boundaries, end).await.unwrap().days
             } else {
                 let snapshot = crate::data::repositories::activity_read_model::load_snapshot(
@@ -191,7 +200,7 @@ fn query_worker() {
             write_new(&root.join(format!("{mode}-days.json")), json!(&days));
             Ok((
                 serde_json::to_vec(
-                    &json!({"data": DailyAppActivitySnapshot { sampled_at_ms: end, days }}),
+                    &json!({"data": DailyAppActivitySnapshot { sampled_at_ms: end, days, applications }}),
                 )
                 .unwrap()
                 .len(),

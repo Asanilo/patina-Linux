@@ -318,7 +318,8 @@ await runTest("Data category trends reuse the destination panel without a second
     /import\("\.\.\/\.\.\/features\/data\/components\/DataDestinationTrendPanel"\)/,
   );
   assert.match(destinationPanel, /type DataDestinationMode = "app" \| "category" \| "web"/);
-  assert.match(destinationPanel, /buildDataCategoryTrendViewModel/);
+  assert.match(destinationPanel, /buildDailyCategoryTrendViewModel/);
+  assert.match(destinationPanel, /appTrendSnapshot\.activity/);
   assert.match(destinationPanel, /data-destination-mode/);
   assert.match(destinationPanel, /event\.ctrlKey \|\| event\.metaKey/);
   assert.match(categoryReadModel, /buildDataTrendSessionContext/);

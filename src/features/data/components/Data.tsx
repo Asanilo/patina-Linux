@@ -125,6 +125,7 @@ export default function Data({
   const currentYear = today.getFullYear();
   const [selectedTrendRange, setSelectedTrendRange] = useState<DataTrendRangeSelection>({ kind: "rolling", days: 7 });
   const [overviewRetry, setOverviewRetry] = useState(0);
+  const [appRetry, setAppRetry] = useState(0);
   const overviewCopy = getDataOverviewCopy(uiLanguage);
   const [selectedAppTrendRange, setSelectedAppTrendRange] = useState<DataTrendRangeSelection>({ kind: "rolling", days: 7 });
   const [currentAppTrendViewModel, setCurrentAppTrendViewModel] = useState<DataAppTrendViewModel | null>(null);
@@ -140,7 +141,7 @@ export default function Data({
   });
   const appTrend = useDataTrendSnapshot({
     selection: selectedAppTrendRange,
-    refreshKey,
+    refreshKey: refreshKey + mappingVersion + appRetry,
     loadSnapshot: loadDataTrendSnapshot,
     getCachedSnapshot: getCachedDataTrendSnapshot,
   });
@@ -355,7 +356,7 @@ export default function Data({
   };
   useEffect(() => {
     if (!trendViewModel || !currentAppTrendViewModel) return;
-    if (heatmapLoading || heatmapError || overviewTrend.error || heatmapDaysView !== selectedHeatmapView) return;
+    if (heatmapLoading || heatmapError || overviewTrend.error || appTrend.error || heatmapDaysView !== selectedHeatmapView) return;
     if (!overviewTrend.snapshot || !appTrend.snapshot) return;
 
     const snapshot: DataBootstrapSnapshot = {
@@ -374,6 +375,7 @@ export default function Data({
     setBootstrapSnapshot(snapshot);
     void saveDataBootstrapSnapshot(snapshot);
   }, [
+    appTrend.error,
     appTrend.snapshot,
     currentAppTrendViewModel,
     earliestStartTime,
@@ -646,6 +648,8 @@ export default function Data({
 
       <Suspense fallback={<div className="qp-panel p-5 md:p-6 data-app-panel" aria-hidden="true" />}>
         <DataDestinationTrendPanel
+          appTrendError={appTrend.error}
+          onRetryAppTrend={() => setAppRetry(value => value + 1)}
           appTrendNowMs={appTrend.nowMs}
           appTrendRangeCacheKey={appTrend.resolvedRange.cacheKey}
           appTrendSnapshot={appTrend.snapshot}

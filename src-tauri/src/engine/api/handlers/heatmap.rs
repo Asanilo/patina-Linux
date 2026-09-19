@@ -25,11 +25,39 @@ fn error_response(status: u16, error: ApiError) -> RouteResponse {
 }
 
 pub async fn get_daily_apps(context: &ApiRuntimeContext, query: Option<&str>) -> RouteResponse {
-    let boundaries = match parse_boundaries(query) {
+    let (named, dates) = {
+        let mut named = None;
+        let mut dates = url::form_urlencoded::Serializer::new(String::new());
+        for (key, value) in url::form_urlencoded::parse(query.unwrap_or_default().as_bytes()) {
+            if key == "include_names" {
+                if named.is_some() || !matches!(value.as_ref(), "true" | "false") {
+                    return error_response(
+                        400,
+                        ApiError::bad_request("include_names must be a single true/false value"),
+                    );
+                }
+                named = Some(value == "true");
+            } else {
+                dates.append_pair(&key, &value);
+            }
+        }
+        (named, dates.finish())
+    };
+    let boundaries = match parse_boundaries(Some(&dates)) {
         Ok(boundaries) => boundaries,
         Err(message) => return error_response(400, ApiError::bad_request(&message)),
     };
-    match load_daily_apps(context.pool(), &boundaries, context.now_ms()).await {
+    let result = if named.unwrap_or(false) {
+        crate::data::repositories::daily_activity::load_daily_apps_named(
+            context.pool(),
+            &boundaries,
+            context.now_ms(),
+        )
+        .await
+    } else {
+        load_daily_apps(context.pool(), &boundaries, context.now_ms()).await
+    };
+    match result {
         Ok(data) => RouteResponse {
             status: 200,
             body: serde_json::to_value(ApiResponse { data }).unwrap_or_default(),

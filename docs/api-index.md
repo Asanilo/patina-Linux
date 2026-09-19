@@ -63,7 +63,7 @@ Current caveats:
 | `/api/v1/summary/week` | `GET` | Implemented | Local-week summary |
 | `/api/v1/trend` | `GET` | Partial | Daily activity trend for week/month |
 | `/api/v1/heatmap` | `GET` | Beta.17 candidate | Bounded local-calendar daily totals; used by Desktop heatmap |
-| `/api/v1/activity/daily-apps` | `GET` | Unreleased source | Bounded daily totals for every canonical application; not yet connected to Desktop application/category charts |
+| `/api/v1/activity/daily-apps` | `GET` | Unreleased source | Bounded daily application totals and optional identities; used by Desktop application/category charts |
 | `/api/v1/classification/observed-apps` | `GET` | Unreleased source | Bounded raw executable statistics for classification candidates |
 | `/api/v1/web-activity` | `GET` | Implemented | Browser activity segment query |
 | `/api/v1/ai/activity-context` | `GET` | Implemented | Aggregated diagnostics, active session, summaries, and recent web activity for external AI analysis |
@@ -669,11 +669,11 @@ Desktop transport: `cmd_get_daily_activity {from, to}` forwards through the type
 
 ### `GET /api/v1/activity/daily-apps`
 
-Unreleased source endpoint on Desktop, read-only daemon and tracking daemon, using the existing Bearer authentication. Unlike `/trend`, this returns **all positive application totals** for each day, not only the top application. It is a read contract for future application/category clients; current Desktop application/category charts have not switched to it.
+Unreleased source endpoint on Desktop, read-only daemon and tracking daemon, using the existing Bearer authentication. Unlike `/trend`, this returns **all positive application totals** for each day, not only the top application. Desktop application/category charts use this read instead of transferring session details to JavaScript.
 
 ```bash
 curl --fail-with-body -H "Authorization: Bearer $PATINA_API_TOKEN" \
-  "$PATINA_API_BASE/api/v1/activity/daily-apps?from=2026-09-01&to=2026-09-08"
+  "$PATINA_API_BASE/api/v1/activity/daily-apps?from=2026-09-01&to=2026-09-08&include_names=true"
 ```
 
 `from` and `to` are required strict `YYYY-MM-DD` local dates, inclusive/exclusive respectively. They use the **runtime host timezone**, the same independent midnight resolution as heatmap, and a 1–378 day range. Duplicate/unknown parameters, invalid/nonexistent local dates and oversized ranges return `400`. No timezone override is accepted.
@@ -689,6 +689,10 @@ Response schema: `DailyAppsResponse` → `data`:
 | `days[].apps` | array | Positive totals sorted by canonical executable key, empty array for an inactive day |
 | `days[].apps[].app_key` | string | Canonical executable key with aliases merged, **not a display name or category** |
 | `days[].apps[].active_ms` | integer > 0 | Resolved activity milliseconds attributed to that key on this day |
+| `applications` | optional array | Present only for `include_names=true` (default false); one identity per contributing canonical key |
+| `applications[].app_key` | string | Canonical key matching daily totals |
+| `applications[].app_name` | string | Preferred contributing app name, possibly empty for aliases; at most 1,024 UTF-8 bytes |
+| `applications[].exe_name` | string | Executable identity used for app navigation; at most 1,024 UTF-8 bytes |
 
 Example `data.days` entry:
 
@@ -696,11 +700,11 @@ Example `data.days` entry:
 {"start_ms":1788192000000,"end_ms":1788278400000,"active_ms":1234,"apps":[{"app_key":"zen","active_ms":1234}]}
 ```
 
-The numeric boundaries above are illustrative; actual values follow the runtime timezone. Native facts suppress overlapping exact imports, then hourly buckets consume remaining capacity. Process filters and current exclusion overrides run **after** precedence; excluded native intervals do not reveal suppressed imported intervals. Native overlaps are not deduplicated, so totals may exceed elapsed wall time. This endpoint is not classification-candidate evidence: excluded apps are omitted. It does not return titles, URLs, raw app names, session IDs, or fabricated per-app intervals.
+The numeric boundaries above are illustrative; actual values follow the runtime timezone. Native facts suppress overlapping exact imports, then hourly buckets consume remaining capacity. Process filters and current exclusion overrides run **after** precedence; excluded native intervals do not reveal suppressed imported intervals. Native overlaps are not deduplicated, so totals may exceed elapsed wall time. This endpoint is not classification-candidate evidence: excluded apps are omitted. It never returns titles, URLs, session IDs, or fabricated per-app intervals. Optional identities are read from contributing records in batches of at most 256 primary keys within the same SQLite snapshot; suppressed or out-of-range records cannot supply names. Duplicate or invalid `include_names` values return `400`.
 
 Budgets: shared heatmap/trend single-query permit, 30-second repository timeout (HTTP handler remains 15 seconds), 20,000 intersecting facts/day, 4,096 distinct canonical keys over the requested range, 50,000 day/app rows, and 4 MiB encoded response including JSON escaping and reserved envelope overhead. Existing heatmap settings/metadata limits also apply. Busy/read/budget failures return `500` without partial data or SQL fallback; the HTTP timeout uses the server's existing error policy. Per-day facts are released between days within one SQLite snapshot. These are retained-data limits, not a proven fixed process-memory ceiling.
 
-Desktop transport `cmd_get_daily_apps {from,to}` uses the typed daemon client in daemon-owned mode, otherwise the same repository. Only this response allows 4 MiB; other endpoints' caps remain unchanged. Its client timeout is 35 seconds, with no retry/fallback on errors. A `404` becomes `daily-apps-unsupported`. The prepared frontend adapter validates complete local-day boundaries, unique keys, positive safe-integer durations, per-day sum consistency and key/row budgets, sharing the heatmap/overview request queue; it is not yet used by the charts. No dedicated MCP tool is exposed yet. Display names, category assignment and app-detail navigation must be designed before switching the existing charts; do not relabel `app_key` as a user-facing name or infer session start times from daily totals.
+Desktop transport `cmd_get_daily_apps {from,to}` requests identities through the typed daemon client in daemon-owned mode, otherwise the same repository. Only this response allows 4 MiB; other endpoints' caps remain unchanged. Its client timeout is 35 seconds, with no retry/fallback on errors. A `404` becomes `daily-apps-unsupported`. The frontend validates complete local-day boundaries, unique keys and identities, positive safe-integer durations, per-day sum consistency and key/row budgets, sharing the heatmap/overview request queue. It retains manual display-name/category overrides and canonical alias display names. Old persisted app charts without `appReadVersion: 1` are discarded. Failures show retry rather than a stale successful chart. No dedicated MCP tool is exposed yet. Daily totals are never interpreted as session start/end intervals.
 
 ### `GET /api/v1/classification/observed-apps`
 

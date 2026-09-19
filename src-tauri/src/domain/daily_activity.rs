@@ -23,6 +23,15 @@ pub struct DailyAppActivityDay {
 pub struct DailyAppActivitySnapshot {
     pub sampled_at_ms: i64,
     pub days: Vec<DailyAppActivityDay>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub applications: Option<Vec<DailyAppIdentity>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DailyAppIdentity {
+    pub app_key: String,
+    pub app_name: String,
+    pub exe_name: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

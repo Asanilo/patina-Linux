@@ -22,12 +22,14 @@ const MAX_APP_KEY_BYTES: usize = 1024;
 const MAX_OVERRIDE_BYTES: usize = 16_384;
 const QUERY_TIMEOUT: Duration = Duration::from_secs(30);
 static DAILY_ACTIVITY_QUERY: Semaphore = Semaphore::const_new(1);
+mod names;
 
 #[derive(Debug)]
 pub struct DailyActivityTrend {
     pub activity: DailyActivitySnapshot,
     pub top_apps: Vec<Option<String>>,
     app_days: Vec<DailyAppActivityDay>,
+    applications: Option<Vec<crate::domain::daily_activity::DailyAppIdentity>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -35,12 +37,14 @@ enum ReadMode {
     Totals,
     TopApp,
     Applications,
+    ApplicationsNamed,
 }
 
 #[derive(Clone, Debug)]
 struct DayFact {
     included: bool,
     app: Option<Arc<str>>,
+    id: i64,
 }
 
 // Use existing covering indexes to avoid rereading title-heavy table pages for each day.
@@ -94,6 +98,21 @@ pub async fn load_daily_apps(
     Ok(DailyAppActivitySnapshot {
         sampled_at_ms,
         days: snapshot.app_days,
+        applications: None,
+    })
+}
+
+pub async fn load_daily_apps_named(
+    pool: &SqlitePool,
+    boundaries: &[i64],
+    sampled_at_ms: i64,
+) -> Result<DailyAppActivitySnapshot, String> {
+    let snapshot =
+        load_bounded_snapshot(pool, boundaries, sampled_at_ms, ReadMode::ApplicationsNamed).await?;
+    Ok(DailyAppActivitySnapshot {
+        sampled_at_ms,
+        days: snapshot.app_days,
+        applications: snapshot.applications,
     })
 }
 
@@ -168,6 +187,7 @@ async fn load_snapshot_with_apps(
     let mut app_rows = 0;
     // Reserve envelope/date overhead; encoded day bytes include escaped app keys.
     let mut response_bytes = 1024;
+    let mut identities = names::IdentityCollector::default();
     for day in boundaries.windows(2) {
         let records = load_day_facts(
             &mut transaction,
@@ -181,12 +201,20 @@ async fn load_snapshot_with_apps(
         .await?;
         // Excluded native activity must still suppress overlapping imported facts.
         let mut app_totals = HashMap::<Arc<str>, i64>::new();
+        let mut name_requests = Vec::new();
         let active_ms = summarize_activity_range(&records, day[0], day[1])
             .into_iter()
             .filter(|contribution| contribution.value.included)
             .try_fold(0_i64, |sum, contribution| {
                 if contribution.duration_ms > 0 {
                     if let Some(app) = contribution.value.app {
+                        if mode == ReadMode::ApplicationsNamed {
+                            name_requests.push((
+                                contribution.origin,
+                                contribution.value.id,
+                                app.clone(),
+                            ));
+                        }
                         let total = app_totals.entry(app).or_default();
                         *total = total
                             .checked_add(contribution.duration_ms)
@@ -202,7 +230,7 @@ async fn load_snapshot_with_apps(
                 .max_by(|(left, a), (right, b)| a.cmp(b).then_with(|| right.cmp(left)))
                 .map(|(app, _)| app.to_string()),
         );
-        if mode == ReadMode::Applications {
+        if matches!(mode, ReadMode::Applications | ReadMode::ApplicationsNamed) {
             if app_totals.keys().any(|key| key.len() > MAX_APP_KEY_BYTES) {
                 return Err("daily application canonical key exceeds budget".into());
             }
@@ -233,6 +261,9 @@ async fn load_snapshot_with_apps(
                 return Err("daily application response exceeds budget".into());
             }
             app_days.push(entry);
+            if mode == ReadMode::ApplicationsNamed {
+                identities.read(&mut transaction, name_requests).await?;
+            }
         }
         days.push(DailyActivityTotal {
             start_ms: day[0],
@@ -241,6 +272,20 @@ async fn load_snapshot_with_apps(
         });
     }
     transaction.commit().await.map_err(query_error)?;
+    let applications = if mode == ReadMode::ApplicationsNamed {
+        let values = identities.finish();
+        if response_bytes
+            + serde_json::to_vec(&values)
+                .map_err(|error| error.to_string())?
+                .len()
+            > MAX_DAILY_APPS_RESPONSE_BYTES
+        {
+            return Err("daily application response exceeds budget".into());
+        }
+        Some(values)
+    } else {
+        None
+    };
     Ok(DailyActivityTrend {
         activity: DailyActivitySnapshot {
             sampled_at_ms,
@@ -249,6 +294,7 @@ async fn load_snapshot_with_apps(
         },
         top_apps,
         app_days,
+        applications,
     })
 }
 
@@ -373,6 +419,7 @@ async fn load_day_facts(
             value: DayFact {
                 included: include,
                 app: app_key,
+                id: row.try_get("record_id").map_err(query_error)?,
             },
         });
     }
@@ -429,6 +476,47 @@ mod tests {
         sqlx::query("INSERT INTO sessions (app_name, exe_name, start_time, end_time, duration) VALUES ('App', ?, ?, ?, ?)")
             .bind(app).bind(start).bind(end).bind(end.map(|end| end - start))
             .execute(pool).await.unwrap();
+    }
+
+    #[test]
+    fn named_applications_use_only_contributing_metadata_and_bound_names() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup().await;
+            native(&pool, "Custom", -200, Some(-100)).await;
+            native(&pool, "Custom", 0, Some(100)).await;
+            native(&pool, "custom", 100, Some(200)).await;
+            native(&pool, "steamwebhelper.exe", 200, Some(300)).await;
+            sqlx::query("UPDATE sessions SET app_name = CASE start_time WHEN -200 THEN 'Outside' WHEN 0 THEN 'tray-helper' WHEN 100 THEN 'Editor' ELSE 'Helper' END, window_title = ?")
+                .bind("private title".repeat(10000)).execute(&pool).await.unwrap();
+            let result =
+                load_snapshot_with_apps(&pool, &[0, 1000], 1000, ReadMode::ApplicationsNamed)
+                    .await
+                    .unwrap();
+            let names = result.applications.unwrap();
+            assert_eq!(names.len(), 2);
+            assert_eq!(names[0].app_key, "custom");
+            assert_eq!(names[0].app_name, "Editor");
+            assert_eq!(names[0].exe_name, "Custom");
+            assert_eq!(names[1].app_key, "steam.exe");
+            assert_eq!(names[1].app_name, "");
+            assert_eq!(names[1].exe_name, "steam.exe");
+            sqlx::query("UPDATE sessions SET app_name = ? WHERE start_time = 100")
+                .bind("x".repeat(1025))
+                .execute(&pool)
+                .await
+                .unwrap();
+            assert!(
+                load_snapshot_with_apps(&pool, &[0, 1000], 1000, ReadMode::ApplicationsNamed)
+                    .await
+                    .unwrap_err()
+                    .contains("identity exceeds budget")
+            );
+            assert!(
+                load_snapshot_with_apps(&pool, &[0, 1000], 1000, ReadMode::Applications)
+                    .await
+                    .is_ok()
+            );
+        });
     }
 
     #[test]

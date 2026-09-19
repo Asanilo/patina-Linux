@@ -3,6 +3,7 @@ import { getDailyActivity } from "./dailyActivityRepository.ts";
 
 export interface DailyAppsRead {
   sampledAtMs: number;
+  applications: Array<{ appKey: string; appName: string; exeName: string }>;
   days: Array<{
     date: string;
     duration: number;
@@ -21,6 +22,7 @@ export async function getDailyApps(
 ): Promise<DailyAppsRead> {
   let sampledAtMs = 0;
   let applications: DailyAppsRead["days"][number]["apps"][] = [];
+  let identities: DailyAppsRead["applications"] = [];
   // Reuse local midnight validation and the Desktop daily-read queue. This does
   // not infer intervals or classify canonical keys as display names.
   const daily = await getDailyActivity(startMs, endMs, async (from, to) => {
@@ -57,10 +59,25 @@ export async function getDailyApps(
       if (duration !== day.active_ms) throw new Error("Daily application totals do not match the day");
       return apps;
     });
+    if (!Array.isArray(value.applications) || value.applications.length !== keys.size) {
+      throw new Error("Daily application identities are missing; update the runtime");
+    }
+    const identityKeys = new Set<string>();
+    identities = value.applications.map((identity: unknown) => {
+      if (!record(identity) || typeof identity.app_key !== "string" || !keys.has(identity.app_key)
+        || identityKeys.has(identity.app_key) || typeof identity.app_name !== "string"
+        || typeof identity.exe_name !== "string" || !identity.exe_name
+        || encoder.encode(identity.app_name).length > 1024 || encoder.encode(identity.exe_name).length > 1024) {
+        throw new Error("Invalid daily application identity");
+      }
+      identityKeys.add(identity.app_key);
+      return { appKey: identity.app_key, appName: identity.app_name, exeName: identity.exe_name };
+    });
     return { ...value, earliest_start_ms: null };
   });
   return {
     sampledAtMs,
+    applications: identities,
     days: daily.days.map((day, index) => ({ ...day, apps: applications[index] })),
   };
 }

@@ -274,7 +274,8 @@ fn paths(surface: ApiSurface) -> Value {
             "Bounded daily totals grouped by canonical executable in the runtime host local timezone. Same precedence, exclusions and day boundaries as heatmap. All positive application totals, not only top_app; keys are not display names or categories. No titles, URLs or session intervals. At most 378 days, 4096 keys, 50000 day/app rows and 4 MiB response. Shares heatmap single-query and 30-second budgets; busy or exceeded budgets return 500 without partial data.",
             "DailyAppsResponse",
             vec![required_query_param("from", "string", "Inclusive local date, strictly YYYY-MM-DD."),
-                 required_query_param("to", "string", "Exclusive local date, strictly YYYY-MM-DD.")],
+                 required_query_param("to", "string", "Exclusive local date, strictly YYYY-MM-DD."),
+                 query_param("include_names", "boolean", "Optional, default false. Include bounded display identities for contributing applications; never titles or URLs.")],
         )}),
     );
     object.insert(
@@ -968,11 +969,20 @@ fn schemas() -> Value {
         ]),
     );
     schemas.insert(
-        "DailyAppsData".to_string(),
+        "DailyAppIdentity".to_string(),
         object_schema(vec![
+            ("app_key", string_schema()),
+            ("app_name", json!({"type":"string", "maxLength":1024, "description":"Preferred contributing name; may be empty for canonical aliases. Limit is 1024 UTF-8 bytes."})),
+            ("exe_name", json!({"type":"string", "maxLength":1024, "description":"Executable identity for app navigation, not a session interval."})),
+        ]),
+    );
+    schemas.insert(
+        "DailyAppsData".to_string(),
+        object_schema_with_required(vec![
             ("sampled_at_ms", integer_schema()),
             ("days", json!({"type":"array", "minItems":1, "maxItems":378, "items":schema_ref("DailyAppsDay")})),
-        ]),
+            ("applications", json!({"type":"array", "maxItems":4096, "items":schema_ref("DailyAppIdentity"), "description":"Only present with include_names=true; one identity per contributing key."})),
+        ], vec!["sampled_at_ms", "days"]),
     );
     schemas.insert(
         "DailyAppsResponse".to_string(),

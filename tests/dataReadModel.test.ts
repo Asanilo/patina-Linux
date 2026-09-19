@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { dailyAppsFixture } from "./helpers/dailyAppsFixture.ts";
 import { readFile } from "node:fs/promises";
 import { getDailyActivity } from "../src/platform/persistence/dailyActivityRepository.ts";
 import { ProcessMapper } from "../src/shared/classification/processMapper.ts";
@@ -653,7 +654,7 @@ await runTest("an obsolete heatmap completion cannot delete a newer pending read
 await runTest("data bootstrap snapshot loads a valid persisted payload into cache", async () => {
   const snapshot = makeBootstrapSnapshot();
   const loaded = await loadPersistedDataBootstrapSnapshot({
-    loadPayload: async () => JSON.stringify({ ...snapshot, heatmapReadVersion: 2, overviewReadVersion: 1 }),
+    loadPayload: async () => JSON.stringify({ ...snapshot, heatmapReadVersion: 2, overviewReadVersion: 1, appReadVersion: 1 }),
     savePayload: async () => {
       throw new Error("unexpected save");
     },
@@ -676,7 +677,7 @@ await runTest("data bootstrap snapshot rejects incomplete app options and clears
   let cleared = false;
 
   const loaded = await loadPersistedDataBootstrapSnapshot({
-    loadPayload: async () => JSON.stringify({ ...snapshot, heatmapReadVersion: 2, overviewReadVersion: 1 }),
+    loadPayload: async () => JSON.stringify({ ...snapshot, heatmapReadVersion: 2, overviewReadVersion: 1, appReadVersion: 1 }),
     savePayload: async () => {
       throw new Error("unexpected save");
     },
@@ -726,7 +727,7 @@ await runTest("data first screen prewarm saves a bootstrap snapshot", async () =
     }),
   ];
   const trendSnapshot = await loadDataTrendSnapshot({ kind: "rolling", days: 7 }, nowMs, {
-    getSessionSummariesInRange: async () => sessions,
+    getDailyApps: async () => dailyAppsFixture(sessions),
   });
   let savedSnapshot: DataBootstrapSnapshot | null = null;
 
@@ -767,7 +768,7 @@ await runTest("data first screen prewarm dedupes pending matching work and throt
     }),
   ];
   const trendSnapshot = await loadDataTrendSnapshot({ kind: "rolling", days: 7 }, nowMs, {
-    getSessionSummariesInRange: async () => sessions,
+    getDailyApps: async () => dailyAppsFixture(sessions),
   });
   let loadCount = 0;
   let releaseLoad: (() => void) | null = null;
@@ -821,7 +822,7 @@ await runTest("data heavy cache cleanup clears trend and heatmap caches without 
   resetDataReadModelCacheForTests();
   const nowMs = new Date(2026, 0, 3, 12, 0, 0).getTime();
   await loadDataTrendSnapshot({ kind: "rolling", days: 7 }, nowMs, {
-    getSessionSummariesInRange: async () => [],
+    getDailyApps: async () => dailyAppsFixture([]),
   });
   await loadDataHeatmapSnapshot("recent", nowMs, {
     getEarliestSessionStartTime: async () => null,
@@ -842,7 +843,7 @@ await runTest("data heavy cache cleanup clears trend and heatmap caches without 
   assert.equal(getDataHeatmapDayCacheSizeForTests(), 0);
   assert.equal((await loadPersistedDataBootstrapSnapshot({
     clearPayload: async () => undefined,
-    loadPayload: async () => JSON.stringify({ ...makeBootstrapSnapshot(), heatmapReadVersion: 2, overviewReadVersion: 1 }),
+    loadPayload: async () => JSON.stringify({ ...makeBootstrapSnapshot(), heatmapReadVersion: 2, overviewReadVersion: 1, appReadVersion: 1 }),
     savePayload: async () => undefined,
   }))?.overviewRangeCacheKey, "rolling:7:2026-05-02:2026-05-08");
 });

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { dailyAppsFixture } from "./helpers/dailyAppsFixture.ts";
 import {
   countInclusiveLocalDays,
   resolveDataTrendRange,
@@ -80,10 +81,10 @@ await runTest("custom granularity changes after sixty-two days", () => {
 await runTest("trend snapshots dedupe matching in-flight range loads and cache the result", async () => {
   let loadCount = 0;
   const deps = {
-    getSessionSummariesInRange: async () => {
+    getDailyApps: async () => {
       loadCount += 1;
       await Promise.resolve();
-      return [];
+      return dailyAppsFixture([]);
     },
   };
   const selection = { kind: "custom", startDateKey: "2026-05-01", endDateKey: "2026-05-20" } as const;
@@ -92,14 +93,14 @@ await runTest("trend snapshots dedupe matching in-flight range loads and cache t
     loadDataTrendSnapshot(selection, nowMs, deps),
   ]);
 
-  assert.equal(first.sessions, second.sessions);
+  assert.equal(first.activity, second.activity);
   assert.equal(loadCount, 1);
-  assert.equal(getCachedDataTrendSnapshot(first.range)?.sessions, first.sessions);
+  assert.equal(getCachedDataTrendSnapshot(first.range)?.activity, first.activity);
 });
 
 await runTest("trend snapshot cache keeps a small LRU set", async () => {
   const deps = {
-    getSessionSummariesInRange: async () => [],
+    getDailyApps: async () => dailyAppsFixture([]),
   };
 
   for (let day = 1; day <= 5; day += 1) {
@@ -116,9 +117,9 @@ await runTest("trend snapshot cache keeps a small LRU set", async () => {
 await runTest("invalidated trend reads cannot refill caches or evict a newer pending request", async () => {
   let calls = 0;
   const resolvers: Array<() => void> = [];
-  const deps = { getSessionSummariesInRange: () => {
+  const deps = { getDailyApps: () => {
     calls += 1;
-    return new Promise<[]>(resolve => resolvers.push(() => resolve([])));
+    return new Promise<ReturnType<typeof dailyAppsFixture>>(resolve => resolvers.push(() => resolve(dailyAppsFixture([]))));
   } };
   const selection = { kind: "rolling", days: 7 } as const;
   const old = loadDataTrendSnapshot(selection, nowMs, deps);
@@ -131,8 +132,8 @@ await runTest("invalidated trend reads cannot refill caches or evict a newer pen
   assert.equal(calls, 2);
   resolvers[1]();
   const [a, b] = await Promise.all([fresh, deduped]);
-  assert.equal(a.sessions, b.sessions);
-  assert.equal(getCachedDataTrendSnapshot(a.range)?.sessions, a.sessions);
+  assert.equal(a.activity, b.activity);
+  assert.equal(getCachedDataTrendSnapshot(a.range)?.activity, a.activity);
 });
 
 console.log(`Passed ${passed} data trend range tests`);

@@ -70,6 +70,7 @@ function isValidBootstrapSnapshot(value: unknown): value is DataBootstrapSnapsho
   return (
     value.heatmapReadVersion === 2
     && value.overviewReadVersion === 1
+    && value.appReadVersion === 1
     && typeof value.createdAtMs === "number"
     && typeof value.overviewRangeCacheKey === "string"
     && typeof value.appRangeCacheKey === "string"
@@ -136,7 +137,7 @@ export async function saveDataBootstrapSnapshot(
     return false;
   }
 
-  const payload = JSON.stringify({ ...snapshot, heatmapReadVersion: 2, overviewReadVersion: 1 });
+  const payload = JSON.stringify({ ...snapshot, heatmapReadVersion: 2, overviewReadVersion: 1, appReadVersion: 1 });
   if (payload.length > DATA_BOOTSTRAP_SNAPSHOT_MAX_BYTES) {
     resolvedDeps.warn(
       "Skipped Data bootstrap snapshot because it exceeded the size budget",

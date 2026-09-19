@@ -26,18 +26,18 @@ import {
 import { useDataChartInitialDimension } from "../hooks/useDataChartInitialDimension.ts";
 import { useDataWebActivitySnapshot } from "../hooks/useDataWebActivitySnapshot.ts";
 import {
-  buildDataCategoryTrendViewModel,
   filterDataCategoryOptionsForQuery,
   type DataCategoryTrendViewModel,
 } from "../services/dataCategoryTrendReadModel.ts";
 import { resolveTrendDateFromChartEvent } from "../services/dataChartInteraction.ts";
 import {
-  buildDataAppTrendViewModel,
   type DataAppOption,
   type DataAppTrendViewModel,
 } from "../services/dataReadModel.ts";
 import type { DataTrendRangeSelection } from "../services/dataTrendRange.ts";
 import type { DataTrendSnapshot } from "../services/dataTrendSnapshot.ts";
+import { getDataOverviewCopy } from "../services/dataOverviewCopy.ts";
+import { buildDailyAppTrendViewModel, buildDailyCategoryTrendViewModel } from "../services/dataDailyAppReadModel.ts";
 import { getDataWebActivityCopy } from "../services/dataWebActivityCopy.ts";
 import {
   buildDataWebActivityTrendViewModel,
@@ -47,6 +47,8 @@ import {
 import DataTrendRangeControl from "./DataTrendRangeControl.tsx";
 
 interface Props {
+  appTrendError: string | null;
+  onRetryAppTrend: () => void;
   appTrendNowMs: number;
   appTrendRangeCacheKey: string;
   appTrendSnapshot: DataTrendSnapshot | null;
@@ -118,6 +120,8 @@ function updateDataDestinationSelection(
 }
 
 export default function DataDestinationTrendPanel({
+  appTrendError,
+  onRetryAppTrend,
   appTrendNowMs,
   appTrendRangeCacheKey,
   appTrendSnapshot,
@@ -134,6 +138,7 @@ export default function DataDestinationTrendPanel({
   webEnabled,
 }: Props) {
   const webActivityCopy = getDataWebActivityCopy(uiLanguage);
+  const appCopy = getDataOverviewCopy(uiLanguage);
   const [destinationMode, setDestinationMode] = useState<DataDestinationMode>("app");
   const [selectedAppKey, setSelectedAppKey] = useState<string | null>(null);
   const [selectedCategoryKeys, setSelectedCategoryKeys] = useState<string[]>([]);
@@ -165,42 +170,40 @@ export default function DataDestinationTrendPanel({
   const activeDestinationTrendDateRef = useRef<string | null>(null);
 
   const appTrendViewModel = useMemo(() => {
-    if (!appTrendSnapshot) return null;
-    return buildDataAppTrendViewModel(
-      appTrendSnapshot.sessions,
+    if (!appTrendSnapshot || appTrendSnapshot.range.cacheKey !== appTrendRangeCacheKey) return null;
+    return buildDailyAppTrendViewModel(
+      appTrendSnapshot.activity,
       appTrendSnapshot.range,
-      appTrendNowMs,
       selectedAppKey,
     );
-  }, [appTrendNowMs, appTrendSnapshot, mappingVersion, selectedAppKey]);
+  }, [appTrendNowMs, appTrendRangeCacheKey, appTrendSnapshot, mappingVersion, selectedAppKey]);
   if (appTrendViewModel) {
     lastAppTrendViewModelRef.current = {
       rangeCacheKey: appTrendRangeCacheKey,
       viewModel: appTrendViewModel,
     };
   }
-  const visibleAppTrendViewModel = appTrendViewModel
+  const visibleAppTrendViewModel = appTrendError ? null : appTrendViewModel
     ?? (lastAppTrendViewModelRef.current?.rangeCacheKey === appTrendRangeCacheKey
       ? lastAppTrendViewModelRef.current.viewModel
       : null)
     ?? bootstrapAppTrendViewModel;
 
   const categoryTrendViewModel = useMemo(() => {
-    if (!appTrendSnapshot) return null;
-    return buildDataCategoryTrendViewModel(
-      appTrendSnapshot.sessions,
+    if (!appTrendSnapshot || appTrendSnapshot.range.cacheKey !== appTrendRangeCacheKey) return null;
+    return buildDailyCategoryTrendViewModel(
+      appTrendSnapshot.activity,
       appTrendSnapshot.range,
-      appTrendNowMs,
       selectedCategoryKeys,
     );
-  }, [appTrendNowMs, appTrendSnapshot, mappingVersion, selectedCategoryKeys]);
+  }, [appTrendNowMs, appTrendRangeCacheKey, appTrendSnapshot, mappingVersion, selectedCategoryKeys]);
   if (categoryTrendViewModel) {
     lastCategoryTrendViewModelRef.current = {
       rangeCacheKey: appTrendRangeCacheKey,
       viewModel: categoryTrendViewModel,
     };
   }
-  const visibleCategoryTrendViewModel = categoryTrendViewModel
+  const visibleCategoryTrendViewModel = appTrendError ? null : categoryTrendViewModel
     ?? (lastCategoryTrendViewModelRef.current?.rangeCacheKey === appTrendRangeCacheKey
       ? lastCategoryTrendViewModelRef.current.viewModel
       : null);
@@ -340,7 +343,7 @@ export default function DataDestinationTrendPanel({
     : isCategoryDestination
       ? selectedCategories.length > 0
       : Boolean(selectedAppTrendApp);
-  const destinationError = isWebDestination ? webActivityTrend.error : null;
+  const destinationError = isWebDestination ? webActivityTrend.error : appTrendError;
   const destinationSearchQuery = isWebDestination
     ? webSearchQuery
     : isCategoryDestination ? categorySearchQuery : appSearchQuery;
@@ -532,11 +535,11 @@ export default function DataDestinationTrendPanel({
 
       {destinationError && !destinationReady ? (
         <div className="data-app-loading data-web-trend-error text-[var(--qp-text-tertiary)] text-xs" role="status">
-          <span>{webActivityCopy.unavailable}</span>
+          <span>{isWebDestination ? webActivityCopy.unavailable : appTrendError?.includes("overview-range-limit") ? appCopy.rangeLimit : appCopy.failed}</span>
           <button
             type="button"
             className="qp-inline-action qp-inline-action-accent"
-            onClick={() => setWebRetryKey((current) => current + 1)}
+            onClick={() => isWebDestination ? setWebRetryKey((current) => current + 1) : onRetryAppTrend()}
           >
             {webActivityCopy.retry}
           </button>

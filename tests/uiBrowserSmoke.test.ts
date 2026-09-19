@@ -175,6 +175,27 @@ function tauriStubFor(path: string) {
           if (globalThis.__PATINA_SMOKE_OBSERVED_ERROR) throw new Error(globalThis.__PATINA_SMOKE_OBSERVED_ERROR);
           return [{ exe_name: "zen", app_name: "Zen", total_duration_ms: 60000, last_seen_ms: payload.toMs - 60000 }];
         }
+        if (command === "cmd_get_daily_apps") {
+          globalThis.__PATINA_SMOKE_DAILY_APPS_CALLS = (globalThis.__PATINA_SMOKE_DAILY_APPS_CALLS ?? 0) + 1;
+          if (globalThis.__PATINA_SMOKE_DAILY_APPS_ERROR) throw new Error(globalThis.__PATINA_SMOKE_DAILY_APPS_ERROR);
+          const yesterday = new Date(); yesterday.setDate(yesterday.getDate()-1); yesterday.setHours(0,0,0,0);
+          const days = [];
+          const end = new Date(payload.to + "T00:00:00");
+          let cursor = new Date(payload.from + "T00:00:00");
+          let included = false;
+          while (cursor < end) {
+            const next = new Date(cursor.getFullYear(),cursor.getMonth(),cursor.getDate()+1);
+            const active = cursor.getTime() === yesterday.getTime();
+            included ||= active;
+            days.push({ start_ms:cursor.getTime(), end_ms:next.getTime(), active_ms:active ? 3000000 : 0,
+              apps:active ? [{ app_key:"cursor.exe", active_ms:600000 },{ app_key:"deep-research-workbench.exe",active_ms:2400000 }] : [] });
+            cursor = next;
+          }
+          return { sampled_at_ms:Date.now(), days, applications:included ? [
+            { app_key:"deep-research-workbench.exe",app_name:"Extremely Long Research Workbench Application Name",exe_name:"deep-research-workbench.exe" },
+            { app_key:"cursor.exe", app_name:"Cursor",exe_name:"cursor.exe" },
+          ] : [] };
+        }
         if (command === "cmd_get_daily_activity") {
           globalThis.__PATINA_SMOKE_HEATMAP_CALLS = (globalThis.__PATINA_SMOKE_HEATMAP_CALLS ?? 0) + 1;
           if (globalThis.__PATINA_SMOKE_HEATMAP_ERROR) throw new Error(globalThis.__PATINA_SMOKE_HEATMAP_ERROR);
@@ -3476,6 +3497,33 @@ try {
       const shot = await client!.command("Page.captureScreenshot", { format: "png" }, sessionId);
       writeFileSync(join(process.env.PATINA_UI_SCREENSHOTS_DIR, "overview-recovered-760.png"), Buffer.from(String(shot.data), "base64"));
     }
+  });
+
+  await runTest("application aggregates fail visibly and retry without stale category charts", async () => {
+    await evaluate(client!, sessionId, `document.querySelector('[aria-label="历史"]').click()`);
+    await waitForExpression(client!, sessionId, `document.querySelector('[aria-label="历史"]')?.className.includes('qp-nav-item-active')`);
+    await evaluate(client!, sessionId, `
+      globalThis.__PATINA_SMOKE_DAILY_APPS_ERROR = 'daily-apps-unsupported';
+      document.querySelector('[aria-label="数据"]').click();
+    `);
+    await waitForExpression(client!, sessionId, `Boolean(document.querySelector('.data-web-trend-error'))`);
+    assert.equal(await evaluate(client!, sessionId, `Boolean(document.querySelector('.data-app-grid'))`), false);
+    const previous = Number(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_DAILY_APPS_CALLS`));
+    for (const width of [1280, 760]) {
+      await client!.command("Emulation.setDeviceMetricsOverride", { width, height: 820, deviceScaleFactor: 1, mobile: false }, sessionId);
+      await evaluate(client!, sessionId, `document.querySelector('.data-web-trend-error').scrollIntoView({block:'center'})`);
+      assert.equal(await evaluate(client!, sessionId, `document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1`), true);
+      if (process.env.PATINA_UI_SCREENSHOTS_DIR) {
+        const shot = await client!.command("Page.captureScreenshot", { format: "png" }, sessionId);
+        writeFileSync(join(process.env.PATINA_UI_SCREENSHOTS_DIR, `apps-error-${width}.png`), Buffer.from(String(shot.data), "base64"));
+      }
+    }
+    await evaluate(client!, sessionId, `
+      globalThis.__PATINA_SMOKE_DAILY_APPS_ERROR = null;
+      document.querySelector('.data-web-trend-error button').click();
+    `);
+    await waitForExpression(client!, sessionId, `!document.querySelector('.data-web-trend-error') && Boolean(document.querySelector('.data-app-grid'))`);
+    assert.ok(Number(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_DAILY_APPS_CALLS`)) > previous);
   });
 
   await runTest("English history title chips do not crowd the duration column", async () => {
