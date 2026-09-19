@@ -22,6 +22,14 @@
 - 用户安装的版本仍为 beta.17，安装后只读、Data/History、关闭回收和用户重开确认通过。当前 beta.18 已将窄窗口修复与低耗延迟设置合为本地 DEB 候选，成品检查通过，尚未升级用户安装版本。2026-09-18 前次只读查询 GitHub 确认最新预发布为 beta.12，最新稳定版为 1.8.4，本轮没有重新查询或操作远端；本批独立收口到现有 daemon 分支，不推送或公开发布。
 - 下文保留阶段证据与历史限制，不以早期“下一步”覆盖本节执行焦点。
 
+#### 多表备份与写入故障补验（2026-09-19，未出包）
+
+- `scripts/perf/backup-benchmark.mjs --release --multi-table` 扩展为 50,000 原生 session、50,000 标题、50,000 网页及关联、各 10,000 imported exact/bucket 和 1,000 settings。Merge/Replace 检查行数、时间/标题及网页关联、外键和 quick_check；恢复标题沿用现有 trim 语义。最后一个 bucket 写入注入失败，验证整事务回滚，未触碰生产数据。
+- 成功证据 `/tmp/patina-backup-bench-5oB3Al/summary.json`，fixture SHA-256 `b69c4e8eb69e9d8df8f0941087dff29aacbde5c43b55b8a35192ad4bca69f3a7`。旧导出 5,444 ms / USS 增量约 770.4 MiB，新导出 1,926 ms / 6.3 MiB；旧预览 4,228 ms / 213.4 MiB，新纯预览 1,903 ms / 3.2 MiB，预览加 SHA-256 2,369 ms / 3.5 MiB。完整 Replace 9,978 ms、Merge 15,700 ms，峰值增量约 219 MiB；恢复仍保留完整 payload/ID map，不能套用预览 64 MiB 预算。
+- 三次异步预览与真实 TrackingRuntimeDataStore 写入并行：221 次 tick，最大间隔 40 ms，222 条标题，完整性通过。此为隔离 release worker，不是 GNOME 或 WebKit 长期验收。早期两次失败分别是测试类型导入错误和未考虑标题 trim 的断言，修正后重跑，不隐藏失败。
+- 新增 `write-failure` worker，使用独立进程的 `RLIMIT_FSIZE=4096` 触发真实内核 EFBIG，覆盖覆盖式与不覆盖式导出：原目标、无关文件不变，新目标不存在，本次临时文件清理。不是 ENOSPC，也不代替断电测试。使用新 debug worker 单独通过，证据为同目录 `write-failure.json`；前述 release summary 生成时尚不含该模式，不能称为一次完整 release 矩阵。runner 后续默认包含此项。
+- 全历史分类迁移已单独提交 `556c159`；应用趋势 `3d0316f`。均未推送，后续 AppImage 实现和验收继续，版本与已安装 beta.18 不变。
+
 #### 全历史分类迁移收口（2026-09-19，未出包）
 
 - 删除前端 `loadObservedSessionStats(0, now)` 的整表 SQL/JSON 读取。首次迁移通过 typed command/daemon client 读取 `observed-apps?scope=legacy-migration`；不是用近期 366 天接口冒充全历史。原名称、别名和旧自动分类规则未重写，完整响应后才原子写入分类变更及完成 marker，错误时不标记完成、不回退本地明细。

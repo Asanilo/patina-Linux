@@ -39,6 +39,7 @@ fn worker() {
         "backup-benchmark\n"
     );
     let mode = std::env::var("PATINA_BACKUP_BENCH_MODE").unwrap();
+    let multi_table = std::env::var("PATINA_BACKUP_BENCH_MULTI").as_deref() == Ok("1");
     assert!([
         "seed",
         "legacy-export",
@@ -48,6 +49,7 @@ fn worker() {
         "preview-only",
         "sha256",
         "responsiveness",
+        "write-failure",
         "restore-replace",
         "restore-merge",
         "rollback-replace",
@@ -63,6 +65,9 @@ fn worker() {
                 .unwrap();
             sqlx::query("WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i<49999) INSERT INTO sessions(app_name,exe_name,window_title,start_time,end_time,duration) SELECT 'Fixture','fixture',?,i*60000,i*60000+30000,30000 FROM n")
                 .bind("Synthetic fixture title ".repeat(45)).execute(&pool).await.unwrap();
+            if multi_table {
+                seed_related_tables(&pool).await;
+            }
             export_backup_from_pool(&pool, &root.join("fixture.zip"))
                 .await
                 .unwrap();
@@ -82,6 +87,11 @@ fn worker() {
             )
             .await
             .unwrap();
+        if mode == "write-failure" {
+            verify_export_write_failure(&pool, &root).await;
+            pool.close().await;
+            return;
+        }
         let restore_pool = if mode.starts_with("restore-") || mode.starts_with("rollback-") {
             let target = open_prepared_sqlite_pool_at_path(&root.join(format!("{mode}.db")), true)
                 .await
@@ -93,8 +103,12 @@ fn worker() {
                 .await
                 .unwrap();
             if mode.starts_with("rollback-") {
-                sqlx::query("CREATE TRIGGER fail_last_session BEFORE INSERT ON sessions WHEN NEW.exe_name='fixture' AND NEW.start_time=2999940000 BEGIN SELECT RAISE(ABORT, 'benchmark injected late failure'); END")
-                    .execute(&target).await.unwrap();
+                let trigger = if multi_table {
+                    "CREATE TRIGGER fail_last_import BEFORE INSERT ON import_time_buckets WHEN NEW.bucket_start_time=599940000 BEGIN SELECT RAISE(ABORT, 'benchmark injected late failure'); END"
+                } else {
+                    "CREATE TRIGGER fail_last_session BEFORE INSERT ON sessions WHEN NEW.exe_name='fixture' AND NEW.start_time=2999940000 BEGIN SELECT RAISE(ABORT, 'benchmark injected late failure'); END"
+                };
+                sqlx::query(trigger).execute(&target).await.unwrap();
             }
             Some(target)
         } else {
@@ -193,6 +207,9 @@ fn worker() {
                 .await
                 .unwrap();
             assert_eq!(actual, expected);
+            if multi_table {
+                verify_related_tables(&target, mode.starts_with("restore-")).await;
+            }
             if mode.starts_with("restore-") {
                 let total: i64 = sqlx::query_scalar(
                     "SELECT SUM(duration) FROM sessions WHERE exe_name='fixture'",
@@ -239,10 +256,153 @@ fn worker() {
             json!({
                 "mode": mode, "baseline": baseline, "samples": *samples.lock().unwrap(),
                 "elapsed_ms": elapsed_ms, "records": count, "integrity": integrity,
+                "multi_table": multi_table,
             }),
         );
         pool.close().await;
     });
+}
+
+async fn seed_related_tables(pool: &Pool<Sqlite>) {
+    for statement in [
+        "INSERT INTO session_title_samples(session_id,title,start_time,end_time) SELECT id,window_title,start_time,end_time FROM sessions",
+        "INSERT INTO web_activity_segments(id,browser_client_id,browser_kind,browser_exe_name,domain,normalized_domain,url,title,start_time,end_time,duration,created_at,updated_at) SELECT id,'synthetic','firefox','fixture','example.test','example.test','https://example.test/'||id,window_title,start_time,end_time,duration,start_time,end_time FROM sessions",
+        "INSERT INTO web_activity_native_sessions(segment_id,session_id) SELECT id,id FROM sessions",
+        "INSERT INTO import_batches(id,imported_at,source_name,source_kind,source_fingerprint,exact_session_count,hour_bucket_count) VALUES ('fixture',1,'synthetic','patina-csv',printf('%064d',1),10000,10000)",
+        "INSERT INTO import_exact_sessions(batch_id,fingerprint,app_name,exe_name,window_title,start_time,end_time,duration) SELECT 'fixture',printf('%064d',id),'Imported','imported',window_title,start_time,end_time,duration FROM sessions WHERE id<=10000",
+        "INSERT INTO import_time_buckets(batch_id,fingerprint,app_name,exe_name,bucket_start_time,duration) SELECT 'fixture',printf('%064d',id),'Imported','imported',start_time,1000 FROM sessions WHERE id<=10000",
+        "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<1000) INSERT INTO settings(key,value) SELECT 'fixture_'||i,'synthetic' FROM n",
+    ] {
+        sqlx::query(statement).execute(pool).await.unwrap();
+    }
+}
+
+async fn verify_export_write_failure(pool: &Pool<Sqlite>, root: &Path) {
+    let existing = root.join("write-failure-existing.zip");
+    let unrelated = root.join("write-failure-unrelated.txt");
+    fs::write(&existing, b"preserve existing destination").unwrap();
+    fs::write(&unrelated, b"not owned by exporter").unwrap();
+    let before: std::collections::BTreeSet<_> = fs::read_dir(root)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    for create_new in [false, true] {
+        let target = if create_new {
+            root.join("write-failure-new.zip")
+        } else {
+            existing.clone()
+        };
+        // This opt-in test runs in its own process. Inject a real kernel file-write
+        // error without filling a shared filesystem or changing production limits.
+        let limit = FileSizeLimit::new(4096);
+        let result = streaming::export(pool, &target, create_new).await;
+        drop(limit);
+        let error = result.unwrap_err();
+        assert!(
+            matches!(error, CreateNewBackupError::Failed(ref message) if message.contains("File too large") || message.contains("os error 27")),
+            "{error:?}"
+        );
+        assert_eq!(
+            fs::read(&existing).unwrap(),
+            b"preserve existing destination"
+        );
+        assert_eq!(fs::read(&unrelated).unwrap(), b"not owned by exporter");
+        let after: std::collections::BTreeSet<_> = fs::read_dir(root)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(
+            before, after,
+            "failed export must remove only its staged file"
+        );
+    }
+    write_new(
+        &root.join("write-failure.json"),
+        json!({
+            "passed": true, "failure": "kernel EFBIG via isolated RLIMIT_FSIZE",
+            "existing_target_and_unrelated_preserved": true, "new_target_absent": true,
+            "staged_files_removed": true,
+        }),
+    );
+}
+
+struct FileSizeLimit {
+    previous: libc::rlimit,
+    signal: libc::sighandler_t,
+}
+
+impl FileSizeLimit {
+    fn new(bytes: libc::rlim_t) -> Self {
+        let mut previous = libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
+        // SAFETY: valid stack pointers, current isolated worker process only.
+        unsafe {
+            assert_eq!(libc::getrlimit(libc::RLIMIT_FSIZE, &mut previous), 0);
+            let signal = libc::signal(libc::SIGXFSZ, libc::SIG_IGN);
+            assert_ne!(signal, libc::SIG_ERR);
+            let guard = Self { previous, signal };
+            assert_eq!(
+                libc::setrlimit(
+                    libc::RLIMIT_FSIZE,
+                    &libc::rlimit {
+                        rlim_cur: bytes.min(previous.rlim_max),
+                        rlim_max: previous.rlim_max,
+                    }
+                ),
+                0
+            );
+            guard
+        }
+    }
+}
+
+impl Drop for FileSizeLimit {
+    fn drop(&mut self) {
+        // SAFETY: restore the limits and signal handler saved by this process.
+        unsafe {
+            assert_eq!(libc::setrlimit(libc::RLIMIT_FSIZE, &self.previous), 0);
+            libc::signal(libc::SIGXFSZ, self.signal);
+        }
+    }
+}
+
+async fn verify_related_tables(pool: &Pool<Sqlite>, restored: bool) {
+    for (table, count) in [
+        ("session_title_samples", 50_000),
+        ("web_activity_segments", 50_000),
+        ("web_activity_native_sessions", 50_000),
+        ("import_batches", 1),
+        ("import_exact_sessions", 10_000),
+        ("import_time_buckets", 10_000),
+    ] {
+        let actual: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!(actual, if restored { count } else { 0 }, "{table}");
+    }
+    let settings: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM settings WHERE key GLOB 'fixture_*' AND value='synthetic'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(settings, if restored { 1000 } else { 0 });
+    if restored {
+        let linked: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM web_activity_native_sessions r JOIN sessions s ON s.id=r.session_id JOIN web_activity_segments w ON w.id=r.segment_id WHERE s.exe_name='fixture' AND s.start_time=w.start_time AND s.end_time=w.end_time AND w.duration=s.duration")
+            .fetch_one(pool).await.unwrap();
+        assert_eq!(linked, 50_000);
+        let titles: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM session_title_samples t JOIN sessions s ON s.id=t.session_id WHERE t.title=TRIM(s.window_title) AND t.start_time=s.start_time AND t.end_time=s.end_time")
+            .fetch_one(pool).await.unwrap();
+        assert_eq!(titles, 50_000);
+    }
+    let foreign_keys = sqlx::query("PRAGMA foreign_key_check")
+        .fetch_all(pool)
+        .await
+        .unwrap();
+    assert!(foreign_keys.is_empty());
 }
 
 async fn measure_responsiveness(root: &Path) {

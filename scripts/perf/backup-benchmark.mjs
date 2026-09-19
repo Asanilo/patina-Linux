@@ -9,6 +9,7 @@ import { createReadStream } from "node:fs";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const release = process.argv.includes("--release");
+const multiTable = process.argv.includes("--multi-table");
 const modes = ["legacy-export", "export", "legacy-preview", "preview-only", "sha256", "preview", "restore-replace", "restore-merge", "rollback-replace", "rollback-merge"];
 if (process.platform !== "linux") throw new Error("This benchmark requires Linux /proc");
 async function sha256(file) {
@@ -34,12 +35,13 @@ for await (const line of createInterface({ input: build.stdout })) {
 if (await built !== 0 || !binary) throw new Error("Could not compile benchmark");
 const hash = await sha256(binary);
 let fixtureHash;
-for (const mode of ["seed", ...modes, "responsiveness"]) {
+for (const mode of ["seed", ...modes, "write-failure", "responsiveness"]) {
   const child = spawn(binary, ["data::backup::benchmark::worker", "--exact", "--ignored", "--nocapture", "--test-threads=1"], {
     cwd: root, stdio: "inherit", env: {
       PATH: process.env.PATH, LANG: "C.UTF-8", TZ: "UTC",
       HOME: root, XDG_DATA_HOME: root, XDG_CONFIG_HOME: root, XDG_CACHE_HOME: root,
       PATINA_BACKUP_BENCH_ROOT: root, PATINA_BACKUP_BENCH_MODE: mode,
+      PATINA_BACKUP_BENCH_MULTI: multiTable ? "1" : "0",
     },
   });
   const timer = setTimeout(() => child.kill("SIGKILL"), 120_000);
@@ -61,14 +63,16 @@ for (const mode of modes) {
 }
 const budgets = { elapsed_ms: release ? 5000 : 30000, sampled_uss_growth_bytes: 64 * 1024 * 1024 };
 const responsiveness = JSON.parse(await readFile(path.join(root, "responsiveness.json"), "utf8"));
-const passed = responsiveness.passed && results.filter(result => ["export", "preview", "preview-only"].includes(result.mode)).every(result =>
+const writeFailure = JSON.parse(await readFile(path.join(root, "write-failure.json"), "utf8"));
+const passed = writeFailure.passed && responsiveness.passed && results.filter(result => ["export", "preview", "preview-only"].includes(result.mode)).every(result =>
   result.elapsed_ms <= budgets.elapsed_ms && result.records === 50000
   && result.sampled_peak.uss_bytes !== null && result.baseline.uss_bytes !== null
   && result.sampled_peak.uss_bytes - result.baseline.uss_bytes <= budgets.sampled_uss_growth_bytes);
 const report = { binary, sha256: hash, fixture_sha256: fixtureHash,
   profile: release ? "release" : "debug",
+  multi_table: multiTable,
   scope: "Isolated worker; synthetic 50000 rows; includes restore transactions, not Desktop or systemd maintenance; restore measurements are observational, not subject to preview memory budget",
-  budgets, passed, results, responsiveness };
+  budgets, passed, results, responsiveness, write_failure: writeFailure };
 await writeFile(path.join(root, "summary.json"), JSON.stringify(report, null, 2), { flag: "wx", mode: 0o600 });
 console.log(JSON.stringify(report, null, 2));
 if (!passed) process.exitCode = 1;
