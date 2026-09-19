@@ -375,7 +375,7 @@ pub async fn install_downloaded<R: Runtime>(
 
     let installing_snapshot = state.set_installing();
     emit_update_snapshot_changed(app, &installing_snapshot);
-    let install_result = update.install(&downloaded_bytes);
+    let install_result = install_verified_update(&update, &downloaded_bytes);
 
     match install_result {
         Ok(()) => {
@@ -404,4 +404,18 @@ pub async fn install_downloaded<R: Runtime>(
             Ok(snapshot)
         }
     }
+}
+
+fn install_verified_update(update: &Update, bytes: &[u8]) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    if tauri::utils::platform::bundle_type() == Some(tauri::utils::config::BundleType::AppImage) {
+        let path = std::env::var_os("APPIMAGE")
+            .ok_or("AppImage runtime did not provide its package path")?;
+        crate::platform::linux::appimage_update::install_verified_image(
+            std::path::Path::new(&path),
+            bytes,
+        )?;
+        return Ok(());
+    }
+    update.install(bytes).map_err(|error| error.to_string())
 }

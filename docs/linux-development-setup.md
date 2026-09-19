@@ -192,6 +192,72 @@ A manual preview reports startup stage `tracking-preview`, exposes service state
 
 ## Linux Release Bundles
 
+### Daemon-Backed AppImage Runtime (Development)
+
+AppImage support on the daemon branch is implemented but remains behind the
+independent packaging/acceptance gate; prerelease publishing is still DEB-only.
+The AppImage includes both Desktop and `usr/bin/patinad`. `AppRun --patinad`
+executes the bundled daemon before Desktop initialization. First launch stages
+the entire AppDir, including its libraries, under the stable product data root:
+
+```text
+~/.local/share/Patina/runtime-appimage/versions/<package-sha256>/
+~/.local/share/Patina/runtime-appimage/current -> versions/<package-sha256>
+~/.config/systemd/user/patinad.service
+```
+
+The store follows XDG roots, not a relocated activity database. Copying is bounded
+to 2 GiB, 30,000 entries and depth 64; external/dangling links and special files
+are rejected. A private installation lock serializes staging. Only a complete,
+synced runtime that passes `--patinad --version` can become `current` via atomic
+symlink replacement. Older packages do not downgrade it; different content with
+the same version is rejected. Use a new candidate version for rebuilt packages.
+
+There is only one `patinad.service` and one profile lease. An existing managed
+AppImage user unit keeps ownership; otherwise a packaged DEB unit is reused if
+available. In that case upgrade the DEB to upgrade its daemon, rather than
+expecting the AppImage to replace `/usr/bin/patinad`. Masks/custom user units are
+preserved and setup fails explicitly. Systemd and Desktop must agree on the
+configuration root; DEB reuse additionally requires matching data roots. AppImage
+portable HOME/config directories are not supported for this shared user service.
+Creating/reloading the unit does not enable or start tracking: existing owner
+handoff, startup preferences and explicit reload confirmation remain authoritative.
+
+AppImage updates still use Tauri's verified download and configured public key.
+Only the successful verified buffer enters the replacement helper. It writes and
+syncs a private same-directory file, retains the previous image as
+`.patina-previous-<sha256>.AppImage`, then atomically renames the new file. The
+target and directory must not be writable by other users. Filesystems without
+hard-link/rename support fail instead of falling back to an in-place overwrite.
+A final directory sync failure can report an error after the complete new image
+has already been installed; retry is idempotent. Neither recovery images nor old
+runtime versions are automatically deleted, so reserve disk space for both.
+
+Before pointer activation, copy or version-preflight failure leaves the previous
+runtime selected. Retained files are recovery material, not a promise of automatic
+database downgrade: after a new daemon has opened/migrated data, do not point an
+older binary at that data. Use a compatible repaired package or the existing
+validated backup/restore flow. A first-launch failure must be corrected before
+claiming AppImage acceptance; unit tests alone do not satisfy the release gate.
+
+For an unsigned **local test artifact**, without changing release signing policy:
+
+```bash
+npm run tauri -- build --bundles appimage --config '{"bundle":{"createUpdaterArtifacts":false}}' --ci
+PATINA_APPIMAGE_TEST_SOURCE=/absolute/path/Patina.AppDir \
+PATINA_APPIMAGE_TEST_IMAGE=/absolute/path/Patina.AppImage \
+  cargo test --manifest-path src-tauri/Cargo.toml --lib \
+  built_appdir_runs_from_durable_store -- --ignored --nocapture
+```
+
+The opt-in test uses only a new private temporary runtime and prints its retained
+`PERSISTED_APPDIR`. To run the existing isolated local/remote systemd restore
+tests against it, set `PATINA_SYSTEMD_TEST_BINARY=<PERSISTED_APPDIR>/AppRun` and
+`PATINA_SYSTEMD_TEST_APPIMAGE_LAUNCHER=1`. Never supply the production unit or data
+directory. This does not replace real first-launch, login or signed-release tests.
+
+### Published Bundles
+
 Stable tagged releases build on Ubuntu 22.04 and publish:
 
 - x86_64 AppImage for portable execution and package-aware Tauri updates
@@ -268,7 +334,7 @@ PATINA_SYSTEMD_TEST_BINARY=/usr/bin/patinad cargo test \
   real_systemd_restore_crosses_process_boundary -- --ignored --nocapture
 ```
 
-Each case creates a private temporary HOME/XDG tree, a synthetic archive and database, pauses tracking, disables audio/web/remote-status integration, and disconnects the child from desktop D-Bus. It sends an authenticated restore request on a random loopback port, verifies a new systemd PID and terminal restore status, then checks data, receipts, integrity and exact staging cleanup. The cases cover Replace, Merge and an injected INSERT failure with transaction rollback. Test services have bounded runtime/restart limits and are stopped on completion or unwinding; a cleanup failure must be investigated using the exact printed test unit name. Never stop the product service to clean up a test.
+Each case creates a private temporary HOME/XDG tree, a synthetic archive and database, pauses tracking, disables audio/web/remote-status integration, and disconnects the child from desktop D-Bus and the real system bus. The latter prevents the user's actual lock/suspend state from changing a restore test's readiness; power lifecycle has separate tests. It sends an authenticated restore request on a random loopback port, verifies a new systemd PID and terminal restore status, then checks data, receipts, integrity and exact staging cleanup. The cases cover Replace, Merge and an injected INSERT failure with transaction rollback. Test services have bounded runtime/restart limits and are stopped on completion or unwinding; a cleanup failure must be investigated using the exact printed test unit name. Never stop the product service to clean up a test.
 
 Successful cases retain small synthetic fixtures and owner-only `evidence.json` files under their printed temporary directories. No Token, real window title or URL is printed. Normal `cargo test` ignores this test. This is a real cross-process restore check, not a second installed package, separate user account, WebDAV test, power-loss test or validation of every security property of the packaged unit. The fixed service environment marker is reused for protocol negotiation while the actual transient unit name is intentionally distinct.
 

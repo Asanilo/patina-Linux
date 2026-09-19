@@ -1,6 +1,8 @@
 use serde::Serialize;
 
 pub mod upgrade;
+#[cfg(target_os = "linux")]
+pub(crate) mod appimage;
 
 #[derive(Debug, Default)]
 pub struct DaemonServiceMutationState {

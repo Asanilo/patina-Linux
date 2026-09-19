@@ -76,6 +76,9 @@ impl SystemdUserServiceSnapshot {
     interface = "org.freedesktop.systemd1.Manager"
 )]
 trait SystemdUserManager {
+    #[zbus(property)]
+    fn environment(&self) -> zbus::Result<Vec<String>>;
+
     #[zbus(name = "GetUnitFileState")]
     fn get_unit_file_state(&self, name: &str) -> zbus::Result<String>;
 
@@ -107,6 +110,22 @@ trait SystemdUserManager {
     fn reload(&self) -> zbus::Result<()>;
 }
 
+pub(crate) async fn manager_environment() -> Result<Vec<String>, String> {
+    tokio::time::timeout(CONTROL_TIMEOUT, async {
+        let connection = zbus::Connection::session()
+            .await
+            .map_err(|error| error.to_string())?;
+        SystemdUserManagerProxy::new(&connection)
+            .await
+            .map_err(|error| error.to_string())?
+            .environment()
+            .await
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|_| "systemd environment inspection timed out".to_string())?
+}
+
 #[proxy(
     default_service = "org.freedesktop.systemd1",
     interface = "org.freedesktop.systemd1.Unit"
@@ -126,6 +145,20 @@ pub async fn inspect_patinad_service() -> SystemdUserServiceSnapshot {
             "timed out while inspecting the systemd user service",
         ),
     }
+}
+
+pub(crate) async fn reload_user_units() -> Result<(), String> {
+    tokio::time::timeout(CONTROL_TIMEOUT, async {
+        let connection = zbus::Connection::session()
+            .await
+            .map_err(|error| error.to_string())?;
+        let manager = SystemdUserManagerProxy::new(&connection)
+            .await
+            .map_err(|error| error.to_string())?;
+        manager.reload().await.map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|_| "systemd user reload timed out".to_string())?
 }
 
 pub async fn control_patinad_service(

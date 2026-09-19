@@ -205,6 +205,9 @@ fn register_runtime_hooks(
         .on_tray_icon_event(tray::handle_tray_icon_event)
         .on_window_event(tray::handle_window_event)
         .setup(move |app| {
+            #[cfg(target_os = "linux")]
+            tauri::async_runtime::block_on(crate::app::daemon_service::appimage::ensure_runtime(app.handle()))
+                .map_err(std::io::Error::other)?;
             if runtime_mode.owns_embedded_runtime() {
                 let profile = crate::platform::app_paths::app_profile(app.handle());
                 let control_root =

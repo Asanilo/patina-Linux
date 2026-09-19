@@ -66,24 +66,35 @@ async fn wait_json(
     token: &str,
     matches: impl Fn(&Value) -> bool,
 ) -> Value {
-    tokio::time::timeout(Duration::from_secs(30), async {
+    let mut observation = String::from("no response");
+    let result = tokio::time::timeout(Duration::from_secs(30), async {
         loop {
-            if let Ok(response) = client.get(url).bearer_auth(token).send().await {
-                if response.status().is_success() {
-                    if let Ok(bytes) = response.bytes().await {
-                        if let Ok(value) = serde_json::from_slice::<Value>(&bytes) {
-                            if matches(&value) {
-                                return value;
+            match client.get(url).bearer_auth(token).send().await {
+                Ok(response) => {
+                    observation = format!("HTTP {}", response.status());
+                    if response.status().is_success() {
+                        if let Ok(bytes) = response.bytes().await {
+                            if let Ok(value) = serde_json::from_slice::<Value>(&bytes) {
+                                observation = format!(
+                                    "ready={}, status={}",
+                                    value["data"]["tracking"]["ready"], value["data"]["status"]
+                                );
+                                if matches(&value) {
+                                    return value;
+                                }
                             }
                         }
                     }
                 }
+                Err(error) => observation = format!("request failed: {error}"),
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     })
-    .await
-    .expect("isolated daemon did not reach expected state")
+    .await;
+    result.unwrap_or_else(|error| {
+        panic!("isolated daemon did not reach expected state: {error}; {observation}")
+    })
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -223,7 +234,17 @@ async fn run_restore_cases(webdav: bool) {
             .map(|fixture| fixture.bus.clone())
             .unwrap_or_else(|| format!("unix:path={}/no-session-bus", root.display()));
         command.arg(format!("--setenv=DBUS_SESSION_BUS_ADDRESS={bus}"));
-        command.arg("--").arg(&binary).args([
+        // Restore acceptance must not inherit the real user's lock/suspend state.
+        // Power lifecycle integration has its own tests and manual acceptance.
+        command.arg(format!(
+            "--setenv=DBUS_SYSTEM_BUS_ADDRESS=unix:path={}/no-system-bus",
+            root.display()
+        ));
+        command.arg("--").arg(&binary);
+        if std::env::var_os("PATINA_SYSTEMD_TEST_APPIMAGE_LAUNCHER").is_some() {
+            command.arg("--patinad");
+        }
+        command.args([
             "--profile",
             "dev",
             "--serve-api",

@@ -5,6 +5,25 @@
 
 ### 当前执行焦点（2026-09-19）
 
+- 最新收口状态：应用/分类趋势 `3d0316f`、全历史迁移 `556c159`、多表备份及内核写失败测试 `65c1440` 已本地提交，尚未推送。AppImage 源码、最终构建与隔离成品链路已实现并验证，随本节和长期文档独立提交；以下早期“进行中”保留批次过程，不代表新的功能待办。没有改动安装版、生产服务、版本号或公开发布策略。
+- 多 UI 前的开发范围已经覆盖；尚不能宣布稳定版门槛全部通过。真实 AppImage 首次接管、DEB 共存/切换、登录与正式签名升级，以及最新查询/备份组合候选的长期真实数据体验，仍需独立人工/安装验收。当前 DEB-only beta gate 保留，GPUI/TUI/浏览器 UI 未开始，悬浮窗专项继续暂停。
+
+#### AppImage 持久运行时与原子更新（2026-09-19）
+
+- owner：`app/daemon_service/appimage` 编排平台包与现有交接；Linux `appimage_runtime` 负责完整 AppDir 有界复制和原子指针，`appimage_update` 负责已经 Tauri 验签的包替换。没有新增 tracker、独立 service 名称或更新凭据体系。`AppRun --patinad` 在 Desktop 初始化前 exec sidecar；`patinad --version` 不初始化数据。
+- 私有稳定 store 使用包 SHA-256/version marker、安装文件锁、2 GiB/30,000 entries/depth 64 限额。暂存完整并 fsync、版本预检成功后才切换 `current`；拒绝包外链接/特殊文件/未知指针/同版本不同包，不自动降级。旧版本和恢复包保留，无 GC，不扫描删除用户目录。已有 managed AppImage unit 保持 owner，否则复用 DEB；自定义 unit/mask 保留。与 systemd 的 config 根必须相同，DEB 复用还要求 data 根相同；便携 HOME/config 不在共享 user service 的支持范围。
+- 更新不改变公钥和 Tauri 下载验签：有效 bytes 才进入同目录临时文件、fsync、旧文件 hard link 保留和原子 rename。普通文件/权限/大小检查与冲突保护失败不原地写旧包；最终目录 fsync 失败可能发生在替换后，重试幂等。预检前失败可继续旧 runtime；数据库迁移后不自动降级 binary/schema。这些限制已写入架构、开发与 release 文档。
+- 完整 `npm run check:full` 通过：634 Rust passed / 13 opt-in ignored、38 浏览器回归、Clippy、边界和 bundle 检查，index 71.78 KiB、总 JS 361.24 KiB。之后补篡改内容验签断言，相关 ignored test 和 5 项普通 AppImage 测试再次通过。
+- 一次性测试密钥生成后只留下公钥/签名 fixture，私钥已删除，未读取发布私钥。真实 Tauri `Update::download` 验证有效签名、有效签名但数据被篡改、非法签名；错误均未改变已安装合成文件。证据根 `/tmp/patina-updater-signature-zMwQW2`。
+- 首次本地打包因沙箱缓存写权限失败，提权后遇官方 linuxdeploy 下载超时；从同一 Tauri 官方 URL 用 curl 完整下载到构建缓存后重试成功。重复 bundle 的类型标记警告来自已经被前次 patch 的二进制，后续以源码重建复核，不能用警告产物宣称正式 updater 已验收。首个测试包 SHA-256 `117516e96e84d5cebd6891c7a09bc4bbb387b9687a2ce25cb7ab75dd2f9ce01f`，约 99 MiB；它用于下述隔离运行，不是发布包。
+- 实际 AppDir 的暂存/持久启动验证通过，保留 store `/tmp/patina-durable-appimage-97a8cf8f9301d98e/current`。临时 systemd 单元使用它的 AppRun，而非源码 target daemon。Local Replace/Merge/晚期失败回滚：`/tmp/patina-systemd_test_a078466ea843ac11688857797947c725`、`7ae2c249d2206afa27953dad6a6d2daf`、`e69b66a41d35ee61d9f442defa079578`；后两项同样带 `/tmp/patina-systemd_test_` 前缀。私有 keyring + loopback WebDAV 三场景：对应后缀 `e35570021a0b91efa864257668ef8e84`、`772ec980b8bfd9236279f461643ee645`、`b4b01fff74cea159acd662467350cb56`。均验证新 PID、receipt、数据和精确 staging 清理，并停止各自临时 unit。
+- 尚未覆盖：生产首次启动/接管、真实双包安装交替、登录/多天运行、真实发布密钥/下载频道和所有断电时刻。测试中的 DEB precedence/custom unit 是隔离函数/文件测试，不等于真的卸装两个包。正式环境不改动；最终源码构建及提交状态在后续补记。
+
+- 最终重建成功且无重复 bundle type 警告，包 SHA-256 `0320f0ab920c0baf9490297a67d099c7450fc1a6b11a3356657a7fa96f46da8c`，持久 store `/tmp/patina-durable-appimage-e4978782a1421c1f/current` 启动复验通过。其首轮 local/remote systemd 复验超时，未掩盖失败：新旧包对照均 `tracking.ready=false`，只读 logind 确认真实 session 3 为 `LockedHint=yes`。原测试仅断开 session bus，未断开 system bus，真实锁屏使采样正确停止；已补测试子进程 `DBUS_SYSTEM_BUS_ADDRESS` 隔离及无密钥失败诊断，保持就绪断言和生产代码不变。此问题归测试隔离，不通过解锁用户电脑或放宽就绪条件绕过。
+- 修正测试隔离后，最终产物的 local 三场景通过，私有证据目录前缀均为 `/tmp/patina-systemd_test_`，后缀为 `065d5374c708363089746a1091ee861f`、`b438e0339b52dafa390d08da10c3d3ae`、`4930ab3a081f5c22d843167ec8520ad8`；remote 三场景后缀为 `4c174f02587d71729afd51ed32cb23a5`、`93adbd118b57a02b1a5e33555ef3c478`、`6488314e3213d3f50ae7b57bcb4dbc85`。最终只追加了测试诊断/隔离与文档，不改变成品生产代码。版本/changelog、GNOME/Chromium/已签名 Firefox 扩展检查通过；release 契约 25 项、DEB 静态验证 3 项、installed 验收工具 11 项再次通过。一次沙箱内 Node 子进程 stderr 缺失导致匹配断言失败，在与完整检查相同权限环境复验通过，不修改测试预期。无公开 release、安装或推送。
+
+#### 本轮此前执行记录
+
 - 用户新授权：连续完成多 UI 之前的开发与隔离验收后再汇总，不逐小批请求继续。执行清单：应用/分类趋势及名称契约（已提交 `3d0316f`）；旧分类全历史迁移（已实现并自动验证）；备份多表与安装/恢复故障补验（进行中）；AppImage 持久 daemon、唯一 owner、原子更新/回退与成品验证（进行中，未通过交付门槛）。生产安装、真实长期运行和公开发布仍需与自动测试区分，不自动操作用户会话。GPUI/TUI/浏览器 UI 和暂停的悬浮窗不在本轮范围。
 - `28671d7` 及之前共 15 个提交已推送 `origin/feature/patinad-daemon`；下方“未推送”为各批次当时状态，不覆盖本次确认。
 - 最新应用趋势批次已替换应用/分类图表的明细路径，名称契约、手动分类与名称覆盖、日期范围和失败重试均接通；详情页面仍按其自身边界查询。以下“尚未接入图表”为基础批次的历史状态。

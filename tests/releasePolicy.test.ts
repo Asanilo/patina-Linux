@@ -312,6 +312,7 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   const cargoManifest = await readFile("src-tauri/Cargo.toml", "utf8");
   const daemonUnit = await readFile("packaging/systemd/patinad.service", "utf8");
   const tauriConfig = JSON.parse(await readFile("src-tauri/tauri.conf.json", "utf8"));
+  assert.equal(tauriConfig.bundle.linux.appimage.files["/usr/bin/patinad"], "target/release/patinad");
   const { stdout: trackedFirefoxAssets } = await execFileAsync("git", [
     "ls-files",
     "extensions/firefox/dist/patina-web-sync.xpi",

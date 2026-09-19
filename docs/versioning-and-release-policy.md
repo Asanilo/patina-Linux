@@ -365,6 +365,8 @@ GitHub Release 继续作为正式发布源、主下载入口和主更新清单�
 
 ## 10. 发布前的最低验证门槛
 
+daemon 分支现有 AppImage 实现仍不自动解除 DEB-only beta 限制：持久 AppDir、固定 user unit、验签后原子文件替换已有源码及隔离验证；实际首次启动/接管、DEB 共存、登录启动和正式签名升级仍需候选验收。保留旧运行时/包不等于允许自动降级数据库。后续恢复 AppImage 发布时，应同时复核 release workflow、双包 manifest 与旧客户端 fallback，不能仅修改 bundles 列表。开发时通过 `createUpdaterArtifacts=false` 构建的本地未签名包不得作为公开更新资产使用。
+
 发布前至少应完成以下验证：
 
 - `npm run release:validate-version-files -- <version>` 或工作流中的等价校验
