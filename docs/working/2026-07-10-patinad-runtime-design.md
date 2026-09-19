@@ -5,10 +5,16 @@
 
 ### 当前执行焦点（2026-09-19）
 
-- 最新收口状态：应用/分类趋势 `3d0316f`、全历史迁移 `556c159`、多表备份及内核写失败测试 `65c1440` 已本地提交，尚未推送。AppImage 源码、最终构建与隔离成品链路已实现并验证，随本节和长期文档独立提交；以下早期“进行中”保留批次过程，不代表新的功能待办。没有改动安装版、生产服务、版本号或公开发布策略。
+- 最新收口状态：应用/分类趋势 `3d0316f`、全历史迁移 `556c159`、多表备份及内核写失败测试 `65c1440`、AppImage 持久运行时与原子更新 `14e37d9` 已本地提交，尚未推送。随后继续补验首次安装预检与真实 systemd 解析，发现并修复下述问题；以下早期“进行中”保留批次过程，不代表新的功能待办。没有改动安装版、生产服务、版本号或公开发布策略。
 - 多 UI 前的开发范围已经覆盖；尚不能宣布稳定版门槛全部通过。真实 AppImage 首次接管、DEB 共存/切换、登录与正式签名升级，以及最新查询/备份组合候选的长期真实数据体验，仍需独立人工/安装验收。当前 DEB-only beta gate 保留，GPUI/TUI/浏览器 UI 未开始，悬浮窗专项继续暂停。
 
 #### AppImage 持久运行时与原子更新（2026-09-19）
+
+- 追加预检收口：生产与隔离测试共用 `PreparedRuntime::verify`，显式设置暂存 APPDIR、移除旧挂载 loader/GTK 环境；stdout 限 128 bytes、10 秒超时，只接受精确版本和成功退出。错误版本、非零退出、无限输出、超时均测试旧指针不变且旧 launcher 仍可运行。未把测试中的环境清理误当作生产已有保护。
+- 新并发子进程测试两次暴露旧安装锁测试失败：仅关闭描述符会被短暂继承的 open-file-description 延长锁持有。Drop 改为清理后显式 unlock，新增克隆描述符回归：安装持有期间仍拒绝竞争，发布后即使旧描述符存在也能开始下一次安装，关闭旧描述符不会释放新安装的锁。
+- 真实 `systemd-analyze --user verify` 首次失败：ExecStart 可执行文件路径中的 `$` 被生成为 `$$`，找不到文件。修正后含空格、`%`、`$` 的临时 unit 解析成功；没有安装、reload 或启动用户服务。此测试不等价于 DEB/AppImage 实机切换验收。
+- 当前预检实现对上一轮真实 AppDir 验证成功，刻意继承失效 APPDIR/APPIMAGE；隔离 HOME/XDG 为 `/tmp/patina-appimage-preflight-obKmpV`，没有活动数据文件，持久 store 为 `/tmp/patina-durable-appimage-8649902ebd1f484c/current`。这是新预检代码验证现有产物，不是重新构建或发布包含本轮修复的 Desktop。
+- 本轮完整 `npm run check:full` 最终通过：637 Rust passed / 14 opt-in ignored、38 浏览器回归、Clippy 与边界/bundle 检查；另外单独执行上述真实 AppDir 和 systemd parser 两项 ignored 测试通过。浏览器测试结束有一次临时 profile 清理 `ENOTEMPTY` 警告，38 项断言通过，未将它记为产品故障或无警告运行。源码格式和 `git diff --check` 通过。本轮不出包、不安装、不推送。
 
 - owner：`app/daemon_service/appimage` 编排平台包与现有交接；Linux `appimage_runtime` 负责完整 AppDir 有界复制和原子指针，`appimage_update` 负责已经 Tauri 验签的包替换。没有新增 tracker、独立 service 名称或更新凭据体系。`AppRun --patinad` 在 Desktop 初始化前 exec sidecar；`patinad --version` 不初始化数据。
 - 私有稳定 store 使用包 SHA-256/version marker、安装文件锁、2 GiB/30,000 entries/depth 64 限额。暂存完整并 fsync、版本预检成功后才切换 `current`；拒绝包外链接/特殊文件/未知指针/同版本不同包，不自动降级。旧版本和恢复包保留，无 GC，不扫描删除用户目录。已有 managed AppImage unit 保持 owner，否则复用 DEB；自定义 unit/mask 保留。与 systemd 的 config 根必须相同，DEB 复用还要求 data 根相同；便携 HOME/config 不在共享 user service 的支持范围。

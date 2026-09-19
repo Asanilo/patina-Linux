@@ -213,6 +213,15 @@ synced runtime that passes `--patinad --version` can become `current` via atomic
 symlink replacement. Older packages do not downgrade it; different content with
 the same version is rejected. Use a new candidate version for rebuilt packages.
 
+Production and isolated tests share the same preflight: it replaces inherited
+AppImage/GTK loader paths with the staged AppDir environment, allows 10 seconds,
+and accepts only the exact version line (at most 128 bytes) and a successful exit.
+Wrong versions, excessive output, nonzero exits and timeouts leave `current`
+unchanged. The installation guard explicitly unlocks after cleanup, including
+when another concurrent spawn briefly inherits its file descriptor. The generated
+unit is also checked with the real systemd parser using paths containing spaces,
+percent signs and dollar signs; this check does not install or start a service.
+
 There is only one `patinad.service` and one profile lease. An existing managed
 AppImage user unit keeps ownership; otherwise a packaged DEB unit is reused if
 available. In that case upgrade the DEB to upgrade its daemon, rather than

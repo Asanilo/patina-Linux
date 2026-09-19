@@ -67,21 +67,7 @@ pub(crate) async fn ensure_runtime<R: Runtime>(app: &AppHandle<R>) -> Result<(),
     })
     .await
     .map_err(|error| error.to_string())??;
-    let output = tokio::time::timeout(
-        std::time::Duration::from_secs(10),
-        tokio::process::Command::new(prepared.launcher())
-            .args(["--patinad", "--version"])
-            .kill_on_drop(true)
-            .output(),
-    )
-    .await
-    .map_err(|_| "AppImage runtime preflight timed out")?
-    .map_err(|error| error.to_string())?;
-    if !output.status.success()
-        || output.stdout != format!("patinad {}\n", env!("CARGO_PKG_VERSION")).as_bytes()
-    {
-        return Err("AppImage runtime preflight failed; existing service was not changed".into());
-    }
+    prepared.verify().await?;
     tokio::task::spawn_blocking(move || {
         prepared.publish()?;
         install_unit(&unit_path, &unit)
@@ -144,8 +130,7 @@ fn unit_text(launcher: &Path, config: &Path, data: &Path) -> Result<String, Stri
     let quoted = value
         .replace('\\', "\\\\")
         .replace('"', "\\\"")
-        .replace('%', "%%")
-        .replace('$', "$$");
+        .replace('%', "%%");
     let base = include_str!("../../../../packaging/systemd/patinad.service");
     let mut unit = format!(
         "{UNIT_HEADER}{}",
@@ -206,6 +191,36 @@ fn install_unit(path: &Path, expected: &str) -> Result<(), String> {
 mod tests {
     use super::*;
     #[test]
+    #[ignore = "requires systemd-analyze; validates a private unit without installing or starting it"]
+    fn generated_unit_passes_real_systemd_parser() {
+        use std::os::unix::fs::PermissionsExt;
+        let mut random = [0u8; 8];
+        getrandom::fill(&mut random).unwrap();
+        let suffix: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
+        let root = std::env::temp_dir().join(format!("patina-unit-verify-{suffix}"));
+        fs::create_dir(&root).unwrap();
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
+        let directory = root.join("space 100% $literal");
+        fs::create_dir(&directory).unwrap();
+        let launcher = directory.join("AppRun");
+        fs::write(&launcher, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&launcher, fs::Permissions::from_mode(0o700)).unwrap();
+        let path = root.join("patinad.service");
+        let unit = unit_text(&launcher, &root.join("config"), &root.join("data")).unwrap();
+        install_unit(&path, &unit).unwrap();
+        let output = std::process::Command::new("timeout")
+            .args(["10s", "systemd-analyze", "--user", "verify"])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn coexistence_preserves_custom_units_masks_and_profile_roots() {
         let mut random = [0u8; 8];
         getrandom::fill(&mut random).unwrap();
@@ -248,7 +263,7 @@ mod tests {
         )
         .unwrap();
         assert!(unit.starts_with(UNIT_HEADER));
-        assert!(unit.contains("ExecStart=\"/home/test user/100%%/$$name/current/AppRun\" --patinad --profile production --serve-api --track"));
+        assert!(unit.contains("ExecStart=\"/home/test user/100%%/$name/current/AppRun\" --patinad --profile production --serve-api --track"));
         assert!(unit.contains("Environment=PATINA_SYSTEMD_SERVICE=patinad.service"));
         assert!(!unit.contains("/tmp/"));
         assert!(unit.contains("Environment=\"XDG_CONFIG_HOME=/home/test user/.config\""));

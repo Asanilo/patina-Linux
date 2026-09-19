@@ -156,6 +156,15 @@ impl PreparedRuntime {
             .join("AppRun")
     }
 
+    pub(crate) async fn verify(&self) -> Result<(), String> {
+        verify_launcher(
+            &self.launcher(),
+            &self.identity.version,
+            std::time::Duration::from_secs(10),
+        )
+        .await
+    }
+
     /// Called only after the staged launcher reports the expected daemon version.
     pub(crate) fn publish(mut self) -> Result<PathBuf, String> {
         let current = self.root.join("current");
@@ -215,11 +224,80 @@ impl PreparedRuntime {
     }
 }
 
+fn preflight_command(launcher: &Path) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new(launcher);
+    // A Desktop launched from another AppDir carries mount-specific loader paths.
+    // The staged launcher must establish its own paths, as a fresh service would.
+    for key in [
+        "APPIMAGE",
+        "ARGV0",
+        "LD_LIBRARY_PATH",
+        "LD_PRELOAD",
+        "GTK_PATH",
+        "GTK_EXE_PREFIX",
+        "GTK_DATA_PREFIX",
+        "GTK_IM_MODULE_FILE",
+        "GDK_PIXBUF_MODULE_FILE",
+        "GIO_EXTRA_MODULES",
+        "GSETTINGS_SCHEMA_DIR",
+    ] {
+        command.env_remove(key);
+    }
+    command
+        .env(
+            "APPDIR",
+            launcher.parent().expect("runtime launcher has a parent"),
+        )
+        .args(["--patinad", "--version"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
+    command
+}
+
+async fn verify_launcher(
+    launcher: &Path,
+    version: &str,
+    deadline: std::time::Duration,
+) -> Result<(), String> {
+    use tokio::io::AsyncReadExt;
+    tokio::time::timeout(deadline, async {
+        let mut child = preflight_command(launcher).spawn().map_err(fail)?;
+        let mut output = Vec::new();
+        child
+            .stdout
+            .take()
+            .expect("piped preflight stdout")
+            .take(129)
+            .read_to_end(&mut output)
+            .await
+            .map_err(fail)?;
+        if output != format!("patinad {version}\n").as_bytes() {
+            let _ = child.kill().await;
+            return Err(fail(
+                "runtime preflight returned an invalid version; existing runtime was not changed",
+            ));
+        }
+        if !child.wait().await.map_err(fail)?.success() {
+            return Err(fail(
+                "runtime preflight failed; existing runtime was not changed",
+            ));
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|_| fail("runtime preflight timed out; existing runtime was not changed"))?
+}
+
 impl Drop for PreparedRuntime {
     fn drop(&mut self) {
         if let Some(stage) = &self.stage {
             let _ = fs::remove_dir_all(stage);
         }
+        // A concurrent spawn can briefly inherit this open file description.
+        // Release ownership explicitly rather than waiting for every copy to close.
+        let _ = FileExt::unlock(&self._lock);
     }
 }
 
@@ -310,9 +388,9 @@ mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
 
-    #[test]
+    #[tokio::test]
     #[ignore = "requires an explicitly supplied built AppDir and AppImage; private runtime only"]
-    fn built_appdir_runs_from_durable_store() {
+    async fn built_appdir_runs_from_durable_store() {
         let source = PathBuf::from(std::env::var_os("PATINA_APPIMAGE_TEST_SOURCE").unwrap());
         let image = PathBuf::from(std::env::var_os("PATINA_APPIMAGE_TEST_IMAGE").unwrap());
         let mut random = [0u8; 8];
@@ -322,32 +400,15 @@ mod tests {
         let hash = super::super::appimage_update::fingerprint(&image).unwrap();
         let prepared =
             PreparedRuntime::prepare(&source, &root, env!("CARGO_PKG_VERSION"), &hash).unwrap();
-        let version = |launcher: &Path| {
-            let output = std::process::Command::new("timeout")
-                .arg("15s")
-                .arg(launcher)
-                .args(["--patinad", "--version"])
-                .env_remove("APPDIR")
-                .env_remove("APPIMAGE")
-                .env("HOME", &root)
-                .env("XDG_CONFIG_HOME", root.join("config"))
-                .env("XDG_DATA_HOME", root.join("data"))
-                .env("XDG_CACHE_HOME", root.join("cache"))
-                .output()
-                .unwrap();
-            assert!(
-                output.status.success(),
-                "{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            assert_eq!(
-                output.stdout,
-                format!("patinad {}\n", env!("CARGO_PKG_VERSION")).as_bytes()
-            );
-        };
-        version(&prepared.launcher());
+        prepared.verify().await.unwrap();
         let launcher = prepared.publish().unwrap();
-        version(&launcher);
+        verify_launcher(
+            &launcher,
+            env!("CARGO_PKG_VERSION"),
+            std::time::Duration::from_secs(10),
+        )
+        .await
+        .unwrap();
         assert!(launcher
             .canonicalize()
             .unwrap()
@@ -386,6 +447,88 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[tokio::test]
+    async fn preflight_rejects_bad_launchers_without_changing_current() {
+        let fixture = Fixture::new();
+        fs::write(
+            fixture.0.join("source/AppRun"),
+            "#!/bin/sh\nprintf 'patinad 1.9.0-beta.18\\n'\n",
+        )
+        .unwrap();
+        let old = fixture
+            .prepare("1.9.0-beta.18", 'a')
+            .unwrap()
+            .publish()
+            .unwrap();
+        let original = old.canonicalize().unwrap();
+        for (index, script) in [
+            "#!/bin/sh\nprintf 'patinad 0.0.0\\n'\n",
+            "#!/bin/sh\nprintf 'patinad 1.9.0-beta.19\\n'\nexit 1\n",
+            "#!/bin/sh\nwhile :; do printf 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'; done\n",
+            "#!/bin/sh\nexec sleep 5\n",
+        ]
+        .iter()
+        .enumerate()
+        {
+            fs::write(fixture.0.join("source/AppRun"), script).unwrap();
+            let prepared = fixture
+                .prepare("1.9.0-beta.19", char::from(b'b' + index as u8))
+                .unwrap();
+            let staged = prepared.launcher();
+            assert!(verify_launcher(
+                &staged,
+                "1.9.0-beta.19",
+                std::time::Duration::from_millis(200)
+            )
+            .await
+            .is_err());
+            drop(prepared);
+            assert!(!staged.exists());
+            assert_eq!(old.canonicalize().unwrap(), original);
+            verify_launcher(&old, "1.9.0-beta.18", std::time::Duration::from_secs(2))
+                .await
+                .unwrap();
+        }
+        fs::write(fixture.0.join("source/AppRun"), "#!/bin/sh\n[ \"$APPDIR\" = \"$(dirname \"$0\")\" ] || exit 2\n[ -z \"${LD_LIBRARY_PATH+x}\" ] || exit 3\nprintf 'patinad 1.9.0-beta.19\\n'\n").unwrap();
+        let prepared = fixture.prepare("1.9.0-beta.19", 'f').unwrap();
+        prepared.verify().await.unwrap();
+        prepared.publish().unwrap();
+        assert_ne!(old.canonicalize().unwrap(), original);
+    }
+
+    #[test]
+    fn preflight_replaces_mount_environment_without_mutating_parent() {
+        let command = preflight_command(Path::new("/private/stage/AppRun"));
+        let env: std::collections::HashMap<_, _> = command.as_std().get_envs().collect();
+        assert_eq!(
+            env[std::ffi::OsStr::new("APPDIR")],
+            Some(std::ffi::OsStr::new("/private/stage"))
+        );
+        for key in [
+            "APPIMAGE",
+            "LD_LIBRARY_PATH",
+            "LD_PRELOAD",
+            "GTK_PATH",
+            "GSETTINGS_SCHEMA_DIR",
+        ] {
+            assert_eq!(env[std::ffi::OsStr::new(key)], None);
+        }
+    }
+
+    #[test]
+    fn completed_install_releases_lock_even_with_inherited_descriptor() {
+        let fixture = Fixture::new();
+        let prepared = fixture.prepare("1.9.0-beta.18", 'a').unwrap();
+        let inherited = prepared._lock.try_clone().unwrap();
+        assert!(fixture.prepare("1.9.0-beta.19", 'b').is_err());
+        prepared.publish().unwrap();
+        let next = fixture.prepare("1.9.0-beta.19", 'b').unwrap();
+        drop(inherited);
+        assert!(fixture.prepare("1.9.0-beta.20", 'c').is_err());
+        drop(next);
+        fixture.prepare("1.9.0-beta.20", 'c').unwrap();
     }
 
     #[test]
