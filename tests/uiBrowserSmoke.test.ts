@@ -170,6 +170,7 @@ function tauriStubFor(path: string) {
           window.__backupRestoreCalls = (window.__backupRestoreCalls || 0) + 1;
           throw new Error("browser test must never restore data");
         }
+        if (command === "cmd_get_migration_observed_apps") return [];
         if (command === "cmd_get_observed_apps") {
           globalThis.__PATINA_SMOKE_OBSERVED_CALLS = (globalThis.__PATINA_SMOKE_OBSERVED_CALLS ?? 0) + 1;
           if (globalThis.__PATINA_SMOKE_OBSERVED_ERROR) throw new Error(globalThis.__PATINA_SMOKE_OBSERVED_ERROR);

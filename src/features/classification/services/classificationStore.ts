@@ -3,7 +3,6 @@ import {
   deleteSessionsByExeNamesBetween,
   deleteSettingValue,
   loadDistinctSessionExeNames,
-  loadObservedSessionStats,
   loadSettingValue,
   loadSettingKeysByKeyPrefix,
   loadSettingRowsByKeyPrefix,
@@ -180,9 +179,10 @@ async function runLegacyAutoClassificationMigration(): Promise<void> {
   }
 
   const migratedAt = Date.now();
+  const { loadMigrationObservedSessionStats } = await import("../../../platform/persistence/observedAppsRepository.ts");
   const [overrideRows, observed] = await Promise.all([
     loadSettingRowsByKeyPrefix(APP_OVERRIDE_KEY_PREFIX),
-    loadObservedSessionStats(0, migratedAt),
+    loadMigrationObservedSessionStats(migratedAt),
   ]);
   const { overrides, transitionMutations } = buildLoadedAppOverrides(overrideRows);
   const mutations = [

@@ -196,6 +196,7 @@ The repository includes [`skills/analyzing-patina-activity`](../skills/analyzing
 - The wrapper does not generate tools from `/api/v1/openapi.json` yet.
 - The unreleased `/api/v1/classification/observed-apps` read is used by Desktop and documented for direct HTTP clients; no dedicated MCP tool is exposed yet. Do not treat classification evidence (including excluded apps and bucket start estimates) as an already filtered activity summary.
 - The unreleased `/api/v1/activity/daily-apps` read provides complete positive day/application totals through authenticated HTTP; optional `include_names=true` adds bounded contributing app identities. No dedicated MCP tool is exposed yet. `get_activity_trend` remains a top-app summary and is not an equivalent substitute. Keys are canonical executable identifiers, not display names/categories; see the [daily application contract](api-index.md#get-apiv1activitydaily-apps) for date, privacy and budget limits.
+- Legacy classification migration uses the HTTP observed-apps `scope=legacy-migration` read, not a new MCP write tool. It returns bounded full-history evidence and never writes classification settings or a migration marker by itself; see the API contract before using this specialized mode.
 - Browser extension installation and GNOME extension installation remain app/docs workflows, not MCP tools.
 
 `configure_browser_activity` is a complete replacement operation and must only be used after explicit confirmation. Do not echo its Token in summaries, logs, or analysis output.

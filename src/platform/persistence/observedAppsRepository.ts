@@ -11,6 +11,18 @@ export async function loadRecentObservedSessionStats(
     throw new Error("Invalid observed apps range");
   }
   const rows = await request(fromMs, toMs);
+  return parseObservedRows(rows, fromMs, toMs);
+}
+
+export async function loadMigrationObservedSessionStats(
+  toMs: number,
+  request: (to: number) => Promise<unknown> = to => invoke("cmd_get_migration_observed_apps", { toMs: to }),
+): Promise<ObservedSessionStatRow[]> {
+  if (!Number.isSafeInteger(toMs) || toMs <= 0) throw new Error("Invalid migration cutoff");
+  return parseObservedRows(await request(toMs), 0, toMs);
+}
+
+function parseObservedRows(rows: unknown, fromMs: number, toMs: number): ObservedSessionStatRow[] {
   if (!Array.isArray(rows) || rows.length > 4096) throw new Error("Invalid observed apps response");
   const encoder = new TextEncoder();
   if (encoder.encode(JSON.stringify({ data: rows })).length > 1024 * 1024) throw new Error("Observed apps response exceeds budget");

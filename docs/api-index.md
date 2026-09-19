@@ -712,6 +712,13 @@ Unreleased source endpoint, available on Desktop, read-only daemon and tracking 
 Bearer authentication is required. This is classification evidence, not a top-app summary:
 excluded apps remain visible so users can change their recording rules.
 
+Optional `scope=legacy-migration` is the one-time legacy classification evidence mode. It requires `from_ms=0` and a positive `to_ms` no later than runtime time; it does not apply the recent reader's 366-day truncation. It streams chronologically connected capacity components in one SQLite snapshot and applies the same native/import compiler. Limits: 1,000,000 total input facts, 50,000 facts and 8 MiB metadata per connected component, 30 seconds at repository level (the generic HTTP timeout may be shorter), and the same 1,024-byte names, 4,096 raw executables and 1 MiB encoded response. SQL sorting/temporary storage is not a process-memory ceiling. All errors reject the whole read; no settings or completion marker is written. Desktop commits the legacy migration marker with its classification mutations only after a complete successful response. Normal candidate reads retain the existing budgets. Old daemons rejecting this scope never fall back to frontend SQL.
+
+```bash
+curl --fail-with-body -H "Authorization: Bearer $PATINA_API_TOKEN" \
+  "$PATINA_API_BASE/api/v1/classification/observed-apps?from_ms=0&to_ms=1788192000000&scope=legacy-migration"
+```
+
 ```bash
 curl -fsS -H "Authorization: Bearer $PATINA_API_TOKEN" \
   "$PATINA_API_BASE/api/v1/classification/observed-apps?from_ms=1788220800000&to_ms=1790812800000"

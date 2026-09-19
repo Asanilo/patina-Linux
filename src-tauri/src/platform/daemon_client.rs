@@ -749,6 +749,23 @@ impl PatinadClient {
         .await
     }
 
+    pub async fn migration_observed_apps(
+        &self,
+        to_ms: i64,
+    ) -> Result<Vec<crate::domain::observed_apps::ObservedAppStat>, PatinadClientError> {
+        if to_ms <= 0 {
+            return Err(PatinadClientError::InvalidConfiguration(
+                "invalid migration cutoff".into(),
+            ));
+        }
+        self.get_json_with_limits(
+            &format!("/api/v1/classification/observed-apps?from_ms=0&to_ms={to_ms}&scope=legacy-migration"),
+            "legacy classification evidence",
+            Duration::from_secs(35),
+            crate::domain::observed_apps::MAX_OBSERVED_APPS_RESPONSE_BYTES,
+        ).await
+    }
+
     pub async fn daily_apps(
         &self,
         from: &str,
@@ -1155,43 +1172,56 @@ mod tests {
             .collect::<Vec<_>>();
         let encoded = serde_json::to_string(&ApiResponse { data: rows.clone() }).unwrap();
         assert!(encoded.len() > MAX_RESPONSE_BYTES);
-        for (status, body, error) in [
-            (200, encoded, None),
-            (404, "{}".into(), Some("http-error")),
-            (401, "{}".into(), Some("unauthorized")),
-            (200, "{}".into(), Some("invalid-response")),
-            (
-                200,
-                "x".repeat(crate::domain::observed_apps::MAX_OBSERVED_APPS_RESPONSE_BYTES + 1),
-                Some("response-too-large"),
-            ),
-        ] {
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let client =
-                PatinadClient::new(listener.local_addr().unwrap().port(), "fixture-token").unwrap();
-            let server = tokio::spawn(async move {
-                let (mut socket, _) = listener.accept().await.unwrap();
-                let mut request = Vec::new();
-                let mut chunk = [0; 1024];
-                while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
-                    let count = socket.read(&mut chunk).await.unwrap();
-                    assert!(count > 0 && request.len() < 8192);
-                    request.extend_from_slice(&chunk[..count]);
+        for legacy in [false, true] {
+            for (status, body, error) in [
+                (200, encoded.clone(), None),
+                (404, "{}".into(), Some("http-error")),
+                (401, "{}".into(), Some("unauthorized")),
+                (200, "{}".into(), Some("invalid-response")),
+                (
+                    200,
+                    "x".repeat(crate::domain::observed_apps::MAX_OBSERVED_APPS_RESPONSE_BYTES + 1),
+                    Some("response-too-large"),
+                ),
+            ] {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let client =
+                    PatinadClient::new(listener.local_addr().unwrap().port(), "fixture-token")
+                        .unwrap();
+                let server = tokio::spawn(async move {
+                    let (mut socket, _) = listener.accept().await.unwrap();
+                    let mut request = Vec::new();
+                    let mut chunk = [0; 1024];
+                    while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                        let count = socket.read(&mut chunk).await.unwrap();
+                        assert!(count > 0 && request.len() < 8192);
+                        request.extend_from_slice(&chunk[..count]);
+                    }
+                    let request = String::from_utf8(request).unwrap().to_lowercase();
+                    let scope = if legacy {
+                        "&scope=legacy-migration"
+                    } else {
+                        ""
+                    };
+                    assert!(request.starts_with(&format!(
+                        "get /api/v1/classification/observed-apps?from_ms=0&to_ms=3000{scope} "
+                    )));
+                    assert!(request.contains("authorization: bearer fixture-token\r\n"));
+                    let response = format!("HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len());
+                    let _ = socket.write_all(response.as_bytes()).await;
+                });
+                let result = if legacy {
+                    client.migration_observed_apps(3000).await
+                } else {
+                    client.observed_apps(0, 3000).await
+                };
+                if let Some(error) = error {
+                    assert_eq!(result.unwrap_err().code(), error);
+                } else {
+                    assert_eq!(result.unwrap(), rows);
                 }
-                let request = String::from_utf8(request).unwrap().to_lowercase();
-                assert!(request
-                    .starts_with("get /api/v1/classification/observed-apps?from_ms=0&to_ms=3000 "));
-                assert!(request.contains("authorization: bearer fixture-token\r\n"));
-                let response = format!("HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len());
-                let _ = socket.write_all(response.as_bytes()).await;
-            });
-            let result = client.observed_apps(0, 3000).await;
-            if let Some(error) = error {
-                assert_eq!(result.unwrap_err().code(), error);
-            } else {
-                assert_eq!(result.unwrap(), rows);
+                server.await.unwrap();
             }
-            server.await.unwrap();
         }
     }
 

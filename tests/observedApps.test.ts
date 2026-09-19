@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolveNativeSessionPrecedence, type TimeRecordOrigin } from "../src/platform/persistence/nativeSessionPrecedence.ts";
-import { loadRecentObservedSessionStats } from "../src/platform/persistence/observedAppsRepository.ts";
+import { loadRecentObservedSessionStats, loadMigrationObservedSessionStats } from "../src/platform/persistence/observedAppsRepository.ts";
 
 const cases = JSON.parse(readFileSync(new URL("./fixtures/observed-apps.json", import.meta.url), "utf8"));
 for (const test of cases) {
@@ -34,3 +34,9 @@ for (const response of [null, {}, [null], [valid, valid], [{...valid, total_dura
 }
 await assert.rejects(loadRecentObservedSessionStats(0,3000,async () => { throw new Error("unsupported daemon"); }), /unsupported daemon/);
 console.log("PASS observed apps adapter validates bounded responses and propagates failures without fallback");
+const cutoff = new Date(2026, 8, 1).getTime();
+assert.equal((await loadMigrationObservedSessionStats(cutoff, async () => [valid]))[0].lastSeenMs, 1000);
+await assert.rejects(loadMigrationObservedSessionStats(cutoff, async () => { throw new Error("overlapping facts exceed budget"); }), /budget/);
+await assert.rejects(loadMigrationObservedSessionStats(cutoff, async () => [{ ...valid, last_seen_ms: cutoff }]), /Invalid/);
+await assert.rejects(loadMigrationObservedSessionStats(0, async () => []), /cutoff/);
+console.log("PASS full-history migration validates old evidence without a recent-history truncation or SQL fallback");

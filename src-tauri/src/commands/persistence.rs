@@ -4,6 +4,26 @@ use crate::engine::tracking::runtime::emit_tracking_data_changed;
 use tauri::{AppHandle, Runtime};
 
 #[tauri::command]
+pub async fn cmd_get_migration_observed_apps<R: Runtime>(
+    to_ms: i64,
+    app: AppHandle<R>,
+) -> Result<Vec<crate::domain::observed_apps::ObservedAppStat>, String> {
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        return client
+            .migration_observed_apps(to_ms)
+            .await
+            .map_err(|error| error.to_string());
+    }
+    let pool = sqlite_pool::wait_for_sqlite_pool(&app).await?;
+    crate::data::repositories::observed_apps::load_migration_observed_apps(
+        &pool,
+        to_ms,
+        crate::app::runtime::now_ms() as i64,
+    )
+    .await
+}
+
+#[tauri::command]
 pub async fn cmd_get_observed_apps<R: Runtime>(
     from_ms: i64,
     to_ms: i64,

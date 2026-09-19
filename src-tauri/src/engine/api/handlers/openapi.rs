@@ -284,7 +284,8 @@ fn paths(surface: ApiSurface) -> Value {
             "Bounded classification evidence grouped by raw executable. Native/import precedence precedes UI filtering. Includes excluded apps; no titles or URLs. At most 366 days, 50000 facts, 8 MiB metadata and 4096 apps; budget errors return no partial data. last_seen_ms is the latest resolved start, not the last heartbeat; bucket starts are not exact observation times.",
             "ObservedAppsResponse",
             vec![required_query_param("from_ms", "integer", "Inclusive nonnegative epoch milliseconds."),
-                 required_query_param("to_ms", "integer", "Exclusive epoch milliseconds.")],
+                 required_query_param("to_ms", "integer", "Exclusive epoch milliseconds."),
+                 query_param("scope", "string", "Optional legacy-migration: requires from_ms=0, cutoff no later than now. Full history, max 1000000 facts, max 50000 facts/8 MiB metadata per connected capacity component, 30-second repository timeout. Same 4096 app/1 MiB response limits. No partial results or writes.")],
         )}),
     );
     object.insert(

@@ -12,6 +12,20 @@ const MAX_FACTS: usize = 50_000;
 const MAX_TEXT_BYTES: usize = 1024;
 const MAX_METADATA_BYTES: usize = 8 * 1024 * 1024;
 static QUERY: Semaphore = Semaphore::const_new(1);
+mod migration;
+pub use migration::load_migration_observed_apps;
+
+const FACTS_SQL: &str = "SELECT id, 0 AS source, substr(exe_name,1,1025) AS exe_name,
+                substr(COALESCE(app_name,''),1,1025) AS app_name,
+                start_time, COALESCE(end_time,?) AS end_time, COALESCE(end_time,?) AS capacity_end
+         FROM sessions WHERE start_time < ? AND COALESCE(end_time,?) > ?
+         UNION ALL
+         SELECT id, 1, substr(exe_name,1,1025), substr(app_name,1,1025), start_time, end_time, end_time
+         FROM import_exact_sessions WHERE start_time < ? AND end_time > ?
+         UNION ALL
+         SELECT id, 2, substr(exe_name,1,1025), substr(app_name,1,1025), bucket_start_time,
+                bucket_start_time + duration, bucket_start_time + ?
+         FROM import_time_buckets WHERE bucket_start_time < ? AND bucket_start_time > ?";
 
 pub async fn load_observed_apps(
     pool: &SqlitePool,
@@ -42,22 +56,20 @@ async fn load_snapshot(
     let active_end = sampled_at_ms.min(to_ms);
     // Only compact metadata crosses the reader boundary. Explicit source/id order
     // makes precedence ties and bucket rounding reproducible across query plans.
-    let mut rows = sqlx::query(
-        "SELECT id, 0 AS source, substr(exe_name,1,1025) AS exe_name,
-                substr(COALESCE(app_name,''),1,1025) AS app_name,
-                start_time, COALESCE(end_time,?) AS end_time, COALESCE(end_time,?) AS capacity_end
-         FROM sessions WHERE start_time < ? AND COALESCE(end_time,?) > ?
-         UNION ALL
-         SELECT id, 1, substr(exe_name,1,1025), substr(app_name,1,1025), start_time, end_time, end_time
-         FROM import_exact_sessions WHERE start_time < ? AND end_time > ?
-         UNION ALL
-         SELECT id, 2, substr(exe_name,1,1025), substr(app_name,1,1025), bucket_start_time,
-                bucket_start_time + duration, bucket_start_time + ?
-         FROM import_time_buckets WHERE bucket_start_time < ? AND bucket_start_time > ?
-         ORDER BY source, id LIMIT ?")
-        .bind(active_end).bind(active_end).bind(to_ms).bind(active_end).bind(from_ms)
-        .bind(to_ms).bind(from_ms).bind(HOUR_MS).bind(to_ms).bind(from_ms.saturating_sub(HOUR_MS))
-        .bind((fact_limit + 1) as i64).fetch(&mut *tx);
+    let query = format!("{FACTS_SQL} ORDER BY source, id LIMIT ?");
+    let mut rows = sqlx::query(&query)
+        .bind(active_end)
+        .bind(active_end)
+        .bind(to_ms)
+        .bind(active_end)
+        .bind(from_ms)
+        .bind(to_ms)
+        .bind(from_ms)
+        .bind(HOUR_MS)
+        .bind(to_ms)
+        .bind(from_ms.saturating_sub(HOUR_MS))
+        .bind((fact_limit + 1) as i64)
+        .fetch(&mut *tx);
     let mut records = Vec::new();
     let mut metadata = Vec::new();
     let mut metadata_bytes = 0;
@@ -90,54 +102,76 @@ async fn load_snapshot(
     }
     drop(rows);
     tx.commit().await.map_err(query_error)?;
-    let mut contributions = summarize_activity_range(&records, from_ms, to_ms);
-    // Native zero-length facts are classification evidence in the desktop reader.
-    for record in &records {
-        if record.origin == ActivityOrigin::Native && record.start_ms == record.end_ms {
-            contributions.push(crate::domain::activity_read_model::ActivityContribution {
-                origin: record.origin,
-                start_ms: record.start_ms,
-                duration_ms: 0,
-                value: record.value,
-            });
-        }
-    }
-    contributions.sort_by_key(|item| (item.start_ms, item.origin, item.value));
-    let mut indexes: HashMap<String, usize> = HashMap::new();
-    let mut stats: Vec<ObservedAppStat> = Vec::new();
-    for item in contributions {
-        let (exe, app) = &metadata[item.value];
-        let index = if let Some(index) = indexes.get(exe) {
-            *index
-        } else {
-            if stats.len() == MAX_OBSERVED_APPS {
-                return Err("observed apps count exceeds budget".into());
+    let mut accumulator = StatAccumulator::default();
+    accumulator.append(&records, &metadata, from_ms, to_ms)?;
+    accumulator.finish()
+}
+
+#[derive(Default)]
+struct StatAccumulator {
+    indexes: HashMap<String, usize>,
+    stats: Vec<ObservedAppStat>,
+}
+
+impl StatAccumulator {
+    fn append(
+        &mut self,
+        records: &[OwnedActivityRange<usize>],
+        metadata: &[(String, String)],
+        from_ms: i64,
+        to_ms: i64,
+    ) -> Result<(), String> {
+        let mut contributions = summarize_activity_range(records, from_ms, to_ms);
+        // Native zero-length facts are classification evidence in the desktop reader.
+        for record in records {
+            if record.origin == ActivityOrigin::Native && record.start_ms == record.end_ms {
+                contributions.push(crate::domain::activity_read_model::ActivityContribution {
+                    origin: record.origin,
+                    start_ms: record.start_ms,
+                    duration_ms: 0,
+                    value: record.value,
+                });
             }
-            let index = stats.len();
-            indexes.insert(exe.clone(), index);
-            stats.push(ObservedAppStat {
-                exe_name: exe.clone(),
-                app_name: app.clone(),
-                total_duration_ms: 0,
-                last_seen_ms: item.start_ms,
-            });
-            index
-        };
-        let stat = &mut stats[index];
-        stat.total_duration_ms = stat
-            .total_duration_ms
-            .checked_add(item.duration_ms)
-            .ok_or("observed apps duration overflow")?;
-        if item.start_ms >= stat.last_seen_ms {
-            stat.last_seen_ms = item.start_ms;
-            stat.app_name.clone_from(app);
         }
+        contributions.sort_by_key(|item| (item.start_ms, item.origin, item.value));
+        for item in contributions {
+            let (exe, app) = &metadata[item.value];
+            let index = if let Some(index) = self.indexes.get(exe) {
+                *index
+            } else {
+                if self.stats.len() == MAX_OBSERVED_APPS {
+                    return Err("observed apps count exceeds budget".into());
+                }
+                let index = self.stats.len();
+                self.indexes.insert(exe.clone(), index);
+                self.stats.push(ObservedAppStat {
+                    exe_name: exe.clone(),
+                    app_name: app.clone(),
+                    total_duration_ms: 0,
+                    last_seen_ms: item.start_ms,
+                });
+                index
+            };
+            let stat = &mut self.stats[index];
+            stat.total_duration_ms = stat
+                .total_duration_ms
+                .checked_add(item.duration_ms)
+                .ok_or("observed apps duration overflow")?;
+            if item.start_ms >= stat.last_seen_ms {
+                stat.last_seen_ms = item.start_ms;
+                stat.app_name.clone_from(app);
+            }
+        }
+        Ok(())
     }
-    let encoded = serde_json::to_vec(&stats).map_err(|_| "failed to encode observed apps")?;
-    if encoded.len() + 9 > crate::domain::observed_apps::MAX_OBSERVED_APPS_RESPONSE_BYTES {
-        return Err("observed apps response exceeds budget".into());
+    fn finish(self) -> Result<Vec<ObservedAppStat>, String> {
+        let encoded =
+            serde_json::to_vec(&self.stats).map_err(|_| "failed to encode observed apps")?;
+        if encoded.len() + 9 > crate::domain::observed_apps::MAX_OBSERVED_APPS_RESPONSE_BYTES {
+            return Err("observed apps response exceeds budget".into());
+        }
+        Ok(self.stats)
     }
-    Ok(stats)
 }
 
 fn query_error(error: sqlx::Error) -> String {
@@ -152,16 +186,16 @@ mod tests {
     use sqlx::Executor;
 
     #[derive(Deserialize)]
-    struct Case {
-        name: String,
+    pub(super) struct Case {
+        pub(super) name: String,
         from: i64,
-        to: i64,
-        sampled: i64,
-        facts: Vec<Fact>,
+        pub(super) to: i64,
+        pub(super) sampled: i64,
+        pub(super) facts: Vec<Fact>,
         expected: Vec<ObservedAppStat>,
     }
     #[derive(Deserialize)]
-    struct Fact {
+    pub(super) struct Fact {
         origin: String,
         exe: String,
         app: String,
@@ -169,7 +203,7 @@ mod tests {
         end: Option<i64>,
     }
 
-    async fn setup() -> SqlitePool {
+    pub(super) async fn setup() -> SqlitePool {
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
         pool.execute(schema::CURRENT_BASELINE_SCHEMA_SQL)
             .await
@@ -181,7 +215,7 @@ mod tests {
         pool
     }
 
-    async fn insert(pool: &SqlitePool, index: usize, fact: &Fact) {
+    pub(super) async fn insert(pool: &SqlitePool, index: usize, fact: &Fact) {
         match fact.origin.as_str() {
             "native" => {
                 sqlx::query("INSERT INTO sessions(app_name,exe_name,window_title,start_time,end_time,duration) VALUES (?,?,'private title not returned',?,?,?)")

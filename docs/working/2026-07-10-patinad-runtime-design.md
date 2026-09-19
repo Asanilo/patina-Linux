@@ -5,7 +5,7 @@
 
 ### 当前执行焦点（2026-09-19）
 
-- 用户新授权：连续完成多 UI 之前的开发与隔离验收后再汇总，不逐小批请求继续。执行清单：应用/分类趋势及名称契约（已实现并通过自动检查）；旧分类全历史迁移（待处理）；备份多表与安装/恢复故障补验（待处理）；AppImage 持久 daemon、唯一 owner、原子更新/回退与成品验证（待处理）。生产安装、真实长期运行和公开发布仍需与自动测试区分，不自动操作用户会话。GPUI/TUI/浏览器 UI 和暂停的悬浮窗不在本轮范围。
+- 用户新授权：连续完成多 UI 之前的开发与隔离验收后再汇总，不逐小批请求继续。执行清单：应用/分类趋势及名称契约（已提交 `3d0316f`）；旧分类全历史迁移（已实现并自动验证）；备份多表与安装/恢复故障补验（进行中）；AppImage 持久 daemon、唯一 owner、原子更新/回退与成品验证（进行中，未通过交付门槛）。生产安装、真实长期运行和公开发布仍需与自动测试区分，不自动操作用户会话。GPUI/TUI/浏览器 UI 和暂停的悬浮窗不在本轮范围。
 - `28671d7` 及之前共 15 个提交已推送 `origin/feature/patinad-daemon`；下方“未推送”为各批次当时状态，不覆盖本次确认。
 - 最新应用趋势批次已替换应用/分类图表的明细路径，名称契约、手动分类与名称覆盖、日期范围和失败重试均接通；详情页面仍按其自身边界查询。以下“尚未接入图表”为基础批次的历史状态。
 - 上一轮概览批次：Data 概览图表、预热和缓存已改用后端日总量；应用/分类趋势继续旧明细路径，不能宣称整个 Data 页已低内存化。当前仍未出包、安装或推送；实现边界和验证记录见下节。
@@ -21,6 +21,16 @@
 - 下一可发布功能阶段为 **Data 热力图低内存查询**，范围和发布门槛以 [路线文档当前快照](../roadmap-and-prioritization.md#56-当前实施主线patinad) 为准。共享统计语义、读取预算、后端聚合、Desktop/daemon 适配、隔离 debug 整链路与 beta.17 成品检查均已完成；安装后 Data/History、只读 API、关闭回收和用户重开确认已通过，但用户发现窄窗口滚动缺陷。该布局问题已修源码并通过前端回归，尚未包含在已安装 beta.17 中。前台 WebKit 占用仍是后续独立问题。
 - 用户安装的版本仍为 beta.17，安装后只读、Data/History、关闭回收和用户重开确认通过。当前 beta.18 已将窄窗口修复与低耗延迟设置合为本地 DEB 候选，成品检查通过，尚未升级用户安装版本。2026-09-18 前次只读查询 GitHub 确认最新预发布为 beta.12，最新稳定版为 1.8.4，本轮没有重新查询或操作远端；本批独立收口到现有 daemon 分支，不推送或公开发布。
 - 下文保留阶段证据与历史限制，不以早期“下一步”覆盖本节执行焦点。
+
+#### 全历史分类迁移收口（2026-09-19，未出包）
+
+- 删除前端 `loadObservedSessionStats(0, now)` 的整表 SQL/JSON 读取。首次迁移通过 typed command/daemon client 读取 `observed-apps?scope=legacy-migration`；不是用近期 366 天接口冒充全历史。原名称、别名和旧自动分类规则未重写，完整响应后才原子写入分类变更及完成 marker，错误时不标记完成、不回退本地明细。
+- `observed_apps/migration` 在同一 SQLite snapshot 中按 start/source/id 流式读取相连 capacity 区间组，整组交给原 native/import 编译器。跨组无时间/桶容量重叠；桶不会按任意日期切开，保留毫秒舍入、最近贡献起点和名称选择。组内恢复 source/id 顺序，沿用同一 StatAccumulator，不另写优先级算法。
+- 预算：累计最多 1,000,000 facts；单相连组最多 50,000 facts / 8 MiB metadata；名称各 1,024 bytes；输出 4,096 raw exe / 1 MiB；仓储 30 秒、typed client 35 秒，HTTP 通用 deadline 仍可能更短。复杂全重叠历史会报超限，不截断成功。SQLite 排序和临时文件不等于 Rust retained-data 限制。普通近期分类 API 的原预算不变。
+- 共享 native/import/桶 fixture 与全量参考一致；另验证 60,000 个跨多年不相连片段无需 366 天截断，以及 50,001 个相连 facts 拒绝、metadata 超限、未来 cutoff、无写入/无 marker。前端契约测试保留早期记录、传播错误；typed transport 复验鉴权、旧 daemon 错误、JSON 和响应上限，不读取生产数据库。
+- `npm run check:full` 通过：629 Rust passed / 11 ignored、38 浏览器回归、Clippy 和 bundle 检查通过；index gzip 71.78 KiB、总 JS 361.24 KiB。补充 migration transport 后 `cargo test ... observed_apps --lib` 9 项通过。此检查不覆盖正在实现的 AppImage 代码。
+- debug 查询进程对照 `node scripts/perf/daily-activity-benchmark.mjs --legacy-migration`：50,000 合成原生事实、365 天，旧 SQL/JSON 1,601 ms / 8,338,895 bytes / USS 增量约 110.7 MiB，新全历史聚合 503 ms / 122 bytes / 4.9 MiB，总时长同为 3,000,000,000 ms，源库哈希不变。证据 `/tmp/patina-daily-bench-fyktR0/summary.json`，fixture SHA-256 `c2b8e42319f560d156a90f72964756c8e2e0d661209cd65f8fc6c6905b7d6f8a`。旧 SQL 留在 tests fixture 供基准对照，不再打进 UI；不把单应用稀疏库测试当作任意导入/重叠极限证明。
+- 应用趋势错误态 760/1280px 截图复验无重叠，38 项浏览器测试再次通过，证据 `/tmp/patina-app-trends-ui-hhOX5c/`。本批无版本变更、安装、推送或发布。
 
 #### 应用/分类趋势日聚合接线（2026-09-19，未出包）
 

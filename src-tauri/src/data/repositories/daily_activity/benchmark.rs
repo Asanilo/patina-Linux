@@ -57,6 +57,7 @@ fn query_worker() {
         "daily",
         "observed-legacy",
         "observed",
+        "migration",
         "trend",
         "trend-legacy",
         "apps",
@@ -246,26 +247,24 @@ fn query_worker() {
             let total = days.iter().map(|(_, total, _)| total).sum();
             write_new(&root.join(format!("{mode}-days.json")), json!(&days));
             Ok((serde_json::to_vec(&days).unwrap().len(), total))
-        } else if mode == "observed" {
-            let stats = crate::data::repositories::observed_apps::load_observed_apps(
-                &pool, START, end, end,
-            )
-            .await
-            .unwrap();
+        } else if mode == "observed" || mode == "migration" {
+            let stats = if mode == "migration" {
+                crate::data::repositories::observed_apps::load_migration_observed_apps(
+                    &pool, end, end,
+                )
+                .await
+                .unwrap()
+            } else {
+                crate::data::repositories::observed_apps::load_observed_apps(&pool, START, end, end)
+                    .await
+                    .unwrap()
+            };
             let total = stats.iter().map(|stat| stat.total_duration_ms).sum();
             let encoded = serde_json::to_vec(&json!({"data": stats})).unwrap();
             Ok((encoded.len(), total))
         } else if mode == "observed-legacy" {
-            let source = include_str!(
-                "../../../../../src/platform/persistence/classificationPersistence.ts"
-            );
-            let sql = source
-                .split("export async function loadObservedSessionStats")
-                .nth(1)
-                .unwrap()
-                .split('`')
-                .nth(1)
-                .unwrap();
+            // Frozen reference: the unbounded reader no longer ships in the UI.
+            let sql = include_str!("../../../../../tests/fixtures/legacy-observed-apps.sql");
             let mut query = sqlx::query(sql);
             for value in legacy_values {
                 query = query.bind(value);

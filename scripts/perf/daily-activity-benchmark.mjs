@@ -11,8 +11,9 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const observed = process.argv.includes("--observed-apps");
 const trend = process.argv.includes("--trend");
 const apps = process.argv.includes("--daily-apps");
-if ([trend, observed, apps].filter(Boolean).length > 1) throw new Error("Choose one benchmark mode");
-const modes = apps ? ["apps-legacy", process.argv.includes("--names") ? "apps-named" : "apps"] : trend ? ["trend-legacy", "trend"] : observed ? ["observed-legacy", "observed"] : ["legacy", "daily"];
+const migration = process.argv.includes("--legacy-migration");
+if ([trend, observed, apps, migration].filter(Boolean).length > 1) throw new Error("Choose one benchmark mode");
+const modes = apps ? ["apps-legacy", process.argv.includes("--names") ? "apps-named" : "apps"] : trend ? ["trend-legacy", "trend"] : migration ? ["observed-legacy", "migration"] : observed ? ["observed-legacy", "observed"] : ["legacy", "daily"];
 if (process.platform !== "linux") throw new Error("This benchmark requires Linux /proc");
 async function sha256(file) {
   const hasher = createHash("sha256");

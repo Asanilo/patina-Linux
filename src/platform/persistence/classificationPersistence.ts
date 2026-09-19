@@ -1,6 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
 import { executeWrite, getDB } from "./sqlite.ts";
-import { resolveNativeSessionPrecedence, type TimeRecordOrigin } from "./nativeSessionPrecedence.ts";
 
 export interface SettingKeyValueRow {
   key: string;
@@ -13,16 +12,6 @@ export interface SettingKeyRow {
 
 interface RawSessionExeNameRow {
   exe_name: string;
-}
-
-interface RawObservedSessionStatRow {
-  id: number;
-  origin: TimeRecordOrigin;
-  exe_name: string;
-  app_name: string;
-  start_time: number;
-  end_time: number;
-  capacity_end_time: number;
 }
 
 export interface SessionExeNameRow {
@@ -84,53 +73,6 @@ export async function loadDistinctSessionExeNames(): Promise<SessionExeNameRow[]
   return rows.map((row) => ({
     exeName: row.exe_name,
   }));
-}
-
-export async function loadObservedSessionStats(
-  sinceMs: number,
-  nowMs: number,
-): Promise<ObservedSessionStatRow[]> {
-  const db = await getDB();
-  const rows = await db.select<RawObservedSessionStatRow[]>(
-    `SELECT id, 'native' AS origin, exe_name, COALESCE(app_name, '') AS app_name,
-            start_time, COALESCE(end_time, ?) AS end_time,
-            COALESCE(end_time, ?) AS capacity_end_time
-     FROM sessions WHERE start_time < ? AND COALESCE(end_time, ?) > ?
-     UNION ALL
-     SELECT id, 'import_exact', exe_name, app_name, start_time, end_time, end_time
-     FROM import_exact_sessions WHERE start_time < ? AND end_time > ?
-     UNION ALL
-     SELECT id, 'import_bucket', exe_name, app_name, bucket_start_time,
-            bucket_start_time + duration, bucket_start_time + 3600000
-     FROM import_time_buckets
-     WHERE bucket_start_time < ? AND bucket_start_time + 3600000 > ?`,
-    [nowMs, nowMs, nowMs, nowMs, sinceMs, nowMs, sinceMs, nowMs, sinceMs],
-  );
-  const resolved = resolveNativeSessionPrecedence(
-    rows.map((row) => ({
-      key: `${row.origin}:${row.id}`,
-      origin: row.origin,
-      startTime: row.start_time,
-      endTime: row.end_time,
-      capacityEndTime: row.capacity_end_time,
-      value: row,
-    })),
-    { startTime: sinceMs, endTime: nowMs },
-  );
-  const byExe = new Map<string, ObservedSessionStatRow>();
-  for (const range of resolved) {
-    const row = range.value!;
-    const current = byExe.get(row.exe_name);
-    const totalDuration = (current?.totalDuration ?? 0) + range.endTime - range.startTime;
-    const lastSeenMs = Math.max(current?.lastSeenMs ?? 0, range.startTime);
-    byExe.set(row.exe_name, {
-      exeName: row.exe_name,
-      appName: lastSeenMs === range.startTime ? row.app_name : current?.appName ?? row.app_name,
-      totalDuration,
-      lastSeenMs,
-    });
-  }
-  return Array.from(byExe.values());
 }
 
 export async function deleteSessionsByExeNames(exeNames: string[]): Promise<void> {
