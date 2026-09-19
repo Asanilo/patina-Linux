@@ -279,7 +279,7 @@ Desktop runtime adapter 的健康快照刷新不依赖业务数据变化事件�
 
 Tauri 是当前桌面客户端实现，不是长期协议 owner。未来可以在不改变 daemon、数据库、浏览器 UI、TUI 和 MCP 契约的前提下评估 GPUI 或其他 Linux 桌面 UI 框架；框架替换必须作为独立项目，以实测内存、启动速度、桌面集成完整性和维护成本决定。
 
-Patina Desktop、`patinad`、browser UI、extensions、MCP 与未来 TUI 保持一个 monorepo 和一条兼容发布线。首个 daemon-backed package 通过 beta 验收后，完整仓库脱离 Windows 上游 fork network，但保留 Git 历史、MIT 许可与 attribution。首个 daemon 里程碑不拆 Cargo workspace；只有测量证明构建、二进制、常驻资源或独立包需求存在时才进行 crate 拆分。
+Patina Desktop、`patinad`、browser UI、extensions、MCP 与未来 TUI 保持一个 monorepo 和一条兼容发布线。产品独立演进与 GitHub fork 身份分开决策：beta 验收不自动触发脱离 fork、重命名或拆仓库，继续保留 Git 历史、MIT 许可与 attribution。后续上游 Linux 贡献按上游现有架构选择平台适配，不要求上游接纳 daemon。首个 daemon 里程碑不拆 Cargo workspace；只有测量证明构建、二进制、常驻资源或独立包需求存在时才进行 crate 拆分。新客户端选型在分离验收后逐个推进，不把 GPUI/TUI/浏览器 UI 全部实现作为第一阶段前提。
 
 ### 4.6 Linux-only 与 Windows 冻结边界
 

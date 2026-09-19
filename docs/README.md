@@ -4,6 +4,10 @@ Use this page as the entry point for active Patina documentation. Files under `a
 
 ## Start Here
 
+For current priorities, read the roadmap and the short working checklist below.
+For implementation contracts, use the engineering references. Archives are only
+for tracing past decisions and test evidence, not a backlog to execute.
+
 - [`../CONTEXT.md`](../CONTEXT.md): canonical product and runtime terminology
 - [`product-principles-and-scope.md`](./product-principles-and-scope.md): product purpose, scope, and non-goals
 - [`roadmap-and-prioritization.md`](./roadmap-and-prioritization.md): current priorities and implementation order
@@ -19,13 +23,17 @@ Use this page as the entry point for active Patina documentation. Files under `a
 
 - [`linux-development-setup.md`](./linux-development-setup.md): Linux development, extension, and packaging setup
 - [`api-index.md`](./api-index.md): local HTTP API contract and examples
+- [`activity-import-format.md`](./activity-import-format.md): supported activity import format
 - [`mcp-wrapper.md`](./mcp-wrapper.md): MCP integration contract and usage
 - [`issue-fix-boundary-guardrails.md`](./issue-fix-boundary-guardrails.md): stable-period issue triage and fix boundaries
 - [`versioning-and-release-policy.md`](./versioning-and-release-policy.md): version, changelog, updater, and release rules
 
 ## Current Work
 
-- [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md): active `patinad` migration design and acceptance gates
+- [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md): current daemon acceptance checklist, delivery status, and deferred work
+
+The roadmap separates future upstream Linux contributions from the independent
+daemon/client product. No upstream contribution branch has been created yet.
 
 Only current execution documents belong under `working/`. Move them to `archive/` when they stop being the active implementation basis.
 
@@ -37,5 +45,6 @@ Architecture decisions live under [`adr/`](./adr/). They explain durable choices
 
 - [`examples/`](./examples/): optional integration examples, not required reading
 - [`archive/`](./archive/): completed plans, superseded designs, reviews, and historical targets
+- [`archive/2026-09-19-patinad-runtime-history.md`](./archive/2026-09-19-patinad-runtime-history.md): preserved daemon migration experiments and acceptance timeline
 
 Do not use archived documents to reconstruct current behavior when an active document above already defines it.

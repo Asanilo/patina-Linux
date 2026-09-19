@@ -1,0 +1,126 @@
+# 路线历史快照（截至 2026-09-19）
+
+> 已归档：保留整理前的阶段记录，包含过时状态和顺序，不再作为执行依据。当前见 [路线](../roadmap-and-prioritization.md)，详细证据见 [历史记录](./2026-09-19-patinad-runtime-history.md)。
+
+### 5.6 当前实施主线：`patinad`
+
+#### 当前快照与下一个发布阶段（2026-09-19）
+
+本轮收口：多 UI 前计划中的趋势/分类有界读取、全历史分类迁移、流式备份导出/预览和多表恢复故障测试已实现；AppImage 的持久完整运行时、固定服务 owner、验签后原子包替换与旧文件保留也已实现。隔离实际 AppDir 运行、Tauri 验签、临时 systemd 本地/私有 WebDAV 跨进程恢复通过。当前仍为 daemon 分支源码与本地测试产物，不是新的已安装版本或公开发行。下一门槛是组合候选验收，包括真实 AppImage 首次接管/升级/登录、DEB 共存与长期使用；不能以自动验证宣布稳定版完成。GPUI/TUI/本机浏览器 UI 尚未开工，后续优先级仍留待用户讨论。详细证据和剩余边界以当前 working 文档顶部为准。
+
+最新补充：用户确认已安装 beta.18，要求先完成下述浏览器 UI 前工作再汇总，然后单独讨论 GPUI、TUI 与浏览器 UI 的优先级；不提前展开客户端选型。安装确认不等同于新功能的人工验收。
+
+2026-09-19 趋势批次：HTTP `/api/v1/trend` 已复用热力图的有界日仓储，按本地 DST 边界和当前分类排除策略返回总量/规范化 top app；桌面趋势缓存失效竞态已修。Data 概览、应用和分类趋势已接通后端日聚合，包含日/月图表、预热、缓存失效、失败重试和旧快照版本隔离；单次范围最多 378 天，超限明确报错。`/api/v1/activity/daily-apps` 的可选贡献名称与总量在同一 SQLite snapshot 内读取，保留用户别名、分类、排除和详情入口，不构造假会话。带名称查询级 5 万条合成事实对照与页面回归通过；不等于真实桌面总内存验收。旧分类全历史迁移也已改为后端分组流式证据读取，不截断为最近一年，完整成功后才写完成标记；有界内存仍受相连区间复杂度、输出应用数与时间预算约束。接下来继续备份多表/安装恢复故障矩阵与 AppImage 持久 daemon/原子升级。实测与检查状态见当前 working 文档。
+
+2026-09-19 批次补充：流式导出、流式预览/校验已接入；完整恢复也改用共享流式条目读取器，避免原始 JSON 与 payload 同时驻留，仍在全部校验后单事务写入。已补 5 万条合成记录 Merge/Replace 恢复峰值及最后一条写入失败的回滚对照；内存收益与耗时代价详见工作文档，不称为恒定内存恢复。此前 release 预览约半秒，不能用 debug 约 7 秒代替安装版体验。公共异步预览/校验限制进程内单 worker，前端合并进行中请求；隔离追踪写入与 mock 浏览器慢预览响应通过。下一步继续剩余趋势/分类迁移与 AppImage，多表大库恢复、故障矩阵和真实成品体验仍需补验。下方 beta.17/18 候选过程为历史记录，不覆盖用户当前安装 beta.18 的确认。
+
+本节快照优先于下方按日期保留的历史进度。daemon/runtime、客户端接管、systemd 和主要写侧功能已有实现；当前处于 Stage 2H.3d 的 daemon-backed DEB beta 验收与发布收口，尚非稳定版。用户安装版本为 `1.9.0-beta.17`，安装后只读、核心页面与关闭重开验收通过；当前源码已准备 beta.18，包含窄窗口布局修复和低耗延迟设置，release gate 与隔离原生计时测试通过，成品状态见 runtime working 文档。2026-09-18 前次只读查询确认最新公开预发布为 beta.12，稳定版为 1.8.4，本轮未重新查询或操作远端。安装候选不代表已推送或已公开发布。
+
+- **暂停悬浮窗专项**：按用户要求暂停闪烁、左右吸附和 GNOME compositor provider 开发。现有原生 Wayland 行为是自由拖动的小窗口；beta.16 自动及原生生命周期回归通过，不代表闪烁/吸附实机验收通过。该可选功能不阻塞下述聚合阶段，数据安全或崩溃问题除外。
+- **下一可发布阶段：Data 热力图低内存查询**。提供共享后端按本地日期聚合入口及 Desktop/daemon 适配，前端不再拉取或缓存 53 周逐 session 明细。保持本机记录优先、导入桶分配、排除、分类、active cutoff 和日期边界语义。
+- **本阶段进展**：已有界共享日聚合仓储及 `/api/v1/heatmap` 只读入口；开发版 Desktop 热力图已通过薄 command 接 typed daemon client / embedded 共享仓储，不再拉取整年 session 明细。缓存、页面 state 与预热只持有紧凑日汇总，前端检查完整本地日期边界。历史进程过滤与别名归一已迁入 Rust，以 791 组过滤和 598 组别名 fixture 对照前端；日聚合读取当前 override 与旧排除字段，并在优先级分配后过滤。明确修正旧热力图漏用用户排除和把小时桶伪装成连续区间的行为；旧缓存版本失效。旧 daemon、查询失败或响应不完整时显示错误并允许重试，不回退整年明细。
+- **查询级验收**：新增可复现的 `perf:daily-activity`，50,000 条合成 native session 对照暴露并修正逐日回读标题页的查询计划问题，复用既有覆盖索引，无 schema 迁移。日聚合响应约 24.9 KiB、耗时 3.6–3.8 秒、采样 USS 增量约 5 MiB，通过本场景预算；相同数据旧 SQL/JSON 参考路径约 61.7 MiB 响应、288 MiB USS 增量。结果一致且数据库哈希未变。该 debug 查询进程实验不含 WebKit、IPC 和 daemon host，也未覆盖多年份/大量导入数据；下方另列真实链路验收，不将查询级数字解释为整个桌面的收益。
+- **发布门槛**：新旧结果对照与跨日/DST/导入/排除/active 测试通过；在相同合成数据上记录 Desktop/WebKit/daemon 峰值 PSS/USS、响应大小和查询耗时；实现明确的读取与并发预算，不把峰值简单转移到 daemon；完成产品内热力图及日期跳转验收和 DEB release gate。beta.17 已完成下述候选及安装核心验收，反馈修复与低耗延迟设置合为下一候选，版本号到出包时确定。
+- **真实链路进展**：`perf:heatmap-desktop` 已以私有合成 Local profile 跑通真实 React/WebKit → IPC → daemon、五分钟销毁与重开，两轮汇总和 History 跳转通过，数据完整性不变。首次热力图后 Desktop + WebKit PSS 约 503 MiB，销毁后约 98.5 MiB；daemon 未出现同量级增长。主进程数据传输开销已收敛，但前台 WebProcess 仍为主要内存来源；这只是 debug 成品页面的一轮实验，不是同配置旧 UI 对照、release 包或长期追踪验收。后续候选及安装证据见下，不回头扩大悬浮窗专项。
+- **候选发布门禁（2026-09-18）**：beta.17 的完整 `release:check` 通过，含 598 项 Rust 测试、32 项浏览器 smoke、构建预算及扩展/签名 XPI 检查。累计变更已写入 beta.17 changelog；Desktop + daemon DEB 已构建，通过包内容检查和解包后 release daemon 的隔离鉴权、日期与热力图冒烟测试。用户已安装，双端版本、真实统计及后台持续追踪验证见下；不把空库冒烟替代真实追踪或 release UI 内存验收。包路径、哈希和限制见 runtime working 文档第九步。
+- **安装后验收（2026-09-18）**：运行中的 Desktop/daemon 哈希与 beta.17 成品一致，服务、追踪、数据库与凭据检查通过。真实 371 天热力图约 23.9 KiB/1.12 秒，已结束日期的单日/范围结果一致，查询期间采样继续推进；用户确认 Data 热力图与 History 日期跳转正常，关闭及重开结果见下。前台桌面组 PSS 约 600 MiB，其中 WebProcess 约 441 MiB，daemon 约 19 MiB；这是观测，不是对比基准或泄漏判定。证据见 runtime working 文档第十步。
+- **当前小批桌面偏好**：“低耗后台延迟”已接通设置持久化与 Desktop 生命周期，支持 1–60 整分钟，默认保留 5 分钟。归 Desktop 所有，不改变 daemon 追踪，不与 Data/History 返回首页或 Widget 闲置销毁阈值捆绑。已与窄窗口修复组成 beta.18 本地 DEB，完整 `release:check`、成品检查和解包 daemon 冒烟通过，含 603 项 Rust 测试、34 项浏览器回归及构建预算。独立 Wayland 原生测试确认一分钟回收、提前重开取消、关闭开关与改长延迟均正确；仍待安装后的真实页面与持续追踪确认，未公开发布。
+- **重开与窄窗口反馈**：用户确认 beta.17 重开后 Dashboard/当前活动/Data 正常，同时发现窄窗口热力图裁切与滚动缺陷。已限制滚动视口宽度、保留内部完整日历并对齐列间距；390–1280px 浏览器回归与完整 `npm run check` 通过。该修复仍为未打包源码，已安装 beta.17 不会实时更新，后续随低耗后台延迟设置组合验收；不扩展到其他页面的移动适配或悬浮窗专项。
+- **关闭到后台验收**：用户关闭到托盘后，330 秒只读观察通过，67 次采样持续推进；旧页面进程退出，Desktop/daemon PID 与启动身份未变。桌面组 PSS 回收后约 109.5 MiB、daemon 约 19 MiB；数据库复核通过，systemd 重启计数未增加。用户随后确认重开功能正常，不扩大为长期内存或完整稳定版验收。
+- **后续独立阶段**：分类候选及其他趋势聚合、流式备份、Widget 独立入口。关闭 Desktop 进程仅留 daemon/轻量托盘属于另一个架构决策，当前没有实施；Widget 入口拆分随悬浮窗专项暂停。
+- **稳定版剩余门槛**：剩余安装/恢复故障矩阵、真实数据长期运行，以及 AppImage 兼容。beta.18 的真实 Zen 活动网页跨挂起已由用户操作和只读边界检查通过，不扩大为任意硬件或 hibernate 均已验证。用户已确认继续支持 AppImage，不执行 DEB-only 退役；必须完成版本化 daemon 持久解包、稳定服务路径、原子升级与失败恢复，才恢复 daemon-backed AppImage 发布。浏览器 UI、TUI、KDE/wlroots 与 Flatpak 继续按后续路线推进。
+
+#### 已授权的浏览器 UI 前执行范围（2026-09-18）
+
+用户已同意推进本机浏览器 UI 之前的全部任务，不再逐个请求开发授权；仍按小批实现与验证，不能把这一授权解释为已完成验收或可自动改动日常环境。
+
+1. **当前候选交付**：低耗延迟与窄窗口修复合为下一 DEB 候选；先补独立 HOME/XDG/D-Bus 的一分钟原生计时测试，再完成 release gate 与成品校验。安装、生产服务重启和公开 tag 发布与开发构建分开。
+2. **稳定性补验**：继续剩余安装/恢复故障矩阵；隔离环境能验证的自动推进，真实挂起、登录与长期运行保留人工证据，不自动挂起用户电脑。已补 HTTP handler → 电源事件 → SQLite 的活动网页跨挂起自动回归，覆盖迟到上报、恢复前无新采样及恢复后新会话；2026-09-18 真实 beta.18 systemd + Zen 联合验收通过，详细边界与检查脚本重试记录见工作文档。
+3. **后续内存功能**：分类候选及其他趋势有界聚合，再到流式备份；每批独立验证统计语义、读取峰值与失败安全，不继续扩大本次候选。分类日常候选已接共享 Rust 仓储、HTTP/typed client 与 Desktop，带输入/响应/并发预算和失败重试；API/OpenAPI 已记录。50,000 条合成数据的查询级新旧峰值对照通过，尚缺真实客户端链路验收；旧版全历史分类迁移与其他趋势仍待收口。备份导出已逐行写磁盘并原子发布，仍需完成校验/恢复读取内存、故障与峰值验收；不把这一步标为整链路完成。
+4. **AppImage 兼容专项**：继续支持；先明确 DEB/AppImage 并存时唯一 daemon owner 和更新事务，再实现持久解包、服务绑定、签名验证后的切换/回退及旧客户端更新测试。当前 DEB-only beta 契约保持到该专项验收通过，不直接把打包 target 改成 AppImage 就宣称支持完成。
+
+追踪错误、数据损坏与恢复失败可随时打断上述顺序；本机浏览器 UI、TUI、Flatpak、KDE/wlroots 与悬浮窗专项不纳入这一轮授权范围。
+
+#### 实施顺序与历史进度
+
+`patinad` 是当前唯一的架构实施主线。Linux `main` 作为已发布桌面产品的稳定功能基线，在 daemon-backed beta 完成前不再单独扩展一条持续追平 Windows 上游的功能线。上游改动只作为定期审查输入，满足以下条件之一时才进入当前实施序列：
+
+- 修复计时正确性、数据安全、隐私或安全边界问题
+- 对 Linux 同样成立，且能够落入现有明确 owner
+- 能以较小冲突改善高频核心页面，同时不会让 embedded runtime 与 daemon 同时增长
+
+Windows runtime、installer、updater、ARM/UWP 等平台专属实现不移植；纯功能扩张、本地化扩张和低优先级界面增强默认等 daemon-backed beta 后再评估。同步上游时按行为契约重新实现或选择性移植，不整体 merge `upstream/main`，也不以版本号追平作为完成标准。
+
+当前分支收敛顺序固定为：
+
+1. 把 Linux `main` 已验证的功能提交合入 `feature/patinad-daemon`，只做稳定基线到未来架构线的单向收敛。
+2. 审计活动导入、定时备份和其他新增写路径，确保 daemon client 模式不会重新绕过 runtime/database owner。
+3. 按语义审查上游 `1.9.5` 的计时边界、网页区间去重和备份恢复边界修复；只移植 Linux 仍缺失的部分。
+4. 完成受控 backup restore，并分批收口 remote backup 的配置、上传、列表、下载与恢复衔接。
+5. 完成首次启动迁移、systemd 服务控制、默认 owner 切换和双 owner 验收。
+6. 发布 daemon-backed DEB beta 并完成登录启动、关闭 UI 后持续记录、崩溃恢复、升级、卸载和数据保留验证。
+
+当前执行位置：第 1 至 4 步的功能合流、owner 收口、追踪边界修复、受控恢复与 remote backup 实现已完成；第 5 步 Stage 2H.3d 的默认 owner 切换和设置入口已实现，正在第 6 步的 DEB beta 实机验收与发布收口，不能视为稳定版已完成。
+
+截至本地 `1.9.0-beta.7`，已验证首次接管、关闭/重开 Desktop、服务崩溃恢复、连续覆盖安装、登录偏好配置对账、回滚自动重启/再次接管，以及备份导出和产品内解析、remove 卸载保留数据、重装不自动启动、首次打开恢复追踪。Zen 扩展重连与切走封口、音频/MPRIS 身份匹配已有实机证据；真正的 systemd suspend/resume 及数据库无跨挂起计时已在 beta.7 补齐，不再依赖早期仅有屏幕唤醒反馈的结论。
+
+当前 Linger=yes 环境的真实重启登录后台自启已通过：新 boot 下 systemd 自动启动 beta.7 daemon，未打开 Desktop 即产生原生和网页记录；不扩大为 Linger=no 或仅注销再登录均已验证。合成数据的隔离磁盘 Replace/Merge 恢复、receipt 幂等与事务失败回滚已补自动化验证；beta.8 又通过真实临时 systemd 服务的跨进程 Replace/Merge 和失败回滚，生产数据未参与。剩余顺序：健康状态与后台版本对齐收口、活动网页跨挂起、隔离 WebDAV 恢复及剩余故障矩阵；DEB beta 发布复核。稳定版还受 AppImage 兼容或明确退役迁移方案约束。当前只有本地未签名候选，不代表 tag、GitHub Release 或签名更新链已验收。当前状态矩阵和证据时间线统一见 [`working/2026-07-10-patinad-runtime-design.md`](../working/2026-07-10-patinad-runtime-design.md)。
+
+2026-09-09 验收新增阻塞项：Desktop 的“追踪运行时未就绪”间歇跳动。已用隔离测试复现 SSE 静默时客户端快照不刷新的路径，源码加入独立周期刷新，保留后台采样时间及读取失败语义。修复已打入本地 `1.9.0-beta.8` DEB，完整 release gate 与成品静态检查通过。用户安装并打开 beta.8 后，后台仍为 beta.7：现有协议兼容协商不会仅按版本差异自动重启，需补版本差异提示与确认式受控升级收口，不能宣称后台升级或健康状态实机复测已完成。独立临时 systemd 服务的跨进程 Replace/Merge 恢复及失败回滚已通过，WebDAV 恢复及剩余验收矩阵继续保留。
+
+版本对齐收口已形成 `1.9.0-beta.9` 本地未签名 DEB 候选，完整 release gate 和成品检查通过：设置诊断显示 Desktop/Daemon 版本，并通过已有受控重启 API 提供确认式重新加载，检查新实例、凭证和版本后才报告成功；不会自动重启生产服务。用户已确认双方均为 beta.9，只读 managed 验收确认新 service/lease PID 一致、追踪就绪和数据库完整。远端下载/校验/暂存的 8 场景隔离 HTTP 回归通过；随后私有 Secret Service 凭据、受控远端下载、预约及真实 systemd 跨进程恢复三场景也通过，不扩大为第三方 WebDAV/TLS 或任意崩溃时刻均已验收。
+
+在第 6 步完成前，不再把新的上游大型功能只加入 Linux `main` 而不进入 patinad 架构线。
+
+公开发布进度补充：beta.9 标签的 Actions 在 UTC 午夜汇总测试失败，未发布应用。源码修复日/周零长度内建区间后以 beta.10 重新验证发布，不改写 beta.9 标签。当前用户安装仍为 beta.9，内存优化与剩余验收不因这次修复宣称完成。
+
+最终结果：beta.10/11 的元数据和 CLI 入口问题修正后，`v1.9.0-beta.12` 已公开为 DEB prerelease，Actions、下载成品检查和公钥验签通过，Latest 保持稳定版 1.8.4。当前优先处理桌面内存回收的对照验证，随后继续活动网页跨挂起和安装故障矩阵；不将此次发布等同于稳定版或 Flatpak 完成。完整证据以 working 文档的最终发布结果为准。
+
+2026-09-10 内存调查已在 GNOME Wayland 合成数据中复现批量 SQL/IPC 分配后的空闲堆保留；同量数据的日期及分类迁移对照确认启动统计/分类预热显著放大占用。下一步先验证已有低耗后台生命周期内的一次性空闲堆归还，并减少不必要的启动重明细读取、推进有界后端聚合；备份流式化独立跟进。保留默认开关与回收等待，不将实验 trim 或单次 RSS 降幅称为已部署优化。完整矩阵和修复边界见当前 runtime working 文档。
+
+第一批源码修复现已通过完整 check 与隔离 Wayland 实测：去掉前台打开时的 Data 重预热和启动分类候选查询，GNU Linux 低耗后台销毁后执行一次受状态检查的空闲堆归还。相同合成数据下 Desktop 启动 USS 从 244.5 降至 101.9 MiB；备份后关闭回收至 79.7 MiB，重开 108.2 MiB。尚未安装或发布，不把主进程数字当作全部产品占用；下一步先补正式多轮及 widget/长查询验收，再继续有界聚合和流式备份，不更换 UI 框架或改变低耗默认值。
+
+边界补验已完成五组隔离实测：低耗关闭、隐藏后关闭开关、widget 存活、同实例两轮回收，以及私有合成窗口在 UI 销毁/重建期间持续记录。开关和 widget 场景均未误触发 trim，重开与数据库检查通过；合成采样最大间隔约 1.12 秒。2026-09-15 已形成 `1.9.0-beta.13` 本地 DEB 候选，完整 release gate 与成品检查通过，尚未安装、提交或发布。当前下一步为安装后的真实数据多轮复测及长 SQL 与回收重叠验收，不把并行实验的共享页变化或两轮结果解释为长期内存预算达标。候选路径、校验值及完整证据见 runtime working 文档。
+
+2026-09-09 补充收口方向：用户确认 beta.9 正常路径健康提示不再跳动；长期故障恢复仍按矩阵验收。独立凭据到 systemd 的远端恢复已补上述隔离验证，下一步补活动网页跨挂起与安装故障场景。桌面 UI 内存列为并行测量项：先分离 Desktop/WebKit/daemon 的 PSS/USS，验证现有低耗后台回收和重新打开，再决定缓存、轮询或生命周期调整，不未经测量改默认开关或更换框架。跨发行版格式（含 Flatpak）列入后续决策，比较完整沙箱与原生 daemon + 沙箱客户端，不把安装格式误当作 KDE/wlroots 支持；当前仍是 DEB beta，稳定版前的 AppImage 兼容/退役门槛不变。
+
+2026-09-15 外部审查后更新：beta.13 源码已以 `855ad0a` 推送 daemon 分支，用户提供关闭前后 257M/219M 读数，但测量口径及长期表现仍待核对。先修最小化到 Widget 绕过回收计时、创建取消后 Widget 漏排销毁，再独立处理自启延迟建窗和最后 WebView 回收；下一轮性能验收前修正 VmData 诊断口径。随后依次推进 Data/分类有界聚合、流式备份和 Widget 独立入口。现有 trend 底层仍 fetch_all，不能简单把重查询搬到 daemon 就称为内存有界；实施与验收边界以 runtime working 文档“beta.13 外部审查核对与后续修复”为准。本轮后续修复尚未进入已安装 DEB。
+
+beta.14 本地候选已完成：原生 GTK/WebKit 回归运行 626.64 秒通过，除两个生命周期缺口外，还修复了尚未显示的 Widget 设置鼠标穿透触发的 Tao/Wayland 崩溃。完整 release gate 与 DEB 成品检查通过；复现 runner 已入仓库，默认不运行，不触碰生产 runtime。用户已安装并完成关闭前后观察，本批以 `0e00c4a` 提交在 daemon 分支，尚未推送或公开发布。只看系统监视器主进程 RSS 的约 258M/220M 不能代表产品总内存或私有驻留；同次只读采样在无 WebProcess 时记录 Desktop 主进程 RSS/PSS/USS 约 221.7/89.6/74.0 MiB，Desktop 与 Network 合计 PSS/USS 约 102.6/82.8 MiB。
+
+下一批 Desktop 生命周期源码已完成并通过完整 `check:full` 与真实 Wayland 原生回归：最后 WebView 的真实 `Destroyed` 事件统一触发一次可合并、可取消的空闲堆归还；登录自启动先读取设置，Widget 模式不再创建隐藏 Main；Linux 进程内诊断改用 `smaps_rollup` 的 RSS/PSS/USS/Swap。原生回归确认默认 autostart 只创建 Widget、Main/Widget 销毁边界正确且最后 WebView 只回收一次。默认低耗开关和两个五分钟窗口销毁等待不变，不新增周期 trim。当前尚未形成新版本或安装包，安装后的视觉观察和真实数据长期内存循环仍待验收；之后按 Data/分类有界聚合、流式备份、Widget 独立入口推进。
+
+当前结构主线按以下顺序推进：
+
+2026-09-17：beta.15 实机拖动闪烁未通过。先修 Wayland 原生窗口坐标与 X11 按键误用，采用明确的原生自由拖动降级；完整 GNOME 边缘吸附单列为 compositor provider 待办。随后继续内存有界聚合，不把 212 MB 单进程 RSS 当作 Tauri 固定下限。
+
+2026-09-16：准备 beta.15 本地测试候选，将第二批内存生命周期与悬浮窗重复吸附修复合并验收。已补移动事件反馈回归；真实闪烁、登录启动和多轮内存表现仍待安装观察，通过后继续 Data/分类有界聚合。
+
+1. Stage 0 基础已完成：数据 profile、存储锚点、运行时唯一 owner、API 凭据、受限请求解析与生命周期、OpenAPI 一致性和优雅关闭已有自动验证。
+2. Stage 1 已完成：共享 `RuntimeContext`、`RuntimeEventSink`、API runtime context、完整只读 GET API 和 host-neutral handler 已落地。
+3. Stage 2A 已完成：本机有界 event stream、bearer 认证、replay/resync、能力协商和关闭语义已有自动验证。
+4. Stage 2B tracking preview 已完成：显式 `--track` 模式由 daemon 接管 tracking/watchdog、实时快照、session 写入和退出封口；desktop 默认 owner 尚未切换。
+5. Stage 2C power preview 已完成：共享 logind source 覆盖锁屏、解锁、休眠、恢复和关机，daemon 可在对应边界立即封口。
+6. Stage 2D audio preview 已完成：Linux audio source 可由 daemon 显式拥有、取消和按设置启停，PulseAudio/pipewire-pulse 探测不再依赖 Tauri 全局运行时。
+7. Stage 2E MPRIS preview 已完成：Linux media source 可由 daemon 显式拥有和取消，多播放器按当前窗口身份优先匹配，D-Bus 查询不依赖 Tauri 全局运行时。
+8. Stage 2F browser bridge preview 已完成：显式 tracking 模式由 daemon 在 loopback 接收浏览器扩展上报，共用宿主无关的鉴权、隐私、记录和封口逻辑，并提供受限请求生命周期与可等待关闭。
+9. Stage 2F.1 数据语义已完成：网页异常退出按最后可信观测时间恢复；浏览器心跳使用 75 秒宽限并由 watchdog 在过期时按最后上报封口；跨夜崩溃、心跳抖动、扩展消失和并发更新保护已有回归测试。
+   网页写入还必须匹配当前活动的原生浏览器 session；两者通过持久化关系表绑定，原生 session 结束时由 SQLite 在同一事务内截断网页段。备份格式已向后兼容保存该关系，Replace/Merge 使用恢复后的 session ID 重建绑定。
+10. Stage 2F.2 transport 已完成：desktop 与 daemon 共用的 API/SSE、独立浏览器 bridge 均已迁移到 Axum + Tower，不再保留自写 HTTP parser/server loop/SSE writer；普通 API、SSE、browser bridge 分别使用 32/8/8 的 fail-fast 并发预算。API 只允许 loopback Host/origin，bridge 只允许 loopback Host 与 Firefox/Chromium 扩展 Origin；listener readiness 跟随真实 task 生命周期，daemon API 意外退出会触发受控停机，bridge 意外退出会立即降级诊断状态。
+11. daemon owner 拆分已完成：tracking、power、audio、media 与 web activity 的任务状态、重试、取消和退出封口已回到 `app/daemon/runtime/*` 对应 owner 模块；`app/daemon/runtime.rs` 只保留依赖装配、启动顺序和有序关闭，且未混入 Cargo workspace 重排。
+12. Stage 2G Tools runtime preview 已完成：服务版本、协议上下限、write scope 协商、app mapping、classification、AFK threshold、tracking pause、运行中 browser/audio 配置，以及 Tools runtime owner、系统通知、SSE 与写侧 HTTP/MCP 已完成。
+13. Stage 2H.1 local API configuration preview 已完成：daemon 从 profile 存储读取端口并迁移旧数据库 Token，运行中换端口采用预绑定/提交/切换，Token 原子轮换后撤销旧 bearer 与 SSE，会通过 HTTP/MCP 暴露不含密钥的确认状态。
+14. Stage 2H.2 systemd service preview 已完成：DEB 构建输入包含 `patinad` 和默认禁用的 user unit；受控重启先持久化 owner-only ticket、返回 `202 pending`，再优雅退出并由 systemd 重启，下一实例确认同一 ticket。下一步仍需首次桌面启动迁移、服务启停设置和默认 owner 切换；切换后不自动回退 embedded tracker。
+15. Stage 2H.3 分阶段完成默认切换：2H.3a 已完成 systemd 状态与迁移诊断；2H.3b.1/2 已完成安全 typed daemon client 和只读 runtime adapter；2H.3b.3 已完成显式 preview、embedded owner 隔离和真实 GNOME 验收；2H.3c.1 至 2H.3c.7b 已完成 Desktop 写侧、活动导入、定时备份、按应用删除、受控恢复和 remote backup owner 收口。2H.3d.1 已完成固定 unit 的受限控制基础，2H.3d.2 已完成后台追踪与 Desktop 登录偏好的持久化拆分，2H.3d.3a-d 已完成 fail-closed reservation、embedded 受控重启、旧 lease 屏障、managed client readiness 确认和持久状态中断自动化，2H.3d.4a-e 已完成交接诊断、重试、登录偏好对账、安全回滚及 Quiet Pro 设置控件；当前进入 DEB 实机验收，通过前不宣称默认切换完成。
+16. 用一个 `patina` 产品包同时安装 Patina Desktop、`patinad` 和 systemd user unit；首次桌面启动在用户会话中迁移旧 XDG autostart 并启用后台服务，把“后台追踪随登录启动”与“桌面客户端随登录打开”拆成独立设置。
+17. 首个 daemon-backed DEB 先发布为 beta，验证关闭 UI 后持续记录、登录启动、崩溃重启、锁屏、睡眠、浏览器活动、升级、卸载和数据保留；该 beta 只发布 DEB，不发布无法稳定安装 service owner 的 AppImage。embedded runtime 至少保留一个稳定版本作为显式开发回滚路径。
+18. beta 验收后让完整 monorepo 脱离 Windows 上游 fork network，保留 Git 历史、MIT 许可与 attribution；不拆分独立 `patinad` 仓库。
+19. daemon-backed 稳定版发布前，按已确认的继续支持方向，独立实现并验证 AppImage 的版本化 daemon extraction、稳定服务路径、原子更新和失败恢复；不能让 DEB-only stable 悄悄破坏既有 updater contract。
+20. daemon 稳定后建立只读本机浏览器 UI，先覆盖 Dashboard、History、当前会话和诊断；使用 same-origin HttpOnly session，不向前端 JavaScript 暴露长期 API Token。
+21. 浏览器只读路径稳定后再开放受控写操作；MCP、CLI 和 Agent 继续使用 Bearer Token，并与浏览器 UI 复用同一业务 API 契约而非同一认证方式。
+22. 之后开发 TUI / CLI 并开始 KDE Wayland 适配；桌面端是否从 Tauri 迁往 GPUI、是否拆 Cargo workspace，只按实测资源、构建和独立打包收益评估。
+23. `patinad` 稳定后，单独分阶段删除冻结的 Windows 平台代码，不与 owner 切换、transport 迁移或数据修复混合。
+
+每一阶段必须保持当前桌面主路径可用，不以一次性切换换取架构完成感。
+
+
