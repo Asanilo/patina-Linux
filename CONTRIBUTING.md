@@ -8,7 +8,7 @@
 
 Thank you for taking the time to contribute.
 
-Patina is a personal, local-first Windows desktop time tracker. The project
+This repository, `Asanilo/patina-Linux`, develops a personal, local-first Linux desktop time tracker. The project
 values trustworthy records, clear ownership boundaries, readable UI, and
 changes that remain easy to maintain over time.
 
@@ -17,16 +17,16 @@ review feedback, and decide whether a change is ready to merge.
 
 ## 1. Start Here
 
-Before writing code, read the documents that define the current project
-direction:
+Start with [`AGENTS.md`](AGENTS.md) and the task routing in
+[`docs/README.md`](docs/README.md). Read the references relevant to the change;
+small fixes do not require rereading every long-term document.
 
-- [`docs/product-principles-and-scope.md`](docs/product-principles-and-scope.md)
-- [`docs/roadmap-and-prioritization.md`](docs/roadmap-and-prioritization.md)
-- [`docs/engineering-quality.md`](docs/engineering-quality.md)
-- [`docs/architecture.md`](docs/architecture.md)
-- [`docs/issue-fix-boundary-guardrails.md`](docs/issue-fix-boundary-guardrails.md)
-- [`docs/quiet-pro-component-guidelines.md`](docs/quiet-pro-component-guidelines.md) for UI work
-- [`docs/versioning-and-release-policy.md`](docs/versioning-and-release-policy.md) for release work
+`main` is the primary Linux development/product branch. `feature/patinad-daemon`
+is an independent daemon-separation experiment. An upstream Linux contribution
+starts from a recorded current upstream commit and may reuse suitable code from
+Linux `main`; it does not merge the daemon experiment into upstream. The branch
+examples below describe ordinary contributions to Linux `main`, not permission
+to rebase, merge, or redirect existing experimental work.
 
 The active top-level files under `docs/` are the current sources of truth.
 Files under `docs/archive/` are historical context and should not be used as the
@@ -42,7 +42,7 @@ When several implementation options are possible, use this order of priority:
 4. Prefer the smallest change that fully solves the problem.
 5. Add new surface area only when it fits the current product scope.
 
-Patina is intentionally focused on personal, local-first Windows desktop
+Patina is intentionally focused on personal, local-first Linux desktop
 use. Team SaaS features, account systems, cloud-first workflows, mobile-first
 features, and decorative complexity are not current priorities unless the
 project direction is explicitly changed first.
@@ -116,14 +116,19 @@ fix/session-sealing
 docs/contribution-guide
 ```
 
-If you contribute from a fork, add the main repository as `upstream` and use
-`upstream/main` as the source branch:
+If you contribute from a fork of `Asanilo/patina-Linux`, add that Linux repository
+as `upstream` and use `upstream/main` as the source branch. First inspect
+`git remote -v`; do not overwrite an existing remote:
 
 ```bash
-git remote add upstream https://github.com/Ceceliaee/patina.git
+git remote add upstream https://github.com/Asanilo/patina-Linux.git
 git fetch upstream main
 git rebase upstream/main
 ```
+
+In the maintainer's Linux checkout, `origin` already points to `Asanilo/patina-Linux`
+and `upstream` may point to `Ceceliaee/patina`. Keep those meanings: contributions
+to `Ceceliaee/patina` follow the separate [upstream Linux plan](docs/roadmap-and-prioritization.md#57-上游-linux-贡献线), not this ordinary Linux-main workflow.
 
 ### 4.2 Keep The Pull Request Focused
 
@@ -607,22 +612,16 @@ Before merging:
 
 感谢你愿意为 Patina 做出贡献。
 
-Patina 是一个面向个人使用、本地优先的 Windows 桌面时间追踪工具。
+本仓库 `Asanilo/patina-Linux` 开发面向个人使用、本地优先的 Linux 桌面时间追踪工具。
 项目重视可信的记录、清晰的职责边界、可读的界面，以及能够长期维护的改动。
 
 本文说明如何准备改动、提交 Pull Request、响应 review 意见，以及判断一项改动是否可以合并。
 
 ### 1. 开始之前
 
-开始编写代码前，请先阅读定义当前项目方向的文档：
+先读 [`AGENTS.md`](AGENTS.md) 和 [`docs/README.md`](docs/README.md) 的任务路由，再按改动读取相关规范；小修不需要重读所有长期文档。
 
-- [`docs/product-principles-and-scope.md`](docs/product-principles-and-scope.md)
-- [`docs/roadmap-and-prioritization.md`](docs/roadmap-and-prioritization.md)
-- [`docs/engineering-quality.md`](docs/engineering-quality.md)
-- [`docs/architecture.md`](docs/architecture.md)
-- [`docs/issue-fix-boundary-guardrails.md`](docs/issue-fix-boundary-guardrails.md)
-- UI 改动请阅读 [`docs/quiet-pro-component-guidelines.md`](docs/quiet-pro-component-guidelines.md)
-- 发布改动请阅读 [`docs/versioning-and-release-policy.md`](docs/versioning-and-release-policy.md)
+`main` 是 Linux 日常开发与产品主线，`feature/patinad-daemon` 是独立的 daemon 分离实验。上游 Linux 贡献分支从记录明确的最新上游提交起步，可参考 Linux `main` 的适用代码，不把 daemon 实验整体合入上游。下文分支操作示例适用于向 Linux `main` 贡献的普通任务，不授权重置、合并或改变已有实验分支的目标。
 
 `docs/` 顶层的有效文档是当前事实来源。`docs/archive/` 下的文件是历史背景，
 默认不应作为当前实现依据。
@@ -637,7 +636,7 @@ Patina 是一个面向个人使用、本地优先的 Windows 桌面时间追踪�
 4. 优先采用能够完整解决问题的最小改动。
 5. 只有符合当前产品范围时，才增加新的功能表面。
 
-Patina 有意聚焦个人、本地优先的 Windows 桌面使用场景。除非先明确调整项目方向，
+Patina 有意聚焦个人、本地优先的 Linux 桌面使用场景。除非先明确调整项目方向，
 否则团队 SaaS、账号体系、云优先工作流、移动端优先功能和装饰性复杂度都不是当前重点。
 
 ### 3. 开始一项改动之前
@@ -707,13 +706,15 @@ fix/session-sealing
 docs/contribution-guide
 ```
 
-如果你从 fork 贡献，请把主仓库添加为 `upstream`，并以 `upstream/main` 为基准：
+如果你从 `Asanilo/patina-Linux` 的 fork 贡献，请把该 Linux 仓库添加为 `upstream`，并以 `upstream/main` 为基准。先检查 `git remote -v`，不要覆盖已有 remote：
 
 ```bash
-git remote add upstream https://github.com/Ceceliaee/patina.git
+git remote add upstream https://github.com/Asanilo/patina-Linux.git
 git fetch upstream main
 git rebase upstream/main
 ```
+
+维护者的 Linux 工作副本中，`origin` 已指向 `Asanilo/patina-Linux`，`upstream` 可能指向 `Ceceliaee/patina`，应保留这些含义。向 `Ceceliaee/patina` 贡献时走独立的 [上游 Linux 路线](docs/roadmap-and-prioritization.md#57-上游-linux-贡献线)，不套用这里的普通 Linux-main 流程。
 
 #### 4.2 保持 Pull Request 聚焦
 

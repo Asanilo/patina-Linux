@@ -1,7 +1,7 @@
 use crate::data::{maintenance, sqlite_pool};
 use crate::domain::data_maintenance::{TrackingDataCleanupResult, WindowTitleCleanupResult};
 use crate::engine::tracking::runtime::emit_tracking_data_changed;
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Manager, Runtime};
 
 #[tauri::command]
 pub async fn cmd_get_migration_observed_apps<R: Runtime>(
@@ -102,7 +102,16 @@ pub async fn cmd_get_daily_activity<R: Runtime>(
 
 #[tauri::command]
 pub async fn cmd_reopen_sqlite_pool<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
-    sqlite_pool::reopen_sqlite_pool(&app).await.map(|_| ())
+    if app
+        .state::<crate::app::runtime::DesktopRuntimeMode>()
+        .owns_embedded_runtime()
+    {
+        sqlite_pool::reopen_sqlite_pool(&app).await.map(|_| ())
+    } else {
+        sqlite_pool::reopen_existing_sqlite_pool(&app)
+            .await
+            .map(|_| ())
+    }
 }
 
 #[tauri::command]

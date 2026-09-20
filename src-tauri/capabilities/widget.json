@@ -18,12 +18,6 @@
     "core:window:allow-set-focusable",
     "core:window:allow-start-dragging",
     {
-      "identifier": "sql:allow-load",
-      "args": {
-        "db": "sqlite:patina.db"
-      }
-    },
-    {
       "identifier": "sql:allow-select",
       "args": {
         "db": "sqlite:patina.db"

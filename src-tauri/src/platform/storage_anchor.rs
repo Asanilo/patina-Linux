@@ -15,6 +15,20 @@ const WEBVIEW_ANCHOR_FILE_NAME: &str = "webview-anchor.json";
 const PENDING_MIGRATION_FILE_NAME: &str = "storage-migration-pending.json";
 const MAINTENANCE_STATE_FILE_NAME: &str = "storage-maintenance-state.json";
 
+pub fn storage_migration_journal_path(control_root: &Path) -> PathBuf {
+    control_root.join("storage-migration-journal.json")
+}
+
+pub fn storage_migration_journal_exists(control_root: &Path) -> Result<bool, String> {
+    match fs::symlink_metadata(storage_migration_journal_path(control_root)) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(format!(
+            "failed to inspect storage migration recovery journal: {error}"
+        )),
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DataAnchor {

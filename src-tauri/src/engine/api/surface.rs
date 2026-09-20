@@ -399,6 +399,10 @@ const DAEMON_TRACKING_ENDPOINTS: &[ApiEndpoint] = &[
         path: "/api/v1/data/apps/delete",
     },
     ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/data/web-domains/delete",
+    },
+    ApiEndpoint {
         method: "GET",
         path: "/api/v1/system/service",
     },
@@ -483,6 +487,7 @@ const DAEMON_TRACKING_WRITE_OPERATIONS: &[&str] = &[
     "service-lifecycle",
     "tools",
     "tracker-settings",
+    "web-history-cleanup",
 ];
 const NO_WRITE_OPERATIONS: &[&str] = &[];
 
@@ -681,7 +686,8 @@ mod tests {
                 "scheduled-backup",
                 "service-lifecycle",
                 "tools",
-                "tracker-settings"
+                "tracker-settings",
+                "web-history-cleanup"
             ]
         );
     }

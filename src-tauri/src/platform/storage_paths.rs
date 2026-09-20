@@ -76,13 +76,11 @@ pub fn resolve_storage_paths_for_profile(
     profile: app_paths::AppProfile,
 ) -> Result<StoragePaths, String> {
     let defaults = default_storage_paths_for_profile(roots, profile);
-    if let Some(pending) =
-        storage_anchor::read_pending_migration_from_dir(&defaults.control_root, profile.key())?
-    {
-        return Err(format!(
-            "storage migration `{}` is pending; start the desktop app to finish maintenance",
-            pending.id
-        ));
+    if storage_anchor::storage_migration_journal_exists(&defaults.control_root)? {
+        return Err(
+            "storage migration recovery is pending; start the desktop app to finish maintenance"
+                .to_string(),
+        );
     }
     let data_root =
         storage_anchor::read_data_anchor_from_dir(&defaults.control_root, profile.key())?
@@ -91,7 +89,24 @@ pub fn resolve_storage_paths_for_profile(
         storage_anchor::read_webview_anchor_from_dir(&defaults.control_root, profile.key())?
             .map(|anchor| anchor.webview_root);
 
-    resolve_storage_paths_from(&defaults, data_root, webview_root)
+    let current = resolve_storage_paths_from(&defaults, data_root, webview_root)?;
+    if let Some(pending) =
+        storage_anchor::read_pending_migration_from_dir(&defaults.control_root, profile.key())?
+    {
+        // An appointment for the next Desktop restart does not stop tracking.
+        // Offline execution requires the runtime lease; its journal blocks any
+        // restart after an interrupted path switch until host recovery finishes.
+        if pending.state != "pending-restart"
+            || !same_path(&pending.source_data_root, &current.data_root)
+            || !same_path(&pending.source_webview_root, &current.webview_root)
+        {
+            return Err(format!(
+                "storage migration `{}` needs recovery; start the desktop app to finish maintenance",
+                pending.id
+            ));
+        }
+    }
+    Ok(current)
 }
 
 pub fn default_storage_paths<R: Runtime>(app: &AppHandle<R>) -> Result<StoragePaths, String> {

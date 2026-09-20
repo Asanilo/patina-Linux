@@ -1,4 +1,5 @@
-import { getDB, executeWrite } from "./sqlite.ts";
+import { invoke } from "@tauri-apps/api/core";
+import { getDB } from "./sqlite.ts";
 import type {
   ObservedWebDomainCandidate,
   WebActivitySegment,
@@ -104,15 +105,8 @@ export async function getWebActivitySegmentsInRange(
   return rows.map(mapRawWebActivitySegment);
 }
 
-export async function deleteWebActivitySegmentsBefore(cutoffTime: number): Promise<void> {
-  await executeWrite("DELETE FROM web_activity_segments WHERE start_time < ?", [cutoffTime]);
-}
-
 export async function deleteWebActivitySegmentsByDomain(normalizedDomain: string): Promise<void> {
-  await executeWrite(
-    "DELETE FROM web_activity_segments WHERE normalized_domain = ?",
-    [normalizedDomain],
-  );
+  await invoke("cmd_delete_web_activity_segments_by_domain", { domain: normalizedDomain });
 }
 
 export async function loadObservedWebDomainStats(

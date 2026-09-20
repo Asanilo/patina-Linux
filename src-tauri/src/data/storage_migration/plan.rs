@@ -92,18 +92,70 @@ pub(crate) fn validate_target_relationships(
     match kind {
         TargetKind::Data => {
             reject_overlap(target, &current.data_root, "active data directory")?;
-            if !same_path(&current.webview_root, &current.data_root) {
+            if !same_path(&current.webview_root, &current.data_root)
+                && !shares_default_root(current, target, &current.webview_root, kind)?
+            {
                 reject_overlap(target, &current.webview_root, "active WebView directory")?;
             }
         }
         TargetKind::Webview => {
             reject_overlap(target, &current.webview_root, "active WebView directory")?;
-            if !same_path(&current.data_root, &current.webview_root) {
+            if !same_path(&current.data_root, &current.webview_root)
+                && !shares_default_root(current, target, &current.data_root, kind)?
+            {
                 reject_overlap(target, &current.data_root, "active data directory")?;
             }
         }
     }
     Ok(())
+}
+
+fn shares_default_root(
+    current: &StoragePaths,
+    target: &Path,
+    other: &Path,
+    kind: TargetKind,
+) -> Result<bool, String> {
+    // The default root intentionally contains both product data and WebView
+    // entries. Returning one side there is safe because the executor promotes
+    // separate allowlists. No custom shared root or ancestor/child is exempt.
+    if !same_path(target, &current.stable_product_data_root)
+        || !same_path(other, &current.stable_product_data_root)
+    {
+        return Ok(false);
+    }
+    validate_preview_target(target, kind, true)?;
+    let resolved = canonical_relationship_path(target)?;
+    let (source, label) = match kind {
+        TargetKind::Data => (&current.data_root, "active data directory"),
+        TargetKind::Webview => (&current.webview_root, "active WebView directory"),
+    };
+    // An ancestor alias must not disguise overlap with this side's source or
+    // the control root when admitting the shared default directory.
+    reject_overlap(&resolved, &canonical_relationship_path(source)?, label)?;
+    reject_overlap(
+        &resolved,
+        &canonical_relationship_path(&current.control_root)?,
+        "storage control directory",
+    )?;
+    Ok(true)
+}
+
+fn canonical_relationship_path(path: &Path) -> Result<PathBuf, String> {
+    match fs::canonicalize(path) {
+        Ok(resolved) => Ok(resolved),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            // Preview must not create missing directories merely to compare
+            // them. Resolve the existing ancestor and retain the missing tail.
+            let parent = path.parent().ok_or_else(|| error.to_string())?;
+            let name = path.file_name().ok_or_else(|| error.to_string())?;
+            Ok(canonical_relationship_path(parent)?.join(name))
+        }
+        Err(error) => Err(format!(
+            "failed to resolve storage directory `{}`: {error}",
+            path.display()
+        )),
+    }
 }
 
 pub(crate) fn build_preview(
@@ -480,5 +532,127 @@ mod tests {
 
         assert_eq!(preview.target_data_root, target);
         fs::remove_dir_all(root).unwrap();
+    }
+
+    fn separated_paths(root: &Path, kind: TargetKind) -> StoragePaths {
+        let default = root.join("default/Patina");
+        let custom = root.join("custom/Patina");
+        fs::create_dir_all(&default).unwrap();
+        fs::create_dir_all(&custom).unwrap();
+        StoragePaths::from_roots(
+            root.join("config/Patina"),
+            default.clone(),
+            if kind == TargetKind::Data {
+                custom.clone()
+            } else {
+                default.clone()
+            },
+            if kind == TargetKind::Webview {
+                custom
+            } else {
+                default
+            },
+            kind == TargetKind::Data,
+            kind == TargetKind::Webview,
+        )
+    }
+
+    #[test]
+    fn returning_either_storage_kind_to_the_shared_default_can_be_previewed_and_scheduled() {
+        for kind in [TargetKind::Data, TargetKind::Webview] {
+            let root = temp_dir("shared-default");
+            let current = separated_paths(&root, kind);
+            let target = current.stable_product_data_root.clone();
+            fs::write(target.join("patina.db"), b"retained default database").unwrap();
+            let preview = preview_restore_with_deps(
+                &current,
+                kind,
+                target.clone(),
+                || Ok(12),
+                |_| Ok(256 * 1024 * 1024),
+            )
+            .unwrap();
+            assert_eq!(preview.target_data_root, target);
+            assert_eq!(preview.target_webview_root, target);
+            let pending = plan_pending(
+                &current,
+                None,
+                (kind == TargetKind::Data).then(|| target.clone()),
+                (kind == TargetKind::Webview).then(|| target.clone()),
+                "restore-default",
+                "production",
+                10,
+            )
+            .unwrap();
+            assert_eq!(pending.target_data_root, target);
+            assert_eq!(pending.target_webview_root, target);
+            assert_eq!(pending.source_data_root, current.data_root);
+            assert_eq!(pending.source_webview_root, current.webview_root);
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn default_sharing_does_not_allow_other_custom_roots_or_parent_child_overlap() {
+        for kind in [TargetKind::Data, TargetKind::Webview] {
+            let root = temp_dir("shared-default-limits");
+            let current = separated_paths(&root, kind);
+            for target in [
+                current.stable_product_data_root.join("child"),
+                current
+                    .stable_product_data_root
+                    .parent()
+                    .unwrap()
+                    .to_path_buf(),
+                root.clone(),
+                current.control_root.clone(),
+            ] {
+                assert!(
+                    validate_target_relationships(&current, &target, kind).is_err(),
+                    "{target:?}"
+                );
+            }
+            let mut custom_other = current.clone();
+            let other = root.join("other/Patina");
+            match kind {
+                TargetKind::Data => custom_other.webview_root = other.clone(),
+                TargetKind::Webview => custom_other.data_root = other.clone(),
+            }
+            assert!(validate_target_relationships(&custom_other, &other, kind).is_err());
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn shared_default_exception_rejects_leaf_symlinks_and_canonical_source_or_control_overlap() {
+        use std::os::unix::fs::symlink;
+        for kind in [TargetKind::Data, TargetKind::Webview] {
+            let root = temp_dir("shared-default-aliases");
+            let current = separated_paths(&root, kind);
+            let target = &current.stable_product_data_root;
+            symlink(root.join("default"), root.join("alias")).unwrap();
+            let mut aliased_source = current.clone();
+            match kind {
+                TargetKind::Data => aliased_source.data_root = root.join("alias/Patina"),
+                TargetKind::Webview => aliased_source.webview_root = root.join("alias/Patina"),
+            }
+            assert!(validate_target_relationships(&aliased_source, target, kind)
+                .unwrap_err()
+                .contains("active"));
+            let mut aliased_control = current.clone();
+            aliased_control.control_root = root.join("alias/Patina/control-not-created");
+            assert!(
+                validate_target_relationships(&aliased_control, target, kind)
+                    .unwrap_err()
+                    .contains("storage control directory")
+            );
+            fs::remove_dir(target).unwrap();
+            symlink(root.join("custom/Patina"), target).unwrap();
+            assert!(validate_target_relationships(&current, target, kind)
+                .unwrap_err()
+                .contains("symbolic link"));
+            fs::remove_dir_all(root).unwrap();
+        }
     }
 }

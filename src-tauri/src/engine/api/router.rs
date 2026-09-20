@@ -128,6 +128,9 @@ pub(crate) async fn route_request(
         ("POST", "/api/v1/data/apps/delete") => {
             handlers::data_maintenance::delete_app_tracking_data(context, body).await
         }
+        ("POST", "/api/v1/data/web-domains/delete") => {
+            handlers::data_maintenance::delete_web_domain_history(context, body).await
+        }
         ("GET", "/api/v1/system/service") => handlers::service::get_service(context).await,
         ("POST", "/api/v1/system/service/restart") => {
             handlers::service::restart_service(context, body).await

@@ -5,7 +5,6 @@ import {
   loadAllSettingRows,
   loadSettingTimestamp,
 } from "./settingsPersistence.ts";
-import { executeWriteBatch, type SqlWriteOperation } from "./sqlite.ts";
 import {
   DEFAULT_SETTINGS,
   BACKGROUND_OPTIMIZATION_DELAY_RANGE,
@@ -403,50 +402,6 @@ export async function loadTrackerHealthTimestamp(): Promise<number | null> {
   return loadSettingTimestamp(TRACKER_LAST_HEARTBEAT_KEY);
 }
 
-export async function saveTrackerHeartbeat(timestampMs: number): Promise<void> {
-  await saveSettingEntries({
-    [TRACKER_LAST_HEARTBEAT_KEY]: timestampMs,
-  });
-}
-
-async function saveSettingEntries(
-  patch: Record<string, PersistedSettingValue>,
-): Promise<void> {
-  const operations = buildSaveSettingEntryOperations(patch);
-  await executeWriteBatch(operations);
-}
-
-function stringifyInvokeError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  if (typeof error === "string") {
-    return error;
-  }
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return String(error);
-  }
-}
-
-export function isCommitAppSettingsCommandUnavailable(error: unknown): boolean {
-  const message = stringifyInvokeError(error);
-  const normalized = message.toLowerCase();
-  return (
-    normalized.includes(COMMIT_APP_SETTINGS_COMMAND)
-    && (
-      normalized.includes("not found")
-      || normalized.includes("unknown")
-      || normalized.includes("unhandled")
-      || normalized.includes("not registered")
-    )
-  ) || (
-    normalized.includes("command")
-    && normalized.includes("not found")
-  );
-}
-
 export function buildAppSettingMutations(
   patch: Record<string, PersistedSettingValue>,
 ): AppSettingMutation[] {
@@ -461,29 +416,7 @@ async function commitAppSettingMutations(mutations: readonly AppSettingMutation[
     return;
   }
 
-  try {
-    await invoke(COMMIT_APP_SETTINGS_COMMAND, { mutations });
-  } catch (error) {
-    if (!isCommitAppSettingsCommandUnavailable(error)) {
-      throw error;
-    }
-
-    const fallbackPatch = Object.fromEntries(
-      mutations.map((mutation) => [mutation.key, mutation.value]),
-    );
-    await saveSettingEntries(fallbackPatch);
-  }
-}
-
-export function buildSaveSettingEntryOperations(
-  patch: Record<string, PersistedSettingValue>,
-): SqlWriteOperation[] {
-  const operations: SqlWriteOperation[] = [];
-  for (const [key, value] of Object.entries(patch)) {
-    operations.push({
-      query: "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-      values: [key, serializeSettingValue(value)],
-    });
-  }
-  return operations;
+  // The host chooses embedded or daemon ownership. Missing commands and
+  // unavailable daemons must not bypass that decision with a local SQL write.
+  await invoke(COMMIT_APP_SETTINGS_COMMAND, { mutations });
 }

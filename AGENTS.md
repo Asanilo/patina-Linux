@@ -29,38 +29,10 @@ These instructions apply to repository work; UI sections apply when UI is touche
 - Keep updates concise and evidence-based. Distinguish implemented, automatically tested, manually verified, packaged, pushed and publicly released states.
 - A user-paused feature stays deferred until resumed; do not let optional polish block the next agreed release milestone.
 
-## Quiet Pro Baseline
+## UI Work
 
-- Build calm, professional, restrained desktop-product UI.
-- Prefer typography, spacing, alignment, and hierarchy over decoration.
-- Keep the interface neutral and durable rather than flashy or brand-heavy.
-- New UI should feel native to the existing Dashboard, History, App Mapping, and Settings surfaces.
-
-## Hard Rules
-
-- Do not introduce glassmorphism, blur-heavy panels, neon glow, or large gradient backgrounds.
-- Do not hardcode new colors, radii, shadows, or border styles when a token or semantic variable should exist.
-- Do not add one-off visual treatments that only work on a single page.
-- Do not make components louder than the information they present.
-- Do not trade readability or efficiency for "design feeling".
-
-## Token And Styling Rules
-
-- Reuse existing semantic tokens first.
-- If a new visual role is needed, add or extend a token instead of hardcoding a value in a component.
-- Keep radius, border, elevation, and motion within the existing Quiet Pro scale.
-- Category or status colors may vary by feature, but surrounding chrome must stay within the Quiet Pro system.
-
-## Component Rules
-
-- New components must define clear `default`, `hover`, `active`, `focus`, `disabled`, and where relevant `loading` and `empty` states.
-- Prefer existing component archetypes: `panel`, `control`, `chip`, `status`.
-- Icons support recognition; they should not become the main visual focus.
-- Dense pages may be efficient, but they must still scan cleanly at a glance.
-
-## Implementation Preference
-
-- Extend the design system before inventing a page-local workaround.
+- Follow `docs/quiet-pro-component-guidelines.md` for tokens, component states, layout, and motion; these details apply when UI is touched.
+- Keep Quiet Pro calm, readable, and consistent with existing pages. Reuse semantic tokens and component archetypes; do not introduce page-local visual systems, glassmorphism, neon glow, or large gradient backgrounds.
 - Preserve existing product behavior unless the user explicitly asks for interaction changes.
 - If a proposed UI change conflicts with Quiet Pro or requires a new visual direction, pause and confirm before proceeding.
 
@@ -76,7 +48,7 @@ These instructions apply to repository work; UI sections apply when UI is touche
 - Do not reintroduce exited root layers such as `src/lib/` or `src/types/`.
 - Treat compatibility shells and forwarding layers as explicit exceptions that should stay thin.
 - Treat files under `docs/archive/` as historical context, not the default source of truth.
-- Follow the current `patinad` roadmap: the daemon owns background tracking and runtime writes; Desktop and future browser/TUI clients use supported boundaries. Do not expand parallel embedded and daemon implementations without a migration need.
+- On the `feature/patinad-daemon` experiment, follow the daemon ownership roadmap: background tracking and runtime writes belong to the daemon; clients use supported boundaries. Do not expand parallel embedded and daemon implementations without a migration need, or apply the experimental cutover to `main` implicitly.
 
 ## Product And Priority Direction
 
@@ -103,7 +75,8 @@ These instructions apply to repository work; UI sections apply when UI is touche
 
 ## GitHub Push And Issue Rules
 
-- When asked to push, use the current user-authorized branch and verify its upstream. The ongoing daemon migration stays on `feature/patinad-daemon`; do not switch, merge or push it into `main` implicitly. Use `origin/main` when the confirmed task is on main.
+- This is `Asanilo/patina-Linux`. `main` is the primary Linux development/product branch; `feature/patinad-daemon` is the daemon-separation experiment. Future upstream Linux contribution branches start from an explicitly recorded current upstream commit, using Linux `main` only as a reference where suitable.
+- When asked to push, use the current user-authorized branch and verify its upstream. Keep daemon experiment work on `feature/patinad-daemon`; do not switch, merge or push it into `main` implicitly. Use `origin/main` when the confirmed task is on main.
 - Do not create a branch or pull request unless the user explicitly asks for one.
 - Do not use issue-closing keywords such as `Closes`, `Fixes`, or `Resolves` in commits, changelog entries, pull request descriptions, or GitHub comments unless the user explicitly asks to close the issue.
 - When a change relates to an issue, reference it without changing its state, for example with `Refs #3` or a Markdown issue link.

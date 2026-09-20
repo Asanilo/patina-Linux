@@ -104,4 +104,41 @@ mod tests {
         assert!(error.contains("migration-1"));
         fs::remove_dir_all(root).unwrap();
     }
+
+    #[test]
+    fn scheduled_maintenance_keeps_tracking_on_the_source_until_offline_execution() {
+        let (root, roots) = temp_roots("scheduled");
+        let defaults = crate::platform::app_paths::profile_paths(&roots, AppProfile::Production);
+        let pending = PendingStorageMigration {
+            format: STORAGE_MIGRATION_PENDING_FORMAT.to_string(),
+            id: "migration-queued".to_string(),
+            profile: "production".to_string(),
+            source_data_root: defaults.data_root.clone(),
+            target_data_root: root.join("target/Patina"),
+            source_webview_root: defaults.webview_root.clone(),
+            target_webview_root: root.join("target-webview/Patina"),
+            created_at_ms: 1,
+            state: "pending-restart".to_string(),
+        };
+        write_pending_migration_to_dir(&defaults.control_root, &pending).unwrap();
+        let paths = resolve(&roots, AppProfile::Production).unwrap();
+        assert_eq!(paths.data_root, defaults.data_root);
+        assert_eq!(paths.webview_root, defaults.webview_root);
+        assert!(!pending.target_data_root.exists());
+
+        let journal =
+            crate::platform::storage_anchor::storage_migration_journal_path(&defaults.control_root);
+        fs::write(&journal, b"interrupted maintenance").unwrap();
+        let error = resolve(&roots, AppProfile::Production).unwrap_err();
+        assert!(error.contains("recovery"));
+        // Corrupt or incomplete recovery metadata must also fail closed.
+        fs::remove_file(journal).unwrap();
+        let mut stale = pending;
+        stale.source_data_root = root.join("unrelated");
+        write_pending_migration_to_dir(&defaults.control_root, &stale).unwrap();
+        assert!(resolve(&roots, AppProfile::Production)
+            .unwrap_err()
+            .contains("recovery"));
+        fs::remove_dir_all(root).unwrap();
+    }
 }

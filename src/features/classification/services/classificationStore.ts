@@ -1,12 +1,10 @@
 import {
   deleteSessionsByExeNames,
   deleteSessionsByExeNamesBetween,
-  deleteSettingValue,
   loadDistinctSessionExeNames,
   loadSettingValue,
   loadSettingKeysByKeyPrefix,
   loadSettingRowsByKeyPrefix,
-  upsertSettingValue,
 } from "../../../platform/persistence/classificationPersistence.ts";
 import {
   deleteWebActivitySegmentsByDomain,
@@ -265,19 +263,7 @@ export function buildAppOverrideTransition(
 }
 
 export async function saveAppOverride(exeName: string, override: AppOverride | null): Promise<void> {
-  const canonicalExe = resolveCanonicalExecutable(exeName);
-  if (!canonicalExe) {
-    return;
-  }
-
-  const key = `${APP_OVERRIDE_KEY_PREFIX}${canonicalExe}`;
-
-  if (!override || override.enabled === false) {
-    await deleteSettingValue(key);
-    return;
-  }
-
-  await upsertSettingValue(key, ProcessMapper.toOverrideStorageValue(override));
+  await commitClassificationSettingMutations(buildSaveAppOverrideMutations(exeName, override));
 }
 
 function buildSaveAppOverrideMutations(
@@ -351,14 +337,7 @@ export async function saveCategoryColorOverride(
   category: AppCategory,
   colorValue: string | null,
 ): Promise<void> {
-  const key = `${CATEGORY_COLOR_OVERRIDE_KEY_PREFIX}${category}`;
-  const normalizedColor = normalizeHexColor(colorValue ?? undefined);
-  if (!normalizedColor) {
-    await deleteSettingValue(key);
-    return;
-  }
-
-  await upsertSettingValue(key, normalizedColor);
+  await commitClassificationSettingMutations(buildSaveCategoryColorOverrideMutations(category, colorValue));
 }
 
 function buildSaveCategoryColorOverrideMutations(
@@ -428,12 +407,7 @@ export async function saveCategoryDefaultColorAssignment(
 ): Promise<void> {
   const key = `${CATEGORY_DEFAULT_COLOR_ASSIGNMENT_KEY_PREFIX}${category}`;
   const normalizedColor = normalizeHexColor(colorValue ?? undefined);
-  if (!normalizedColor) {
-    await deleteSettingValue(key);
-    return;
-  }
-
-  await upsertSettingValue(key, normalizedColor);
+  await commitClassificationSettingMutations([{ key, value: normalizedColor }]);
 }
 
 export async function loadCustomCategories(): Promise<CustomAppCategory[]> {
@@ -452,8 +426,7 @@ export async function loadCustomCategories(): Promise<CustomAppCategory[]> {
 }
 
 export async function saveCustomCategory(category: CustomAppCategory): Promise<void> {
-  const key = `${CUSTOM_CATEGORY_KEY_PREFIX}${category}`;
-  await upsertSettingValue(key, String(Date.now()));
+  await commitClassificationSettingMutations(buildSaveCustomCategoryMutations(category));
 }
 
 function buildSaveCustomCategoryMutations(category: CustomAppCategory): ClassificationSettingMutation[] {
@@ -464,10 +437,7 @@ function buildSaveCustomCategoryMutations(category: CustomAppCategory): Classifi
 }
 
 export async function deleteCustomCategory(category: CustomAppCategory): Promise<void> {
-  await deleteSettingValue(`${CUSTOM_CATEGORY_KEY_PREFIX}${category}`);
-  await deleteSettingValue(`${CATEGORY_LABEL_OVERRIDE_KEY_PREFIX}${category}`);
-  await deleteSettingValue(`${DELETED_CATEGORY_KEY_PREFIX}${category}`);
-  await deleteSettingValue(`${CATEGORY_DEFAULT_COLOR_ASSIGNMENT_KEY_PREFIX}${category}`);
+  await commitClassificationSettingMutations(buildDeleteCustomCategoryMutations(category));
 }
 
 function buildDeleteCustomCategoryMutations(category: CustomAppCategory): ClassificationSettingMutation[] {
@@ -495,30 +465,29 @@ export async function loadDeletedCategories(): Promise<AppCategory[]> {
   const rows = await loadSettingKeysByKeyPrefix(DELETED_CATEGORY_KEY_PREFIX);
 
   const categories = new Set<AppCategory>();
+  const invalidRows: ClassificationSettingMutation[] = [];
   for (const row of rows) {
     const category = row.key.slice(DELETED_CATEGORY_KEY_PREFIX.length);
     if (!isPersistableDeletedCategory(category)) {
-      await deleteSettingValue(row.key);
+      // Only send keys accepted by the owner's classification namespace.
+      // Corrupt empty/oversized keys stay ignored rather than blocking startup
+      // or being repaired through an unrestricted local SQL escape hatch.
+      if (row.key.startsWith(DELETED_CATEGORY_KEY_PREFIX)
+        && category.length > 0
+        && new TextEncoder().encode(row.key).length <= 256) {
+        invalidRows.push({ key: row.key, value: null });
+      }
       continue;
     }
     categories.add(category);
   }
 
+  await commitClassificationSettingMutations(invalidRows);
   return Array.from(categories);
 }
 
 export async function saveDeletedCategory(category: AppCategory, deleted: boolean): Promise<void> {
-  const key = `${DELETED_CATEGORY_KEY_PREFIX}${category}`;
-  if (!isPersistableDeletedCategory(category)) {
-    await deleteSettingValue(key);
-    return;
-  }
-  if (!deleted) {
-    await deleteSettingValue(key);
-    return;
-  }
-  await upsertSettingValue(key, String(Date.now()));
-  await deleteSettingValue(`${CATEGORY_DEFAULT_COLOR_ASSIGNMENT_KEY_PREFIX}${category}`);
+  await commitClassificationSettingMutations(buildSaveDeletedCategoryMutations(category, deleted));
 }
 
 function buildSaveDeletedCategoryMutations(

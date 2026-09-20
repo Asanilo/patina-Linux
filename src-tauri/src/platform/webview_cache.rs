@@ -13,7 +13,7 @@ const PRODUCT_DATA_ENTRIES: &[&str] = &[
     "api_token",
 ];
 
-const PERSISTENT_WEBVIEW_ENTRIES: &[&str] = &[
+pub(crate) const PERSISTENT_WEBVIEW_ENTRIES: &[&str] = &[
     "localstorage",
     "storage",
     "CacheStorage",

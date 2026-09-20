@@ -49,6 +49,7 @@ const implementedEndpoints = [
   "POST /api/v1/data/cleanup",
   "POST /api/v1/data/window-titles/clear",
   "POST /api/v1/data/apps/delete",
+  "POST /api/v1/data/web-domains/delete",
   "GET /api/v1/system/service",
   "POST /api/v1/system/service/restart",
   "GET /api/v1/tools/snapshot",

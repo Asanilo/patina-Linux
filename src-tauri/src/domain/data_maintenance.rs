@@ -25,6 +25,20 @@ pub struct AppTrackingDataCleanupResult {
     pub import_batches_deleted: u64,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct WebDomainCleanupResult {
+    pub web_activity_segments_deleted: u64,
+}
+
+pub fn normalize_web_domain_cleanup(domain: &str) -> Result<String, String> {
+    let domain = crate::domain::web_activity::normalize_domain(domain)
+        .ok_or_else(|| "web history cleanup requires an exact domain".to_string())?;
+    if domain.len() > 253 || domain.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return Err("web history cleanup contains an invalid domain".to_string());
+    }
+    Ok(domain)
+}
+
 pub fn validate_app_tracking_data_cleanup(
     exe_names: &[String],
     start_time_ms: Option<i64>,

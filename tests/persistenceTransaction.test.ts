@@ -10,13 +10,7 @@ import { buildCommitDraftChangePlanSettingMutations } from "../src/features/clas
 import {
   buildAppSettingMutations,
   buildRawAppSettingsPatch,
-  buildSaveSettingEntryOperations,
-  isCommitAppSettingsCommandUnavailable,
 } from "../src/platform/persistence/appSettingsStore.ts";
-import {
-  buildClassificationSettingMutationOperations,
-  isCommitClassificationSettingsCommandUnavailable,
-} from "../src/platform/persistence/classificationSettingsGateway.ts";
 
 class FakeWriteExecutor {
   executedStatements: Array<{ query: string; values?: unknown[] }> = [];
@@ -83,8 +77,7 @@ await runTest("executeWriteBatchWithExecutor stops after the first failed operat
   assertNoTransactionControlStatements(executor);
 });
 
-await runTest("classification batch operations stop on the first failed write", async () => {
-  const executor = new FakeWriteExecutor(2);
+await runTest("classification draft keeps application, color and deletion changes in one batch", () => {
   const mutations = buildCommitDraftChangePlanSettingMutations(buildClassificationDraftChangePlan({
     overrides: {},
     webDomainOverrides: {},
@@ -107,16 +100,11 @@ await runTest("classification batch operations stop on the first failed write", 
     customCategories: [],
     deletedCategories: ["music"],
   }));
-  const operations = buildClassificationSettingMutationOperations(mutations);
-
-  assert.ok(operations.length >= 3);
-  await assert.rejects(
-    executeWriteBatchWithExecutor(executor, operations),
-    /forced failure at mutation 2/,
-  );
-
-  assert.deepEqual(executor.executedStatements, [operations[0]]);
-  assertNoTransactionControlStatements(executor);
+  assert.ok(mutations.some((mutation) => mutation.key === "__app_override::chrome.exe"));
+  assert.ok(mutations.some((mutation) => mutation.key === "__category_color_override::development"
+    && mutation.value === "#112233"));
+  assert.ok(mutations.some((mutation) => mutation.key === "__deleted_category::music"
+    && mutation.value !== null));
 });
 
 await runTest("custom category definitions and labels share one mutation batch", () => {
@@ -150,30 +138,6 @@ await runTest("custom category definitions and labels share one mutation batch",
     )),
     true,
   );
-});
-
-await runTest("settings batch operations stop on the first failed write", async () => {
-  const executor = new FakeWriteExecutor(2);
-  const operations = buildSaveSettingEntryOperations(buildRawAppSettingsPatch({
-    trackingPaused: true,
-    timelineMergeGapSecs: 180,
-    refreshIntervalSecs: 2,
-    backgroundOptimization: true,
-    themeMode: "dark",
-    language: "en-US",
-    hourlyActivityChartMode: "category",
-    colorSchemeLight: "github",
-    colorSchemeDark: "nord",
-  }));
-
-  assert.ok(operations.length >= 3);
-  await assert.rejects(
-    executeWriteBatchWithExecutor(executor, operations),
-    /forced failure at mutation 2/,
-  );
-
-  assert.deepEqual(executor.executedStatements, [operations[0]]);
-  assertNoTransactionControlStatements(executor);
 });
 
 await runTest("settings raw patch persists theme mode with snake case key", () => {
@@ -218,58 +182,6 @@ await runTest("SQLite transient write errors are recoverable", () => {
   assert.equal(isRecoverableSqliteWriteError("database is locked"), true);
   assert.equal(isRecoverableSqliteWriteError(new Error("SQLITE_BUSY: database is busy")), true);
   assert.equal(isRecoverableSqliteWriteError("UNIQUE constraint failed: settings.key"), false);
-});
-
-await runTest("app setting command fallback only catches missing command", () => {
-  assert.equal(
-    isCommitAppSettingsCommandUnavailable("Command cmd_commit_app_settings not found"),
-    true,
-  );
-  assert.equal(
-    isCommitAppSettingsCommandUnavailable({
-      message: "unknown command: cmd_commit_app_settings",
-    }),
-    true,
-  );
-  assert.equal(
-    isCommitAppSettingsCommandUnavailable("database is locked"),
-    false,
-  );
-});
-
-await runTest("classification setting mutation fallback builds ordered writes", () => {
-  assert.deepEqual(buildClassificationSettingMutationOperations([
-    { key: "__app_override::chrome.exe", value: "{\"enabled\":true}" },
-    { key: "__category_color_override::video", value: null },
-  ]), [
-    {
-      query: "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-      values: ["__app_override::chrome.exe", "{\"enabled\":true}"],
-    },
-    {
-      query: "DELETE FROM settings WHERE key = ?",
-      values: ["__category_color_override::video"],
-    },
-  ]);
-});
-
-await runTest("classification setting command fallback only catches missing command", () => {
-  assert.equal(
-    isCommitClassificationSettingsCommandUnavailable(
-      "Command cmd_commit_classification_settings not found",
-    ),
-    true,
-  );
-  assert.equal(
-    isCommitClassificationSettingsCommandUnavailable({
-      message: "unknown command: cmd_commit_classification_settings",
-    }),
-    true,
-  );
-  assert.equal(
-    isCommitClassificationSettingsCommandUnavailable("database is locked"),
-    false,
-  );
 });
 
 await runTest("createSerializedJobRunner keeps writes strictly ordered", async () => {

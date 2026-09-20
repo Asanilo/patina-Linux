@@ -96,6 +96,7 @@ Current caveats:
 | `/api/v1/data/cleanup` | `POST` | Tracking daemon | Delete tracking rows starting before an explicitly confirmed cutoff |
 | `/api/v1/data/window-titles/clear` | `POST` | Tracking daemon | Explicitly confirm deletion and redaction of stored window titles |
 | `/api/v1/data/apps/delete` | `POST` | Tracking daemon | Explicitly confirm deletion of native and imported activity for selected executables |
+| `/api/v1/data/web-domains/delete` | `POST` | Tracking daemon | Explicitly confirm deletion of browser activity for one exact normalized domain |
 | `/api/v1/system/service` | `GET` | Managed tracking daemon | Read systemd service identity and latest restart ticket |
 | `/api/v1/system/service/restart` | `POST` | Managed tracking daemon | Persist a restart ticket and gracefully return control to systemd |
 | `/api/v1/tools/snapshot` | `GET` | Implemented | Current Tools runtime snapshot |
@@ -1486,6 +1487,23 @@ curl -s -X POST "$PATINA_API_BASE/api/v1/data/apps/delete" \
 ```
 
 `exe_names` must contain 1 through 512 non-empty names, each at most 256 bytes. Missing/false confirmation, a partial range, a negative start, or `end_time_ms <= start_time_ms` returns `400` without writing. The response reports `sessions_deleted`, `imported_exact_sessions_deleted`, `imported_time_buckets_deleted`, and `import_batches_deleted`. Browser page history has a separate domain-scoped deletion flow and is not inferred from an executable name. This destructive endpoint is intentionally absent from MCP.
+
+### `POST /api/v1/data/web-domains/delete`
+
+The `web-history-cleanup` write capability deletes browser history for one exact
+normalized domain. Send `{"domain":"example.com","confirmed":true}` with the
+API bearer token. Whitespace, trailing dots and ASCII case are normalized;
+empty, overlong or whitespace-containing domains are rejected with `400`.
+Matching uses equality, never a wildcard or implicit subdomain expansion.
+
+The response reports `web_activity_segments_deleted`. Native sessions, imported
+activity and domain settings are retained. Deleting an active segment does not
+disable future recording; its next observation starts a new segment at that
+observation time. Successful cleanup publishes the existing web-activity change
+event. Desktop uses this endpoint in daemon-client mode and never falls back to
+local SQL when the daemon is unavailable or does not support it. This destructive
+endpoint is intentionally absent from MCP. It is a source candidate addition,
+not a claim that older installed daemons support it.
 
 ### `GET /api/v1/settings/runtime`
 

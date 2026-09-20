@@ -156,6 +156,7 @@ fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Build
         commands::update::cmd_download_update,
         commands::update::cmd_install_update,
         commands::web_activity::cmd_get_web_activity_bridge_snapshot,
+        commands::web_activity::cmd_delete_web_activity_segments_by_domain,
         commands::backup::cmd_pick_backup_save_file,
         commands::backup::cmd_pick_backup_file,
         commands::backup::cmd_preview_backup,
@@ -205,6 +206,11 @@ fn register_runtime_hooks(
         .on_tray_icon_event(tray::handle_tray_icon_event)
         .on_window_event(tray::handle_window_event)
         .setup(move |app| {
+            // Before opening SQLite or creating any WebView, wait for old
+            // Desktop processes to release their storage handles.
+            let mut storage_access = tauri::async_runtime::block_on(
+                crate::app::storage_maintenance::acquire_startup_access(app.handle()),
+            ).map_err(storage_startup_error)?;
             #[cfg(target_os = "linux")]
             tauri::async_runtime::block_on(crate::app::daemon_service::appimage::ensure_runtime(app.handle()))
                 .map_err(std::io::Error::other)?;
@@ -228,19 +234,16 @@ fn register_runtime_hooks(
                 )
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
                 app.manage(runtime_lease);
+                if storage_access.is_exclusive() {
+                    tauri::async_runtime::block_on(
+                        crate::app::storage_maintenance::wait_for_legacy_access(app.handle(), true),
+                    ).map_err(storage_startup_error)?;
+                }
                 if let Err(error) = tauri::async_runtime::block_on(
                     data::storage_migration::run_startup_storage_maintenance(app.handle()),
                 ) {
                     eprintln!("[storage] startup storage maintenance failed: {error}");
-                    rfd::MessageDialog::new()
-                        .set_level(rfd::MessageLevel::Error)
-                        .set_title("Patina storage unavailable")
-                        .set_description(format!(
-                            "Patina could not open its configured storage. Restore the configured mount or directory, then start Patina again.\n\n{error}"
-                        ))
-                        .set_buttons(rfd::MessageButtons::Ok)
-                        .show();
-                    return Err(std::io::Error::other(error).into());
+                    return Err(storage_startup_error(error).into());
                 }
                 tauri::async_runtime::block_on(data::sqlite_pool::initialize_app_sqlite(
                     app.handle(),
@@ -275,6 +278,11 @@ fn register_runtime_hooks(
                     }
                 }
             } else {
+                tauri::async_runtime::block_on(
+                    crate::app::storage_maintenance::run_managed_startup_maintenance(
+                        app.handle(), &storage_access, runtime_mode,
+                    ),
+                ).map_err(storage_startup_error)?;
                 #[cfg(target_os = "linux")]
                 if runtime_mode.is_managed_daemon_client() {
                     let profile = crate::platform::app_paths::app_profile(app.handle());
@@ -317,6 +325,8 @@ fn register_runtime_hooks(
                     }
                 }
             }
+            storage_access.share().map_err(std::io::Error::other)?;
+            app.manage(storage_access);
             Ok(runtime::setup(
                 app,
                 runtime_health.clone(),
@@ -324,6 +334,18 @@ fn register_runtime_hooks(
                 runtime_mode,
             )?)
         })
+}
+
+fn storage_startup_error(error: String) -> std::io::Error {
+    rfd::MessageDialog::new()
+        .set_level(rfd::MessageLevel::Error)
+        .set_title("Patina storage unavailable")
+        .set_description(format!(
+            "Patina could not finish storage startup. Close other Patina instances or restore the configured mount or directory, then try again.\n\n{error}"
+        ))
+        .set_buttons(rfd::MessageButtons::Ok)
+        .show();
+    std::io::Error::other(error)
 }
 
 pub(crate) fn handle_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {

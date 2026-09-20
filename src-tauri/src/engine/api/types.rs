@@ -298,6 +298,12 @@ pub struct AppTrackingDataCleanupRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+pub struct WebDomainCleanupRequest {
+    pub domain: String,
+    pub confirmed: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct StagedActivityImportCommitRequest {
     pub ticket: String,
     pub source_name: String,

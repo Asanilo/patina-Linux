@@ -1,7 +1,20 @@
 # `patinad` 当前实施与验收
 
-> 更新：2026-09-19。只保留当前状态、剩余门槛和操作边界；历史阶段与实验详见 [归档](../archive/2026-09-19-patinad-runtime-history.md)。
-> 方向以 [路线](../roadmap-and-prioritization.md#56-当前实施主线patinad) 为准，协议与 owner 以 [架构](../architecture.md) 为准。
+> 更新：2026-09-21。本文只管理 `feature/patinad-daemon` 分离实验；Linux 日常产品主线是 `main`。历史阶段与实验详见 [归档](../archive/2026-09-19-patinad-runtime-history.md)。
+> 方向以 [路线](../roadmap-and-prioritization.md#linux-main-and-daemon-experiment) 为准，协议与 owner 以 [架构](../architecture.md) 为准。当前执行见下方 Todo；历史验收不自动覆盖本轮候选。隔离安装、真实临时 systemd、界面重启及用户授权的本机实装验收均已通过；main 尚未合并。
+
+## 推进 Todo（2026-09-20）
+
+用户已确认按“daemon 收口 → 验收与合并 → 选择性回流 Linux 平台成果”的顺序推进。本清单记录执行状态；分支职责与改动流向由路线文档拥有。`[x]` 仅表示有证据完成，不能用已安排或历史测试总数代替完成。
+
+- [x] **T1：固定分支和范围。** 本批起始基准：`main` 为 `a13a64a`，daemon 为 `2193acc`，main 是 daemon 的祖先。`feat/linux-desktop` 已从上游 `80204c73` 创建，未完成草稿保留在独立 worktree，暂停扩大实现。两个工作树原有改动均保留，daemon 本批改动随当前验收记录固定提交。
+- [x] **T2：完成差距审计。** 已清点前端全部 16 个 persistence 模块、Rust command 路由、runtime owner、候选发布和安装事实；读写例外、功能缺口与验证范围见 [本批审计](../archive/2026-09-20-daemon-owner-audit.md)。完成盘点不等于全部缺口已实现。
+- [x] **T3：修复第一阶段阻塞项。** 分类写入和 missing-command SQL fallback、网页历史删除、客户端重连 schema 维护、无用 SQL load 权限、SSE 漏事件与 Tools 并发覆盖已修复。目录迁移/清缓存已接通受管模式离线维护，补齐 Desktop 跨进程屏障、旧客户端占用检测和迁移中断恢复；恢复默认目录误拒绝、双目录同时恢复默认时混淆文件种类的缺陷均已修复。不以删减 main 功能收口。专项与本批完整门禁通过，候选验收归 T4。
+- [x] **T4：验证候选。** 最新 `check:full` 通过：55 个 TypeScript 测试文件、38 项浏览器回归、677 Rust passed / 15 ignored，以及构建/预算/边界/Clippy。main 实际 v1–6 schema 的合成 16 表升级回归通过。私有 dpkg root 完成 beta.18 安装→候选升级→卸载→重装；候选 daemon 配合真实临时 systemd、四次界面 `app.restart` 完成五阶段存储验收，50,000 条记录与总时长正确。用户随后明确授权本机实装；备份校验后完成 beta.18→本地候选升级，正式 Desktop 的存储页、关闭隐藏、单实例唤回、正常退出和新进程重开通过，退出后真实采样继续，daemon PID 不变。最终 15 项托管检查、历史记录摘要、SQLx 校验和及数据库完整性通过。候选身份、一次短暂数据库锁重试及证明范围见 [合并前证据](../archive/2026-09-21-main-merge-readiness.md)。
+- [ ] **T5：达到合入条件并收敛到 main。** 合入前代码与验收阻塞项已完成，Unreleased 已补齐。main 仍为 `a13a64a` 且无新增提交，是 daemon 分支祖先，无需反向同步或 rebase；固定本批提交后可快进合入并保留既有开发及 beta 历史。实际合入时同步长期文档的主线归属与本项状态。当前仍在 `feature/patinad-daemon`，尚未合并 main 或改变公开发布状态。
+- [ ] **T6：按模块评估平台成果。** 汇合后选择性移植贡献草稿中已验证的 GNOME 协议、采样与测试；不整支合并上游历史、数据库迁移或发布身份。错误计时的确定缺陷可提前进入 T3。
+
+第一阶段不要求实现新客户端、补齐所有桌面或清零客户端私有持久化。受控读取可以保留明确例外；runtime 写入必须由当前 owner 执行。AppImage 实机验收仍约束该格式及 daemon 稳定发布，不以源码合并代替。本机现运行本地未签名 beta.19 候选，生产 service 已受控重启；真实数据库继续记录，既有历史及 schema 校验通过。公开发布资产未改变。
 
 ## 当前状态
 
@@ -15,31 +28,47 @@
 
 ## 版本与发布证据
 
-- 用户最后确认安装 beta.18；本轮文档整理不安装、重启或改变生产数据。
+- 2026-09-20 只读确认当时安装 beta.18，生产 service active/running 且使用当时已安装的 binary；未读真实 DB/token，不能据此宣称 tracking-ready 或升级通过。
 - beta.19 发布准备提交 `fbdad8e` 已推送 `feature/patinad-daemon`，标签 `v1.9.0-beta.19` 已推送。
-- 最后确认 [发布工作流](https://github.com/Asanilo/patina-Linux/actions/runs/35449507248) 已启动；本文不据此宣称资产已公开。后续交付前查询实际结果。
-- beta.19 `release:check` 通过：637 Rust 测试、38 浏览器回归、Clippy、版本/changelog、扩展与签名 XPI 检查。14 项 opt-in 测试默认跳过；此前单独验证及适用条件见归档。
+- 已确认 [发布工作流](https://github.com/Asanilo/patina-Linux/actions/runs/35449507248) 成功，[beta.19](https://github.com/Asanilo/patina-Linux/releases/tag/v1.9.0-beta.19) 已公开；tag 和构建 SHA 均对应 `fbdad8e`。DEB/manifest 摘要、公开签名和 DEB 成品检查通过，详见 [本批审计](../archive/2026-09-20-daemon-owner-audit.md#发布和安装事实)。
+- beta.19 `fbdad8e` 的 `release:check` 通过：637 Rust 测试、38 浏览器回归、Clippy、版本/changelog、扩展与签名 XPI 检查。14 项 opt-in 测试默认跳过；[专项路由](../linux-development-setup.md#opt-in-validation-routing) 定义何时单独运行，下表关联既有证据。该数字不代表后续工作树已验证。
 - 浏览器临时 profile 清理出现过非致命 ENOTEMPTY 警告，不记为零警告运行。
-- DEB 成品检查、正式签名与上传由发布工作流执行。AppImage 发布门禁未解除，稳定通道不变。
+- 2026-09-20 的发布资产复核针对已公开 beta.19 成品，不覆盖随后本地候选；两者身份分开记录。AppImage 发布门禁未解除，稳定通道不变。
+- 后续工作树验证：2026-09-20 基于 `2193acc` 的协作/门禁与 Settings owner 修复已通过 `check:full`，见 [本批证据](../archive/2026-09-20-agent-workflow-hardening.md)。当时未提交、未打包或安装；该结果不替代 beta.19 发布资产检查或随后的实装验收。
+- 2026-09-21 本批 daemon owner、事件和目录维护修复的完整 `check:full` 通过，结果与限制见 [本批验证](../archive/2026-09-20-daemon-owner-audit.md#本批验证与交付状态)。这是同一基准上当时未提交的工作树，不是 beta.19 的安装包；浏览器临时 profile 清理有非阻断 ENOTEMPTY 警告。
+- 2026-09-21 原生续验修复恢复默认目录问题后，完整门禁更新为 674 Rust / 15 ignored；`perf:heatmap-desktop` 与 `test:storage-native` 均通过。该次原生存储报告为 `/tmp/patina-storage-test-aoEjAu`，具体动作、构建摘要与证据限制见 [原生续验](../archive/2026-09-20-daemon-owner-audit.md#原生续验2026-09-21)。均为 debug 源码验收，当时未构建新安装包。
+- 随后的本次合并前验证达到 677 Rust / 15 ignored；新候选包 SHA256 为 `40f65c6398f992ca38eaf4f55fcdef7df33b0712cdb107ffc7642967a977da77`，保留版本号但不是公开 beta.19 原包。隔离 dpkg、真实临时 systemd/界面重启和授权后的宿主实装全部通过，详见 [本次证据](../archive/2026-09-21-main-merge-readiness.md)。本机 daemon 从 PID 1464 受控切换至 441183；备份与实装证据保存在用户私有目录 `/home/arinp22/.local/state/patina/acceptance/20260921-merge-f8bplgw1`。
 
 ## 下一阶段：分离收口，不增加通用功能
 
-1. 核实 beta.19 发布资产与签名，按发布规范检查 DEB；不为文档整理另起版本。
-2. 以候选版本逐项复核下表，复用同一行为已有效的证据，只补版本变化或缺失场景。
-3. 审计 Desktop 仍直连 SQLite 的读取与本地写入，区分客户端私有偏好和 runtime 数据；记录必要协议缺口，不将所有性能优化自动升级为阻塞项。
-4. 给出 daemon 第一阶段通过/未通过的具体清单，再选择一个新客户端做独立协议验收。不同时启动 TUI、GPUI 和浏览器 UI。
+以下矩阵是 T4/T5 的验收依据；阻塞修复、完整门禁、隔离候选安装/升级、真实临时服务/应用重启及当前系统实装确认均已完成。下一步为固定提交和主线整合，不增加新客户端或额外性能优化。
 
-| 验收门槛 | 通过标准 |
-| --- | --- |
-| 唯一 owner | 同一 profile 只存在一个追踪/运行时写入 owner；异常时不静默启用第二 tracker |
-| 客户端独立生命周期 | 关闭及退出 Desktop 后持续记录，重开恢复状态，旧 UI 退出不终止 daemon |
-| 协议边界 | 协商版本/capability、认证、SSE 重连和降级可测；新客户端不直连 SQLite 或复制追踪 |
-| 安装与升级 | Desktop/daemon 配套、受控重启可确认；失败保留数据与恢复入口，卸载不误删数据 |
-| 数据安全 | 核心统计一致，备份校验、恢复事务与失败回滚有效 |
+| 验收项与通过标准 | 当前状态、版本与证据 | 下一动作 / 重跑条件 |
+| --- | --- | --- |
+| 唯一 owner：同 profile 不出现第二 tracker，异常不隐式回退 | 旧 DEB 候选已通过单 owner 与回滚/接管；本批实装确认旧 PID 退出和 owner 文件锁释放后才启动候选，lease 与生产 MainPID 一致，tracking/service capability 就绪 | lease、reservation、服务启动/关闭变化时补动作前后证据；不把一次升级作为任意异常证明 |
+| 客户端生命周期：退出后持续记录，重开恢复，旧 UI 不终止 daemon | 本批 libtest 验证低耗窗口销毁与四次真实 Settings 重启；正式包内 Desktop 另完成隐藏、单实例唤回、两次退出码 0 和新进程重开，退出后 15 秒心跳与成功采样均前进，daemon PID 保持 441183、NRestarts=0 | 生产短期采样通过；不替代长期使用、真实登录/挂起或视觉闪烁验收，电源处理变化另补验证 |
+| 协议边界：版本/capability、认证、SSE 与降级可测，新客户端不直连 SQLite | 本轮 Desktop DB 盘点和完整门禁通过；实装认证 API、协议/版本与 capability 检查通过。修复与具名读取例外见 [本批审计](../archive/2026-09-20-daemon-owner-audit.md) | 未来新客户端另做等价协议验收，不宣称 Desktop 已完全脱离 SQLite |
+| DEB 安装/升级：配套版本、受控重启、失败可恢复、卸载保留数据 | 私有 dpkg 安装→升级→卸载→重装通过；获准后实际 beta.18→候选升级、停写备份、生产 unit 重启、正式 Desktop 与真实采样均通过，安装文件 hash 和运行 binary inode 一致，见 [候选证据](../archive/2026-09-21-main-merge-readiness.md) | 实装未卸载或降级；卸载保留数据由隔离测试覆盖。依赖不代表干净发行版装依赖，不覆盖 purge 或正式 updater；旧公共签名不属于本地候选 |
+| AppImage：首次接管、共存、登录及正式升级 | `14e37d9`、`2bc2865` 已有 [隔离 AppDir、预检、unit 解析与验签验证](../archive/2026-09-19-patinad-runtime-history.md#appimage-持久运行时与原子更新2026-09-19)；实机门槛仍未通过 | 持久运行时/updater/unit 变化后重跑具名隔离验证；经授权补实机矩阵后才评估恢复格式发布，不解除 DEB-only gate |
+| 数据安全：统计一致，恢复事务、receipt 与失败回滚有效 | beta.19 自动门禁及 `65c1440` [多表/写入故障](../archive/2026-09-19-patinad-runtime-history.md#多表备份与写入故障补验2026-09-19未出包) 通过；本批实装前在线/停写 SQLite 备份通过校验，升级后固定历史记录摘要和 SQLx 1–8 校验和保持一致，quick_check/外键通过 | schema/备份/恢复/凭据/重启链改变时补具名专项；本轮未恢复或迁移生产数据，WebDAV 外部兼容和任意崩溃时刻不在现有证明范围 |
+| 本机目录维护：保留 main 的迁移、恢复默认目录和重启清缓存 | 候选 daemon + 真实临时 systemd + 四次界面 app.restart 串联通过；数据迁出/恢复各重启一次 daemon，WebView/缓存维护保持 PID，3 次服务退出均为 0，50,000 条记录与总时长、持久偏好、备份/源目录和 journal 收尾正确；双侧恢复另有 37 项迁移专项；正式包存储页加载及控件可用另有实装证据 | 生产数据未做目录迁移或清缓存；迁移动作仍由隔离 unit/libtest 覆盖。目录选择器/确认弹窗、双侧恢复和故障中断未全部执行原生动作，不扩大既有专项证明 |
+
+证据复用时记录比较的两个 commit、相关行为是否变化和实际环境。上表中的历史通过不自动升级成当前候选通过；归档中的 `/tmp` 文件是历史定位，未检查存在性时不得声称原始文件仍可读取。证据缺失写“待补”，不能靠旧测试总数填为完成。
 
 AppImage 实机接管/共存/正式升级仍是恢复该格式发布和 daemon 稳定版的门槛，不是开始讨论或验证新客户端协议的无限前置任务。通用图表、分类体验、备份性能、Widget 独立入口不再扩大本阶段范围；数据丢失、安全和阻塞核心流程的故障例外。
 
 ## 隔离与人工验收规则
+
+本批候选的存储验收需保留动作前后证据，不能仅凭测试总数勾选 T4/T5：
+
+`test:storage-native -- --systemd --daemon <私有安装路径>` 已为下表正常迁移、数据恢复默认、取消和缓存场景提供隔离原生证据：迁移预约通过真实 IPC，缓存开关和四次重启由真实 React 按钮执行，实际服务由唯一临时 systemd unit 管理。它未操作原生目录选择器/确认弹窗，未验证生产持续采集；占用、挂载故障、双侧恢复和中断恢复另有专项回归。不能仅凭该测试宣称系统实装完成；本批实装另有上文正式包与生产 service 证据。
+
+| 场景 | 需要核对的结果 |
+| --- | --- |
+| 数据目录迁移与恢复默认目录 | 从设置页预览、确认、预约并重启；daemon 受控停止和恢复，始终只有一个 tracking owner；数据库行数、关联、备份和当前路径正确，原目录保留；重开 Desktop 不重复迁移 |
+| WebView 目录迁移与单独清缓存 | daemon PID/运行状态不因 WebView-only 或 cache-only 维护改变；持久偏好保留，缓存清理只影响 `WebKitCache`；只预约缓存时也能从设置页重启 |
+| 预约后继续使用与取消 | 未重启前继续在原数据路径记录，daemon 正常重启仍使用原路径；取消后不迁移，不留下无法执行的预约 |
+| 旧客户端占用与恢复失败 | 其他 Desktop 或残留 WebKit 占用时有界失败、不强杀；挂载不可用时不给默认目录建立替代数据库；保留需要恢复的 journal，并在错误解除后恢复，不能恢复时明确报错 |
 
 - 自动验证使用独立 HOME/XDG/profile、端口与临时 service；先记录 baseline，再执行操作，最后复核 owner、数据完整性和清理。
 - 已安装检查脚本的 `baseline / installed / managed / rolled-back / uninstalled` 是各阶段快照，不是仅跑一遍即可代替整套验收。
@@ -50,7 +79,7 @@ AppImage 实机接管/共存/正式升级仍是恢复该格式发布和 daemon �
 
 ## 并行方向与暂停项
 
-- 最新上游的 Linux 贡献分支尚未创建；用户后续启动时，先确认基线和维护者范围，再按 [路线](../roadmap-and-prioritization.md#57-上游-linux-贡献线) 执行。不上推当前 daemon 整包差异。
+- `feat/linux-desktop` 已从上游 `80204c73` 创建；平台边界、GNOME provider 与扩展仍是未完成草稿，尚未完成 Rust 集成和实机验收。当前暂停扩张，按上方 Todo 在 daemon 收口后评估可回流模块；不上推当前 daemon 整包差异。
 - 当前不脱离 fork、不拆仓库、不重命名；上游是否合并不阻塞 daemon 产品。
 - 悬浮窗闪烁/吸附保持暂停；KDE/wlroots、Flatpak、Windows 删除另行评估，不混入分离验收。
 - 此文后续只更新当前状态，完成批次的长篇证据移入归档，不再累积相互覆盖的“下一步”。

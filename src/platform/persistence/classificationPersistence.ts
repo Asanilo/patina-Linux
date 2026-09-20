@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { executeWrite, getDB } from "./sqlite.ts";
+import { getDB } from "./sqlite.ts";
 
 export interface SettingKeyValueRow {
   key: string;
@@ -23,17 +23,6 @@ export interface ObservedSessionStatRow {
   appName: string;
   totalDuration: number;
   lastSeenMs: number;
-}
-
-export async function upsertSettingValue(key: string, value: string): Promise<void> {
-  await executeWrite(
-    "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-    [key, value],
-  );
-}
-
-export async function deleteSettingValue(key: string): Promise<void> {
-  await executeWrite("DELETE FROM settings WHERE key = ?", [key]);
 }
 
 export async function loadSettingValue(key: string): Promise<string | null> {

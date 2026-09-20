@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { QuietToastTone } from "../../../shared/components/QuietToast";
 import { formatStorageBytes } from "../services/storagePathDisplay.ts";
 import {
+  isStorageMaintenanceUnsupported,
   restoreDefaultStorageWithDeps,
   scheduleStorageMoveWithDeps,
   StorageSettingsService,
@@ -95,9 +96,12 @@ export function useStorageSettingsState({
       return await action();
     } catch (actionError) {
       console.error(`storage action ${name} failed`, actionError);
-      const message = actionError instanceof Error ? actionError.message : String(actionError);
+      const unsupported = isStorageMaintenanceUnsupported(actionError);
+      const message = unsupported
+        ? copy.storageMaintenanceUnsupported
+        : actionError instanceof Error ? actionError.message : String(actionError);
       setError(message);
-      notify(copy.storageActionFailed, "warning");
+      notify(unsupported ? message : copy.storageActionFailed, "warning");
       return null;
     } finally {
       setBusyAction(null);

@@ -25,6 +25,8 @@
 
 ## 2. 系统现实
 
+本仓库 `Asanilo/patina-Linux` 的日常产品主线为 `main`；当前分支 `feature/patinad-daemon` 实验宿主分离。下文 daemon owner、交接和客户端协议描述适用于该实验，不能据此推断 `main` 已完成相同迁移。未来上游贡献采用上游当前架构，可参考 Linux `main`，不默认携带本实验。
+
 `Patina` 不是普通 Web 应用，而是一个：
 
 - `Tauri v2` 桌面应用
@@ -117,20 +119,27 @@ IPC 契约应保持稳定、可解析、可测试。
 
 前端当前保留受控的本地 SQLite 访问，用于：
 
-- settings 读写
-- classification 读写
+- settings / classification 读取
 - history / dashboard 读模型查询
 - 桌面端本机活动与外部导入活动的只读组合
+- Desktop 私有、可重建的 `data.bootstrap_snapshot` 渲染缓存读写
 
 这条通道不是默认自由边界，而是显式受控边界。规则如下：
 
 - 页面组件不能直接写 SQL
 - feature 不能直接跳过边界访问底层 DB
 - SQLite 访问应通过 `platform/persistence/*` 暴露的明确出口
-- settings 原始读写、tracker health 时间戳与类似本地持久化适配，默认归 `platform/persistence/*`
+- settings / classification 写入必须经 Rust command 选择当前 owner，命令缺失或 daemon 不可用不得回退前端 SQL；tracker health 只读取 owner 产生的时间戳
+- 原始数据库访问适配归 `platform/persistence/*`；上述缓存例外不能扩展为 runtime 写入口
 - `app/services/*` 只保留应用启动、运行时同步或全局偏好写入所需的薄协调，不从 `features/settings/*` 借基础能力
 - `features/settings/*` 只保留 settings 页面的保存、cleanup、backup、restore 与外链打开等 feature 私有流程
 - 涉及运行时写侧和平台副作用的操作，优先迁往 Rust command
+
+在 daemon-client 模式，Desktop 初始化和重连仅打开并校验现库，不能创建数据库、迁移 schema 或回填 runtime 设置。数据库准备由持有 runtime lease 的 owner 执行。当前仍共享物理库的 Desktop widget 偏好、updater/reopen 状态、bootstrap 缓存，以及专用 host 交接状态是具名例外，不代表客户端已有自由运行时写权限。
+
+目录迁移和启动时 WebView 缓存清理属于本机宿主的离线维护能力，复用既有数据复制与校验 owner，不属于客户端重新取得 tracking 所有权。受管 daemon 模式的维护协调必须在新 Desktop 打开 SQLite 或建立任何 WebView 前取得独占存储屏障；普通 Desktop 在进程生命周期内持有共享访问屏障。涉及数据目录时，宿主先停止受管 daemon、取得临时 maintenance runtime lease，完成迁移与持久化结果后释放 lease 并恢复服务；只涉及 WebView/缓存时不停止 daemon。整个过程不得启动 embedded tracker。
+
+普通“下次重启执行”的预约不能阻止 daemon 在原路径持续追踪或异常重启。开始执行后，持久 journal 与 runtime lease 必须阻止其他进程打开不确定的路径；中断恢复完成前不得清空预约、覆盖旧库或自动选择另一份数据。未知宿主的手动 daemon preview 不拥有生产 service 控制能力，必须明确拒绝无法安全执行的维护。实现与验收状态由当前 working 清单维护，不因写入规则就宣称已交付。
 
 ### 4.4 命名与跨层协议
 
@@ -202,7 +211,7 @@ domain ─────────┘          │
 
 - `engine / domain / data / platform` 承载共享能力，不能依赖某个具体 UI 宿主
 - `patinad` 最终唯一拥有 tracking、watchdog、SQLite 运行时写侧、Linux 平台信号、浏览器桥接和本地 API
-- 桌面客户端当前由 Tauri 实现，并拥有窗口、tray、WebView、用户交互和桌面 updater；Stage 2H.3 切换完成后，它通过稳定客户端边界访问 daemon
+- 桌面客户端当前由 Tauri 实现，并拥有窗口、tray、WebView、用户交互和桌面 updater；完成 owner 交接后，它通过稳定客户端边界访问 daemon
 - 默认 owner 切换后，桌面客户端不得自动启动 embedded tracker；daemon 不可用时必须明确报告暂停状态并通过受控服务入口恢复，不能静默切换 owner
 - 默认 owner 切换前，Production embedded Desktop 启动会停止提前运行的 packaged daemon，再依靠 RuntimeLease 获取唯一 owner；Dev/Local profile 不控制 production unit
 - browser UI 由 `patinad` 在 loopback 提供，通过 HTTP API 和本机 event stream 访问同一运行时，不直接打开 SQLite
@@ -249,7 +258,7 @@ Stage 2F.2 已使用 Axum + Tower 替换通用 API/SSE 与浏览器 bridge 的�
 - tray、系统通知、文件选择、安装更新和窗口激活仍属于桌面客户端能力
 - 浏览器端遇到桌面专属操作时应显示明确不可用状态或请求桌面客户端处理，不复制不安全的文件系统能力
 
-Tauri desktop 的 daemon transport 由 Rust host 持有 Bearer Token，前端 JavaScript 不直接读取 owner-only credential。客户端只连接固定 loopback 地址，不跟随重定向，并限制连接时间、总请求时间与响应大小；使用任何运行状态前必须先确认 `runtime_host=daemon`、协议兼容范围、tracking ownership 和 event stream capability。端口可连接或 HTTP 200 本身不构成成功协商。只读 runtime adapter 必须先建立 SSE 再读取当前快照，首次使用有界 replay，之后携带最后确认 sequence 重连；收到 replay gap 或 receiver lag 时清除旧 cursor 并通过 JSON API 完整重读，不能靠局部事件猜测丢失状态。
+Tauri desktop 的 daemon transport 由 Rust host 持有 Bearer Token，前端 JavaScript 不直接读取 owner-only credential。客户端只连接固定 loopback 地址，不跟随重定向，并限制连接时间、总请求时间与响应大小；使用任何运行状态前必须先确认 `runtime_host=daemon`、协议兼容范围、tracking ownership 和 event stream capability。端口可连接或 HTTP 200 本身不构成成功协商。runtime adapter 必须先建立 SSE 再读取当前快照；新 Desktop 实例订阅实时事件，不从 sequence 0 重放已处理的提醒，之后携带本次会话最后确认的 sequence 重连。收到 replay gap 或 receiver lag 时清除旧 cursor 并通过 JSON API 完整重读，不能靠局部事件猜测丢失状态。tracking、Tools、提醒和定时备份事件均须送到对应客户端 owner；异步快照刷新应保持顺序，配置切换或停止后不得发布旧请求的响应。
 
 Desktop command 的 owner 分流统一依赖受管的 typed daemon client state。显式 daemon client 模式下，已经迁移的 tracker、runtime setting、classification、活动导入、定时备份、数据维护与 Tools command 不得回落到本地 engine 或直接 SQLite；client 不可用时返回明确错误。Tools 和定时备份 SSE 只表达失效通知，Desktop 收到后必须从 daemon 重读完整 snapshot，再复用现有前端事件契约，不能把失效通知冒充完整读模型。embedded 模式在迁移窗口内继续走原路径。尚未迁移的写侧必须保留在 2H.3c 清单中，不能因为只读切换完成就默认视为 daemon-owned。
 
@@ -739,10 +748,11 @@ Rust 侧允许为了稳定演进保留少量入口协调或兼容封装，但规
 - 改动运行时主链、IPC 契约、Rust 核心行为时，至少运行能覆盖该链路的现有验证，而不是只看类型通过
 - 只改文档时，不要求运行构建或测试，但不能让文档与仓库现状失真
 
-当前仓库里，前端关键路径变更的默认最小验证可参考：
+当前仓库里，前端关键路径变更的默认最小验证是：
 
 - `npm run check`
-- `npm run check:frontend`
+
+该命令已经包含 `check:frontend`，无需再运行一遍；具体测试组合以 `package.json` 为准。
 
 结构性改动、Rust 边界改动或发布前复核默认继续使用：
 

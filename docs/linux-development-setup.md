@@ -1,6 +1,8 @@
 # Linux Development Setup
 
-This page records the current Linux prototype setup path.
+This page records Linux development and verification procedures. `main` is the
+primary Linux product branch; daemon-specific procedures apply to the
+`feature/patinad-daemon` experiment and its explicitly selected candidates.
 
 ## Build Storage
 
@@ -29,7 +31,7 @@ When full debugger information is needed temporarily, use `CARGO_PROFILE_DEV_DEB
 
 Installing a DEB replaces files on disk, not necessarily the running daemon. Opening a compatible Desktop also does not automatically restart it. Check the running version, not just the package version.
 
-The beta.9 candidate adds Desktop/Daemon versions to Settings -> Diagnostics and an explicitly confirmed reload action for a completed Production managed-client cutover. This UI is not included in the existing beta.8 DEB. The action appears only for a known version difference and an available systemd service-lifecycle capability. It briefly interrupts tracking, uses the existing graceful restart API, and does not download packages or change login preferences.
+Daemon-backed Desktop exposes Desktop/Daemon versions in Settings -> Diagnostics and an explicitly confirmed reload action for a completed Production managed-client cutover. The action appears only for a known version difference and an available systemd service-lifecycle capability. It briefly interrupts tracking, uses the existing graceful restart API, and does not download packages or change login preferences. Candidate implementation and installed-version evidence live in the [current daemon checklist](./working/2026-07-10-patinad-runtime-design.md).
 
 Success requires a completed matching restart ticket, a new daemon instance, the Desktop version, and tracking readiness. Rejected, ambiguous or timed-out requests are not automatically resubmitted; inspect service state before trying again. If the disk still contains a different daemon version, reloading cannot install the missing version. Do not substitute a forced process kill for this flow.
 
@@ -118,7 +120,7 @@ The default activity data and WebView profile root is:
 ${XDG_DATA_HOME:-~/.local/share}/Patina
 ```
 
-The stable control directory contains versioned data/WebView anchors, pending migration metadata, and maintenance state. The default data root contains `patina.db`, local backups, and the local API token. Moving activity data relocates the database and managed backup/temp directories; the API token remains at the stable default product data root. Activity data and WebView data can be moved independently from Settings -> Data Safety -> Local storage.
+The stable control directory contains versioned data/WebView anchors, pending migration metadata, and maintenance state. The default data root contains `patina.db`, local backups, and the local API token. Moving activity data relocates the database and managed backups; temporary downloads are not migrated, and the API token remains at the stable default product data root. Activity data and WebView data can be moved independently from Settings -> Data Safety -> Local storage.
 
 Storage changes use a restart boundary:
 
@@ -127,6 +129,14 @@ Storage changes use a restart boundary:
 3. Patina exits only when the user chooses to restart.
 4. On the next launch, migration runs before SQLite or either WebView is opened.
 5. The copied database must pass SQLite integrity, schema, and row-count checks before the target is promoted.
+
+On the daemon experiment, a managed Desktop performs offline maintenance as a local host operation; it never starts an embedded tracker. All Desktop instances hold a shared storage-access lock, and startup maintenance takes it exclusively before opening SQLite or creating WebViews. On Linux, bounded checks of same-user process/handle metadata also wait for older Desktop versions and WebKit processes that do not know this lock. A conflicting process produces an error rather than being killed; close the other instance before retrying.
+
+Restoring either storage location may rejoin the shared default directory while the other location remains there. This exception applies only to that exact default root. Custom shared locations and parent/child overlap remain rejected; migration uses separate managed file lists so restoring one location preserves the other location's files.
+
+For an activity-data move, the host stops the managed service, takes a temporary maintenance runtime lease, executes the verified migration, releases that lease, and starts the daemon again. A WebView-only move or cache clear does not stop tracking. The appointment itself leaves the daemon on its original paths until maintenance begins, including when the user chooses to restart later. Unmanaged daemon preview has no service-control contract and rejects these requests.
+
+A private journal in the stable control directory records file promotion and anchor changes. Interrupted migration must recover or finish its recorded operation before a daemon can open the database. Do not manually delete the journal or pending request to bypass a recovery error. Ordinary failures retain the original source and report the concrete reason; current automated and installed evidence is recorded in the [daemon checklist](./working/2026-07-10-patinad-runtime-design.md).
 
 Custom activity storage is fail-closed. If its anchor is invalid, its root is unavailable, or `patina.db` is missing, startup reports the storage error and does not create a database in the default directory. This prevents a missing mount from looking like an empty Patina installation.
 
@@ -357,6 +367,26 @@ PATINA_SYSTEMD_TEST_BINARY=/usr/bin/patinad cargo test \
 
 It creates a private D-Bus and Secret Service with synthetic credentials under the temporary tree. A guarded child test seeds that keyring; never invoke `seed_private_webdav_credential` manually or run all ignored tests indiscriminately. Only the fixture and test daemon receive that bus address; the parent keeps the user-manager connection. The daemon lists/downloads a synthetic archive from an authenticated loopback HTTP fixture and completes Replace/Merge/rollback across a real systemd restart. It does not read the login keyring, connect to a real WebDAV account, test upload/TLS interoperability, or change production settings. Owned fixture processes and transient units are stopped; synthetic evidence remains private under `/tmp`.
 
+## Opt-in Validation Routing
+
+`check:full` does not run Rust `#[ignore]` tests. Select a named test only when
+the changed behavior and its environment match; never run all ignored tests in
+the normal user session. Candidate status, versions, and evidence belong in the
+[daemon checklist](./working/2026-07-10-patinad-runtime-design.md), not this procedure.
+
+| Changed behavior | Named test / entry point | Preconditions and limits |
+| --- | --- | --- |
+| Desktop window disposal / background delay | `native_window_lifecycle`, `native_background_delay`; `node scripts/native-window-lifecycle.mjs` with optional `--background-delay` | Private profile and D-Bus, real Wayland, timed waits; native lifecycle only. See [native lifecycle procedure](#native-window-lifecycle-regression) |
+| React heatmap / daemon reads / disposal | `heatmap_desktop_worker`; `npm run perf:heatmap-desktop` | Use the runner's private fixture and actual frontend; see [heatmap procedure](#real-frontend-heatmap-acceptance) |
+| Managed Desktop storage maintenance | `storage_desktop_worker`; `npm run test:storage-native` | Private Production-shaped profile, real WebKit/IPC, UI restart and independent daemon; optional real temporary systemd unit via `--systemd`. See [native storage procedure](#native-storage-maintenance-acceptance) |
+| Query or backup resource bounds | `query_worker`, `worker`; `node scripts/perf/daily-activity-benchmark.mjs`, `node scripts/perf/backup-benchmark.mjs` | Runner-owned synthetic data; do not invoke workers without their fixture. See [benchmark contracts](./engineering-quality.md#5-默认验证门槛) and the runners' options |
+| Restore across service restart / WebDAV credentials | `real_systemd_restore_crosses_process_boundary`, `real_webdav_restore_crosses_private_credentials_and_systemd` | Explicit matching binary, temporary service and private credentials; use [isolated systemd restore](#isolated-systemd-restore-acceptance) |
+| Private credential seeding | `seed_private_webdav_credential` | Internal child of the WebDAV restore test only; never select directly |
+| Generated AppImage service unit | `generated_unit_passes_real_systemd_parser` | Requires `systemd-analyze`; parses a private unit, does not install or start it |
+| Durable AppDir and atomic update | `built_appdir_runs_from_durable_store`, `tauri_download_verifies_before_atomic_install` | Explicit private AppDir/AppImage or `PATINA_UPDATER_TEST_ROOT` signed synthetic fixture; never use a release private key. See [AppImage procedure](#daemon-backed-appimage-runtime-development) and [updater test preconditions](../src-tauri/src/platform/linux/appimage_update.rs) |
+| Service diagnostics | `live_user_manager_snapshot_is_classified_without_mutation` | Requires live user systemd manager; reads service state only, not an isolated lifecycle test |
+| Audio or media provider | `live_pulseaudio_query_completes_when_compat_server_is_available`, `live_mpris_query_completes_when_session_bus_is_available` | Requires real PulseAudio/pipewire-pulse or D-Bus session; provider availability is not proof of full tracking correctness |
+
 ## Desktop Memory Evidence
 
 ```bash
@@ -440,6 +470,91 @@ scalability. Failed or interrupted runs retain their private evidence rather tha
 deleting directories recursively. Do not infer a memory improvement merely from
 `passed: true`; compare the recorded phases and query-level budgets separately.
 
+## Native Storage Maintenance Acceptance
+
+From a Wayland session, run:
+
+```bash
+npm run test:storage-native
+```
+
+This opt-in runner builds the frontend, a Rust test worker and a separate
+`patinad` binary. It creates a private `0700` `/tmp/patina-storage-test-*` tree,
+HOME/XDG roots and a D-Bus socket inside that tree. Both session and system bus
+addresses point there. The Production application identifier is used only within
+those synthetic roots, with a completed owner reservation, paused tracking and
+disabled login/audio/web integrations. The installed profile and production
+`patinad.service` are not used.
+
+A test-only `org.freedesktop.systemd1` fixture accepts start/stop for its own
+daemon child. The real Desktop bootstrap and service adapter call it over the
+private bus. Five Desktop processes exercise data migration, restoring the
+default data directory, WebView migration and cache clearing. Only the first
+Desktop is launched by the runner; four real Settings button clicks invoke the
+production IPC and Tauri `app.restart`, with PID/start-time and restart-event
+evidence for every successor. Migration appointments use real IPC directly;
+native folder pickers and migration confirmation dialogs are not automated.
+Checks cover cancellation, pending paths, persistent localStorage, daemon
+PID/counters and database integrity. A synthetic cache marker must disappear
+while persistent state survives.
+
+To use a candidate daemon with a real temporary systemd user unit:
+
+```bash
+npm run test:storage-native -- --systemd --daemon /absolute/private-install/usr/bin/patinad
+```
+
+The private D-Bus adapter maps its fixed product name to exactly one random
+`patina-storage-test-*.service` under the real user manager. The installed
+`patinad.service` is never controlled. `systemd-run --wait` preserves the daemon
+exit status, and both the worker and outer runner check cleanup of that exact
+temporary unit. This mode requires access to `/run/user/<uid>/bus`. The optional
+daemon path must be a canonical regular executable; its hash is recorded.
+Desktop still uses the test host compiled from the current source.
+
+Each run retains owner-only stage reports, native snapshots, daemon logs, build
+hashes and final results in its printed private directory. All waits are bounded;
+cleanup only terminates runner-owned processes. Legacy-client occupancy checks
+can refuse maintenance while another Patina Desktop is running. A refusal is
+not permission for the runner to close that application.
+
+The default D-Bus service fixture is not a real systemd manager. The opt-in
+systemd mode verifies real service start/stop and exit status, with a private name
+adapter and test unit properties (`Type=exec`, `Restart=no`, `PrivateTmp=no`). It
+does not verify all packaged hardening, login, ongoing real activity collection
+or production installation. Power-loss and release acceptance remain separate.
+Never point this worker at an existing profile or run the ignored worker directly
+without the runner.
+
+## Isolated Debian Candidate Acceptance
+
+When candidate installation validation is requested, an unsigned local candidate
+may be inspected separately from public release artifacts. Record its source
+manifest and SHA256; a local build retaining the source version is not the
+published release with that version. Public builds and signing still follow the
+[release policy](./versioning-and-release-policy.md).
+
+```bash
+npm run test:deb-isolated -- --candidate /absolute/candidate.deb --baseline /absolute/baseline.deb
+```
+
+This opt-in runner requires Python 3.10+, Debian tools, user namespaces and
+Bubblewrap. It installs the baseline, upgrades to the candidate, removes it and
+reinstalls it using a private root, dpkg database and log. Payload hashes and
+synthetic user-data sentinels are checked at each stage; the final installation
+is retained for the native daemon test above. Packages with maintainer scripts,
+triggers, unexpected payload locations or automatic service enablement are
+rejected before installation. No package GUI or service is executed by this
+runner.
+
+Normal dpkg dependency checks use a copy of installed host package metadata.
+This proves compatibility with those recorded dependency versions, not fresh
+dependency installation on a clean distribution. It does not exercise database
+upgrade, production service takeover, login, purge or signed updater delivery.
+Use a baseline with verified provenance; its filename alone is not evidence of
+an official release. Results, input hashes and the private installed daemon path
+are retained under the printed `/tmp/patina-deb-acceptance-*` directory.
+
 ## MCP Wrapper
 
 The MCP wrapper is a stdio server that maps MCP tool calls to the local API:
@@ -458,12 +573,18 @@ The wrapper exposes read tools for activity, diagnostics, settings, Tools state,
 
 ## Current Validation Commands
 
-```bash
-node --experimental-strip-types --experimental-specifier-resolution=node tests/gnomeShellExtensionScript.test.ts
-node --experimental-strip-types --experimental-specifier-resolution=node tests/patinaMcpScript.test.ts
-npm run test:release
-npm run extension:gnome:check
-npm run extension:gnome:build
-npm run build
-cargo check --manifest-path src-tauri/Cargo.toml --quiet
-```
+Choose the gate for the change; broader gates already include the narrower ones.
+
+| Scope | Command |
+| --- | --- |
+| Ordinary automated tests, including GNOME script and MCP contracts | `npm test` (discovers `tests/**/*.test.ts`) |
+| Frontend delivery, boundaries, build and bundle budget | `npm run check` |
+| Architecture or Rust runtime changes | `npm run check:full` |
+| Release preparation | `npm run release:check` |
+| Focused tracking lifecycle iteration | `npm run test:tracking-lifecycle` |
+| Extension source validation | `npm run extension:gnome:check` |
+
+Other `test:*` commands remain available for focused iteration. Building or
+installing an extension/package is a separate action, not part of ordinary test
+discovery. See [validation policy](./engineering-quality.md#5-默认验证门槛) and
+[opt-in routing](#opt-in-validation-routing) for additional risks.

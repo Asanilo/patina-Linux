@@ -11,7 +11,6 @@ use crate::engine::runtime_event::{RuntimeEvent, RuntimeEventEnvelope, RuntimeEv
 use crate::engine::tracking::watchdog::RuntimeHealthState;
 use crate::platform::daemon_client::{PatinadClient, PatinadClientError, PatinadStreamEvent};
 
-const INITIAL_REPLAY_CURSOR: u64 = 0;
 const INITIAL_RETRY_DELAY: Duration = Duration::from_millis(500);
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(10);
 const INCOHERENT_SNAPSHOT_RETRY_DELAY: Duration = Duration::from_millis(25);
@@ -137,13 +136,15 @@ impl PatinadDesktopRuntimeHandle {
         client_state: crate::app::daemon_client::PatinadClientState,
         runtime_health: Arc<RuntimeHealthState>,
     ) -> Self {
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let output = Arc::new(TauriPatinadRuntimeOutput {
             app: app.clone(),
             runtime_health,
             client_state: client_state.clone(),
+            tools_refresh: Arc::new(ToolsSnapshotRefresh::default()),
+            shutdown: shutdown_rx.clone(),
         });
         let adapter = PatinadRuntimeAdapter::new_with_client_state(client_state.clone(), output);
-        let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let task = tauri::async_runtime::spawn(async move {
             adapter.run(shutdown_rx).await;
         });
@@ -198,6 +199,50 @@ struct TauriPatinadRuntimeOutput<R: Runtime> {
     app: AppHandle<R>,
     runtime_health: Arc<RuntimeHealthState>,
     client_state: crate::app::daemon_client::PatinadClientState,
+    tools_refresh: Arc<ToolsSnapshotRefresh>,
+    shutdown: watch::Receiver<bool>,
+}
+
+#[derive(Default)]
+struct ToolsSnapshotRefresh {
+    serial: tokio::sync::Mutex<()>,
+}
+
+impl ToolsSnapshotRefresh {
+    async fn refresh(
+        &self,
+        client_state: &crate::app::daemon_client::PatinadClientState,
+        mut shutdown: watch::Receiver<bool>,
+        publish: impl FnOnce(crate::domain::tools::ToolsRuntimeSnapshot),
+    ) -> Result<(), String> {
+        if *shutdown.borrow() {
+            return Ok(());
+        }
+        // Keep client selection, read and publication in one serial operation.
+        // A queued invalidation must read the latest client and current state.
+        let _serial = tokio::select! {
+            biased;
+            _ = shutdown.changed() => return Ok(()),
+            serial = self.serial.lock() => serial,
+        };
+        let mut revision = client_state.subscribe();
+        let expected_revision = *revision.borrow();
+        let client = client_state.require()?;
+        let snapshot = tokio::select! {
+            biased;
+            _ = shutdown.changed() => return Ok(()),
+            _ = revision.changed() => return Ok(()),
+            snapshot = client.tools_snapshot() => snapshot.map_err(|error| error.to_string())?,
+        };
+        // Hold these read guards through synchronous publication so a stop or
+        // configuration revision cannot overtake a completed response.
+        let stopped = shutdown.borrow();
+        let current_revision = revision.borrow();
+        if !*stopped && *current_revision == expected_revision {
+            publish(snapshot);
+        }
+        Ok(())
+    }
 }
 
 impl<R: Runtime> PatinadRuntimeOutput for TauriPatinadRuntimeOutput<R> {
@@ -267,16 +312,11 @@ impl<R: Runtime> PatinadRuntimeOutput for TauriPatinadRuntimeOutput<R> {
             RuntimeEvent::ToolsRuntimeChanged { .. } => {
                 let app = self.app.clone();
                 let client_state = self.client_state.clone();
+                let tools_refresh = self.tools_refresh.clone();
+                let shutdown = self.shutdown.clone();
                 tauri::async_runtime::spawn(async move {
-                    let client = match client_state.require() {
-                        Ok(client) => client,
-                        Err(error) => {
-                            eprintln!("[patinad-client] failed to refresh Tools snapshot: {error}");
-                            return;
-                        }
-                    };
-                    match client.tools_snapshot().await {
-                        Ok(snapshot) => {
+                    if let Err(error) = tools_refresh
+                        .refresh(&client_state, shutdown, |snapshot| {
                             if let Some(state) =
                                 app.try_state::<crate::engine::tools::ToolsRuntimeState>()
                             {
@@ -289,10 +329,10 @@ impl<R: Runtime> PatinadRuntimeOutput for TauriPatinadRuntimeOutput<R> {
                                     "[patinad-client] failed to emit Tools snapshot: {error}"
                                 );
                             }
-                        }
-                        Err(error) => {
-                            eprintln!("[patinad-client] failed to refresh Tools snapshot: {error}");
-                        }
+                        })
+                        .await
+                    {
+                        eprintln!("[patinad-client] failed to refresh Tools snapshot: {error}");
                     }
                 });
                 return;
@@ -344,7 +384,10 @@ impl PatinadRuntimeAdapter {
     }
 
     pub async fn run(&self, mut shutdown: watch::Receiver<bool>) {
-        let mut cursor = Some(INITIAL_REPLAY_CURSOR);
+        // A new Desktop instance loads current state via snapshots. Replaying
+        // historical ToolAlert events here would reopen dismissed reminders.
+        // Reconnects retain the live cursor to recover events missed in-session.
+        let mut cursor = None;
         let mut backoff = RetryBackoff::default();
         let mut first_attempt = true;
 
@@ -454,16 +497,16 @@ impl PatinadRuntimeAdapter {
             }
             match event {
                 PatinadStreamEvent::Runtime(envelope) => {
-                    let RuntimeEvent::TrackingDataChanged { changed_at_ms, .. } = &envelope.event
-                    else {
-                        continue;
-                    };
-                    let changed_at_ms = i64::try_from(*changed_at_ms).unwrap_or(i64::MAX);
-                    if changed_at_ms >= snapshot.current_window.sampled_at_ms {
-                        snapshot = self.read_snapshot(&client, *cursor).await?;
-                        self.output.snapshot_changed(snapshot.clone());
+                    if let RuntimeEvent::TrackingDataChanged { changed_at_ms, .. } = &envelope.event
+                    {
+                        let changed_at_ms = i64::try_from(*changed_at_ms).unwrap_or(i64::MAX);
+                        if changed_at_ms >= snapshot.current_window.sampled_at_ms {
+                            snapshot = self.read_snapshot(&client, *cursor).await?;
+                            self.output.snapshot_changed(snapshot.clone());
+                        }
                     }
-                    // A periodic read may precede delivery of its data invalidation event.
+                    // Every runtime event reaches its Desktop owner. Only tracking
+                    // changes need a fresh window/session snapshot first.
                     self.output.tracking_data_changed(&envelope);
                 }
                 PatinadStreamEvent::ResyncRequired { reason, missed } => {
@@ -552,6 +595,169 @@ impl RetryBackoff {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::daemon_client::PatinadClientState;
+    use crate::domain::tools::ToolsRuntimeSnapshot;
+
+    #[tokio::test]
+    async fn tools_refresh_serializes_delayed_responses_through_publication() {
+        let mut server = DelayedToolsServer::start().await;
+        let client_state = PatinadClientState::default();
+        client_state.install(server.client.clone());
+        let refresh = Arc::new(ToolsSnapshotRefresh::default());
+        let (_shutdown_tx, shutdown) = watch::channel(false);
+        let published = Arc::new(Mutex::new(Vec::new()));
+
+        let first = spawn_tools_refresh(&refresh, &client_state, &shutdown, &published).await;
+        let first_response = server.next_request().await;
+        let second = spawn_tools_refresh(&refresh, &client_state, &shutdown, &published).await;
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), server.requests.recv())
+                .await
+                .is_err(),
+            "a later refresh must not read or finish ahead of the delayed response"
+        );
+
+        first_response.send(tools_snapshot(1)).unwrap();
+        finish_tools_refresh(first).await;
+        assert_eq!(*published.lock().unwrap(), vec![1]);
+        server.next_request().await.send(tools_snapshot(2)).unwrap();
+        finish_tools_refresh(second).await;
+        assert_eq!(*published.lock().unwrap(), vec![1, 2]);
+    }
+
+    #[tokio::test]
+    async fn tools_refresh_discards_replaced_client_and_queued_read_uses_new_client() {
+        let mut old_server = DelayedToolsServer::start().await;
+        let mut new_server = DelayedToolsServer::start().await;
+        let client_state = PatinadClientState::default();
+        client_state.install(old_server.client.clone());
+        let refresh = Arc::new(ToolsSnapshotRefresh::default());
+        let (_shutdown_tx, shutdown) = watch::channel(false);
+        let published = Arc::new(Mutex::new(Vec::new()));
+
+        let first = spawn_tools_refresh(&refresh, &client_state, &shutdown, &published).await;
+        let old_response = old_server.next_request().await;
+        let queued = spawn_tools_refresh(&refresh, &client_state, &shutdown, &published).await;
+        client_state.install(new_server.client.clone());
+        finish_tools_refresh(first).await;
+        let new_response = new_server.next_request().await;
+        // The old HTTP response may already be disconnected after cancellation.
+        let _ = old_response.send(tools_snapshot(1));
+        assert!(published.lock().unwrap().is_empty());
+        new_response.send(tools_snapshot(2)).unwrap();
+        finish_tools_refresh(queued).await;
+        assert_eq!(*published.lock().unwrap(), vec![2]);
+        assert!(old_server.requests.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn tools_refresh_stops_in_flight_queued_and_future_publications() {
+        let mut server = DelayedToolsServer::start().await;
+        let client_state = PatinadClientState::default();
+        client_state.install(server.client.clone());
+        let refresh = Arc::new(ToolsSnapshotRefresh::default());
+        let (shutdown_tx, shutdown) = watch::channel(false);
+        let published = Arc::new(Mutex::new(Vec::new()));
+
+        let first = spawn_tools_refresh(&refresh, &client_state, &shutdown, &published).await;
+        let delayed_response = server.next_request().await;
+        let queued = spawn_tools_refresh(&refresh, &client_state, &shutdown, &published).await;
+        shutdown_tx.send(true).unwrap();
+        finish_tools_refresh(first).await;
+        finish_tools_refresh(queued).await;
+        let _ = delayed_response.send(tools_snapshot(1));
+        let after_stop = spawn_tools_refresh(&refresh, &client_state, &shutdown, &published).await;
+        finish_tools_refresh(after_stop).await;
+        assert!(published.lock().unwrap().is_empty());
+        assert!(server.requests.try_recv().is_err());
+    }
+
+    fn tools_snapshot(sampled_at_ms: i64) -> ToolsRuntimeSnapshot {
+        ToolsRuntimeSnapshot {
+            sampled_at_ms,
+            ..Default::default()
+        }
+    }
+
+    async fn spawn_tools_refresh(
+        refresh: &Arc<ToolsSnapshotRefresh>,
+        client_state: &PatinadClientState,
+        shutdown: &watch::Receiver<bool>,
+        published: &Arc<Mutex<Vec<i64>>>,
+    ) -> tokio::task::JoinHandle<Result<(), String>> {
+        let refresh = refresh.clone();
+        let client_state = client_state.clone();
+        let shutdown = shutdown.clone();
+        let published = published.clone();
+        let (started, waiting) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(async move {
+            started.send(()).unwrap();
+            refresh
+                .refresh(&client_state, shutdown, |snapshot| {
+                    published.lock().unwrap().push(snapshot.sampled_at_ms);
+                })
+                .await
+        });
+        waiting.await.unwrap();
+        task
+    }
+
+    async fn finish_tools_refresh(task: tokio::task::JoinHandle<Result<(), String>>) {
+        tokio::time::timeout(Duration::from_secs(1), task)
+            .await
+            .expect("Tools refresh should complete or cancel promptly")
+            .unwrap()
+            .unwrap();
+    }
+
+    struct DelayedToolsServer {
+        client: PatinadClient,
+        requests: tokio::sync::mpsc::UnboundedReceiver<
+            tokio::sync::oneshot::Sender<ToolsRuntimeSnapshot>,
+        >,
+        task: tokio::task::JoinHandle<()>,
+    }
+
+    impl DelayedToolsServer {
+        async fn start() -> Self {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let (requests_tx, requests) = tokio::sync::mpsc::unbounded_channel();
+            let router = axum::Router::new().route(
+                "/api/v1/tools/snapshot",
+                axum::routing::get(move || {
+                    let requests = requests_tx.clone();
+                    async move {
+                        let (response, pending) = tokio::sync::oneshot::channel();
+                        requests.send(response).unwrap();
+                        let snapshot: ToolsRuntimeSnapshot = pending.await.unwrap_or_default();
+                        axum::Json(serde_json::json!({ "data": snapshot }))
+                    }
+                }),
+            );
+            let task = tokio::spawn(async move {
+                axum::serve(listener, router).await.unwrap();
+            });
+            Self {
+                client: PatinadClient::new(port, "test-tools-refresh-token").unwrap(),
+                requests,
+                task,
+            }
+        }
+
+        async fn next_request(&mut self) -> tokio::sync::oneshot::Sender<ToolsRuntimeSnapshot> {
+            tokio::time::timeout(Duration::from_secs(1), self.requests.recv())
+                .await
+                .expect("expected a Tools snapshot request")
+                .unwrap()
+        }
+    }
+
+    impl Drop for DelayedToolsServer {
+        fn drop(&mut self) {
+            self.task.abort();
+        }
+    }
 
     #[test]
     fn runtime_state_never_keeps_a_stale_error_after_a_snapshot() {

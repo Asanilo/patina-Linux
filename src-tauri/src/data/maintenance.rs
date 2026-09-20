@@ -4,6 +4,22 @@ use crate::domain::data_maintenance::{
 };
 use sqlx::{Pool, Sqlite};
 
+pub async fn delete_web_activity_segments_by_domain(
+    pool: &Pool<Sqlite>,
+    domain: &str,
+) -> Result<crate::domain::data_maintenance::WebDomainCleanupResult, String> {
+    let domain = crate::domain::data_maintenance::normalize_web_domain_cleanup(domain)?;
+    let deleted = sqlx::query("DELETE FROM web_activity_segments WHERE normalized_domain = ?")
+        .bind(domain)
+        .execute(pool)
+        .await
+        .map_err(|error| format!("failed to delete web history: {error}"))?
+        .rows_affected();
+    Ok(crate::domain::data_maintenance::WebDomainCleanupResult {
+        web_activity_segments_deleted: deleted,
+    })
+}
+
 pub async fn delete_tracking_data_before(
     pool: &Pool<Sqlite>,
     cutoff_time_ms: i64,
@@ -312,6 +328,88 @@ mod tests {
         .execute(pool)
         .await
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn web_domain_cleanup_is_exact_and_future_activity_starts_fresh() {
+        let pool = test_pool().await;
+        pool.execute(crate::data::schema::WEB_ACTIVITY_SESSION_SCHEMA_SQL)
+            .await
+            .unwrap();
+        seed(&pool).await;
+        sqlx::query("INSERT INTO sessions (id, app_name, exe_name, start_time) VALUES (3, 'Browser', 'zen', 5000)")
+            .execute(&pool).await.unwrap();
+        let input = crate::data::repositories::web_activity::WebActivitySegmentInput {
+            browser_client_id: "browser".into(),
+            browser_kind: "firefox".into(),
+            browser_exe_name: "zen".into(),
+            domain: "old.example".into(),
+            normalized_domain: "old.example".into(),
+            url: None,
+            title: None,
+            favicon_url: None,
+        };
+        crate::data::repositories::web_activity::upsert_active_segment(&pool, &input, 6000)
+            .await
+            .unwrap();
+        assert!(delete_web_activity_segments_by_domain(&pool, "  ")
+            .await
+            .is_err());
+        assert!(
+            delete_web_activity_segments_by_domain(&pool, "old.\nexample")
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            delete_web_activity_segments_by_domain(&pool, "%")
+                .await
+                .unwrap()
+                .web_activity_segments_deleted,
+            0
+        );
+        assert_eq!(
+            delete_web_activity_segments_by_domain(&pool, "example")
+                .await
+                .unwrap()
+                .web_activity_segments_deleted,
+            0
+        );
+        assert_eq!(
+            delete_web_activity_segments_by_domain(&pool, " OLD.EXAMPLE. ")
+                .await
+                .unwrap()
+                .web_activity_segments_deleted,
+            2
+        );
+        let remaining: Vec<String> =
+            sqlx::query_scalar("SELECT normalized_domain FROM web_activity_segments")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(remaining, vec!["new.example"]);
+        let links: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM web_activity_native_sessions")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(links, 0);
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM sessions")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            3
+        );
+        crate::data::repositories::web_activity::upsert_active_segment(&pool, &input, 9000)
+            .await
+            .unwrap();
+        let start: i64 = sqlx::query_scalar(
+            "SELECT start_time FROM web_activity_segments WHERE normalized_domain='old.example'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(start, 9000);
+        pool.close().await;
     }
 
     #[tokio::test]

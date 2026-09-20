@@ -1,4 +1,5 @@
 mod executor;
+mod journal;
 mod plan;
 
 use crate::data::{backup, sqlite_pool};
@@ -38,21 +39,23 @@ pub async fn schedule_storage_migration(
     app: AppHandle,
     kind: StorageTargetKind,
     selected_parent: PathBuf,
+    checkpoint_before_schedule: bool,
 ) -> Result<storage_anchor::PendingStorageMigration, String> {
     let target = target_root(app_paths::app_profile(&app), kind, &selected_parent);
-    schedule_storage_migration_to_root(app, kind, target, false).await
+    schedule_storage_migration_to_root(app, kind, target, false, checkpoint_before_schedule).await
 }
 
 pub async fn schedule_restore_default_storage(
     app: AppHandle,
     kind: StorageTargetKind,
+    checkpoint_before_schedule: bool,
 ) -> Result<storage_anchor::PendingStorageMigration, String> {
     let defaults = storage_paths::default_storage_paths(&app)?;
     let target = match kind {
         StorageTargetKind::Data => defaults.data_root,
         StorageTargetKind::Webview => defaults.webview_root,
     };
-    schedule_storage_migration_to_root(app, kind, target, true).await
+    schedule_storage_migration_to_root(app, kind, target, true, checkpoint_before_schedule).await
 }
 
 async fn schedule_storage_migration_to_root(
@@ -60,6 +63,7 @@ async fn schedule_storage_migration_to_root(
     kind: StorageTargetKind,
     target: PathBuf,
     restore_default: bool,
+    checkpoint_before_schedule: bool,
 ) -> Result<storage_anchor::PendingStorageMigration, String> {
     let preview = preview_storage_migration_to_root(&app, kind, target, restore_default)?;
     let current = storage_paths::resolve_storage_paths(&app)?;
@@ -91,6 +95,7 @@ async fn schedule_storage_migration_to_root(
     let persist_app = app.clone();
     let persisted_pending = pending.clone();
     schedule_preparation_with(
+        checkpoint_before_schedule,
         move || async move {
             backup::export_backup(
                 Some(backup_path.to_string_lossy().into_owned()),
@@ -248,7 +253,7 @@ pub async fn run_startup_storage_maintenance<R: Runtime>(app: &AppHandle<R>) -> 
 
 pub async fn run_pending_storage_migration<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let Some(pending) = storage_anchor::read_pending_migration(app)? else {
-        return Ok(());
+        return executor::finish_without_pending(&storage_paths::resolve_storage_paths(app)?);
     };
     let current = storage_paths::resolve_storage_paths(app)?;
     let execution = executor::execute_pending_with_deps(
@@ -265,22 +270,29 @@ pub async fn run_pending_storage_migration<R: Runtime>(app: &AppHandle<R>) -> Re
     )
     .await;
 
+    let resolved = storage_paths::resolve_storage_paths(app)?;
+    if let Err(error) = &execution {
+        if !executor::failed_execution_can_finish(&pending, &resolved)? {
+            return Err(format!(
+                "storage migration is awaiting safe recovery: {error}"
+            ));
+        }
+        ensure_source_can_continue(&pending)?;
+    }
     let previous_maintenance = storage_anchor::read_maintenance_state(app)?;
     let mut maintenance = maintenance_state_after_execution(&pending, execution.clone());
     maintenance.pending_webview_cache_clear = previous_maintenance.pending_webview_cache_clear;
     maintenance.last_webview_cache_clear_at_ms =
         previous_maintenance.last_webview_cache_clear_at_ms;
+    storage_anchor::write_maintenance_state(app, &maintenance)?;
     storage_anchor::remove_pending_migration(app)
         .map_err(|error| format!("failed to clear completed storage migration request: {error}"))?;
-    if let Err(error) = storage_anchor::write_maintenance_state(app, &maintenance) {
-        eprintln!("[storage] failed to persist migration maintenance state: {error}");
-    }
+    executor::finish_without_pending(&resolved)?;
 
     match execution {
         Ok(()) => Ok(()),
         Err(error) => {
             eprintln!("[storage] pending migration failed: {error}");
-            ensure_source_can_continue(&pending)?;
             Ok(())
         }
     }
@@ -386,6 +398,7 @@ async fn schedule_preparation_with<
     Persist,
     PersistFuture,
 >(
+    checkpoint_before_schedule: bool,
     backup: Backup,
     checkpoint: Checkpoint,
     persist: Persist,
@@ -399,7 +412,11 @@ where
     PersistFuture: Future<Output = Result<(), String>>,
 {
     backup().await?;
-    checkpoint().await?;
+    // A managed Desktop exports a read snapshot only. The host's offline
+    // maintenance phase closes the daemon before copying/checkpointing its DB.
+    if checkpoint_before_schedule {
+        checkpoint().await?;
+    }
     persist().await
 }
 
@@ -435,6 +452,7 @@ mod tests {
             let persist_events = events.clone();
 
             schedule_preparation_with(
+                true,
                 move || async move {
                     backup_events.lock().unwrap().push("backup");
                     Ok(())
@@ -455,6 +473,88 @@ mod tests {
                 events.lock().unwrap().as_slice(),
                 ["backup", "checkpoint", "pending"]
             );
+        });
+    }
+
+    #[test]
+    fn managed_schedule_exports_then_persists_without_desktop_checkpoint() {
+        tauri::async_runtime::block_on(async {
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let backup_events = events.clone();
+            let persist_events = events.clone();
+            schedule_preparation_with(
+                false,
+                move || async move {
+                    backup_events.lock().unwrap().push("backup");
+                    Ok(())
+                },
+                || async { panic!("managed Desktop must not checkpoint the daemon database") },
+                move || async move {
+                    persist_events.lock().unwrap().push("pending");
+                    Ok(())
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(events.lock().unwrap().as_slice(), ["backup", "pending"]);
+        });
+    }
+
+    #[test]
+    fn failed_backup_never_persists_a_storage_request() {
+        tauri::async_runtime::block_on(async {
+            for checkpoint in [false, true] {
+                let error = schedule_preparation_with(
+                    checkpoint,
+                    || async { Err("snapshot failed".to_string()) },
+                    || async { panic!("must not checkpoint after a failed backup") },
+                    || async { panic!("must not schedule after a failed backup") },
+                )
+                .await
+                .unwrap_err();
+                assert_eq!(error, "snapshot failed");
+            }
+        });
+    }
+
+    #[test]
+    fn migration_backup_export_works_with_a_query_only_database() {
+        tauri::async_runtime::block_on(async {
+            let root = std::env::temp_dir().join(format!(
+                "patina-migration-readonly-backup-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+            ));
+            let pool =
+                sqlite_pool::open_prepared_sqlite_pool_at_path(&root.join("patina.db"), true)
+                    .await
+                    .unwrap();
+            sqlx::query("INSERT INTO sessions (app_name, exe_name, start_time, end_time, duration, continuity_group_start_time) VALUES ('Synthetic', 'synthetic', 1000, 2000, 1000, 1000)")
+                .execute(&pool).await.unwrap();
+            sqlx::query("PRAGMA query_only = ON")
+                .execute(&pool)
+                .await
+                .unwrap();
+            let target = root.join("pre-migration.patina-backup");
+            backup::export_backup_from_pool(&pool, &target)
+                .await
+                .unwrap();
+            assert!(target.is_file());
+            let unchanged: (i64, i64) =
+                sqlx::query_as("SELECT COUNT(*), SUM(duration) FROM sessions")
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            assert_eq!(unchanged, (1, 1000));
+            assert!(sqlx::query("DELETE FROM sessions")
+                .execute(&pool)
+                .await
+                .is_err());
+            pool.close().await;
+            std::fs::remove_dir_all(root).unwrap();
         });
     }
 

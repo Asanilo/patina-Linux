@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { discoverTests, selectTests } from "../scripts/run-tests.ts";
 
 const skillRoot = "skills/analyzing-patina-activity";
 assert.equal(
@@ -51,7 +52,16 @@ assert.match(analysis, /hour bucket/i);
 
 assert.match(metadata, /display_name: "Analyze Patina Activity"/);
 assert.match(metadata, /\$analyzing-patina-activity/);
-assert.match(packageJson.scripts["check:frontend"], /npm run test:mcp/);
-assert.match(packageJson.scripts["check:frontend"], /npm run test:agent-skill/);
+assert.match(packageJson.scripts["check:frontend"], /^npm test(?: &&|$)/);
+assert.match(packageJson.scripts.test, /\bscripts\/run-tests\.ts\b/);
+const selectedTests = selectTests(discoverTests("tests"));
+for (const file of [
+  "tests/patinaMcpScript.test.ts",
+  "tests/patinaIntegrationDocs.test.ts",
+  "tests/patinaAgentSkill.test.ts",
+]) {
+  assert.equal(selectedTests.filter((candidate) => candidate === file).length, 1,
+    `${file} must run exactly once in the discovered frontend test suite`);
+}
 
 console.log("Validated Patina Agent Skill transport and safety contract");

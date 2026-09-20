@@ -484,6 +484,17 @@ fn paths(surface: ApiSurface) -> Value {
         }),
     );
     object.insert(
+        "/api/v1/data/web-domains/delete".to_string(),
+        json!({
+            "post": post_operation(
+                "Delete browser activity for one exact normalized domain; future recording remains enabled.",
+                vec![],
+                "WebDomainCleanupRequest",
+                "WebDomainCleanupResponse",
+            )
+        }),
+    );
+    object.insert(
         "/api/v1/system/service".to_string(),
         json!({
             "get": get_operation(
@@ -1787,6 +1798,21 @@ fn schemas() -> Value {
                 bounded_integer_schema(0, i64::MAX),
             ),
         ])),
+    );
+
+    schemas.insert(
+        "WebDomainCleanupRequest".to_string(),
+        object_schema(vec![
+            ("domain", bounded_string_schema(1, 253)),
+            ("confirmed", bool_schema()),
+        ]),
+    );
+    schemas.insert(
+        "WebDomainCleanupResponse".to_string(),
+        envelope(object_schema(vec![(
+            "web_activity_segments_deleted",
+            bounded_integer_schema(0, i64::MAX),
+        )])),
     );
 
     Value::Object(schemas)

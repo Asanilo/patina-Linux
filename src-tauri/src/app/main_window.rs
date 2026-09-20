@@ -107,6 +107,10 @@ pub(crate) fn ensure_main_window<R: Runtime>(
 
 fn main_window_url() -> WebviewUrl {
     #[cfg(test)]
+    if let Ok(url) = std::env::var("PATINA_STORAGE_TEST_URL") {
+        return WebviewUrl::External(url.parse().expect("isolated storage acceptance URL"));
+    }
+    #[cfg(test)]
     if let Ok(url) = std::env::var("PATINA_HEATMAP_TEST_URL") {
         return WebviewUrl::External(url.parse().expect("isolated frontend URL"));
     }

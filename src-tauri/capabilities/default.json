@@ -20,12 +20,6 @@
     "notification:allow-is-permission-granted",
     "updater:default",
     {
-      "identifier": "sql:allow-load",
-      "args": {
-        "db": "sqlite:patina.db"
-      }
-    },
-    {
       "identifier": "sql:allow-select",
       "args": {
         "db": "sqlite:patina.db"

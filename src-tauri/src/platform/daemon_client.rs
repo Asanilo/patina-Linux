@@ -398,6 +398,21 @@ impl PatinadClient {
             .await
     }
 
+    pub async fn delete_web_domain_history(
+        &self,
+        domain: String,
+    ) -> Result<crate::domain::data_maintenance::WebDomainCleanupResult, PatinadClientError> {
+        self.post_json(
+            "/api/v1/data/web-domains/delete",
+            &crate::engine::api::types::WebDomainCleanupRequest {
+                domain,
+                confirmed: true,
+            },
+            "web history cleanup",
+        )
+        .await
+    }
+
     pub async fn commit_staged_activity_import(
         &self,
         request: &crate::engine::api::types::StagedActivityImportCommitRequest,

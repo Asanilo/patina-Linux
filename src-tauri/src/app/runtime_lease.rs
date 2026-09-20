@@ -14,6 +14,7 @@ const RUNTIME_LEASE_FILE_NAME: &str = "runtime-owner.lock";
 pub enum RuntimeRole {
     Desktop,
     Daemon,
+    Maintenance,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

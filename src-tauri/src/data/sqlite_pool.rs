@@ -134,6 +134,34 @@ pub async fn reopen_sqlite_pool<R: Runtime>(app: &AppHandle<R>) -> Result<Pool<S
     Ok(next_pool)
 }
 
+async fn open_existing_sqlite_pool_at_path(db_path: &Path) -> Result<Pool<Sqlite>, String> {
+    let pool = open_single_connection_sqlite_pool(db_path, false).await?;
+    let validation = has_current_baseline_schema(&pool).await;
+    match validation {
+        Ok(true) => Ok(pool),
+        result => {
+            pool.close().await;
+            match result {
+                Err(error) => Err(error),
+                _ => Err(format!(
+                    "existing sqlite database `{}` is not ready for daemon client mode",
+                    db_path.display()
+                )),
+            }
+        }
+    }
+}
+
+pub async fn reopen_existing_sqlite_pool<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<Pool<Sqlite>, String> {
+    // The daemon owns database creation, schema maintenance, and setting backfills.
+    let db_path = storage_paths::resolve_storage_paths(app)?.db_path;
+    let next_pool = open_existing_sqlite_pool_at_path(&db_path).await?;
+    register_sqlite_pool(app, next_pool.clone()).await?;
+    Ok(next_pool)
+}
+
 async fn register_sqlite_pool<R: Runtime>(
     app: &AppHandle<R>,
     next_pool: Pool<Sqlite>,
@@ -170,16 +198,7 @@ pub async fn initialize_app_sqlite<R: Runtime>(app: &AppHandle<R>) -> Result<(),
 }
 
 pub async fn initialize_existing_app_sqlite<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
-    let db_path = resolve_product_db_path(app)?;
-    let pool = open_single_connection_sqlite_pool(&db_path, false).await?;
-    if !has_current_baseline_schema(&pool).await? {
-        pool.close().await;
-        return Err(format!(
-            "existing sqlite database `{}` is not ready for daemon client mode",
-            db_path.display()
-        ));
-    }
-    register_sqlite_pool(app, pool).await
+    reopen_existing_sqlite_pool(app).await.map(|_| ())
 }
 
 async fn prepare_current_schema_for_pool(pool: &Pool<Sqlite>) -> Result<(), String> {
@@ -1163,6 +1182,104 @@ mod tests {
     use super::*;
     use sqlx::{Executor, SqlitePool};
 
+    fn existing_pool_test_root(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "patina-existing-pool-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn existing_only_pool_does_not_create_a_missing_database() {
+        tauri::async_runtime::block_on(async {
+            let root = existing_pool_test_root("missing");
+            let db_path = root.join("Patina").join("patina.db");
+
+            assert!(open_existing_sqlite_pool_at_path(&db_path).await.is_err());
+            assert!(!root.exists());
+
+            std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+            assert!(open_existing_sqlite_pool_at_path(&db_path).await.is_err());
+            assert!(!db_path.exists());
+            std::fs::remove_dir_all(root).unwrap();
+        });
+    }
+
+    #[test]
+    fn existing_only_pool_rejects_incompatible_schema_without_repair() {
+        tauri::async_runtime::block_on(async {
+            let root = existing_pool_test_root("incompatible");
+            std::fs::create_dir_all(&root).unwrap();
+            let db_path = root.join("patina.db");
+            let pool = open_single_connection_sqlite_pool(&db_path, true)
+                .await
+                .unwrap();
+            pool.execute("CREATE TABLE legacy_marker (value TEXT NOT NULL)")
+                .await
+                .unwrap();
+            pool.execute("INSERT INTO legacy_marker (value) VALUES ('preserved')")
+                .await
+                .unwrap();
+            pool.close().await;
+
+            let error = open_existing_sqlite_pool_at_path(&db_path)
+                .await
+                .unwrap_err();
+            assert!(error.contains("not ready for daemon client mode"));
+
+            let pool = open_single_connection_sqlite_pool(&db_path, false)
+                .await
+                .unwrap();
+            let tables: Vec<String> = sqlx::query_scalar(
+                "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
+            )
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+            assert_eq!(tables, vec!["legacy_marker"]);
+            let value: String = sqlx::query_scalar("SELECT value FROM legacy_marker")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(value, "preserved");
+            pool.close().await;
+            std::fs::remove_dir_all(root).unwrap();
+        });
+    }
+
+    #[test]
+    fn existing_only_pool_does_not_run_migrations_or_backfill_settings() {
+        tauri::async_runtime::block_on(async {
+            let root = existing_pool_test_root("no-maintenance");
+            let db_path = root.join("patina.db");
+            let pool = open_prepared_sqlite_pool_at_path(&db_path, true)
+                .await
+                .unwrap();
+            pool.execute("DROP TABLE _sqlx_migrations").await.unwrap();
+            pool.execute("DELETE FROM settings WHERE key = 'background_tracking_at_login'")
+                .await
+                .unwrap();
+            pool.close().await;
+
+            let pool = open_existing_sqlite_pool_at_path(&db_path).await.unwrap();
+            assert!(has_current_baseline_schema(&pool).await.unwrap());
+            assert!(!table_exists(&pool, "_sqlx_migrations").await.unwrap());
+            let login_settings: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM settings WHERE key = 'background_tracking_at_login'",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(login_settings, 0);
+            pool.close().await;
+            std::fs::remove_dir_all(root).unwrap();
+        });
+    }
+
     async fn create_sqlx_migrations_table(pool: &SqlitePool) {
         pool.execute(
             "CREATE TABLE _sqlx_migrations (
@@ -1401,6 +1518,227 @@ mod tests {
 
             run_current_migrations(&pool).await.unwrap();
             assert!(has_web_activity_session_schema(&pool).await.unwrap());
+        });
+    }
+
+    #[test]
+    fn published_linux_main_a13a64a_upgrades_to_daemon_without_losing_existing_data() {
+        tauri::async_runtime::block_on(async {
+            // Fixture provenance: Linux main a13a64a669849234df5575994673cb7a90cc3003
+            // (1.8.4), src-tauri/src/data/schema.rs. Its six SQL migrations are
+            // byte-identical to the first six here. Pin their actual SQLx SHA384
+            // checksums and descriptions instead of copying the migration system.
+            // A future edit must not silently redefine this historical fixture.
+            let main_metadata = [
+                (1, "create_current_baseline_schema", "814c93ce744d7cd7d412b0f6a333fa694912cbfeb50631c3fe2e272b4d48901ec36aa920ca7f2ca2f9c9f65d1181b3b5"),
+                (2, "create_tools_tables", "86f667e46ec43873b4427f49ae6ef6ff4a4651f13a51b89af48d4e808a2a68254407867d4438a4b65479ba749c0b54ee"),
+                (3, "create_software_reminder_rules", "c3b882b9d9002c1ac77a84cfb84825480add3048b508aae0e4a3e6987a506b56d5e9bef88be8cd3236794559b1f700c0"),
+                (4, "create_web_activity_segments", "08919d97b0cc1098695fb1bf6880e87a56e31672a7cefe47dc056f3005ed9cd845af56fd1478d9587af5c442b830c791"),
+                (5, "create_scheduled_backup_tables", "651789cdf631343313427566e3c24b0d28940f1cff1e33e2b6cccfc8d0342fbde81f13eb640972d9d8ee7cf2314c42e5"),
+                (6, "create_activity_import_tables", "7143cd4a81f7523ff67af96c187db75ebb507fbc3ac290c3abb8575dc3d31ad31db297654bcf9f5218b065442bbcec99"),
+            ];
+            let main_migrations = schema::tracker_migrations().into_iter().take(6).collect();
+            let migrator = Migrator::new(InlineMigrationList(main_migrations))
+                .await
+                .unwrap();
+            assert_eq!(migrator.iter().count(), main_metadata.len());
+            for (migration, (version, description, checksum)) in migrator.iter().zip(main_metadata)
+            {
+                let actual_checksum: String = migration
+                    .checksum
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect();
+                assert_eq!(migration.version, version);
+                assert_eq!(migration.description, description);
+                assert_eq!(
+                    actual_checksum, checksum,
+                    "published main migration {version} changed"
+                );
+            }
+
+            let root = existing_pool_test_root("published-main-upgrade");
+            std::fs::create_dir_all(&root).unwrap();
+            let db_path = root.join("patina.db");
+            let pool = open_single_connection_sqlite_pool(&db_path, true)
+                .await
+                .unwrap();
+            migrator.run(&pool).await.unwrap();
+            assert!(!has_web_activity_session_schema(&pool).await.unwrap());
+            assert!(!has_backup_restore_receipt_schema(&pool).await.unwrap());
+            // Entirely synthetic rows, including nullable live records, Unicode,
+            // relationship keys and each of main's sixteen existing data tables.
+            pool.execute(r#"
+                INSERT INTO sessions VALUES
+                    (41, 'Terminal', 'gnome-terminal', '文档', 1000, 5000, 4000, 1000),
+                    (42, 'Firefox', 'firefox', 'Active tab', 6000, NULL, NULL, 6000);
+                INSERT INTO session_title_samples VALUES
+                    (1, 41, '文档', 1000, 5000), (2, 42, 'Active tab', 6000, NULL);
+                INSERT INTO settings VALUES
+                    ('launch_at_login', '1'), ('language', 'en-US'),
+                    ('__app_override::firefox', '{"category":"development","displayName":"工作浏览器","enabled":true}'),
+                    ('__custom_category::main-fixture', '1234'),
+                    ('__web_domain_override::example.org', '{"category":"development"}');
+                INSERT INTO icon_cache VALUES ('firefox', 'synthetic-icon', 1000);
+                INSERT INTO tool_reminders VALUES (21, 'Break', 50000, 1000, 'pending', NULL, NULL);
+                INSERT INTO tool_timers VALUES
+                    (31, 'countdown', 'Tea', 60000, 2000, NULL, 3000, NULL, 'paused', 1000, 3000);
+                INSERT INTO tool_timer_laps VALUES (32, 31, 1, 1000, 3000, 2000);
+                INSERT INTO tool_pomodoro_runs VALUES
+                    (51, 'focus', 'paused', 1, 1500000, 300000, 900000, 4, NULL, 4000, 1000000, 2, 1000, 4000);
+                INSERT INTO tool_daily_stats VALUES ('2026-09-20', 2, 4000);
+                INSERT INTO tool_software_reminder_rules VALUES
+                    (61, 'Firefox', 'firefox', 300000, '休息', 1000, 4000, NULL, '2026-09-20');
+                INSERT INTO web_activity_segments VALUES
+                    (71, 'synthetic-client', 'firefox', 'firefox', 'Example.org', 'example.org',
+                     'https://example.org/docs', '文档', NULL, 2000, 4000, 2000, 'browser-extension', 2000, 4000),
+                    (72, 'synthetic-client', 'firefox', 'firefox', 'Example.org', 'example.org',
+                     'https://example.org/live', 'Active tab', NULL, 6000, NULL, NULL, 'browser-extension', 6000, 6000);
+                INSERT INTO scheduled_backup_config VALUES
+                    (1, 1, 'daily', NULL, 540, '/synthetic/backups', 3, 'main-fixture', 1, 2);
+                INSERT INTO scheduled_backup_runs VALUES
+                    ('main-run', 'main-fixture', '2026-09-19', 540, '/synthetic/backups/old.patina',
+                     'succeeded', 'present', 1, NULL, 1, 2, printf('%064d', 3), 123, NULL, NULL, NULL, 2);
+                INSERT INTO import_batches VALUES
+                    ('main-import', 7000, 'Synthetic CSV', 'patina-csv', printf('%064d', 0), 1, 1);
+                INSERT INTO import_exact_sessions VALUES
+                    (81, 'main-import', printf('%064d', 1), 'Imported App', 'imported', 'Old title',
+                     10000, 12000, 2000, 'other');
+                INSERT INTO import_time_buckets VALUES
+                    (82, 'main-import', printf('%064d', 2), 'Imported App', 'imported', 0, 1000, 'other');
+            "#).await.unwrap();
+
+            let tables: Vec<String> = sqlx::query_scalar(
+                "SELECT name FROM sqlite_master WHERE type = 'table'
+                 AND name NOT IN ('_sqlx_migrations', 'sqlite_sequence') ORDER BY name",
+            )
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+            assert_eq!(tables.len(), 16);
+            let mut snapshots = Vec::new();
+            for table in tables {
+                let columns: Vec<String> = sqlx::query(&format!("PRAGMA table_info({table})"))
+                    .fetch_all(&pool)
+                    .await
+                    .unwrap()
+                    .iter()
+                    .map(|row| format!("\"{}\"", row.get::<String, _>("name")))
+                    .collect();
+                let filter = if table == "settings" {
+                    " WHERE key <> 'background_tracking_at_login'"
+                } else {
+                    ""
+                };
+                let query = format!(
+                    "SELECT json_array({}) FROM {table}{filter} ORDER BY 1",
+                    columns.join(", ")
+                );
+                let rows: Vec<String> = sqlx::query_scalar(&query).fetch_all(&pool).await.unwrap();
+                assert!(!rows.is_empty(), "fixture must exercise {table}");
+                snapshots.push((table, query, rows));
+            }
+            let original_indexes: Vec<(String, String)> = sqlx::query_as(
+                "SELECT name, sql FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL ORDER BY name",
+            ).fetch_all(&pool).await.unwrap();
+            let original_migrations: Vec<(i64, String, Vec<u8>)> = sqlx::query_as(
+                "SELECT version, description, checksum FROM _sqlx_migrations ORDER BY version",
+            )
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+            pool.close().await;
+
+            // Exercise the actual daemon preparation path, then an idempotent reopen.
+            for _ in 0..2 {
+                let upgraded = open_prepared_sqlite_pool_at_path(&db_path, false)
+                    .await
+                    .unwrap();
+                assert!(has_current_schema(&upgraded).await.unwrap());
+                for (table, query, expected) in &snapshots {
+                    let actual: Vec<String> = sqlx::query_scalar(query)
+                        .fetch_all(&upgraded)
+                        .await
+                        .unwrap();
+                    assert_eq!(&actual, expected, "main data changed in {table}");
+                }
+                for (name, expected_sql) in &original_indexes {
+                    let actual: String = sqlx::query_scalar(
+                        "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?",
+                    )
+                    .bind(name)
+                    .fetch_one(&upgraded)
+                    .await
+                    .unwrap();
+                    assert_eq!(&actual, expected_sql);
+                }
+                let preserved_migrations: Vec<(i64, String, Vec<u8>)> = sqlx::query_as(
+                    "SELECT version, description, checksum FROM _sqlx_migrations WHERE version <= 6 ORDER BY version",
+                ).fetch_all(&upgraded).await.unwrap();
+                assert_eq!(preserved_migrations, original_migrations);
+                let versions: Vec<i64> = sqlx::query_scalar(
+                    "SELECT version FROM _sqlx_migrations WHERE success = 1 ORDER BY version",
+                )
+                .fetch_all(&upgraded)
+                .await
+                .unwrap();
+                let expected_versions: Vec<i64> = schema::tracker_migrations()
+                    .iter()
+                    .map(|migration| migration.version)
+                    .collect();
+                assert_eq!(versions, expected_versions);
+                let background_login: String = sqlx::query_scalar(
+                    "SELECT value FROM settings WHERE key = 'background_tracking_at_login'",
+                )
+                .fetch_one(&upgraded)
+                .await
+                .unwrap();
+                assert_eq!(background_login, "1");
+                assert!(has_web_activity_session_schema(&upgraded).await.unwrap());
+                assert!(has_backup_restore_receipt_schema(&upgraded).await.unwrap());
+                let linked_rows: i64 =
+                    sqlx::query_scalar("SELECT COUNT(*) FROM web_activity_native_sessions")
+                        .fetch_one(&upgraded)
+                        .await
+                        .unwrap();
+                assert_eq!(
+                    linked_rows, 0,
+                    "upgrade must not invent historical browser bindings"
+                );
+                let foreign_key_errors = sqlx::query("PRAGMA foreign_key_check")
+                    .fetch_all(&upgraded)
+                    .await
+                    .unwrap();
+                assert!(foreign_key_errors.is_empty());
+                let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
+                    .fetch_one(&upgraded)
+                    .await
+                    .unwrap();
+                assert_eq!(integrity, "ok");
+                upgraded.close().await;
+            }
+
+            // New v7/v8 structures must work, not merely have matching names.
+            let upgraded = open_prepared_sqlite_pool_at_path(&db_path, false)
+                .await
+                .unwrap();
+            upgraded.execute(
+                "INSERT INTO web_activity_native_sessions VALUES (72, 42);
+                 UPDATE sessions SET end_time = 9000, duration = 3000 WHERE id = 42;
+                 INSERT INTO backup_restore_receipts VALUES ('synthetic-restore', 'synthetic-sha', 'merge', 9000);",
+            ).await.unwrap();
+            let closed_web: (i64, i64) = sqlx::query_as(
+                "SELECT end_time, duration FROM web_activity_segments WHERE id = 72",
+            )
+            .fetch_one(&upgraded)
+            .await
+            .unwrap();
+            assert_eq!(closed_web, (9000, 3000));
+            let receipt: (String, i64) = sqlx::query_as("SELECT strategy, completed_at_ms FROM backup_restore_receipts WHERE request_id = 'synthetic-restore'")
+                .fetch_one(&upgraded).await.unwrap();
+            assert_eq!(receipt, ("merge".to_string(), 9000));
+            upgraded.close().await;
+            std::fs::remove_dir_all(root).unwrap();
         });
     }
 

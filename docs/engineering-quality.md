@@ -104,25 +104,9 @@
 
 - `npm run check`
 
-它串行执行：
+它执行命名与架构门禁、普通自动测试、生产构建与 bundle 预算，具体组合以 [`package.json`](../package.json) 为准，不在文档重复维护测试命令清单。
 
-- `npm run check:naming`
-- `npm run check:architecture`
-- `npm run test:memory`
-- `npm test`
-- `npm run test:replay`
-- `npm run test:update`
-- `npm run test:settings`
-- `npm run test:widget`
-- `npm run test:classification`
-- `npm run test:data`
-- `npm run test:persistence`
-- `npm run test:interaction`
-- `npm run test:release`
-- `npm run test:ui-smoke`
-- `npm run test:ui-browser-smoke`
-- `npm run build`
-- `npm run check:bundle`
+`npm test` 递归发现 `tests/**/*.test.ts`，每个文件在独立进程中顺序执行，失败必须使门禁失败；新增普通测试不需要另行接线。专项 `test:*` 命令用于局部迭代，原 tracking 生命周期入口保留为 `npm run test:tracking-lifecycle`。默认链每个测试文件只运行一次。需要真实桌面、systemd 或明确 fixture 的验收继续使用具名专项 runner / Rust ignored test；不得因为自动发现方便就把这些操作加入普通测试。
 
 默认完整质量门槛是：
 
@@ -141,11 +125,13 @@ Rust 默认门槛包含 `npm run check:rust-boundaries`、`cargo check`、Rust �
 - 准备正式发布：本地执行 `npm run release:check`，安装包构建与 updater 产物生成默认交给 GitHub Actions
 - 生成 daemon-backed Debian 包后：执行 `npm run release:verify-daemon-deb -- <deb-path> <version>`，检查最终包内容而不安装或启用服务
 
-当前仓库默认 CI gate 与 release workflow 的质量校验入口统一为 `npm run check:full`。
+Verify 在 `main` 和 `feature/patinad-daemon` 的 push、PR 与手动触发时运行 `npm run check:full`；发布工作流运行包含该门槛的 `npm run release:check`。修改 workflow 文件不等于远端检查已运行。
 
 `check:naming` 是前端边界的轻量命名防线。它默认扫描 `src/app/**`、`src/features/**`、`src/shared/types/**` 与 `src/shared/lib/**`，阻止 tracking / update IPC、backup preview、widget placement、settings persistence 与 SQLite read row 的常见 raw 字段和 `RawXxx` 协议类型重新扩散到业务层。Raw DTO、协议字段与数据库字段应继续留在 `src/platform/**`、`src-tauri/**`、测试 fixture 或明确的 read model 内部边界。
 
 `check:architecture` 是前端 owner 边界的轻量结构防线。它默认扫描 `src/app`、`src/features`、`src/shared` 与 `src/platform`，阻止 shared 反向依赖 app / features / platform，阻止 platform 反向依赖 app / features，并阻止 `src/features/*/components/**` 与 `src/features/*/hooks/**` 直接绕过 feature-owned service 访问 platform、Tauri API 或 `invoke`。`src/app/components/**` 与 `src/app/hooks/**` 不应直接访问 `platform/persistence/**`。
+
+该检查使用 TypeScript AST 识别多行 import/export、类型导入和字面量动态 import，回归自测随门禁运行；注释与普通字符串不算依赖。它不求值计算式动态路径，也不代替行为或 owner 审查。新增扫描规则应包含能复现其漏检或误报的用例。
 
 `check:rust-boundaries` 是 Rust 高吸力层的轻量结构防线。它默认阻止 `commands/*`、`app/*` 与 `lib.rs` 直接写 SQL，阻止 `commands/*` 承接 SQLite pool 类型，阻止 `platform/*` 反向依赖 `data/*`，并阻止 `domain/*` 依赖 `data/*` 或 `platform/*`。测试代码可保留必要的局部例外，但生产路径应继续让 SQL 留在 `data/*`，平台细节留在 `platform/*`，领域决策留在 `domain/*`。
 
@@ -237,7 +223,7 @@ Linux 进程内资源诊断必须以 `/proc/self/smaps_rollup` 为 RSS/PSS/USS �
 
 专项完成后：
 
-- 把阶段事实回写进本文
+- 只把持续有效的规则回写进对应长期文档；版本、测试数字和阶段状态留在工作清单或归档证据中
 - 把执行文档移入 `docs/archive/`
 
 不要让 top-level `docs/` 长期堆积阶段性执行单。

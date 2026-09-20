@@ -205,22 +205,26 @@ export default function SettingsStoragePanel({ storage }: SettingsStoragePanelPr
         </QuietActionRow>
       </div>
 
-      {pending && pendingSource && pendingTarget ? (
+      {pending || snapshot.webviewCache.clearOnRestart ? (
         <div className="mt-4 border-t border-[var(--qp-border-subtle)] pt-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-[var(--qp-warning)]">{copy.storagePendingTitle}</p>
-              <p className="mt-1 truncate font-mono text-xs text-[var(--qp-text-tertiary)]" title={`${pendingSource} → ${pendingTarget}`}>
-                {pendingSource} → {pendingTarget}
-              </p>
+              <p className="text-sm font-semibold text-[var(--qp-warning)]">{pending ? copy.storagePendingTitle : copy.storageCacheClearOnRestart}</p>
+              {pendingSource && pendingTarget ? (
+                <p className="mt-1 truncate font-mono text-xs text-[var(--qp-text-tertiary)]" title={`${pendingSource} → ${pendingTarget}`}>
+                  {pendingSource} → {pendingTarget}
+                </p>
+              ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <button type="button" className={actionButtonClass} onClick={() => void storage.cancelPending()} disabled={busy}>
-                {copy.storagePendingCancel}
-              </button>
-              <button type="button" className="qp-button-primary inline-flex h-8 items-center gap-1.5 px-2.5 text-xs font-semibold disabled:opacity-50" onClick={() => void storage.restart()} disabled={busy} aria-label={copy.storageRestartPending}>
+              {pending ? (
+                <button type="button" className={actionButtonClass} onClick={() => void storage.cancelPending()} disabled={busy}>
+                  {copy.storagePendingCancel}
+                </button>
+              ) : null}
+              <button type="button" className="qp-button-primary inline-flex h-8 items-center gap-1.5 px-2.5 text-xs font-semibold disabled:opacity-50" onClick={() => void storage.restart()} disabled={busy} aria-label={pending ? copy.storageRestartPending : copy.storageRestartNow}>
                 <RefreshCw size={14} />
-                {copy.storageRestartPending}
+                {pending ? copy.storageRestartPending : copy.storageRestartNow}
               </button>
             </div>
           </div>

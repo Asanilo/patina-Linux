@@ -436,6 +436,89 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn web_history_cleanup_requires_confirmation_and_tracking_owner() {
+        let runtime = TestApiRuntime::start_tracking().await;
+        let client = PatinadClient::new(runtime.port, TEST_TOKEN).unwrap();
+        use crate::data::repositories::web_activity::{
+            self, WebActivitySegmentInput, WebActivitySegmentQuery,
+        };
+        runtime.replace_active_session("Browser", "zen", 1000).await;
+        web_activity::upsert_active_segment(
+            &runtime.pool,
+            &WebActivitySegmentInput {
+                browser_client_id: "browser".into(),
+                browser_kind: "firefox".into(),
+                browser_exe_name: "zen".into(),
+                domain: "example.test".into(),
+                normalized_domain: "example.test".into(),
+                url: None,
+                title: None,
+                favicon_url: None,
+            },
+            1200,
+        )
+        .await
+        .unwrap();
+        let url = format!(
+            "http://127.0.0.1:{}/api/v1/data/web-domains/delete",
+            runtime.port
+        );
+        let http = reqwest::Client::new();
+        let response = http
+            .post(&url)
+            .bearer_auth(TEST_TOKEN)
+            .header("Content-Type", "application/json")
+            .body(r#"{"domain":"example.test","confirmed":false}"#)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status().as_u16(), 400);
+        let response = http
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .body(r#"{"domain":"example.test","confirmed":true}"#)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status().as_u16(), 401);
+        assert!(matches!(
+            client.delete_web_domain_history(" ".into()).await,
+            Err(PatinadClientError::Http { status: 400, .. })
+        ));
+        assert_eq!(
+            web_activity::query_segments(&runtime.pool, &WebActivitySegmentQuery::default(), 2000)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        let mut events = runtime.event_hub.subscribe_after(None);
+        let deleted = client
+            .delete_web_domain_history("example.test".into())
+            .await
+            .unwrap();
+        assert_eq!(deleted.web_activity_segments_deleted, 1);
+        let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(event.event, crate::engine::runtime_event::RuntimeEvent::TrackingDataChanged {reason,..} if reason == crate::domain::web_activity::WEB_ACTIVITY_CHANGED_REASON)
+        );
+        runtime.shutdown().await;
+
+        let readonly = TestApiRuntime::start(ApiSurface::DaemonReadOnly).await;
+        let client = PatinadClient::new(readonly.port, TEST_TOKEN).unwrap();
+        assert!(matches!(
+            client
+                .delete_web_domain_history("example.test".into())
+                .await,
+            Err(PatinadClientError::Http { status: 404, .. })
+        ));
+        readonly.shutdown().await;
+    }
+
+    #[tokio::test]
     async fn client_commits_lists_and_deletes_a_staged_activity_import() {
         const CSV: &[u8] = b"record_type,start_time,end_time,duration_ms,exe_name,app_name,title,category\nexact_session,2026-01-15T09:00:00+08:00,2026-01-15T09:30:00+08:00,1800000,org.example.Editor,Editor,Work,Development\n";
 
@@ -585,6 +668,7 @@ mod tests {
         let output = std::sync::Arc::new(TestRuntimeOutput {
             state: state.clone(),
             notifications: std::sync::atomic::AtomicUsize::new(0),
+            events: std::sync::Mutex::new(Vec::new()),
         });
         let adapter = super::runtime::PatinadRuntimeAdapter::new(client, output.clone());
         let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
@@ -667,6 +751,88 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn runtime_adapter_forwards_tools_alerts_and_backup_events() {
+        let runtime = TestApiRuntime::start_tracking().await;
+        runtime
+            .event_hub
+            .emit(RuntimeEvent::ToolAlert {
+                alert: crate::domain::tools::ToolAlert {
+                    id: "previous-desktop-dismissed".to_string(),
+                    kind: crate::domain::tools::ToolAlertKind::Reminder,
+                    title: "Old reminder".to_string(),
+                    body: "Must not be replayed to a new Desktop instance".to_string(),
+                    occurred_at: 100,
+                },
+            })
+            .unwrap();
+        let client = PatinadClient::new(runtime.port, TEST_TOKEN).unwrap();
+        let state = std::sync::Arc::new(super::runtime::PatinadRuntimeState::default());
+        let output = std::sync::Arc::new(TestRuntimeOutput {
+            state: state.clone(),
+            notifications: std::sync::atomic::AtomicUsize::new(0),
+            events: std::sync::Mutex::new(Vec::new()),
+        });
+        let adapter = super::runtime::PatinadRuntimeAdapter::new(client, output.clone());
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let task = tokio::spawn(async move { adapter.run(shutdown_rx).await });
+        wait_for_runtime(&state, "ghostty").await;
+
+        let expected = vec![
+            RuntimeEvent::ToolsRuntimeChanged {
+                changed_at_ms: 2_000,
+            },
+            RuntimeEvent::ToolAlert {
+                alert: crate::domain::tools::ToolAlert {
+                    id: "test-reminder".to_string(),
+                    kind: crate::domain::tools::ToolAlertKind::Reminder,
+                    title: "Synthetic reminder".to_string(),
+                    body: "Synthetic event".to_string(),
+                    occurred_at: 2_000,
+                },
+            },
+            RuntimeEvent::ScheduledBackupChanged {
+                changed_at_ms: 2_000,
+            },
+            // Older tracking invalidations also remain observable after a read.
+            RuntimeEvent::TrackingDataChanged {
+                reason: "web-activity-changed".to_string(),
+                changed_at_ms: 500,
+            },
+        ];
+        for event in &expected {
+            runtime.event_hub.emit(event.clone()).unwrap();
+        }
+        let delivered = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while output.events.lock().unwrap().len() < expected.len() {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+
+        shutdown_tx.send(true).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(1), task)
+            .await
+            .expect("runtime adapter should stop")
+            .unwrap();
+        runtime.shutdown().await;
+        assert!(
+            delivered.is_ok(),
+            "all runtime event families must reach the client"
+        );
+        let events = output.events.lock().unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| event.event.clone())
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert!(events
+            .windows(2)
+            .all(|pair| pair[0].sequence < pair[1].sequence));
+    }
+
+    #[tokio::test]
     async fn runtime_adapter_reconnects_with_replaced_client_configuration() {
         let first_runtime = TestApiRuntime::start_tracking().await;
         let second_runtime = TestApiRuntime::start_tracking().await;
@@ -732,6 +898,7 @@ mod tests {
     struct TestRuntimeOutput {
         state: std::sync::Arc<super::runtime::PatinadRuntimeState>,
         notifications: std::sync::atomic::AtomicUsize,
+        events: std::sync::Mutex<Vec<crate::engine::runtime_event::RuntimeEventEnvelope>>,
     }
 
     impl super::runtime::PatinadRuntimeOutput for TestRuntimeOutput {
@@ -749,8 +916,9 @@ mod tests {
 
         fn tracking_data_changed(
             &self,
-            _event: &crate::engine::runtime_event::RuntimeEventEnvelope,
+            event: &crate::engine::runtime_event::RuntimeEventEnvelope,
         ) {
+            self.events.lock().unwrap().push(event.clone());
             self.notifications
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }

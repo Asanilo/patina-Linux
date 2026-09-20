@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { formatStorageBytes } from "../src/features/settings/services/storagePathDisplay.ts";
 import {
+  isStorageMaintenanceUnsupported,
   restoreDefaultStorageWithDeps,
   scheduleStorageMoveWithDeps,
 } from "../src/features/settings/services/storageSettingsActions.ts";
@@ -117,6 +118,42 @@ await runTest("preview errors are propagated without confirmation", async () => 
     /mount unavailable/,
   );
   assert.equal(confirmations, 0);
+});
+
+await runTest("manual daemon preview refusal never confirms or schedules either migration flow", async () => {
+  const unsupported = "storage-maintenance-unsupported-in-daemon-preview";
+  const events: string[] = [];
+  const deps = {
+    preview: async () => {
+      events.push("preview");
+      throw unsupported;
+    },
+    confirm: async () => {
+      events.push("confirm");
+      return true;
+    },
+    schedule: async () => {
+      events.push("schedule");
+      return pending;
+    },
+  };
+
+  await assert.rejects(
+    scheduleStorageMoveWithDeps("data", "/mnt/work", deps),
+    isStorageMaintenanceUnsupported,
+  );
+  await assert.rejects(
+    restoreDefaultStorageWithDeps("webview", deps),
+    isStorageMaintenanceUnsupported,
+  );
+  assert.deepEqual(events, ["preview", "preview"]);
+});
+
+await runTest("unsupported maintenance errors use their own reason, not a disk-space warning", () => {
+  const code = "storage-maintenance-unsupported-in-daemon-preview";
+  assert.equal(isStorageMaintenanceUnsupported(code), true);
+  assert.equal(isStorageMaintenanceUnsupported(new Error(code)), true);
+  assert.equal(isStorageMaintenanceUnsupported(new Error("mount unavailable")), false);
 });
 
 console.log(`Passed ${passed} storage settings tests`);

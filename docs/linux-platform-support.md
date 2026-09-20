@@ -8,6 +8,8 @@
 
 ## 2. 当前支持承诺
 
+`Asanilo/patina-Linux` 的日常产品主线是 `main`，当前发行版支持与验证范围限 Debian 系；`feature/patinad-daemon` 的实验验收不自动扩大该范围。下表区分桌面/显示协议，不能单凭“GNOME”或生成了 AppImage 就宣称其他发行版可用。版本、CPU 架构和包格式仍须随候选证据记录；上游 Linux PR 的首批支持矩阵另行讨论。
+
 | 环境 | 支持级别 | 前台窗口来源 | 说明 |
 | --- | --- | --- | --- |
 | GNOME Wayland | 主要支持 | GNOME Shell 扩展 + session D-Bus | 当前 Linux 发布与验证主路径 |

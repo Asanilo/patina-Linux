@@ -3,6 +3,7 @@ pub mod app_paths;
 pub mod backup_restore_staging;
 pub mod credentials;
 pub mod daemon_client;
+pub mod storage_access;
 pub mod storage_anchor;
 pub mod storage_paths;
 pub mod storage_usage;

@@ -17,26 +17,12 @@ import { UI_TEXT } from "../../../shared/copy/uiText.ts";
 import { useQuietDialogs } from "../../../shared/hooks/useQuietDialogs.tsx";
 import type { TrackerHealthSnapshot } from "../../../shared/types/tracking.ts";
 import {
-  getWebActivityBridgeSnapshot,
+  SettingsDiagnosticsService,
   type WebActivityBridgeSnapshot,
-} from "../../../platform/runtime/webActivityBridgeGateway.ts";
-import {
-  getLocalApiDiagnostics,
   type LocalApiDiagnosticsSnapshot,
-} from "../../../platform/runtime/localApiDiagnosticsGateway.ts";
-import {
-  getDesktopIntegrationDiagnostics,
-  repairAutostartDesktopFile,
   type DesktopIntegrationDiagnosticsSnapshot,
-} from "../../../platform/runtime/desktopIntegrationDiagnosticsGateway.ts";
-import {
-  getDaemonServiceDiagnostics,
-  reloadDaemonVersion,
-  retryRuntimeOwnerCutover,
-  rollbackRuntimeOwnerToEmbedded,
-  setBackgroundTrackingAtLogin,
   type DaemonServiceDiagnosticsSnapshot,
-} from "../../../platform/runtime/daemonServiceDiagnosticsGateway.ts";
+} from "../services/settingsDiagnosticsService.ts";
 import {
   buildSettingsDiagnosticsViewModel,
   type SettingsDiagnosticItem,
@@ -99,33 +85,11 @@ export default function SettingsDiagnosticsPanel({
 
     const refresh = async () => {
       try {
-        const [bridge, localApi, desktopIntegration] = await Promise.allSettled([
-          getWebActivityBridgeSnapshot(),
-          getLocalApiDiagnostics(),
-          getDesktopIntegrationDiagnostics(),
-        ]);
+        const { bridge, localApi, desktopIntegration } = await SettingsDiagnosticsService.loadLive();
         if (disposed) return;
-
-        if (bridge.status === "fulfilled") {
-          setBridgeSnapshot(bridge.value);
-        } else {
-          setBridgeSnapshot(null);
-          console.warn("load web activity bridge snapshot failed", bridge.reason);
-        }
-
-        if (localApi.status === "fulfilled") {
-          setLocalApiSnapshot(localApi.value);
-        } else {
-          setLocalApiSnapshot(null);
-          console.warn("load local API diagnostics failed", localApi.reason);
-        }
-
-        if (desktopIntegration.status === "fulfilled") {
-          setDesktopIntegrationSnapshot(desktopIntegration.value);
-        } else {
-          setDesktopIntegrationSnapshot(null);
-          console.warn("load desktop integration diagnostics failed", desktopIntegration.reason);
-        }
+        setBridgeSnapshot(bridge);
+        setLocalApiSnapshot(localApi);
+        setDesktopIntegrationSnapshot(desktopIntegration);
       } catch (error) {
         if (!disposed) {
           setBridgeSnapshot(null);
@@ -152,7 +116,7 @@ export default function SettingsDiagnosticsPanel({
 
     const refreshDaemonService = async () => {
       try {
-        const snapshot = await getDaemonServiceDiagnostics();
+        const snapshot = await SettingsDiagnosticsService.loadDaemon();
         if (!disposed) setDaemonServiceSnapshot(snapshot);
       } catch (error) {
         if (!disposed) {
@@ -210,7 +174,7 @@ export default function SettingsDiagnosticsPanel({
   const handleRepairAutostart = async () => {
     setIsRepairingAutostart(true);
     try {
-      const snapshot = await repairAutostartDesktopFile();
+      const snapshot = await SettingsDiagnosticsService.repairAutostart();
       setDesktopIntegrationSnapshot(snapshot);
     } catch (error) {
       console.warn("repair autostart desktop file failed", error);
@@ -230,7 +194,7 @@ export default function SettingsDiagnosticsPanel({
     if (daemonActionBusy) return;
     setDaemonServiceAction("updating-login");
     try {
-      const snapshot = await setBackgroundTrackingAtLogin(enabled);
+      const snapshot = await SettingsDiagnosticsService.setBackgroundTrackingAtLogin(enabled);
       setDaemonServiceSnapshot(snapshot);
       setDesktopIntegrationSnapshot((current) => current ? {
         ...current,
@@ -257,7 +221,7 @@ export default function SettingsDiagnosticsPanel({
 
     setDaemonServiceAction("retrying");
     try {
-      await retryRuntimeOwnerCutover();
+      await SettingsDiagnosticsService.retryCutover();
     } catch (error) {
       console.warn("retry runtime owner cutover failed", error);
       onToast?.(UI_TEXT.settings.daemonCutoverRetryFailed, "warning");
@@ -277,7 +241,7 @@ export default function SettingsDiagnosticsPanel({
 
     setDaemonServiceAction("rolling-back");
     try {
-      await rollbackRuntimeOwnerToEmbedded();
+      await SettingsDiagnosticsService.rollbackOwner();
     } catch (error) {
       console.warn("rollback runtime owner to embedded failed", error);
       onToast?.(UI_TEXT.settings.daemonOwnerRollbackFailed, "warning");
@@ -297,13 +261,13 @@ export default function SettingsDiagnosticsPanel({
         confirmLabel: UI_TEXT.settings.daemonReloadLabel,
       });
       if (!accepted) return;
-      await reloadDaemonVersion(runningVersion);
+      await SettingsDiagnosticsService.reloadDaemon(runningVersion);
       onToast?.(UI_TEXT.settings.daemonReloadSucceeded, "success");
     } catch (error) {
       console.warn("daemon reload verification failed", error);
       onToast?.(UI_TEXT.settings.daemonReloadFailed, "warning");
     } finally {
-      try { setDaemonServiceSnapshot(await getDaemonServiceDiagnostics()); }
+      try { setDaemonServiceSnapshot(await SettingsDiagnosticsService.loadDaemon()); }
       catch { setDaemonServiceSnapshot(null); }
       reloadInFlight.current = false;
       setDaemonServiceAction("idle");

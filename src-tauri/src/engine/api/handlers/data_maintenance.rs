@@ -85,6 +85,33 @@ fn ok(data: impl serde::Serialize) -> RouteResponse {
     }
 }
 
+pub async fn delete_web_domain_history(context: &ApiRuntimeContext, body: &[u8]) -> RouteResponse {
+    let request: crate::engine::api::types::WebDomainCleanupRequest =
+        match serde_json::from_slice(body) {
+            Ok(request) => request,
+            Err(_) => return bad_request("invalid JSON body"),
+        };
+    if !request.confirmed {
+        return bad_request("web history cleanup requires confirmed=true");
+    }
+    let domain =
+        match crate::domain::data_maintenance::normalize_web_domain_cleanup(&request.domain) {
+            Ok(domain) => domain,
+            Err(error) => return bad_request(&error),
+        };
+    match crate::data::maintenance::delete_web_activity_segments_by_domain(context.pool(), &domain)
+        .await
+    {
+        Ok(result) => {
+            context.emit_tracking_data_changed(
+                crate::domain::web_activity::WEB_ACTIVITY_CHANGED_REASON,
+            );
+            ok(result)
+        }
+        Err(error) => internal_error(&error),
+    }
+}
+
 fn bad_request(message: &str) -> RouteResponse {
     RouteResponse {
         status: 400,

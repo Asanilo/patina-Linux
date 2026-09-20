@@ -19,6 +19,9 @@ pub mod runtime_owner_cutover;
 pub mod runtime_tasks;
 pub mod scheduled_backup;
 pub mod state;
+#[cfg(all(test, target_os = "linux"))]
+mod storage_acceptance_tests;
+pub mod storage_maintenance;
 pub mod tray;
 pub mod web_activity;
 pub mod web_activity_bridge;

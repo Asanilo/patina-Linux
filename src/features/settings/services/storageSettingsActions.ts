@@ -38,6 +38,11 @@ export const StorageSettingsService = {
   restart: restartForStorageMaintenance,
 };
 
+export function isStorageMaintenanceUnsupported(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message === "storage-maintenance-unsupported-in-daemon-preview";
+}
+
 export type StorageScheduleResult =
   | { status: "cancelled" }
   | { status: "scheduled"; pending: StoragePendingMigration; preview: StorageMigrationPreview };

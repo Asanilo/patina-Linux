@@ -1,16 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
-import { executeWrite, getDB } from "./sqlite.ts";
+import { getDB } from "./sqlite.ts";
 
 export interface SettingRow {
   key: string;
   value: string;
-}
-
-export async function upsertSettingValue(key: string, value: string): Promise<void> {
-  await executeWrite(
-    "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-    [key, value],
-  );
 }
 
 export async function loadSettingTimestamp(key: string): Promise<number | null> {
