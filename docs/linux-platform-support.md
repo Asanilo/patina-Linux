@@ -18,14 +18,14 @@
 | wlroots compositor | 尚未支持 | 按 compositor 评估 | 不把 wlroots 视为单一统一桌面接口 |
 | Windows / macOS | 不支持 | 无 | 不进入当前 CI、Release 或维护承诺 |
 
-GNOME Wayland 下，如果 `org.patina.WindowTracker` 没有 D-Bus owner，Patina 必须报告扩展未安装、未启用或 D-Bus 不可用，不能静默退回不可靠的 X11 查询。
+GNOME Wayland 下，采样端先检查 `org.patina.WindowTracker1`，只有新名称明确没有 D-Bus owner 时才尝试旧 `org.patina.WindowTracker`；两者都不可用时必须报告扩展未安装、未启用或 D-Bus 不可用，不能静默退回 X11。新接口存在但响应失败或不合协议时不回退旧接口。实际可用的 GNOME companion 可以补足不完整的桌面环境标签；仅有名称 owner 的能力诊断不能替代实际采样健康状态。
 
 ## 3. Linux 平台能力
 
 | 能力 | 当前实现 | 降级行为 |
 | --- | --- | --- |
 | 前台窗口 | GNOME extension D-Bus；X11 fallback | 明确诊断为 unavailable 或 unsupported |
-| AFK | Mutter IdleMonitor；XScreenSaver fallback | 无可靠来源时不把未知状态伪装成正常样本 |
+| AFK | Wayland 使用 Mutter IdleMonitor；X11 可回退 XScreenSaver | 真实 0 毫秒有效；无可靠来源返回采样失败，按最后可信样本结算，恢复后不补记未知时间 |
 | 锁屏 / 睡眠 / 恢复 | systemd-logind 与桌面事件 | watcher 失败进入诊断和重启路径 |
 | 音频参与信号 | PulseAudio API，兼容 pipewire-pulse | 不可用时跳过音频信号，不阻止窗口追踪 |
 | 媒体参与信号 | MPRIS D-Bus | 不可用时跳过媒体信号 |
@@ -40,7 +40,11 @@ GNOME Wayland 下，如果 `org.patina.WindowTracker` 没有 D-Bus owner，Patin
 
 ## 4. GNOME 扩展边界
 
-GNOME Shell 扩展只负责读取 Shell 已知的焦点窗口，并通过 `org.patina.WindowTracker` 暴露最小 D-Bus 接口。它不拥有 session 切分、分类、AFK 决策、数据库或 API。
+随产品分发的 GNOME Shell 扩展只负责读取 Shell 已知的焦点窗口，并通过旧 `org.patina.WindowTracker` 暴露最小 D-Bus 接口。它不拥有 session 切分、分类、AFK 决策、数据库或 API。
+
+main 的消费端另可识别版本 1 的 `org.patina.WindowTracker1.GetSnapshot`，校验消息类型/大小、版本/状态和窗口字段，再解析应用身份。正常无窗口/overview 和明确锁屏必须携带全空窗口事实；当前映射为无活动窗口，仍要求可信 idle，不生成永久 logind 锁状态。锁屏时 idle 同时失效则保守按最后可信采样停止记录。未知状态、不可用状态、无法解析的窗口身份和损坏响应均为失败，不作为正常空桌面推进成功时间戳。
+
+此兼容属于消费端源码能力；现有 version 3 扩展继续使用旧协议，GNOME Shell 42 是其声明范围。新协议扩展发行、legacy/ESM 双入口、更多 Shell 版本和真实锁屏/overview 验收仍需独立完成，不因消费端兼容自动扩大支持承诺。
 
 当前扩展不提供悬浮窗移动、置顶或全局指针状态接口。Wayland 原生窗口的边缘吸附尚未实现，不能用 GTK 返回的 `(0, 0)` 推断左侧位置；详见 [GTK 窗口位置限制](https://docs.gtk.org/gtk3/method.Window.get_position.html)。能力判断应使用实际显示后端，而非仅使用 `XDG_SESSION_TYPE`，以兼容 Wayland 会话内的 X11 客户端。
 

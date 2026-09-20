@@ -29,7 +29,7 @@ impl WindowPollOutcome {
 }
 
 #[derive(Debug, Default)]
-struct ForegroundProbeState {
+pub(super) struct ForegroundProbeState {
     inner: Mutex<ForegroundProbeInner>,
 }
 
@@ -73,19 +73,30 @@ pub(super) async fn poll_active_window_with_timeout() -> WindowPollOutcome {
         foreground_probe_state().clone(),
         Duration::from_secs(WINDOW_POLL_TIMEOUT_SECS),
         now_ms(),
-        tracker::get_active_window,
+        query_active_window,
     )
     .await
 }
 
-async fn poll_active_window_with_state<F>(
+fn query_active_window() -> Result<tracker::WindowInfo, String> {
+    #[cfg(target_os = "linux")]
+    {
+        tracker::get_active_window().map_err(|error| error.to_string())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Ok(tracker::get_active_window())
+    }
+}
+
+pub(super) async fn poll_active_window_with_state<F>(
     state: Arc<ForegroundProbeState>,
     timeout_duration: Duration,
     sampled_at_ms: i64,
     probe: F,
 ) -> WindowPollOutcome
 where
-    F: FnOnce() -> tracker::WindowInfo + Send + 'static,
+    F: FnOnce() -> Result<tracker::WindowInfo, String> + Send + 'static,
 {
     let probe_start = match prepare_probe_decision(&state, sampled_at_ms) {
         ProbeDecision::Start(probe_start) => probe_start,
@@ -114,7 +125,7 @@ where
     });
 
     match timeout(timeout_duration, query).await {
-        Ok(Ok(window)) => {
+        Ok(Ok(Ok(window))) => {
             let probe_diagnostics =
                 remember_successful_window(&state, probe_start.generation, &window, sampled_at_ms);
             WindowPollOutcome {
@@ -124,6 +135,13 @@ where
                 probe_diagnostics,
             }
         }
+        Ok(Ok(Err(error))) => fallback_outcome(
+            &state,
+            TrackingRuntimeProbeStatus::TaskFailedFallback,
+            TrackingRuntimeProbeStatus::TaskFailedInactive,
+            &format!("active window provider failed: {error}"),
+            sampled_at_ms,
+        ),
         Ok(Err(error)) => fallback_outcome(
             &state,
             TrackingRuntimeProbeStatus::TaskFailedFallback,
@@ -379,7 +397,7 @@ mod tests {
             let outcome =
                 poll_active_window_with_state(state, Duration::from_millis(10), 1_000, || {
                     thread::sleep(Duration::from_millis(80));
-                    make_window("Late.exe")
+                    Ok(make_window("Late.exe"))
                 })
                 .await;
 
@@ -405,7 +423,7 @@ mod tests {
             let outcome =
                 poll_active_window_with_state(state, Duration::from_millis(10), 1_000, || {
                     thread::sleep(Duration::from_millis(80));
-                    make_window("Late.exe")
+                    Ok(make_window("Late.exe"))
                 })
                 .await;
 
@@ -435,7 +453,7 @@ mod tests {
                     move || {
                         first_calls.fetch_add(1, Ordering::SeqCst);
                         thread::sleep(Duration::from_millis(120));
-                        make_window("Late.exe")
+                        Ok(make_window("Late.exe"))
                     },
                 )
                 .await
@@ -447,7 +465,7 @@ mod tests {
                     state.clone(),
                     Duration::from_millis(30),
                     1_010,
-                    || make_window("ShouldNotRun.exe"),
+                    || Ok(make_window("ShouldNotRun.exe")),
                 )
                 .await;
                 assert_eq!(
@@ -474,7 +492,7 @@ mod tests {
                 state.clone(),
                 Duration::from_millis(50),
                 1_000,
-                || make_window("Code.exe"),
+                || Ok(make_window("Code.exe")),
             )
             .await;
 
@@ -496,6 +514,122 @@ mod tests {
     }
 
     #[test]
+    fn provider_failure_without_cache_remains_inactive_and_retries() {
+        tauri::async_runtime::block_on(async {
+            let state = Arc::new(ForegroundProbeState::default());
+
+            for (at_ms, count) in [(1_000, 1), (2_000, 2)] {
+                let outcome = poll_active_window_with_state(
+                    state.clone(),
+                    Duration::from_secs(1),
+                    at_ms,
+                    || Err("synthetic-provider-unavailable".into()),
+                )
+                .await;
+
+                assert_eq!(outcome.window.exe_name, "");
+                assert_eq!(
+                    outcome.probe_status,
+                    TrackingRuntimeProbeStatus::TaskFailedInactive
+                );
+                assert_eq!(
+                    outcome.degraded_reason.as_deref(),
+                    Some("active window provider failed: synthetic-provider-unavailable")
+                );
+                assert!(!outcome.is_successful_sample());
+                assert_eq!(outcome.probe_diagnostics.last_successful_sample_at_ms, None);
+                assert_eq!(
+                    outcome.probe_diagnostics.fallback_started_at_ms,
+                    Some(1_000)
+                );
+                assert_eq!(outcome.probe_diagnostics.fallback_count, count);
+                assert_eq!(outcome.probe_diagnostics.consecutive_fallback_count, count);
+                assert!(lock_inner(&state).last_successful_window.is_none());
+                assert!(lock_inner(&state).active_generation.is_none());
+            }
+        });
+    }
+
+    #[test]
+    fn provider_failure_preserves_the_last_successful_window_and_timestamp() {
+        tauri::async_runtime::block_on(async {
+            let state = Arc::new(ForegroundProbeState::default());
+            let accepted =
+                poll_active_window_with_state(state.clone(), Duration::from_secs(1), 1_000, || {
+                    Ok(make_window("Code.exe"))
+                })
+                .await;
+            assert!(accepted.is_successful_sample());
+
+            let outcome =
+                poll_active_window_with_state(state.clone(), Duration::from_secs(1), 2_000, || {
+                    Err("synthetic-provider-unavailable".into())
+                })
+                .await;
+
+            assert_eq!(outcome.window.exe_name, "Code.exe");
+            assert_eq!(
+                outcome.probe_status,
+                TrackingRuntimeProbeStatus::TaskFailedFallback
+            );
+            assert!(!outcome.is_successful_sample());
+            assert_eq!(
+                outcome.probe_diagnostics.last_successful_sample_at_ms,
+                Some(1_000)
+            );
+            assert_eq!(
+                outcome.probe_diagnostics.fallback_started_at_ms,
+                Some(2_000)
+            );
+            assert_eq!(outcome.probe_diagnostics.consecutive_fallback_count, 1);
+            let inner = lock_inner(&state);
+            assert_eq!(
+                inner.last_successful_window.as_ref().unwrap().exe_name,
+                "Code.exe"
+            );
+            assert_eq!(inner.last_successful_sample_at_ms, Some(1_000));
+        });
+    }
+
+    #[test]
+    fn successful_probe_after_provider_failure_replaces_cache_and_clears_degradation() {
+        tauri::async_runtime::block_on(async {
+            let state = Arc::new(ForegroundProbeState::default());
+            remember_successful_window(&state, 0, &make_window("Old.exe"), 500);
+            let failed =
+                poll_active_window_with_state(state.clone(), Duration::from_secs(1), 1_000, || {
+                    Err("synthetic-provider-unavailable".into())
+                })
+                .await;
+            assert!(!failed.is_successful_sample());
+
+            let recovered =
+                poll_active_window_with_state(state.clone(), Duration::from_secs(1), 2_000, || {
+                    Ok(make_window("Recovered.exe"))
+                })
+                .await;
+
+            assert!(recovered.is_successful_sample());
+            assert_eq!(recovered.window.exe_name, "Recovered.exe");
+            assert_eq!(recovered.degraded_reason, None);
+            assert_eq!(
+                recovered.probe_diagnostics.last_successful_sample_at_ms,
+                Some(2_000)
+            );
+            assert_eq!(recovered.probe_diagnostics.fallback_started_at_ms, None);
+            assert_eq!(recovered.probe_diagnostics.consecutive_fallback_count, 0);
+            assert_eq!(recovered.probe_diagnostics.fallback_count, 1);
+            let inner = lock_inner(&state);
+            assert_eq!(
+                inner.last_successful_window.as_ref().unwrap().exe_name,
+                "Recovered.exe"
+            );
+            assert_eq!(inner.last_successful_sample_at_ms, Some(2_000));
+            assert!(inner.active_generation.is_none());
+        });
+    }
+
+    #[test]
     fn long_running_probe_gets_bounded_recovery_attempt() {
         tauri::async_runtime::block_on(async {
             let state = Arc::new(ForegroundProbeState::default());
@@ -511,7 +645,7 @@ mod tests {
                     move || {
                         first_calls.fetch_add(1, Ordering::SeqCst);
                         thread::sleep(Duration::from_millis(180));
-                        make_window("Late.exe")
+                        Ok(make_window("Late.exe"))
                     },
                 )
                 .await
@@ -525,7 +659,7 @@ mod tests {
                 12_000,
                 move || {
                     recovery_calls.fetch_add(1, Ordering::SeqCst);
-                    make_window("Code.exe")
+                    Ok(make_window("Code.exe"))
                 },
             )
             .await;
@@ -570,7 +704,7 @@ mod tests {
                 43_000,
                 || {
                     thread::sleep(Duration::from_millis(80));
-                    make_window("Late2.exe")
+                    Ok(make_window("Late2.exe"))
                 },
             )
             .await;
@@ -582,7 +716,7 @@ mod tests {
 
             let hard_degraded =
                 poll_active_window_with_state(state, Duration::from_millis(10), 44_000, || {
-                    make_window("ShouldNotRun.exe")
+                    Ok(make_window("ShouldNotRun.exe"))
                 })
                 .await;
 

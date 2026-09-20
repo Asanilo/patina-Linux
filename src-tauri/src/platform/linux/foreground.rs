@@ -8,6 +8,32 @@ use std::sync::{
 
 use crate::platform::tracking_diagnostics::WindowTrackingDiagnostics;
 
+mod gnome;
+mod idle;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ForegroundProbeError {
+    IdleUnavailable,
+    WindowUnavailable,
+    ProviderUnavailable,
+    UnsupportedSession,
+    InvalidWindowResponse,
+}
+
+impl std::fmt::Display for ForegroundProbeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::IdleUnavailable => "linux-idle-unavailable",
+            Self::WindowUnavailable => "linux-window-unavailable",
+            Self::ProviderUnavailable => "linux-window-provider-unavailable",
+            Self::UnsupportedSession => "linux-session-unsupported",
+            Self::InvalidWindowResponse => "linux-window-response-invalid",
+        })
+    }
+}
+
+impl std::error::Error for ForegroundProbeError {}
+
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct WindowInfo {
     pub hwnd: String,
@@ -63,12 +89,26 @@ pub fn cmd_set_afk_threshold(threshold_secs: u64) {
     AFK_THRESHOLD_SECS.store(threshold_secs, Ordering::Relaxed);
 }
 
-pub fn get_active_window() -> WindowInfo {
-    let idle_time = query_idle_time_ms();
-    let afk_threshold_ms = (AFK_THRESHOLD_SECS.load(Ordering::Relaxed) as u32) * 1000;
-    let is_afk = idle_time > afk_threshold_ms;
+pub fn get_active_window() -> Result<WindowInfo, ForegroundProbeError> {
+    let session_type = current_session_type();
+    let desktop = current_desktop();
+    let window = query_focused_window_with(
+        session_type.as_deref(),
+        desktop.as_deref(),
+        gnome::query_focused_window,
+        query_focused_window_x11,
+    )?;
+    let idle_time = idle::query_idle_time_ms(session_type.as_deref())?;
+    Ok(attach_idle(
+        window,
+        idle_time,
+        AFK_THRESHOLD_SECS.load(Ordering::Relaxed),
+    ))
+}
 
-    match query_focused_window() {
+fn attach_idle(window: Option<WindowInfo>, idle_time: u32, threshold_secs: u64) -> WindowInfo {
+    let is_afk = u64::from(idle_time) > threshold_secs.saturating_mul(1000);
+    match window {
         Some(window) => WindowInfo {
             is_afk,
             idle_time_ms: idle_time,
@@ -78,80 +118,44 @@ pub fn get_active_window() -> WindowInfo {
     }
 }
 
-// ── Idle time detection ─────────────────────────────────────────────
-
-fn query_idle_time_ms() -> u32 {
-    // Try GNOME/Wayland D-Bus first, fall back to X11 screensaver
-    query_idle_time_dbus().unwrap_or_else(query_idle_time_x11)
-}
-
-fn query_idle_time_dbus() -> Option<u32> {
-    let conn = zbus::blocking::Connection::session().ok()?;
-    // Try GNOME Mutter IdleMonitor first (works on GNOME Wayland)
-    let proxy = zbus::blocking::Proxy::new(
-        &conn,
-        "org.gnome.Mutter.IdleMonitor",
-        "/org/gnome/Mutter/IdleMonitor/Core",
-        "org.gnome.Mutter.IdleMonitor",
-    )
-    .ok()?;
-    let idle_time_ms: u64 = proxy
-        .call_method("GetIdletime", &())
-        .ok()?
-        .body()
-        .deserialize()
-        .ok()?;
-    Some(mutter_idle_time_to_ms(idle_time_ms))
-}
-
-fn mutter_idle_time_to_ms(idle_time_ms: u64) -> u32 {
-    idle_time_ms.min(u64::from(u32::MAX)) as u32
-}
-
-fn query_idle_time_x11() -> u32 {
-    use xcb::x::Drawable;
-    use xcb::Xid;
-
-    let Ok((conn, _screen_num)) = xcb::Connection::connect(None) else {
-        return 0;
-    };
-
-    let screensaver_cookie = conn.send_request(&xcb::screensaver::QueryInfo {
-        drawable: Drawable::none(),
-    });
-
-    match conn.wait_for_reply(screensaver_cookie) {
-        Ok(reply) => reply.ms_since_user_input(),
-        Err(_) => 0,
-    }
-}
-
 // ── Focused window detection ────────────────────────────────────────
 
-fn query_focused_window() -> Option<WindowInfo> {
-    let session_type = current_session_type();
-    let desktop = current_desktop();
-
-    if let Some(window) = query_focused_window_gnome() {
-        return Some(window);
+fn query_focused_window_with(
+    session_type: Option<&str>,
+    desktop: Option<&str>,
+    gnome_query: impl FnOnce() -> Result<Option<WindowInfo>, ForegroundProbeError>,
+    x11_query: impl FnOnce() -> Result<Option<WindowInfo>, ForegroundProbeError>,
+) -> Result<Option<WindowInfo>, ForegroundProbeError> {
+    if is_wayland_session(session_type) {
+        // An available companion is stronger evidence than an incomplete
+        // desktop label inherited by the user service.
+        return match gnome_query() {
+            Err(ForegroundProbeError::ProviderUnavailable) if !is_gnome_desktop(desktop) => {
+                Err(ForegroundProbeError::UnsupportedSession)
+            }
+            result => result,
+        };
     }
-
-    if should_try_x11_focused_window(session_type.as_deref(), desktop.as_deref()) {
-        query_focused_window_x11()
-    } else {
-        None
+    if !should_try_x11_focused_window(session_type, desktop) {
+        return Err(ForegroundProbeError::UnsupportedSession);
     }
+    if is_gnome_desktop(desktop) {
+        match gnome_query() {
+            Err(ForegroundProbeError::ProviderUnavailable) => {}
+            result => return result,
+        }
+    }
+    x11_query()
 }
 
 pub fn window_tracking_diagnostics() -> WindowTrackingDiagnostics {
     let session_type = current_session_type();
     let desktop = current_desktop();
-    let has_gnome_owner =
-        if is_wayland_session(session_type.as_deref()) && is_gnome_desktop(desktop.as_deref()) {
-            dbus_name_has_owner("org.patina.WindowTracker").ok()
-        } else {
-            None
-        };
+    let has_gnome_owner = if is_wayland_session(session_type.as_deref()) {
+        gnome_tracker_has_owner().ok()
+    } else {
+        None
+    };
 
     resolve_window_tracking_diagnostics(
         session_type.as_deref(),
@@ -175,7 +179,9 @@ fn resolve_window_tracking_diagnostics(
             session_type: session_type.map(str::to_string),
             desktop: desktop.map(str::to_string),
         },
-        Some("wayland") if is_gnome_desktop(desktop) => {
+        Some("wayland")
+            if is_gnome_desktop(desktop) || has_gnome_window_tracker_owner == Some(true) =>
+        {
             if has_gnome_window_tracker_owner == Some(true) {
                 WindowTrackingDiagnostics {
                     status: "available".to_string(),
@@ -217,7 +223,7 @@ fn resolve_window_tracking_diagnostics(
 }
 
 fn should_try_x11_focused_window(session_type: Option<&str>, _desktop: Option<&str>) -> bool {
-    !is_wayland_session(session_type)
+    session_type.is_some_and(|value| value.trim().eq_ignore_ascii_case("x11"))
 }
 
 fn is_wayland_session(session_type: Option<&str>) -> bool {
@@ -264,89 +270,55 @@ fn dbus_name_has_owner(name: &str) -> Result<bool, String> {
         .map_err(|error| error.to_string())
 }
 
-fn query_focused_window_gnome() -> Option<WindowInfo> {
-    // Use the Patina GNOME Shell extension's D-Bus interface
-    let conn = zbus::blocking::Connection::session().ok()?;
-
-    let proxy = zbus::blocking::Proxy::new(
-        &conn,
-        "org.patina.WindowTracker",
-        "/org/patina/WindowTracker",
-        "org.patina.WindowTracker",
-    )
-    .ok()?;
-
-    // GetFocusedWindow() returns (title, app_id, wm_class, pid, window_id)
-    let reply = proxy.call_method("GetFocusedWindow", &()).ok()?;
-    let body = reply.body();
-    let (title, app_id, wm_class, pid, window_id): (String, String, String, u32, u64) =
-        body.deserialize().ok()?;
-
-    if app_id.trim().is_empty() && title.trim().is_empty() {
-        return None;
+fn gnome_tracker_has_owner() -> Result<bool, String> {
+    if dbus_name_has_owner("org.patina.WindowTracker1")? {
+        return Ok(true);
     }
-
-    let (exe_name, process_path) = if pid > 0 {
-        get_process_details(pid)
-    } else {
-        (app_id.clone(), String::new())
-    };
-
-    Some(WindowInfo {
-        hwnd: window_id.to_string(),
-        root_owner_hwnd: window_id.to_string(),
-        process_id: pid,
-        window_class: wm_class,
-        title,
-        exe_name: if exe_name.is_empty() {
-            app_id
-        } else {
-            exe_name
-        },
-        process_path,
-        is_afk: false,
-        idle_time_ms: 0,
-    })
+    dbus_name_has_owner("org.patina.WindowTracker")
 }
 
 // ── X11 fallback ────────────────────────────────────────────────────
 
-fn query_focused_window_x11() -> Option<WindowInfo> {
+fn query_focused_window_x11() -> Result<Option<WindowInfo>, ForegroundProbeError> {
     use xcb::x;
     use xcb::Xid;
 
-    let Ok((conn, screen_num)) = xcb::Connection::connect(None) else {
-        return None;
-    };
+    let (conn, screen_num) =
+        xcb::Connection::connect(None).map_err(|_| ForegroundProbeError::WindowUnavailable)?;
 
     let setup = conn.get_setup();
-    let screen = setup.roots().nth(screen_num as usize)?;
+    let screen = setup
+        .roots()
+        .nth(screen_num as usize)
+        .ok_or(ForegroundProbeError::WindowUnavailable)?;
 
     let focus_cookie = conn.send_request(&x::GetInputFocus {});
-    let focus_reply = conn.wait_for_reply(focus_cookie).ok()?;
+    let focus_reply = conn
+        .wait_for_reply(focus_cookie)
+        .map_err(|_| ForegroundProbeError::WindowUnavailable)?;
     let focus_window = focus_reply.focus();
 
     if focus_window == x::Window::none() || focus_window == screen.root() {
-        return None;
+        return Ok(None);
     }
 
     let root_owner = get_root_owner(&conn, focus_window, screen.root());
     let process_id = get_window_pid(&conn, root_owner);
 
     if process_id == 0 {
-        return None;
+        return Err(ForegroundProbeError::WindowUnavailable);
     }
 
     let (exe_name, process_path) = get_process_details(process_id);
 
     if exe_name.trim().is_empty() {
-        return None;
+        return Err(ForegroundProbeError::WindowUnavailable);
     }
 
     let title = get_window_title(&conn, focus_window);
     let window_class = get_window_class(&conn, focus_window);
 
-    Some(WindowInfo {
+    Ok(Some(WindowInfo {
         hwnd: format!("0x{:X}", focus_window.resource_id()),
         root_owner_hwnd: format!("0x{:X}", root_owner.resource_id()),
         process_id,
@@ -356,7 +328,7 @@ fn query_focused_window_x11() -> Option<WindowInfo> {
         process_path,
         is_afk: false,
         idle_time_ms: 0,
-    })
+    }))
 }
 
 fn get_root_owner(
@@ -646,11 +618,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mutter_idle_monitor_value_is_already_milliseconds() {
-        assert_eq!(mutter_idle_time_to_ms(181), 181);
-    }
-
-    #[test]
     fn gnome_wayland_without_extension_reports_dbus_unavailable() {
         let diagnostic =
             resolve_window_tracking_diagnostics(Some("wayland"), Some("GNOME"), Some(false));
@@ -681,5 +648,113 @@ mod tests {
             Some("GNOME")
         ));
         assert!(should_try_x11_focused_window(Some("x11"), Some("GNOME")));
+        assert!(!should_try_x11_focused_window(None, Some("GNOME")));
+    }
+
+    #[test]
+    fn wayland_provider_failure_never_queries_x11() {
+        assert_eq!(
+            query_focused_window_with(
+                Some("wayland"),
+                Some("GNOME"),
+                || Err(ForegroundProbeError::ProviderUnavailable),
+                || panic!("Wayland must not fall back to X11")
+            ),
+            Err(ForegroundProbeError::ProviderUnavailable),
+        );
+    }
+
+    #[test]
+    fn x11_uses_extension_only_on_gnome_and_falls_back_only_for_absent_provider() {
+        let window = build_inactive_window(123, false);
+        assert_eq!(
+            query_focused_window_with(
+                Some("x11"),
+                Some("XFCE"),
+                || panic!("GNOME should not be queried"),
+                || Ok(Some(window.clone()))
+            ),
+            Ok(Some(window.clone()))
+        );
+        assert_eq!(
+            query_focused_window_with(
+                Some("x11"),
+                Some("GNOME"),
+                || Err(ForegroundProbeError::ProviderUnavailable),
+                || Ok(Some(window.clone()))
+            ),
+            Ok(Some(window))
+        );
+        assert_eq!(
+            query_focused_window_with(
+                Some("x11"),
+                Some("GNOME"),
+                || Err(ForegroundProbeError::InvalidWindowResponse),
+                || panic!("invalid protocol must not be hidden")
+            ),
+            Err(ForegroundProbeError::InvalidWindowResponse)
+        );
+    }
+
+    #[test]
+    fn trusted_empty_gnome_window_is_authoritative_even_on_x11() {
+        assert_eq!(
+            query_focused_window_with(
+                Some("x11"),
+                Some("GNOME"),
+                || Ok(None),
+                || panic!("must not bypass no-window or locked state")
+            ),
+            Ok(None)
+        );
+    }
+
+    #[test]
+    fn unknown_session_is_rejected_and_unsupported_wayland_never_uses_x11() {
+        assert_eq!(
+            query_focused_window_with(
+                None,
+                Some("GNOME"),
+                || panic!("unexpected GNOME"),
+                || panic!("unexpected X11")
+            ),
+            Err(ForegroundProbeError::UnsupportedSession)
+        );
+        assert_eq!(
+            query_focused_window_with(
+                Some("wayland"),
+                Some("KDE"),
+                || Err(ForegroundProbeError::ProviderUnavailable),
+                || panic!("unexpected X11")
+            ),
+            Err(ForegroundProbeError::UnsupportedSession)
+        );
+    }
+
+    #[test]
+    fn working_gnome_provider_is_detected_with_an_incomplete_desktop_label() {
+        assert_eq!(
+            query_focused_window_with(
+                Some("wayland"),
+                Some("ubuntu"),
+                || Ok(None),
+                || panic!("unexpected X11")
+            ),
+            Ok(None)
+        );
+        let diagnostics =
+            resolve_window_tracking_diagnostics(Some("wayland"), Some("ubuntu"), Some(true));
+        assert_eq!(diagnostics.status, "available");
+        assert_eq!(diagnostics.provider, "gnome-shell-extension");
+    }
+
+    #[test]
+    fn attaching_trusted_idle_preserves_afk_boundary_and_empty_window() {
+        assert!(!attach_idle(None, 180_000, 180).is_afk);
+        let empty = attach_idle(None, 180_001, 180);
+        assert!(empty.is_afk);
+        assert!(empty.exe_name.is_empty());
+        assert_eq!(empty.idle_time_ms, 180_001);
+        assert!(!attach_idle(None, u32::MAX, u64::MAX).is_afk);
     }
 }

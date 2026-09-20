@@ -1,3 +1,4 @@
+use super::window_polling::{poll_active_window_with_state, ForegroundProbeState};
 use super::*;
 use crate::data::schema;
 use crate::domain::{settings::WebActivitySettings, web_activity::WebActivityBridgeSnapshot};
@@ -116,21 +117,24 @@ impl LoopFixture {
     }
 
     async fn sample(&mut self, at_ms: i64, app: &str, successful: bool) {
-        self.samples
-            .send(Sample {
-                at_ms,
-                outcome: WindowPollOutcome {
-                    window: window(app),
-                    probe_status: if successful {
-                        TrackingRuntimeProbeStatus::Ok
-                    } else {
-                        TrackingRuntimeProbeStatus::TimeoutFallback
-                    },
-                    degraded_reason: (!successful).then(|| "synthetic timeout".into()),
-                    probe_diagnostics: TrackingRuntimeProbeDiagnostics::default(),
+        self.sample_outcome(
+            at_ms,
+            WindowPollOutcome {
+                window: window(app),
+                probe_status: if successful {
+                    TrackingRuntimeProbeStatus::Ok
+                } else {
+                    TrackingRuntimeProbeStatus::TimeoutFallback
                 },
-            })
-            .unwrap();
+                degraded_reason: (!successful).then(|| "synthetic timeout".into()),
+                probe_diagnostics: TrackingRuntimeProbeDiagnostics::default(),
+            },
+        )
+        .await;
+    }
+
+    async fn sample_outcome(&mut self, at_ms: i64, outcome: WindowPollOutcome) {
+        self.samples.send(Sample { at_ms, outcome }).unwrap();
         self.wait_ready().await;
     }
 
@@ -237,6 +241,99 @@ async fn short_interruption_splits_same_app_title_and_web_in_the_real_loop() {
     assert_eq!(f.interruption_events(), vec![2_000]);
     f.sample(6_000, "zen", true).await;
     f.sample(8_000, "", true).await;
+    assert_eq!(
+        f.rows().await,
+        vec![
+            ("zen".into(), 1_000, Some(2_000), 1_000),
+            ("zen".into(), 6_000, Some(8_000), 6_000),
+        ]
+    );
+    let titles: Vec<(i64, Option<i64>)> =
+        sqlx::query_as("SELECT start_time, end_time FROM session_title_samples ORDER BY id")
+            .fetch_all(&f.pool)
+            .await
+            .unwrap();
+    assert_eq!(titles, vec![(1_000, Some(2_000)), (6_000, Some(8_000))]);
+    let web: (i64, Option<i64>, i64) =
+        sqlx::query_as("SELECT start_time, end_time, duration FROM web_activity_segments")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    assert_eq!(web, (1_500, Some(2_000), 500));
+    f.stop().await;
+}
+
+#[tokio::test]
+async fn idle_provider_failure_from_poller_seals_and_recovers_without_bridging_the_gap() {
+    let mut f = LoopFixture::start().await;
+    let probe_state = Arc::new(ForegroundProbeState::default());
+    for at_ms in [1_000, 2_000] {
+        let outcome = poll_active_window_with_state(
+            probe_state.clone(),
+            Duration::from_secs(1),
+            at_ms,
+            || Ok(window("zen")),
+        )
+        .await;
+        f.sample_outcome(at_ms, outcome).await;
+        if at_ms == 1_000 {
+            f.seed_active_browser().await;
+        }
+    }
+
+    for at_ms in [4_000, 4_500] {
+        // Exercise the real poller's Result handling and the Linux error's
+        // diagnostic code without contacting a desktop provider.
+        let outcome = poll_active_window_with_state(
+            probe_state.clone(),
+            Duration::from_secs(1),
+            at_ms,
+            || Err(tracker::ForegroundProbeError::IdleUnavailable.to_string()),
+        )
+        .await;
+        assert_eq!(outcome.window.exe_name, "zen");
+        assert_eq!(
+            outcome.probe_status,
+            TrackingRuntimeProbeStatus::TaskFailedFallback
+        );
+        assert!(!outcome.is_successful_sample());
+        assert_eq!(
+            outcome.probe_diagnostics.last_successful_sample_at_ms,
+            Some(2_000)
+        );
+        f.sample_outcome(at_ms, outcome).await;
+
+        let snapshot = f.state.snapshot().unwrap();
+        assert!(!snapshot.status.is_tracking_active);
+        assert_eq!(
+            snapshot.probe_status,
+            TrackingRuntimeProbeStatus::TaskFailedFallback
+        );
+        assert_eq!(
+            snapshot.degraded_reason.as_deref(),
+            Some("active window provider failed: linux-idle-unavailable")
+        );
+        assert_eq!(f.health.snapshot().last_successful_sample_ms, Some(2_000));
+        assert_eq!(f.persisted_sample().await, Some(1_000));
+        assert_eq!(
+            f.rows().await,
+            vec![("zen".into(), 1_000, Some(2_000), 1_000)]
+        );
+        assert_eq!(f.interruption_events(), vec![2_000]);
+    }
+
+    for (at_ms, app) in [(6_000, "zen"), (8_000, "")] {
+        let outcome = poll_active_window_with_state(
+            probe_state.clone(),
+            Duration::from_secs(1),
+            at_ms,
+            move || Ok(window(app)),
+        )
+        .await;
+        assert!(outcome.is_successful_sample());
+        assert_eq!(outcome.probe_diagnostics.consecutive_fallback_count, 0);
+        f.sample_outcome(at_ms, outcome).await;
+    }
     assert_eq!(
         f.rows().await,
         vec![
