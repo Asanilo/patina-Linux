@@ -47,12 +47,13 @@ Read only the references needed for the task:
 ## Current Work
 
 - [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md): current daemon acceptance checklist, delivery status, and deferred work
+- [`working/2026-09-21-linux-platform-reuse.md`](./working/2026-09-21-linux-platform-reuse.md): T6 module assessment, protocol compatibility, and the bounded sampling-interruption fix
 
 The roadmap now places daemon and Desktop product work together on Linux `main`,
 with upstream Linux contributions kept separate. `feat/linux-desktop` was created
 from upstream `80204c73`; its unfinished draft remains paused. The daemon checklist
-records completed acceptance and integration, the remaining release gates, and
-the next selective review of platform work.
+records completed acceptance and integration, beta.20 source preparation, and
+the remaining platform work and release gates.
 
 Only current execution documents belong under `working/`. Move them to `archive/` when they stop being the active implementation basis.
 

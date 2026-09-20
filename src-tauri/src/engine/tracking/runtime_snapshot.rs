@@ -51,6 +51,7 @@ struct TrackingLifecycle {
     suspended: bool,
     shutting_down: bool,
     pending_stop: Option<(u64, i64, &'static str)>,
+    pending_probe_seal_ms: Option<i64>,
 }
 
 #[derive(Clone, Debug)]
@@ -92,6 +93,38 @@ impl TrackingRuntimeSnapshotState {
             && !lifecycle.suspended
             && !lifecycle.shutting_down
             && lifecycle.pending_stop.is_none()
+            && lifecycle.pending_probe_seal_ms.is_none()
+    }
+
+    pub(crate) fn note_probe_interruption(&self, boundary_ms: i64) {
+        let mut lifecycle = self
+            .lifecycle
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        lifecycle.pending_probe_seal_ms = Some(
+            lifecycle
+                .pending_probe_seal_ms
+                .map_or(boundary_ms, |old| old.min(boundary_ms)),
+        );
+        drop(lifecycle);
+        self.invalidate_activity();
+    }
+
+    pub(crate) fn pending_probe_seal(&self) -> Option<i64> {
+        self.lifecycle
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .pending_probe_seal_ms
+    }
+
+    pub(crate) fn acknowledge_probe_seal(&self, boundary_ms: i64) {
+        let mut lifecycle = self
+            .lifecycle
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if lifecycle.pending_probe_seal_ms == Some(boundary_ms) {
+            lifecycle.pending_probe_seal_ms = None;
+        }
     }
 
     pub(crate) fn note_tracking_policy_change(&self) {

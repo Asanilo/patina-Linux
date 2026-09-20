@@ -10,6 +10,20 @@ use crate::platform::linux::foreground as tracker;
 #[cfg(target_os = "windows")]
 use crate::platform::windows::foreground as tracker;
 
+pub(super) async fn seal_active_sessions_for_probe_failure(
+    data: &TrackingRuntimeDataStore,
+    runtime_state: &super::runtime_snapshot::TrackingRuntimeSnapshotState,
+) -> Result<Option<(&'static str, i64)>, TrackingRuntimeDataError> {
+    let Some(boundary_ms) = runtime_state.pending_probe_seal() else {
+        return Ok(None);
+    };
+    let did_seal = data
+        .end_active_sessions_started_at_or_before(boundary_ms)
+        .await?;
+    runtime_state.acknowledge_probe_seal(boundary_ms);
+    Ok(did_seal.then_some(("session-ended-probe-failure", boundary_ms)))
+}
+
 pub(super) async fn seal_active_sessions_for_tracking_pause(
     data: &TrackingRuntimeDataStore,
     timestamp_ms: i64,

@@ -11,8 +11,9 @@
 - [x] **T2：完成差距审计。** 已清点前端全部 16 个 persistence 模块、Rust command 路由、runtime owner、候选发布和安装事实；读写例外、功能缺口与验证范围见 [本批审计](../archive/2026-09-20-daemon-owner-audit.md)。完成盘点不等于全部缺口已实现。
 - [x] **T3：修复第一阶段阻塞项。** 分类写入和 missing-command SQL fallback、网页历史删除、客户端重连 schema 维护、无用 SQL load 权限、SSE 漏事件与 Tools 并发覆盖已修复。目录迁移/清缓存已接通受管模式离线维护，补齐 Desktop 跨进程屏障、旧客户端占用检测和迁移中断恢复；恢复默认目录误拒绝、双目录同时恢复默认时混淆文件种类的缺陷均已修复。不以删减 main 功能收口。专项与本批完整门禁通过，候选验收归 T4。
 - [x] **T4：验证候选。** 最新 `check:full` 通过：55 个 TypeScript 测试文件、38 项浏览器回归、677 Rust passed / 15 ignored，以及构建/预算/边界/Clippy。main 实际 v1–6 schema 的合成 16 表升级回归通过。私有 dpkg root 完成 beta.18 安装→候选升级→卸载→重装；候选 daemon 配合真实临时 systemd、四次界面 `app.restart` 完成五阶段存储验收，50,000 条记录与总时长正确。用户随后明确授权本机实装；备份校验后完成 beta.18→本地候选升级，正式 Desktop 的存储页、关闭隐藏、单实例唤回、正常退出和新进程重开通过，退出后真实采样继续，daemon PID 不变。最终 15 项托管检查、历史记录摘要、SQLx 校验和及数据库完整性通过。候选身份、一次短暂数据库锁重试及证明范围见 [合并前证据](../archive/2026-09-21-main-merge-readiness.md)。
-- [x] **T5：达到合入条件并收敛到 main。** 用户明确要求合并后，本地 main 从 `a13a64a669849234df5575994673cb7a90cc3003` 快进至已验收提交 `bc5c2e9c7f56251857add5b91dd527cb1340288f`，无冲突，保留全部开发及 beta 历史。主线协作、架构、路线和贡献文档随合流同步；后续产品开发在 main，原 `feature/patinad-daemon` 分支保留。未推送、打 tag 或改变公开发布状态。
-- [ ] **T6：按模块评估平台成果。** 汇合后选择性移植贡献草稿中已验证的 GNOME 协议、采样与测试；不整支合并上游历史、数据库迁移或发布身份。错误计时的确定缺陷可提前进入 T3。
+- [x] **T5：达到合入条件并收敛到 main。** 用户明确要求合并后，本地 main 从 `a13a64a669849234df5575994673cb7a90cc3003` 快进至已验收提交 `bc5c2e9c7f56251857add5b91dd527cb1340288f`，无冲突，保留全部开发及 beta 历史。主线文档同步提交为 `5eefcf4e`，用户随后同意交付收尾，已将该提交普通快进推送至 `origin/main`。后续产品开发在 main，原 daemon 分支保留；未打 tag 或改变公开发布状态。
+- [ ] **T6：按模块评估并选择性回流平台成果。** 已完成 [可复用／需重写／暂缓清单](2026-09-21-linux-platform-reuse.md)，草稿纯 JS 测试 7 项通过，整体 Rust 集成和实机验证仍未完成。main 首片已修复采样中断后的未知间隙计时，并完成旧协议 GNOME 扩展日志/信号小修；专项与 beta.20 完整发布门禁通过。idle 可用性与扩展新旧协议兼容仍待后续分片，不整支合并上游历史、数据库迁移或发布身份。
+- [x] **T7：准备合流后的下一版 beta。** 按公开 beta.19 `fbdad8eb` 之后的完整范围整理 beta.20 版本与 changelog，源码发布门禁通过；本项只表示准备完成，尚未打 tag、出包、安装或公开发布。AppImage 门槛保持不变。
 
 第一阶段不要求实现新客户端、补齐所有桌面或清零客户端私有持久化。受控读取可以保留明确例外；runtime 写入必须由当前 owner 执行。AppImage 实机验收仍约束该格式及 daemon 稳定发布，不以源码合并代替。本机现运行本地未签名 beta.19 候选，生产 service 已受控重启；真实数据库继续记录，既有历史及 schema 校验通过。公开发布资产未改变。
 
@@ -39,6 +40,8 @@
 - 2026-09-21 原生续验修复恢复默认目录问题后，完整门禁更新为 674 Rust / 15 ignored；`perf:heatmap-desktop` 与 `test:storage-native` 均通过。该次原生存储报告为 `/tmp/patina-storage-test-aoEjAu`，具体动作、构建摘要与证据限制见 [原生续验](../archive/2026-09-20-daemon-owner-audit.md#原生续验2026-09-21)。均为 debug 源码验收，当时未构建新安装包。
 - 随后的本次合并前验证达到 677 Rust / 15 ignored；新候选包 SHA256 为 `40f65c6398f992ca38eaf4f55fcdef7df33b0712cdb107ffc7642967a977da77`，保留版本号但不是公开 beta.19 原包。隔离 dpkg、真实临时 systemd/界面重启和授权后的宿主实装全部通过，详见 [本次证据](../archive/2026-09-21-main-merge-readiness.md)。本机 daemon 从 PID 1464 受控切换至 441183；备份与实装证据保存在用户私有目录 `/home/arinp22/.local/state/patina/acceptance/20260921-merge-f8bplgw1`。
 - 本地主线合入复用 `bc5c2e9c` 的代码与验收证据，后续仅同步 13 份文档；存储/Agent/API 文档契约、UTF-8、相对链接和 diff 检查通过。发布契约在宿主环境通过 25 项 policy、3 项 DEB 与 11 项安装检查脚本测试；沙箱内两次未捕获预期子进程错误输出，保留为环境限制，不记为零重试。合并没有重新构建、安装或操作生产服务。
+- 用户确认后，`5eefcf4e` 已推送 main，对应 [Verify 35529435704](https://github.com/Asanilo/patina-Linux/actions/runs/35529435704) 成功；该结果只覆盖合流基线，不覆盖随后本地 beta.20 准备改动。
+- beta.20 源码准备已完成，新增采样中断及旧协议扩展修复后 `release:check` 通过：56 个 TypeScript 测试文件、38 项浏览器回归、683 Rust passed / 15 ignored、Clippy、扩展签名和版本/changelog 检查。浏览器临时 profile 清理仍有非阻断警告；详细范围与限制见 [平台回流记录](2026-09-21-linux-platform-reuse.md#本批验证与限制)。本批没有新安装包、生产重启、tag 或公开资产。
 
 ## 合流后的验收基线与后续范围
 

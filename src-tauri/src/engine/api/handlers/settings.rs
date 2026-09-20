@@ -126,10 +126,15 @@ pub async fn set_tracking_paused(context: &ApiRuntimeContext, body: &[u8]) -> Ro
         key: "tracking_paused".to_string(),
         value: if request.paused { "1" } else { "0" }.to_string(),
     };
+    let probe_boundary = runtime_state
+        .as_ref()
+        .and_then(|state| state.pending_probe_seal());
+    let now_ms = context.now_ms();
+    let seal_at_ms = probe_boundary.map_or(now_ms, |boundary| boundary.min(now_ms));
     if let Err(error) = crate::data::repositories::app_settings::commit_app_setting_mutations_at(
         context.pool(),
         &[mutation],
-        context.now_ms(),
+        seal_at_ms,
     )
     .await
     {
@@ -139,6 +144,11 @@ pub async fn set_tracking_paused(context: &ApiRuntimeContext, body: &[u8]) -> Ro
         };
     }
     if let Some(state) = runtime_state.as_ref() {
+        if request.paused {
+            if let Some(boundary) = probe_boundary {
+                state.acknowledge_probe_seal(boundary);
+            }
+        }
         state.note_tracking_policy_change();
     }
     context.emit_tracking_data_changed(if request.paused {

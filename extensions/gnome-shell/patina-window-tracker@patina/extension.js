@@ -89,9 +89,7 @@ class PatinaTracker {
         const self = this;
         const impl = {
             GetFocusedWindow() {
-                log('PATINA: GetFocusedWindow called');
                 const info = self._getWindowInfo();
-                log('PATINA: info title=' + info.title + ' app=' + info.app_id);
                 return [info.title, info.app_id, info.wm_class, info.pid, info.window_id];
             }
         };
@@ -154,7 +152,7 @@ class PatinaTracker {
             this._exportedObject.emit_signal(
                 'FocusedWindowChanged',
                 new GLib.Variant(
-                    '(sstut)',
+                    '(sssut)',
                     [info.title, info.app_id, info.wm_class, info.pid, info.window_id]
                 )
             );

@@ -8,10 +8,15 @@ pub(super) async fn flush_pending_power_stop(
     let Some(stop) = runtime_state.pending_stop() else {
         return Ok(None);
     };
-    let reason = apply_power_lifecycle_event(data, stop.2, stop.1).await?;
+    let probe_boundary = runtime_state.pending_probe_seal();
+    let boundary_ms = probe_boundary.map_or(stop.1, |boundary| boundary.min(stop.1));
+    let reason = apply_power_lifecycle_event(data, stop.2, boundary_ms).await?;
     runtime_state.acknowledge_stop(stop);
+    if let Some(boundary) = probe_boundary {
+        runtime_state.acknowledge_probe_seal(boundary);
+    }
     runtime_state.invalidate_activity();
-    Ok(reason.map(|reason| (reason, stop.1)))
+    Ok(reason.map(|reason| (reason, boundary_ms)))
 }
 
 pub(super) async fn apply_power_lifecycle_event(

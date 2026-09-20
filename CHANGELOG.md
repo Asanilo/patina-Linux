@@ -16,6 +16,12 @@ Release: 待定。
 App note: 待定。
 App note en: TBD.
 
+## [1.9.0-beta.20] - 2026-09-21
+
+Release: Linux DEB 测试版：修复后台目录维护、采样中断计时和状态刷新，停止向 GNOME 日志写入窗口标题。
+App note: 修复后台目录迁移与清缓存，避免采样中断期间继续计时，减少窗口标题的日志暴露。
+App note en: Restore background storage maintenance, avoid counting sampling gaps, and keep window titles out of GNOME logs.
+
 ### Changed
 
 - 后台运行模式下，分类与设置保存、网页历史删除统一由后台处理；后台不可用或接口不匹配时明确报错。
@@ -25,10 +31,14 @@ App note en: TBD.
 - 修复后台运行模式下数据及 WebView 目录迁移、恢复默认位置和重启清缓存无法正确执行的问题；只预约清缓存时也可直接从设置页重启。
 - 修复工具提醒、备份状态等后台事件漏传，以及工具界面被过期响应覆盖的问题。
 - 修复桌面数据库重连时重复维护数据库的问题，避免数据库不可用时由界面创建新库或重做结构迁移。
+- 修复前台窗口采样超时或任务失败后，短暂恢复同一应用时仍将未知间隙计入会话的问题；结算失败时先完成重试再恢复记录。
+- GNOME 扩展不再把窗口标题和应用标识写入 Shell 日志。
 
 ### Internal
 
 - 补充主线数据库升级、目录维护中断恢复、隔离 DEB 安装升级及原生界面重启验收，完善自动测试发现与架构边界检查。
+- GNOME 扩展更新为 version 3，修正焦点变化信号的窗口类字段类型；保留既有 D-Bus 接口和 GNOME 42 支持范围。
+- daemon 与 Desktop 开发已合流到 main；本版保持 DEB-only beta，AppImage 的实机接管、共存和正式升级门槛不变。
 
 ## [1.9.0-beta.19] - 2026-09-19
 

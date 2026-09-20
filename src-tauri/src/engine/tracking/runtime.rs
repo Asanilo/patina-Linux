@@ -1,7 +1,7 @@
 use super::runtime_snapshot::{TrackingRuntimeSnapshot, TrackingRuntimeSnapshotState};
 use super::session_timeout::{
     seal_active_sessions_for_continuity_timeout,
-    seal_active_sessions_for_passive_participation_timeout,
+    seal_active_sessions_for_passive_participation_timeout, seal_active_sessions_for_probe_failure,
     seal_active_sessions_for_tracking_pause, should_seal_sustained_participation,
     should_suspend_active_tracking,
 };
@@ -31,6 +31,9 @@ use tokio::time::{sleep, Duration};
 mod loop_state;
 #[path = "runtime/power_lifecycle.rs"]
 mod power_lifecycle;
+#[cfg(all(test, target_os = "linux"))]
+#[path = "runtime/probe_interruption_tests.rs"]
+mod probe_interruption_tests;
 #[path = "runtime/support.rs"]
 mod support;
 #[path = "runtime/window_polling.rs"]
@@ -132,8 +135,39 @@ pub async fn run_with_context(
     output: Arc<dyn TrackingRuntimeOutput>,
     #[cfg(target_os = "linux")] audio_source: crate::platform::linux::audio::AudioSignalSource,
     #[cfg(target_os = "linux")] media_source: crate::platform::linux::media::MediaSignalSource,
-    mut shutdown: watch::Receiver<bool>,
+    shutdown: watch::Receiver<bool>,
 ) -> Result<(), String> {
+    run_with_probe(
+        context,
+        health_state,
+        event_sink,
+        output,
+        #[cfg(target_os = "linux")]
+        (audio_source, media_source),
+        shutdown,
+        poll_active_window_with_timeout,
+    )
+    .await
+}
+
+async fn run_with_probe<P, F>(
+    context: RuntimeContext,
+    health_state: Arc<watchdog::RuntimeHealthState>,
+    event_sink: Arc<dyn RuntimeEventSink>,
+    output: Arc<dyn TrackingRuntimeOutput>,
+    #[cfg(target_os = "linux")] signal_sources: (
+        crate::platform::linux::audio::AudioSignalSource,
+        crate::platform::linux::media::MediaSignalSource,
+    ),
+    mut shutdown: watch::Receiver<bool>,
+    mut poll: P,
+) -> Result<(), String>
+where
+    P: FnMut() -> F,
+    F: std::future::Future<Output = WindowPollOutcome>,
+{
+    #[cfg(target_os = "linux")]
+    let (audio_source, media_source) = signal_sources;
     let data = TrackingRuntimeDataStore::new(context.pool().clone());
     startup::initialize_tracker(&data, event_sink.as_ref(), context.now_ms())
         .await
@@ -146,18 +180,64 @@ pub async fn run_with_context(
     let mut sustained_participation_state = SustainedParticipationRuntimeState::default();
     let mut timestamp_persist_state = TrackerTimestampPersistState::default();
     let mut settings_cache = TrackingSettingsCache::default();
+    let mut last_accepted_sample_ms = None;
     let runtime_state = output.runtime_state();
 
     loop {
         if *shutdown.borrow() {
-            return Ok(());
+            break;
         }
         let generation = runtime_state.lifecycle_generation();
         let poll_outcome = tokio::select! {
-            outcome = poll_active_window_with_timeout() => outcome,
-            _ = shutdown.changed() => return Ok(()),
+            outcome = poll() => outcome,
+            _ = shutdown.changed() => break,
         };
         let transition_guard = runtime_state.lock_transition().await;
+        let now_ms = context.now_ms();
+        health_state.note_heartbeat(now_ms);
+        if !poll_outcome.is_successful_sample() {
+            // Cached foreground data is diagnostic only. Keep the first boundary
+            // until its transaction succeeds, including across a recovered probe.
+            if let Some(boundary_ms) = last_accepted_sample_ms.take() {
+                runtime_state.note_probe_interruption(boundary_ms);
+            }
+            last_window = None;
+            last_tracking_status = None;
+            pending_continuity = None;
+            sustained_participation_state = SustainedParticipationRuntimeState::default();
+            runtime_state.invalidate_activity();
+            // A failed sealing transaction must not leave an apparently healthy
+            // probe. Reuse the already filtered window, never the raw poll title.
+            if let Some(mut snapshot) = runtime_state.snapshot() {
+                snapshot.status = TrackingStatusSnapshot::default();
+                snapshot.sampled_at_ms = now_ms;
+                snapshot.probe_status = poll_outcome.probe_status;
+                snapshot.degraded_reason = poll_outcome.degraded_reason.clone();
+                snapshot.probe_diagnostics = poll_outcome.probe_diagnostics.clone();
+                output.replace_snapshot(snapshot);
+            }
+        }
+        match seal_active_sessions_for_probe_failure(&data, &runtime_state).await {
+            Ok(Some((reason, boundary_ms))) => {
+                emit_tracking_event(event_sink.as_ref(), reason, boundary_ms);
+            }
+            Ok(None) => {}
+            Err(error) => {
+                log_tracker_error(format!("failed to seal interrupted sampling: {error}"));
+                persist_tracker_runtime_timestamps(
+                    &data,
+                    now_ms,
+                    false,
+                    &mut timestamp_persist_state,
+                )
+                .await;
+                drop(transition_guard);
+                if wait_for_next_iteration(&mut shutdown).await {
+                    break;
+                }
+                continue;
+            }
+        }
         match power_lifecycle::flush_pending_power_stop(&data, &runtime_state).await {
             Ok(Some((reason, boundary_ms))) => {
                 emit_tracking_event(event_sink.as_ref(), reason, boundary_ms);
@@ -169,7 +249,7 @@ pub async fn run_with_context(
                 ));
                 drop(transition_guard);
                 if wait_for_next_iteration(&mut shutdown).await {
-                    return Ok(());
+                    break;
                 }
                 continue;
             }
@@ -179,16 +259,16 @@ pub async fn run_with_context(
             last_tracking_status = None;
             pending_continuity = None;
             sustained_participation_state = SustainedParticipationRuntimeState::default();
+            last_accepted_sample_ms = None;
             drop(transition_guard);
             if wait_for_next_iteration(&mut shutdown).await {
-                return Ok(());
+                break;
             }
             continue;
         }
         let window_info = poll_outcome.window.clone();
-        let now_ms = context.now_ms();
-        health_state.note_heartbeat(now_ms);
         if poll_outcome.is_successful_sample() {
+            last_accepted_sample_ms = Some(now_ms);
             health_state.note_successful_sample(now_ms);
         }
         persist_tracker_runtime_timestamps(
@@ -198,7 +278,7 @@ pub async fn run_with_context(
             &mut timestamp_persist_state,
         )
         .await;
-        let (tracking_state, next_sustained_participation_state) = load_tracking_loop_state(
+        let (mut tracking_state, next_sustained_participation_state) = load_tracking_loop_state(
             &data,
             &window_info,
             now_ms,
@@ -210,7 +290,11 @@ pub async fn run_with_context(
             &media_source,
         )
         .await;
-        sustained_participation_state = next_sustained_participation_state;
+        if poll_outcome.is_successful_sample() {
+            sustained_participation_state = next_sustained_participation_state;
+        } else {
+            tracking_state.tracking_status = TrackingStatusSnapshot::default();
+        }
         let tracked_window = tracking_state.tracked_window;
         update_runtime_snapshot_state(
             output.as_ref(),
@@ -220,6 +304,13 @@ pub async fn run_with_context(
             &poll_outcome,
             generation,
         );
+        if !poll_outcome.is_successful_sample() {
+            drop(transition_guard);
+            if wait_for_next_iteration(&mut shutdown).await {
+                break;
+            }
+            continue;
+        }
         if tracking_state.tracking_paused {
             match seal_active_sessions_for_tracking_pause(&data, now_ms).await {
                 Ok(Some(reason)) => {
@@ -236,17 +327,7 @@ pub async fn run_with_context(
             last_tracking_status = Some(tracking_state.tracking_status);
             drop(transition_guard);
             if wait_for_next_iteration(&mut shutdown).await {
-                return Ok(());
-            }
-            continue;
-        }
-
-        if !poll_outcome.is_successful_sample() {
-            last_window = Some(tracked_window);
-            last_tracking_status = Some(tracking_state.tracking_status);
-            drop(transition_guard);
-            if wait_for_next_iteration(&mut shutdown).await {
-                return Ok(());
+                break;
             }
             continue;
         }
@@ -296,7 +377,7 @@ pub async fn run_with_context(
             last_tracking_status = Some(tracking_state.tracking_status);
             drop(transition_guard);
             if wait_for_next_iteration(&mut shutdown).await {
-                return Ok(());
+                break;
             }
             continue;
         }
@@ -330,7 +411,7 @@ pub async fn run_with_context(
             last_tracking_status = Some(tracking_state.tracking_status);
             drop(transition_guard);
             if wait_for_next_iteration(&mut shutdown).await {
-                return Ok(());
+                break;
             }
             continue;
         }
@@ -384,9 +465,21 @@ pub async fn run_with_context(
         last_tracking_status = Some(tracking_state.tracking_status);
         drop(transition_guard);
         if wait_for_next_iteration(&mut shutdown).await {
-            return Ok(());
+            break;
         }
     }
+
+    let _transition_guard = runtime_state.lock_transition().await;
+    if let Some((reason, boundary_ms)) =
+        seal_active_sessions_for_probe_failure(&data, &runtime_state)
+            .await
+            .map_err(|error| {
+                format!("failed to seal interrupted sampling during shutdown: {error}")
+            })?
+    {
+        emit_tracking_event(event_sink.as_ref(), reason, boundary_ms);
+    }
+    Ok(())
 }
 
 async fn wait_for_next_iteration(shutdown: &mut watch::Receiver<bool>) -> bool {
