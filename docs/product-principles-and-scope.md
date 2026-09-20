@@ -210,7 +210,7 @@
 
 允许把自动追踪主链逐步迁入独立的本地后台进程 `patinad`，并让浏览器 UI、桌面界面、未来的 TUI 或 CLI 作为本机客户端使用同一份运行状态与数据。
 
-在 `Asanilo/patina-Linux` 中，`main` 继续承担 Linux 日常开发与产品主线；上述分离在 `feature/patinad-daemon` 实验，不因实验有候选版本就自动替代 `main`。当前 Debian 系支持承诺与未来上游 Linux 贡献的支持范围分别评估。
+在 `Asanilo/patina-Linux` 中，`main` 承担 Linux 日常开发与产品主线，已合入通过第一阶段验收的后台与客户端分离。`feature/patinad-daemon` 保留为已合入的开发历史，不继续维护两条完整产品线。源码合入不改变发布门槛；当前 Debian 系支持承诺与未来上游 Linux 贡献的支持范围分别评估。
 
 这条路线的目的不是把产品改造成网络服务，而是：
 

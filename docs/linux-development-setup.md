@@ -1,8 +1,10 @@
 # Linux Development Setup
 
 This page records Linux development and verification procedures. `main` is the
-primary Linux product branch; daemon-specific procedures apply to the
-`feature/patinad-daemon` experiment and its explicitly selected candidates.
+primary Linux product branch and includes the daemon separation developed on
+`feature/patinad-daemon`; subsequent product work continues on `main`.
+Daemon-specific procedures apply to this baseline and its selected candidates.
+The source merge does not change beta or AppImage release gates.
 
 ## Build Storage
 
@@ -130,7 +132,7 @@ Storage changes use a restart boundary:
 4. On the next launch, migration runs before SQLite or either WebView is opened.
 5. The copied database must pass SQLite integrity, schema, and row-count checks before the target is promoted.
 
-On the daemon experiment, a managed Desktop performs offline maintenance as a local host operation; it never starts an embedded tracker. All Desktop instances hold a shared storage-access lock, and startup maintenance takes it exclusively before opening SQLite or creating WebViews. On Linux, bounded checks of same-user process/handle metadata also wait for older Desktop versions and WebKit processes that do not know this lock. A conflicting process produces an error rather than being killed; close the other instance before retrying.
+In managed daemon mode, Desktop performs offline maintenance as a local host operation; it never starts an embedded tracker. All Desktop instances hold a shared storage-access lock, and startup maintenance takes it exclusively before opening SQLite or creating WebViews. On Linux, bounded checks of same-user process/handle metadata also wait for older Desktop versions and WebKit processes that do not know this lock. A conflicting process produces an error rather than being killed; close the other instance before retrying.
 
 Restoring either storage location may rejoin the shared default directory while the other location remains there. This exception applies only to that exact default root. Custom shared locations and parent/child overlap remain rejected; migration uses separate managed file lists so restoring one location preserves the other location's files.
 
@@ -204,7 +206,7 @@ A manual preview reports startup stage `tracking-preview`, exposes service state
 
 ### Daemon-Backed AppImage Runtime (Development)
 
-AppImage support on the daemon branch is implemented but remains behind the
+Daemon-backed AppImage support on `main` is implemented but remains behind the
 independent packaging/acceptance gate; prerelease publishing is still DEB-only.
 The AppImage includes both Desktop and `usr/bin/patinad`. `AppRun --patinad`
 executes the bundled daemon before Desktop initialization. First launch stages

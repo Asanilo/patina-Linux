@@ -21,12 +21,13 @@ Start with [`AGENTS.md`](AGENTS.md) and the task routing in
 [`docs/README.md`](docs/README.md). Read the references relevant to the change;
 small fixes do not require rereading every long-term document.
 
-`main` is the primary Linux development/product branch. `feature/patinad-daemon`
-is an independent daemon-separation experiment. An upstream Linux contribution
-starts from a recorded current upstream commit and may reuse suitable code from
-Linux `main`; it does not merge the daemon experiment into upstream. The branch
-examples below describe ordinary contributions to Linux `main`, not permission
-to rebase, merge, or redirect existing experimental work.
+`main` is the primary Linux development/product branch and now includes the daemon
+separation developed on `feature/patinad-daemon`. Subsequent Linux product work
+continues on `main`. An upstream Linux contribution starts from a recorded
+current upstream commit and may reuse suitable code from Linux `main`; it does
+not import the fork's daemon architecture wholesale. The branch examples below
+describe ordinary contributions to Linux `main`; upstream contributions follow
+their separate scope and base commit.
 
 The active top-level files under `docs/` are the current sources of truth.
 Files under `docs/archive/` are historical context and should not be used as the
@@ -621,7 +622,7 @@ Before merging:
 
 先读 [`AGENTS.md`](AGENTS.md) 和 [`docs/README.md`](docs/README.md) 的任务路由，再按改动读取相关规范；小修不需要重读所有长期文档。
 
-`main` 是 Linux 日常开发与产品主线，`feature/patinad-daemon` 是独立的 daemon 分离实验。上游 Linux 贡献分支从记录明确的最新上游提交起步，可参考 Linux `main` 的适用代码，不把 daemon 实验整体合入上游。下文分支操作示例适用于向 Linux `main` 贡献的普通任务，不授权重置、合并或改变已有实验分支的目标。
+`main` 是 Linux 日常开发与产品主线，已合入 `feature/patinad-daemon` 上完成的 daemon 分离，后续 Linux 产品开发继续在 `main` 推进。上游 Linux 贡献分支从记录明确的最新上游提交起步，可参考 Linux `main` 的适用代码，不整体引入本 fork 的 daemon 架构。下文分支操作示例适用于向 Linux `main` 贡献的普通任务；上游贡献继续使用其独立范围与基线提交。
 
 `docs/` 顶层的有效文档是当前事实来源。`docs/archive/` 下的文件是历史背景，
 默认不应作为当前实现依据。

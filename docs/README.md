@@ -5,8 +5,9 @@ Use this page as the entry point for active Patina documentation. Files under `a
 ## Start Here
 
 This is `Asanilo/patina-Linux`: `main` is the primary Linux development/product
-branch; `feature/patinad-daemon` is the daemon-separation experiment. Check the
-current branch before applying experimental runtime or release instructions.
+branch and includes the accepted daemon separation. `feature/patinad-daemon`
+is retained as merged history. Check the current branch and candidate evidence
+before applying runtime or release instructions; source integration is not a release.
 
 For current priorities, read the roadmap and the relevant working checklist below.
 For implementation contracts, use the engineering references. Archives are only
@@ -47,11 +48,11 @@ Read only the references needed for the task:
 
 - [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md): current daemon acceptance checklist, delivery status, and deferred work
 
-The roadmap separates Linux `main`, the daemon experiment, and upstream Linux
-contributions. `feat/linux-desktop` was created from upstream `80204c73`; its
-unfinished draft is on hold while daemon work converges. Follow the ordered Todo
-in the daemon checklist for the database audit, blocking fixes, validation,
-merge readiness, and later selective reuse of platform work.
+The roadmap now places daemon and Desktop product work together on Linux `main`,
+with upstream Linux contributions kept separate. `feat/linux-desktop` was created
+from upstream `80204c73`; its unfinished draft remains paused. The daemon checklist
+records completed acceptance and integration, the remaining release gates, and
+the next selective review of platform work.
 
 Only current execution documents belong under `working/`. Move them to `archive/` when they stop being the active implementation basis.
 

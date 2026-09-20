@@ -25,7 +25,7 @@
 
 ## 2. 系统现实
 
-本仓库 `Asanilo/patina-Linux` 的日常产品主线为 `main`；当前分支 `feature/patinad-daemon` 实验宿主分离。下文 daemon owner、交接和客户端协议描述适用于该实验，不能据此推断 `main` 已完成相同迁移。未来上游贡献采用上游当前架构，可参考 Linux `main`，不默认携带本实验。
+本仓库 `Asanilo/patina-Linux` 的日常产品主线为 `main`，已合入通过第一阶段验收的 daemon 宿主分离。下文 daemon owner、交接和客户端协议是主线架构；embedded 路径仅保留明确的迁移兼容用途。源码合入不等于稳定发布或用户 profile 已完成交接。未来上游贡献采用上游当前架构，可参考 Linux `main`，不默认携带 daemon 架构替换。
 
 `Patina` 不是普通 Web 应用，而是一个：
 

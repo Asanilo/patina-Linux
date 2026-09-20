@@ -21,7 +21,7 @@ Patina 的 Linux 移植与本地 AI/API 集成 fork。
 
 这个 fork 是 Patina 的 Linux-only 版本，重点放在 GNOME/Linux 前台窗口识别、浏览器网页活动记录、本地 HTTP API，以及面向外部 AI/MCP 的数据接口。Windows 平台源码暂时保留为冻结兼容代码，但不再跟踪上游功能，也不进入默认 CI、Release、验证矩阵或当前支持承诺。
 
-Linux 版本当前是可用的开发原型，还不是稳定发行版。
+`main` 上的 daemon-backed 版本仍处于 beta 阶段。GNOME Wayland 是主要支持环境，KDE 和 wlroots 合成器仍需专门适配。
 
 ## 当前 fork 重点
 
@@ -33,7 +33,7 @@ Linux 版本当前是可用的开发原型，还不是稳定发行版。
 - 支持 Firefox / Zen 扩展。
 - 设置页提供窗口追踪、本地 API、浏览器桥接、Linux 自启动诊断。
 - 可以修复 Linux `~/.config/autostart/Patina.desktop` 的错误 `Exec`。
-- 正在开发独立后台进程 `patinad`，目标是关闭桌面 UI 后仍能可靠记录，并为未来 TUI 提供统一运行时。
+- 独立后台进程 `patinad` 负责追踪，关闭桌面 UI 后仍能记录，并为未来 TUI 提供统一运行时边界。
 - 规划由 `patinad` 在本机提供浏览器 UI，类似 ActivityWatch；Tauri 保留为桌面客户端，未来可独立评估其他 Linux UI 框架。
 
 ## Linux-only 开发策略
@@ -43,7 +43,7 @@ Linux 版本当前是可用的开发原型，还不是稳定发行版。
 Windows 代码采用冻结后删除策略：
 
 - `patinad` 稳定前保留现有条件编译代码，不再增加 Windows 功能、测试和发布工作。
-- `patinad` 完成后台接管后，再用独立版本分阶段删除 Windows cfg、依赖和源码。
+- `patinad` 后台接管稳定后，再用独立版本分阶段删除 Windows cfg、依赖和源码。
 - Linux tracking、数据安全、桌面体验和发布可靠性优先于平台追平。
 
 已经按 Linux 产品边界适配的跨平台能力包括：
@@ -57,7 +57,7 @@ Windows 代码采用冻结后删除策略：
 - Linux 数据目录管理与 WebView cache 管理已按 Linux 路径重新实现。
 - 应用/网站活动详情、应用/分类/网页趋势、安全活动导入和本地定时备份。
 
-上游改动只按 Linux 的正确性和数据安全价值定期审查；在 daemon-backed 架构完成前，不整体合并上游，也不以版本追平为目标。
+上游改动只按 Linux 的正确性和数据安全价值定期审查，不整体合并上游，也不以版本追平为目标。
 
 ## 界面预览
 
@@ -80,7 +80,7 @@ Windows 代码采用冻结后删除策略：
 | MCP wrapper | 已实现 | `npm run mcp:patina`；受控写侧覆盖应用/设置，以及提醒、计时器和番茄钟。 |
 | Chromium 网页同步 | 已实现 | `extensions/chromium`。 |
 | Firefox / Zen 网页同步 | 原型已实现 | 已签名 XPI 可直接安装。 |
-| Linux 打包 | 发布链已配置 | 后续版本 tag 会生成 x86_64 AppImage、`.deb`、浏览器/桌面扩展资产和 Linux-only updater 清单。 |
+| Linux 打包 | 稳定版与 beta 发布链已配置 | 稳定版 tag 会生成 x86_64 AppImage 和 `.deb`；daemon-backed beta 只发布 DEB，AppImage 仍需完成安装/共存验收。 |
 | 本地 API token/port UI | 已实现 | 设置页可管理本地 API port/token，和浏览器网页同步配置分开。 |
 
 ## Linux 快速开始
@@ -132,7 +132,7 @@ ${XDG_DATA_HOME:-~/.local/share}/Patina/api_token
 
 ## Daemon 测试版验收
 
-daemon 分支与稳定 `main` 独立验证。测试包同时包含 Desktop、`patinad`、user unit 和 GNOME 扩展，只提供 DEB；请在 [Release 列表](https://github.com/Asanilo/patina-Linux/releases) 查看是否已有预发布版本，不使用稳定版 latest 下载入口判断 beta 是否发布。
+`feature/patinad-daemon` 上完成的 daemon 分离已合入 `main`，后续 Linux 产品开发继续在 `main` 推进。这次源码合并不代表发布了新安装包，也不改变稳定版本。测试包同时包含 Desktop、`patinad`、user unit 和 GNOME 扩展，只提供 DEB；请在 [Release 列表](https://github.com/Asanilo/patina-Linux/releases) 查看是否已有预发布版本，不使用稳定版 latest 下载入口判断 beta 是否发布。
 
 安装前先导出并验证一份位于 Patina 数据目录之外的备份。覆盖安装后重新打开桌面端；设置诊断若显示 Desktop/Daemon 版本不同，再显式确认“重新加载后台”。安装软件包不等于运行中的后台已经更新；重新加载会短暂停止记录，不负责下载软件包。
 
@@ -140,7 +140,7 @@ daemon 分支与稳定 `main` 独立验证。测试包同时包含 Desktop、`pa
 
 ## Linux 安装包
 
-正式发布工作流会生成：
+稳定版发布工作流会生成：
 
 - `Patina_<version>_amd64.AppImage`
 - `Patina_<version>_amd64.deb`
@@ -149,7 +149,7 @@ daemon 分支与稳定 `main` 独立验证。测试包同时包含 Desktop、`pa
 - `patina-firefox-extension-v<version>.xpi`
 - `latest.json`
 
-Ubuntu / Debian 用户优先安装 `.deb`。它会把 GNOME Shell 扩展文件安装到系统扩展目录，但仍需为当前用户启用扩展：
+Ubuntu / Debian 用户优先安装 `.deb`。daemon-backed DEB 会把 GNOME Shell 扩展文件、`patinad` 和默认禁用的 systemd user unit 安装到系统目录。首次启动 Desktop 时会执行 owner 迁移；旧版 embedded Desktop 仍持有同一 Production profile 时，不要手动启用 `patinad.service`。已公开的 1.8.4 稳定线仍使用内置运行时。GNOME 扩展仍需为当前用户启用：
 
 ```bash
 gnome-extensions enable patina-window-tracker@patina

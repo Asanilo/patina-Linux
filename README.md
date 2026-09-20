@@ -21,7 +21,7 @@ English · [简体中文](README.zh-CN.md)
 
 This fork is the Linux-only edition of Patina. It focuses on GNOME/Linux foreground tracking, browser webpage activity, and a localhost API/MCP surface for external AI analysis. Windows platform sources remain temporarily as frozen compatibility code, but upstream Windows features are no longer tracked and Windows is outside the default CI, release pipeline, validation matrix, and support commitment.
 
-The Linux port is a usable development prototype, but it is not yet a stable release. GNOME Wayland is the primary supported environment; KDE and wlroots compositors still need dedicated adapters.
+The daemon-backed line on `main` remains in beta. GNOME Wayland is the primary supported environment; KDE and wlroots compositors still need dedicated adapters.
 
 ## Current Fork Focus
 
@@ -35,7 +35,7 @@ The Linux port is a usable development prototype, but it is not yet a stable rel
 - Repair action for Linux `~/.config/autostart/Patina.desktop`.
 - Stable custom categories with rename, merge, delete, and excluded-item filtering.
 - HTTP and MCP Agent Skill guidance for external local analysis.
-- An in-progress `patinad` background runtime so tracking can continue without the desktop UI and future TUI clients can share one owner.
+- The `patinad` background runtime owns tracking independently of the desktop UI and provides the runtime boundary for future TUI clients.
 - A planned ActivityWatch-style local browser UI served by `patinad`; Tauri remains the desktop client and can be evaluated independently against future Linux UI frameworks.
 
 ## Linux-only Development Policy
@@ -59,7 +59,7 @@ Selected cross-platform capabilities already adapted to the Linux product includ
 - Linux-native data-directory and WebView-cache management.
 - App/site activity details, app/category/web trends, safe activity import, and local scheduled backups.
 
-Upstream changes are reviewed for Linux correctness and data-safety value. They are not merged wholesale or used as a version-parity target while the daemon-backed architecture is being completed.
+Upstream changes are reviewed for Linux correctness and data-safety value. They are not merged wholesale or used as a version-parity target.
 
 ## Interface Preview
 |  |  |
@@ -81,12 +81,12 @@ Upstream changes are reviewed for Linux correctness and data-safety value. They 
 | MCP wrapper and Agent Skill | Implemented | `npm run mcp:patina`; controlled writes cover app/settings, local API configuration, daemon restart verification, and Tools reminders, timers, and pomodoro. |
 | Chromium Web Sync | Implemented | `extensions/chromium`. |
 | Firefox / Zen Web Sync | Implemented | The signed `0.1.1` XPI can be installed directly and identifies Firefox-family forks before generic Firefox. |
-| Linux packaging | Current stable pipeline configured | Current stable tags build x86_64 AppImage and `.deb`; the first daemon-backed beta will intentionally publish DEB only until AppImage service ownership and atomic updates are designed. |
+| Linux packaging | Stable and beta pipelines configured | Stable tags build x86_64 AppImage and `.deb`; daemon-backed betas publish DEB only while complete AppImage installation/coexistence acceptance remains pending. |
 | Local API token/port UI | Implemented | Settings applies ports atomically and rotates the owner-only API Token separately from browser Web Sync. |
 
 ### Daemon Beta Acceptance
 
-The daemon branch is being validated separately from stable `main`. Beta packages contain Desktop, `patinad`, the user unit and GNOME extension together, and publish DEB only. Use the [release list](https://github.com/Asanilo/patina-Linux/releases), not the stable latest-download link, to check for available prereleases.
+The daemon separation developed on `feature/patinad-daemon` has been merged into `main`, where subsequent Linux product development continues. This source merge does not publish a new package or change the stable release. Beta packages contain Desktop, `patinad`, the user unit and GNOME extension together, and publish DEB only. Use the [release list](https://github.com/Asanilo/patina-Linux/releases), not the stable latest-download link, to check for available prereleases.
 
 Before installing a beta, export and verify a backup outside the Patina data directory. Reopen Desktop after package installation; if Settings reports different Desktop/Daemon versions, explicitly confirm **Reload background service**. Installation alone does not replace an already-running daemon. Reload briefly interrupts tracking and does not download a package.
 
@@ -150,7 +150,7 @@ The current stable release workflow produces:
 - `patina-firefox-extension-v<version>.xpi`
 - `latest.json`
 
-Ubuntu and Debian users should prefer the `.deb`. It installs the GNOME Shell extension files, `patinad`, and a default-disabled systemd user unit into system directories. The current release still uses Patina Desktop as the default tracking owner; do not enable `patinad.service` against the same production profile yet. The GNOME extension must still be enabled for the current user:
+Ubuntu and Debian users should prefer the `.deb`. Daemon-backed DEBs install the GNOME Shell extension files, `patinad`, and a default-disabled systemd user unit into system directories. The first Desktop launch handles owner migration; do not manually enable `patinad.service` while an older embedded Desktop still owns the same Production profile. The published 1.8.4 stable line retains its embedded runtime. The GNOME extension must still be enabled for the current user:
 
 ```bash
 gnome-extensions enable patina-window-tracker@patina

@@ -20,3 +20,11 @@ convergence; do not merge the upstream-based product history into the fork.
 This sequencing does not waive release gates, authorize production service
 changes, or imply that daemon acceptance is complete. The active Todo and
 evidence remain in the daemon working checklist.
+
+Converged 2026-09-21 with explicit user authorization: local `main` fast-forwarded
+from `a13a64a6` to the accepted daemon candidate `bc5c2e9c`, preserving all existing
+development and beta history. The experiment branch is retained as merged history;
+ongoing daemon and Desktop product work now shares `main`. This supersedes the
+temporary two-branch development arrangement above. Upstream work remains separate,
+and source integration does not publish a release or waive the DEB-only beta and
+AppImage acceptance gates.

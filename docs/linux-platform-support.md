@@ -8,7 +8,7 @@
 
 ## 2. 当前支持承诺
 
-`Asanilo/patina-Linux` 的日常产品主线是 `main`，当前发行版支持与验证范围限 Debian 系；`feature/patinad-daemon` 的实验验收不自动扩大该范围。下表区分桌面/显示协议，不能单凭“GNOME”或生成了 AppImage 就宣称其他发行版可用。版本、CPU 架构和包格式仍须随候选证据记录；上游 Linux PR 的首批支持矩阵另行讨论。
+`Asanilo/patina-Linux` 的日常产品主线是 `main`，已合入 daemon 分离；当前发行版支持与验证范围仍限 Debian 系。下表区分桌面/显示协议，不能单凭“GNOME”或生成了 AppImage 就宣称其他发行版可用。版本、CPU 架构和包格式仍须随候选证据记录；上游 Linux PR 的首批支持矩阵另行讨论。
 
 | 环境 | 支持级别 | 前台窗口来源 | 说明 |
 | --- | --- | --- | --- |
@@ -33,7 +33,7 @@ GNOME Wayland 下，如果 `org.patina.WindowTracker` 没有 D-Bus owner，Patin
 | 浏览器网页活动 | Firefox / Zen 与 Chromium 扩展 | 未连接时仅保留窗口标题级数据 |
 | 桌面通知 | freedesktop 通知 | 失败时记录错误，不改变 tracking 数据 |
 | 悬浮窗拖动 / 吸附 | X11 使用全局坐标吸附；原生 Wayland 由 compositor 处理拖动 | Wayland 不读写 GTK 伪全局坐标，不自动吸附或覆盖已保存的左右偏好；全局按键未知时等待本地指针事件结束拖动态 |
-| 自启动 | 当前已发布稳定版仍使用 XDG autostart desktop entry；daemon 分支的 DEB 输入包含默认禁用的 `patinad.service`，并已接入后台/客户端登录偏好拆分和首次安全交接 | Settings 继续显示并修复旧 desktop entry；daemon-backed DEB 完成实机验收前不把该交接标为稳定支持，也不开放可能启动第二 owner 的普通设置写入 |
+| 自启动 | 当前已发布稳定版仍使用 XDG autostart desktop entry；main 的 daemon-backed DEB 输入包含默认禁用的 `patinad.service`，并已接入后台/客户端登录偏好拆分和首次安全交接 | Settings 继续显示并修复旧 desktop entry；候选交接与登录验收按实际版本记录，源码合入不等于稳定支持，也不开放可能启动第二 owner 的普通设置写入 |
 | 本地 API | `127.0.0.1` + owner-only Bearer token | daemon 可原子换端口/轮换 Token；冲突时保留旧 listener，轮换后旧 API/SSE 凭据失效 |
 
 音频和媒体是持续参与判断的辅助信号，不是录音能力。Patina 不采集麦克风内容或系统音频内容。

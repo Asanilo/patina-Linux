@@ -48,7 +48,7 @@ These instructions apply to repository work; UI sections apply when UI is touche
 - Do not reintroduce exited root layers such as `src/lib/` or `src/types/`.
 - Treat compatibility shells and forwarding layers as explicit exceptions that should stay thin.
 - Treat files under `docs/archive/` as historical context, not the default source of truth.
-- On the `feature/patinad-daemon` experiment, follow the daemon ownership roadmap: background tracking and runtime writes belong to the daemon; clients use supported boundaries. Do not expand parallel embedded and daemon implementations without a migration need, or apply the experimental cutover to `main` implicitly.
+- `main` includes the accepted daemon separation: background tracking and runtime writes belong to the daemon; clients use supported boundaries. Embedded compatibility paths remain only for explicit migration needs; do not expand parallel runtime implementations.
 
 ## Product And Priority Direction
 
@@ -75,8 +75,8 @@ These instructions apply to repository work; UI sections apply when UI is touche
 
 ## GitHub Push And Issue Rules
 
-- This is `Asanilo/patina-Linux`. `main` is the primary Linux development/product branch; `feature/patinad-daemon` is the daemon-separation experiment. Future upstream Linux contribution branches start from an explicitly recorded current upstream commit, using Linux `main` only as a reference where suitable.
-- When asked to push, use the current user-authorized branch and verify its upstream. Keep daemon experiment work on `feature/patinad-daemon`; do not switch, merge or push it into `main` implicitly. Use `origin/main` when the confirmed task is on main.
+- This is `Asanilo/patina-Linux`. `main` is the primary Linux development/product branch and includes the accepted daemon separation. `feature/patinad-daemon` is retained as merged history; ongoing product work belongs on `main` or explicitly requested short-lived branches. Future upstream Linux contribution branches start from an explicitly recorded current upstream commit, using Linux `main` only as a reference where suitable.
+- When asked to push, use the current user-authorized branch and verify its upstream. Use `origin/main` when the confirmed task is on main. A local merge does not authorize a push, tag, or public release.
 - Do not create a branch or pull request unless the user explicitly asks for one.
 - Do not use issue-closing keywords such as `Closes`, `Fixes`, or `Resolves` in commits, changelog entries, pull request descriptions, or GitHub comments unless the user explicitly asks to close the issue.
 - When a change relates to an issue, reference it without changing its state, for example with `Refs #3` or a Markdown issue link.
