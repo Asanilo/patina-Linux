@@ -1,7 +1,7 @@
 # `patinad` 当前实施与验收
 
 > 更新：2026-09-23。daemon 分离已通过第一阶段验收并经用户明确授权合入本地 `main`；本文继续管理平台成果评估、候选证据与剩余发布门槛。历史阶段与实验详见 [归档](../archive/2026-09-19-patinad-runtime-history.md)。
-> 方向以 [路线](../roadmap-and-prioritization.md#linux-main-and-daemon-experiment) 为准，协议与 owner 以 [架构](../architecture.md) 为准。当前执行见下方 Todo 与 [beta.21 候选记录](2026-09-21-linux-platform-reuse.md)；历史验收不自动覆盖后续候选。隔离安装、真实临时 systemd、界面重启及本机实装验收均已通过；源码合入不改变公开发布状态。
+> 方向以 [路线](../roadmap-and-prioritization.md#linux-main-and-daemon-experiment) 为准，协议与 owner 以 [架构](../architecture.md) 为准。当前执行见下方 Todo 与 [beta.21 候选记录](2026-09-21-linux-platform-reuse.md)；历史验收不自动覆盖后续候选。beta.21 已完成 DEB 隔离升级、本机实装与 AppImage FUSE 共存；其 Xvfb 容器悬浮窗退出仍未解决，不能宣称 AppImage 全部验收通过。源码合入不改变公开发布状态。
 
 ## 推进 Todo（2026-09-20）
 
@@ -12,10 +12,10 @@
 - [x] **T3：修复第一阶段阻塞项。** 分类写入和 missing-command SQL fallback、网页历史删除、客户端重连 schema 维护、无用 SQL load 权限、SSE 漏事件与 Tools 并发覆盖已修复。目录迁移/清缓存已接通受管模式离线维护，补齐 Desktop 跨进程屏障、旧客户端占用检测和迁移中断恢复；恢复默认目录误拒绝、双目录同时恢复默认时混淆文件种类的缺陷均已修复。不以删减 main 功能收口。专项与本批完整门禁通过，候选验收归 T4。
 - [x] **T4：验证候选。** 最新 `check:full` 通过：55 个 TypeScript 测试文件、38 项浏览器回归、677 Rust passed / 15 ignored，以及构建/预算/边界/Clippy。main 实际 v1–6 schema 的合成 16 表升级回归通过。私有 dpkg root 完成 beta.18 安装→候选升级→卸载→重装；候选 daemon 配合真实临时 systemd、四次界面 `app.restart` 完成五阶段存储验收，50,000 条记录与总时长正确。用户随后明确授权本机实装；备份校验后完成 beta.18→本地候选升级，正式 Desktop 的存储页、关闭隐藏、单实例唤回、正常退出和新进程重开通过，退出后真实采样继续，daemon PID 不变。最终 15 项托管检查、历史记录摘要、SQLx 校验和及数据库完整性通过。候选身份、一次短暂数据库锁重试及证明范围见 [合并前证据](../archive/2026-09-21-main-merge-readiness.md)。
 - [x] **T5：达到合入条件并收敛到 main。** 用户明确要求合并后，本地 main 从 `a13a64a669849234df5575994673cb7a90cc3003` 快进至已验收提交 `bc5c2e9c7f56251857add5b91dd527cb1340288f`，无冲突，保留全部开发及 beta 历史。主线文档同步提交为 `5eefcf4e`，用户随后同意交付收尾，已将该提交普通快进推送至 `origin/main`。后续产品开发在 main，原 daemon 分支保留；未打 tag 或改变公开发布状态。
-- [ ] **T6：按模块评估并选择性回流平台成果。** [当前执行记录](2026-09-21-linux-platform-reuse.md)中的采样中断、idle 可信性、GNOME 双协议及会话重绑已实现并通过完整门禁；version 4 扩展已在本机激活，用户已完成锁屏/挂起。beta.20 本机 DEB 升级、实际 AppImage/DEB 共存、无界面持续采样、重新登录后的会话恢复及真实系统重启后的后台自动启动均通过。随后独立真实 systemd 验收发现并修复首次凭据竞态，新候选通过两秒延迟接管、界面重开、崩溃恢复、容器重启启动和六条隔离路由；714 Rust / 17 ignored 的完整门禁通过。新候选未替换本机安装。剩余为纯 AppImage 独立 GNOME 登录/FUSE、正式签名升级及后续 ESM/更多 Shell 验证；上游草稿仍保留，不整支合并。
+- [ ] **T6：按模块评估并选择性回流平台成果。** [当前执行记录](2026-09-21-linux-platform-reuse.md)中的采样中断、idle 可信性、GNOME 双协议及会话重绑已实现并通过完整门禁；version 4 扩展已在本机激活，用户已完成锁屏/挂起。beta.20 的重新登录及真实系统重启验收通过。后续凭据等待与 AppImage 自启动修复已进入 beta.21，本机 DEB 升级、两种客户端的实际 GNOME 生命周期、FUSE 共存与无界面持续采样通过；完整门禁为 715 Rust / 18 ignored。beta.21 容器完成 11 秒延迟接管，但自启动悬浮窗发生 `XI_BadDevice`，该整套流程未通过。剩余为该退出问题、纯 AppImage 独立 GNOME 登录、正式签名升级及后续 ESM/更多 Shell 验证；用户暂无独立 GNOME 环境，上游草稿仍保留，不整支合并。
 - [x] **T7：准备合流后的下一版 beta。** 按公开 beta.19 `fbdad8eb` 之后的完整范围整理 beta.20 版本与 changelog，源码发布门禁通过；beta.20 已于 2026-09-22 公开预发布，后续审核修复已提交 main（`fa1cec27`），当前准备 beta.21，本项不代表 beta.21 已发布；2026-09-22 另完成未签名 AppImage 本地候选与隔离验收，不等于恢复该格式发布。AppImage 实装/正式升级门槛保持不变。
 
-第一阶段不要求实现新客户端、补齐所有桌面或清零客户端私有持久化。受控读取可以保留明确例外；runtime 写入必须由当前 owner 执行。AppImage 实机验收仍约束该格式及 daemon 稳定发布，不以源码合并代替。本机现运行 2026-09-22 实装验收的本地未签名 beta.20 候选，生产 service 已受控重启；真实数据库继续记录，既有历史及 schema 校验通过。当前最新公开预发布为 beta.20；beta.21 的源码、包和本机安装状态由候选执行记录管理。
+第一阶段不要求实现新客户端、补齐所有桌面或清零客户端私有持久化。受控读取可以保留明确例外；runtime 写入必须由当前 owner 执行。AppImage 实机验收仍约束该格式及 daemon 稳定发布，不以源码合并代替。本机现运行 2026-09-23 实装验收的本地未签名 beta.21 候选，生产 service 已受控重启；真实数据库继续记录，既有历史及 schema 校验通过。桌面开机自启动保持关闭，后台登录启动保持开启。当前最新公开预发布为 beta.20；beta.21 尚未推送、打 tag 或公开发布。
 
 ## 当前状态
 
@@ -24,7 +24,7 @@
 | daemon 与 Desktop 分离 | 独立二进制、profile/lease、HTTP/SSE、追踪与平台信号、主要写侧、服务交接和客户端适配已实现；既有 DEB 候选有实机验收 | 所有读取均已脱离 Desktop SQLite，或任意客户端均可直接替换 |
 | 后台生命周期 | 已验证关闭/重开、故障恢复、回退/接管、特定登录环境、锁屏/挂起与 Zen 网页边界 | 所有桌面、硬件、登录配置长期稳定 |
 | 数据与备份 | 有界趋势/分类读取、流式导出与预览、多表恢复回滚及隔离 systemd/WebDAV 恢复已有验证 | 完整恢复恒定内存、任意第三方 WebDAV 兼容 |
-| AppImage | 旧 beta.20 候选具备宿主 DEB 共存证据；修复凭据竞态的新候选通过无 DEB 容器真实 systemd 首次接管、故障恢复及容器重启、六条隔离路由，见 [最新证据](2026-09-21-linux-platform-reuse.md) | 新候选已实装宿主、纯 AppImage GNOME 登录/FUSE 或正式签名升级已通过；允许公开发布 |
+| AppImage | beta.21 已通过本机真实 FUSE 挂载、GNOME 生命周期与 DEB 共存；旧候选另有无 DEB 容器首次接管、恢复与重启证据，见 [最新证据](2026-09-21-linux-platform-reuse.md) | beta.21 的 Xvfb 默认悬浮窗路径稳定、纯 AppImage GNOME 登录或正式签名升级已通过；允许公开发布 |
 | 新客户端 | Tauri 保留；TUI、GPUI、本机浏览器 UI 是后续方向 | 已实现，或已决定三者开发顺序 |
 
 ## 版本与发布证据

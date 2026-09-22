@@ -52,7 +52,7 @@ Read only the references needed for the task:
 The roadmap now places daemon and Desktop product work together on Linux `main`,
 with upstream Linux contributions kept separate. `feat/linux-desktop` was created
 from upstream `80204c73`; its unfinished draft remains paused. The daemon checklist
-records completed acceptance and integration, beta.21 source preparation, and
+records completed acceptance and integration, beta.21 local candidate installation, and
 the remaining platform work and release gates.
 
 Only current execution documents belong under `working/`. Move them to `archive/` when they stop being the active implementation basis.

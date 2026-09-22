@@ -331,13 +331,34 @@ power watcher 保持全局睡眠/关机订阅，每秒重新校验当前图形�
 本轮没有安装、推送、打 tag 或公开发布，也没有更改本机桌面开机自启动设置。AppImage 的真实 GNOME 图形登录、FUSE 和正式签名升级门槛继续保留。
 
 
-### beta.21 候选与后续门槛（2026-09-23，执行中）
+### beta.21 候选与后续门槛（2026-09-23，本机验收完成）
 
 用户授权完成上一轮提出的 main 提交、本机候选验收、下一版本准备与 AppImage 门槛推进。默认不把“准备下一版本”解释为公开发布授权。
 
 - [x] 已验证修复提交到 main：`fa1cec27`。
 - [x] 同步 beta.21 版本与发布说明，`release:check`、发布策略/DEB/已安装检查专项和 Firefox 检查通过。
-- [ ] 生成 DEB 与本地 AppImage 验收候选并完成包级检查。
-- [ ] 备份本机现有数据/配置，安装候选，验证 GNOME 中启动、退出、重开和后台持续记录，保持桌面自启动关闭。
-- [ ] 使用真实 FUSE 挂载验证 AppImage；复核独立 GNOME 登录与正式签名升级的可用环境。
-- [ ] 固定版本准备及验收记录，留下明确的发布与 AppImage 未完成门槛。
+- [x] 生成 DEB 与本地 AppImage 验收候选；DEB 契约与 beta.20→beta.21 私有 dpkg 安装/升级/卸载/重装通过，真实 FUSE 挂载与卸载通过。
+- [x] 备份本机现有数据/配置，安装候选，验证 GNOME 中启动、退出、重开和后台持续记录，保持桌面自启动关闭。
+- [x] 使用真实 FUSE 挂载验证 AppImage 的本机 DEB 共存；复核独立 GNOME 登录与正式签名升级的可用环境。
+- [x] 固定版本准备及验收记录，留下明确的发布与 AppImage 未完成门槛。
+- [ ] AppImage 发布前补齐独立 GNOME 登录、解决 Xvfb 默认悬浮窗退出问题，并完成正式签名升级；本轮不具备完整验收条件，不勾选通过。
+
+
+本批包与环境证据：
+
+- 源码准备提交 `0fe0838e`，已从提交文件独立验证版本/changelog。私有持久证据目录 `/home/arinp22/.local/state/patina/acceptance/20260923-beta21-d39le7kc/` 保存已校验的在线 SQLite 备份、配置归档、源码哈希、包与发布门禁日志，不进入 Git。
+- 本地未签名 beta.21 DEB SHA256 `1400104ad8c1c87a52283ede414f2af42bb779ff7b7db8b7421be9db4eb58cb2`；AppImage SHA256 `a1170977b858d31358a3176986b8d92a7ecb7437846de388c1aa298150af2257`。它们是验收候选，不是正式签名发布资产。
+- DEB 私有 dpkg 根证据 `/tmp/patina-deb-acceptance-s4hbh0th/evidence.json`。真实 FUSE 验证使用 `--appimage-mount`，包内 daemon 报告 beta.21，挂载已清理，证据 `fuse-result.json`；首次清理检查与自动卸载竞态已在私有脚本中改为等待实际卸载完成，不以错误的重复卸载证明产品故障。
+- **AppImage 容器验收存在未收口问题：** beta.21 在 `/tmp/patina-appimage-systemd-vis4sudo/` 完成 11 秒延迟接管后，自启动默认悬浮窗退出码为 127，GDK 报 `XI_BadDevice`。本次已启用软件渲染和 `-noreset`，因此前一批两次通过不能证明该 Xvfb 路径已稳定，也不能把本次整套流程记为通过。暂不扩大到已暂停的悬浮窗改造，不解除 AppImage 发布门槛。
+- 用户确认没有独立 GNOME 测试环境，本轮只完成本机与可隔离验收；独立 GNOME 登录、上述 Xvfb 默认悬浮窗问题和正式签名 AppImage 升级继续保留。现有发布 workflow 会直接公开发布且 prerelease 只构建 DEB，本轮未触发它，也未读取签名私钥。
+
+本机实装与收尾：
+
+- 用户完成系统管理员认证后，dpkg 将 beta.20 升级为上述 beta.21 候选。旧后台停止后，确认 runtime owner 排他锁可获取，保存并验证停写 SQLite 备份，再启动新后台；受控重启耗时 4.06 秒，PID 从 1477 变为 426291。安装的 Desktop、daemon 与 unit 的 SHA256 均与候选 payload 一致。
+- 在真实 GNOME Wayland 会话中，已安装 DEB 的设置页及受管存储控件、关闭隐藏、单实例唤回、托盘正常退出、新进程重开均通过。退出后无 Desktop 的 15 秒观测窗口中，心跳前进、成功采样时间推进 15,393 ms。
+- 直接启动原始 AppImage，未设置解包运行选项；Desktop 实际运行于 FUSE `.mount_` 路径。相同的设置页、隐藏/唤回、正常退出及新进程重开流程全部通过，退出后采样推进 15,286 ms；两个实际 Desktop 挂载均已卸载。未新建 AppImage user unit 或持久运行时，继续复用 DEB 服务。
+- 两种客户端的全部 14 项 UI/后台动作前后，daemon PID 与 InvocationID 保持不变，NRestarts=0。最终 15 项 managed 检查、SQLite quick_check/外键、SQLx 1–8 元数据和固定历史 session/web/title/import 摘要通过；未对生产数据执行迁移、恢复或清缓存。
+- `launch_at_login=0`、`background_tracking_at_login=1` 与安装前一致，Desktop autostart 文件不存在。最终无 Desktop 进程，DEB daemon enabled/active，后台继续采样；没有要求用户再次注销或重启，也不把 beta.20 的既有冷启动结果称为 beta.21 冷启动验收。
+- 持久目录中的 `acceptance-summary.json` 汇总当前证据，`service-upgrade.json`、`after-ui.json`、`final-comparison.json`、`ui-*.json` 记录具名动作；在线/停写备份和配置归档保留在同一私有目录。源码 manifest 与构建时提交 `0fe0838e` 逐文件一致，收尾只修改文档，不重复构建候选。
+
+当前结论：**beta.21 本地 DEB 候选实装、本机 GNOME 生命周期与 AppImage FUSE/DEB 共存验收通过。** 完整发布门禁为 715 Rust passed / 18 ignored、56 个 TypeScript 文件、38 项浏览器回归与 Clippy；发布策略/DEB/installed acceptance 专项为 25/3/11 项。此结论不覆盖独立无 DEB 的 GNOME 登录、失败的 Xvfb 悬浮窗路径或正式签名升级。修复与版本准备已提交本地 main，当前公开版本仍为 beta.20；本轮未 push、tag 或公开发布，AppImage 发布门槛不解除。
