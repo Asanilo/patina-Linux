@@ -5,7 +5,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, watch};
 use zbus::proxy;
-use zbus::zvariant::OwnedObjectPath;
 
 const POWER_EVENT_SOURCE: &str = "power_lifecycle_v1";
 const POWER_EVENT_BUFFER: usize = 16;
@@ -16,12 +15,6 @@ const POWER_EVENT_BUFFER: usize = 16;
     default_path = "/org/freedesktop/login1"
 )]
 trait LoginManager {
-    fn get_session(&self, session_id: &str) -> zbus::Result<OwnedObjectPath>;
-    #[zbus(name = "GetSessionByPID")]
-    fn get_session_by_pid(&self, pid: u32) -> zbus::Result<OwnedObjectPath>;
-    #[zbus(name = "GetUserByPID")]
-    fn get_user_by_pid(&self, pid: u32) -> zbus::Result<OwnedObjectPath>;
-
     #[zbus(signal)]
     fn prepare_for_sleep(&self, start: bool) -> zbus::Result<()>;
 
@@ -42,15 +35,6 @@ trait LoginSession {
 
     #[zbus(signal)]
     fn unlock(&self) -> zbus::Result<()>;
-}
-
-#[proxy(
-    interface = "org.freedesktop.login1.User",
-    default_service = "org.freedesktop.login1"
-)]
-trait LoginUser {
-    #[zbus(property)]
-    fn display(&self) -> zbus::Result<(String, OwnedObjectPath)>;
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
@@ -103,7 +87,7 @@ pub fn start(app_handle: AppHandle) {
 }
 
 pub async fn watch_systemd_logind(
-    mut shutdown: watch::Receiver<bool>,
+    shutdown: watch::Receiver<bool>,
     event_tx: mpsc::Sender<PowerLifecycleEvent>,
 ) -> Result<(), String> {
     if *shutdown.borrow() {
@@ -112,116 +96,128 @@ pub async fn watch_systemd_logind(
     let conn = zbus::Connection::system()
         .await
         .map_err(|error| format!("failed to connect to system D-Bus: {error}"))?;
-    let manager = LoginManagerProxy::new(&conn)
-        .await
-        .map_err(|error| format!("failed to create login1 manager proxy: {error}"))?;
-    let session_path = resolve_current_session_path(&conn, &manager).await?;
-    let session = LoginSessionProxy::builder(&conn)
-        .path(session_path)
-        .map_err(|error| format!("failed to set login1 session path: {error}"))?
-        .build()
-        .await
-        .map_err(|error| format!("failed to create login1 session proxy: {error}"))?;
+    watch_connection(&conn, shutdown, event_tx).await
+}
 
-    let mut prepare_for_sleep = manager
+pub(super) async fn watch_connection(
+    conn: &zbus::Connection,
+    mut shutdown: watch::Receiver<bool>,
+    event_tx: mpsc::Sender<PowerLifecycleEvent>,
+) -> Result<(), String> {
+    let manager = LoginManagerProxy::new(conn)
+        .await
+        .map_err(|_| "login1 manager unavailable")?;
+    let mut sleep = manager
         .receive_prepare_for_sleep()
         .await
-        .map_err(|error| format!("failed to subscribe to PrepareForSleep: {error}"))?;
-    let mut prepare_for_shutdown = manager
+        .map_err(|_| "PrepareForSleep subscription failed")?;
+    let mut stop = manager
         .receive_prepare_for_shutdown()
         .await
-        .map_err(|error| format!("failed to subscribe to PrepareForShutdown: {error}"))?;
-    let mut lock = session
-        .receive_lock()
-        .await
-        .map_err(|error| format!("failed to subscribe to session Lock: {error}"))?;
-    let mut unlock = session
-        .receive_unlock()
-        .await
-        .map_err(|error| format!("failed to subscribe to session Unlock: {error}"))?;
-    let mut locked_hint = session.receive_locked_hint_changed().await;
-
+        .map_err(|_| "PrepareForShutdown subscription failed")?;
     send_event(&event_tx, "ready").await?;
-    if session
-        .locked_hint()
-        .await
-        .map_err(|error| format!("failed to read session LockedHint: {error}"))?
-    {
-        send_event(&event_tx, "lock").await?;
-    }
-
+    let sessions = watch_graphical_sessions(conn, shutdown.clone(), event_tx.clone());
+    tokio::pin!(sessions);
+    // Sleep and shutdown remain observable even before login or between sessions.
     loop {
         tokio::select! {
-            changed = shutdown.changed() => {
-                let _ = changed;
-                return Ok(());
-            }
-            signal = prepare_for_sleep.next() => {
-                let signal = signal.ok_or_else(|| "PrepareForSleep stream ended".to_string())?;
-                let args = signal.args().map_err(|error| format!("failed to parse PrepareForSleep signal: {error}"))?;
+            _ = shutdown.changed() => return Ok(()),
+            result = &mut sessions => return result,
+            signal = sleep.next() => {
+                let signal = signal.ok_or("PrepareForSleep stream ended")?;
+                let args = signal.args().map_err(|_| "invalid PrepareForSleep signal")?;
                 send_event(&event_tx, sleep_state(*args.start())).await?;
             }
-            signal = prepare_for_shutdown.next() => {
-                let signal = signal.ok_or_else(|| "PrepareForShutdown stream ended".to_string())?;
-                let args = signal.args().map_err(|error| format!("failed to parse PrepareForShutdown signal: {error}"))?;
+            signal = stop.next() => {
+                let signal = signal.ok_or("PrepareForShutdown stream ended")?;
+                let args = signal.args().map_err(|_| "invalid PrepareForShutdown signal")?;
                 if *args.start() {
                     send_event(&event_tx, "shutdown").await?;
                 }
-            }
-            signal = lock.next() => {
-                signal.ok_or_else(|| "session Lock stream ended".to_string())?;
-                send_event(&event_tx, "lock").await?;
-            }
-            signal = unlock.next() => {
-                signal.ok_or_else(|| "session Unlock stream ended".to_string())?;
-                send_event(&event_tx, "unlock").await?;
-            }
-            changed = locked_hint.next() => {
-                let changed = changed.ok_or_else(|| "session LockedHint stream ended".to_string())?;
-                let is_locked = changed.get().await
-                    .map_err(|error| format!("failed to read changed session LockedHint: {error}"))?;
-                send_event(&event_tx, lock_state(is_locked)).await?;
             }
         }
     }
 }
 
-async fn resolve_current_session_path(
+async fn watch_graphical_sessions(
     conn: &zbus::Connection,
-    manager: &LoginManagerProxy<'_>,
-) -> Result<OwnedObjectPath, String> {
-    if let Some(session_id) = std::env::var("XDG_SESSION_ID")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-    {
-        if let Ok(path) = manager.get_session(session_id.trim()).await {
-            return Ok(path);
+    mut shutdown: watch::Receiver<bool>,
+    event_tx: mpsc::Sender<PowerLifecycleEvent>,
+) -> Result<(), String> {
+    let mut refresh = tokio::time::interval(std::time::Duration::from_secs(1));
+    refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        tokio::select! {
+            _ = shutdown.changed() => return Ok(()),
+            _ = refresh.tick() => {}
+        }
+        let Ok(current) = super::session::read_on(conn).await else {
+            continue;
+        };
+        let Ok(session) = LoginSessionProxy::builder(conn)
+            .path(current.path.clone())
+            .map_err(|_| "invalid login1 session path")?
+            .build()
+            .await
+        else {
+            continue;
+        };
+        let Ok(mut lock) = session.receive_lock().await else {
+            continue;
+        };
+        let Ok(mut unlock) = session.receive_unlock().await else {
+            continue;
+        };
+        let mut hint = session.receive_locked_hint_changed().await;
+        let Ok(initial) = session.locked_hint().await else {
+            continue;
+        };
+        if !same_session(conn, &current).await {
+            continue;
+        }
+        send_event(&event_tx, "ready").await?;
+        // Explicit unlock also clears a lock retained from the previous login.
+        send_event(&event_tx, lock_state(initial)).await?;
+        let mut last_locked = initial;
+        loop {
+            tokio::select! {
+                _ = shutdown.changed() => return Ok(()),
+                _ = refresh.tick() => {
+                    if !same_session(conn, &current).await { break; }
+                }
+                signal = lock.next() => {
+                    if signal.is_none() || !same_session(conn, &current).await { break; }
+                    if !last_locked {
+                        send_event(&event_tx, "lock").await?;
+                        last_locked = true;
+                    }
+                }
+                signal = unlock.next() => {
+                    if signal.is_none() || !same_session(conn, &current).await { break; }
+                    if last_locked {
+                        send_event(&event_tx, "unlock").await?;
+                        last_locked = false;
+                    }
+                }
+                changed = hint.next() => {
+                    let Some(changed) = changed else { break; };
+                    if !same_session(conn, &current).await { break; }
+                    let Ok(locked) = changed.get().await else { break; };
+                    if locked != last_locked {
+                        send_event(&event_tx, lock_state(locked)).await?;
+                        last_locked = locked;
+                    }
+                }
+            }
         }
     }
+}
 
-    let pid = std::process::id();
-    if let Ok(path) = manager.get_session_by_pid(pid).await {
-        return Ok(path);
-    }
-
-    let user_path = manager
-        .get_user_by_pid(pid)
-        .await
-        .map_err(|error| format!("failed to resolve current login1 user: {error}"))?;
-    let user = LoginUserProxy::builder(conn)
-        .path(user_path)
-        .map_err(|error| format!("failed to set login1 user path: {error}"))?
-        .build()
-        .await
-        .map_err(|error| format!("failed to create login1 user proxy: {error}"))?;
-    let (session_id, session_path) = user
-        .display()
-        .await
-        .map_err(|error| format!("failed to read login1 user Display session: {error}"))?;
-    if session_id.trim().is_empty() || session_path.as_str() == "/" {
-        return Err("login1 user has no graphical Display session".to_string());
-    }
-    Ok(session_path)
+async fn same_session(
+    conn: &zbus::Connection,
+    previous: &super::session::GraphicalSession,
+) -> bool {
+    super::session::read_on(conn).await.as_ref() == Ok(previous)
 }
 
 async fn send_event(

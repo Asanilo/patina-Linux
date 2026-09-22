@@ -323,6 +323,12 @@ fn copy_tree(
     }
     for entry in fs::read_dir(source).map_err(fail)? {
         let entry = entry.map_err(fail)?;
+        // AppImage's root icon alias is launcher metadata, not a runtime input.
+        // Tauri may package it as an absolute link to the build AppDir. Never
+        // resolve or copy it; all other escaping/dangling links remain errors.
+        if depth == 0 && entry.file_name() == ".DirIcon" {
+            continue;
+        }
         budget.0 += 1;
         if budget.0 > MAX_FILES {
             return Err(fail("package file count exceeds budget"));
@@ -576,6 +582,24 @@ mod tests {
         fs::remove_dir_all(fixture.0.join("source")).unwrap();
         assert!(launcher.is_file());
         assert!(fixture.0.join("store/current/usr/bin/helper").is_file());
+    }
+
+    #[test]
+    fn root_icon_alias_is_omitted_without_following_build_machine_paths() {
+        let fixture = Fixture::new();
+        symlink(
+            "/missing/build/Patina.png",
+            fixture.0.join("source/.DirIcon"),
+        )
+        .unwrap();
+        let launcher = fixture.prepare("1.9.0", 'a').unwrap().publish().unwrap();
+        assert!(fs::symlink_metadata(launcher.parent().unwrap().join(".DirIcon")).is_err());
+        symlink(
+            "/missing/build/Patina.png",
+            fixture.0.join("source/usr/.DirIcon"),
+        )
+        .unwrap();
+        assert!(fixture.prepare("1.9.1", 'b').is_err());
     }
 
     #[test]

@@ -220,7 +220,10 @@ the entire AppDir, including its libraries, under the stable product data root:
 
 The store follows XDG roots, not a relocated activity database. Copying is bounded
 to 2 GiB, 30,000 entries and depth 64; external/dangling links and special files
-are rejected. A private installation lock serializes staging. Only a complete,
+are rejected. The root `.DirIcon` launcher alias is omitted without resolving it:
+Tauri may encode it as an absolute link to the build machine. The real icon and
+runtime files remain subject to normal validation. A private installation lock
+serializes staging. Only a complete,
 synced runtime that passes `--patinad --version` can become `current` via atomic
 symlink replacement. Older packages do not downgrade it; different content with
 the same version is rejected. Use a new candidate version for rebuilt packages.
@@ -276,6 +279,31 @@ The opt-in test uses only a new private temporary runtime and prints its retaine
 tests against it, set `PATINA_SYSTEMD_TEST_BINARY=<PERSISTED_APPDIR>/AppRun` and
 `PATINA_SYSTEMD_TEST_APPIMAGE_LAUNCHER=1`. Never supply the production unit or data
 directory. This does not replace real first-launch, login or signed-release tests.
+
+### Packaged Desktop Startup Validation
+
+Before accepting a newly built AppImage, exercise the packaged Desktop startup
+path (not only the build-directory AppDir):
+
+```bash
+/usr/bin/python3 scripts/appimage-startup-acceptance.py /absolute/Patina.AppImage
+# Also exercise the daemon/unit installed by isolated-deb-acceptance.py:
+/usr/bin/python3 scripts/appimage-startup-acceptance.py /absolute/Patina.AppImage \
+  --installed-deb-root /absolute/private-dpkg-root
+```
+
+The opt-in runner requires bubblewrap, Xvfb, dbus-run-session and Python GI.
+It uses a private filesystem/PID/network namespace, X11 and a non-activating
+D-Bus with a fixture systemd manager. It checks standalone runtime staging,
+packaged DEB unit selection, preservation of custom units and mismatched profile
+root rejection. It also runs the actual Desktop owner-cutover restart and packaged
+daemon, checks managed API readiness after Desktop exit/reopen, and verifies clean
+daemon shutdown and SQLite integrity. The optional private dpkg root supplies the
+real installed DEB daemon and unit for a second handoff case; AppImage must reuse
+them without staging a second runtime. The manager simulates systemd control and
+INVOCATION_ID; these cases do not prove installed systemd takeover, UI behavior,
+login or formal signed upgrades. Evidence and failures are
+retained under the printed `/tmp/patina-appimage-startup-*` directory.
 
 ### Published Bundles
 
@@ -386,6 +414,7 @@ the normal user session. Candidate status, versions, and evidence belong in the
 | Private credential seeding | `seed_private_webdav_credential` | Internal child of the WebDAV restore test only; never select directly |
 | Generated AppImage service unit | `generated_unit_passes_real_systemd_parser` | Requires `systemd-analyze`; parses a private unit, does not install or start it |
 | Durable AppDir and atomic update | `built_appdir_runs_from_durable_store`, `tauri_download_verifies_before_atomic_install` | Explicit private AppDir/AppImage or `PATINA_UPDATER_TEST_ROOT` signed synthetic fixture; never use a release private key. See [AppImage procedure](#daemon-backed-appimage-runtime-development) and [updater test preconditions](../src-tauri/src/platform/linux/appimage_update.rs) |
+| Graphical session discovery / lock subscription rebinding | `private_logind_late_login_logout_and_rebind_preserve_global_power_events`, `host_logind_resolves_graphical_session_without_environment` | Private D-Bus lifecycle fixture or read-only host query, respectively; see [session validation](#graphical-session-validation) |
 | Service diagnostics | `live_user_manager_snapshot_is_classified_without_mutation` | Requires live user systemd manager; reads service state only, not an isolated lifecycle test |
 | Audio or media provider | `live_pulseaudio_query_completes_when_compat_server_is_available`, `live_mpris_query_completes_when_session_bus_is_available` | Requires real PulseAudio/pipewire-pulse or D-Bus session; provider availability is not proof of full tracking correctness |
 
@@ -590,3 +619,60 @@ Other `test:*` commands remain available for focused iteration. Building or
 installing an extension/package is a separate action, not part of ordinary test
 discovery. See [validation policy](./engineering-quality.md#5-默认验证门槛) and
 [opt-in routing](#opt-in-validation-routing) for additional risks.
+
+## Isolated GNOME Extension Acceptance
+
+After `npm run extension:gnome:build`, run:
+
+```bash
+python3 scripts/gnome-shell-acceptance.py
+```
+
+The opt-in runner requires GNOME Shell 42, GJS, GTK 3, `gdbus` and
+`dbus-run-session`. It copies the built extension into a private temporary HOME,
+starts a separate headless Wayland Shell, and checks both D-Bus protocols against
+a synthetic GTK window. It covers overview, the real Shell screen shield, unlock
+recovery and three disable/enable cycles. No existing extension is installed or
+replaced. Its private bus has no service activation and also substitutes for the
+system bus; a GDM Version fixture permits screen-shield construction without
+connecting to the host GDM/logind. This is not password-authentication, production
+login or suspend acceptance. The printed evidence directory retains the Shell
+log and JSON result; missing desktop services can produce expected warnings.
+The runner terminates only its own private process group.
+
+## Graphical Session Validation
+
+Managed foreground sampling uses live logind facts, not the service's inherited
+desktop variables. The resolver reads only the current user's graphical session
+metadata. Missing, inactive, remote, closing or mismatched sessions fail closed;
+no old positive session is cached. The power watcher retains global sleep/shutdown
+subscriptions while graphical sessions disappear or change, and reconciles the
+new session's lock state after subscribing.
+
+Run the lifecycle fixture on a new private bus, never the host bus:
+
+```bash
+dbus-run-session -- env PATINA_PRIVATE_LOGIND_TEST=1 \
+  cargo test --manifest-path src-tauri/Cargo.toml --lib \
+  private_logind_late_login_logout_and_rebind_preserve_global_power_events \
+  -- --ignored --nocapture
+```
+
+The fixture covers late login, no-session power events, logout/relogin, stale
+session signals and clearing the previous login's lock. It does not lock or
+suspend the machine and uses no production profile.
+
+To validate the real host's session metadata without inherited desktop labels:
+
+```bash
+env -u XDG_SESSION_TYPE -u XDG_CURRENT_DESKTOP -u DESKTOP_SESSION \
+  -u DISPLAY -u WAYLAND_DISPLAY PATINA_SYSTEMD_SERVICE=patinad.service \
+  cargo test --manifest-path src-tauri/Cargo.toml --lib \
+  host_logind_resolves_graphical_session_without_environment \
+  -- --ignored --nocapture
+```
+
+This second test needs an active local graphical login. It reads logind metadata
+and provider-name availability only; it does not query foreground content, modify
+the manager environment, restart the installed daemon or prove tracking-duration
+correctness. Environment removal applies only to the test process.

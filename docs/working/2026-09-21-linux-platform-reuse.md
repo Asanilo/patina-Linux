@@ -1,8 +1,8 @@
 # Linux 平台草稿评估与回流
 
-状态：T6 模块评估、首片和第二片源码修复完成。第二片 idle 可信性与 GNOME 消费端协议兼容已通过完整发布门禁；扩展生产端兼容、ESM 打包及实机验证仍待后续。首片 beta.20 准备提交 `e42ba3c9` 的远端 Verify 已通过；beta.20 继续保持未发布，不打 tag 或公开资产。产品主线为 `main`，评估基准为 `5eefcf4e`；贡献草稿位于 `feat/linux-desktop`，基于上游 `80204c73`，另含未提交改动。草稿没有完成整体 Rust 集成或实机验收，不视为可直接合入的实现。
+状态：T6 首片/第二片、扩展生产端第三片及 daemon 会话识别第四片已实现并通过源码验证；第四片及 AppImage 首次启动修复已通过隔离验收；2026-09-22 本机已安装 beta.20 DEB，并完成真实 AppImage/DEB 共存与后台持续记录检查，新版本实际注销/登录后的会话识别和无界面采样已通过；冷启动自动拉起另行验证。version 4 双协议、锁屏/overview 与生命周期已通过本机独立 GNOME 42.9 会话验收；AppImage 本地候选与隔离验收通过，完整实装矩阵仍待补齐。生产会话切换、ESM/更多 Shell 和正式 AppImage 发布门槛仍分开管理。首片 beta.20 准备提交 `e42ba3c9` 的远端 Verify 已通过；beta.20 继续保持未发布，不打 tag 或公开资产。产品主线为 `main`，评估基准为 `5eefcf4e`；贡献草稿位于 `feat/linux-desktop`，基于上游 `80204c73`，另含未提交改动。草稿没有完成整体 Rust 集成或实机验收，不视为可直接合入的实现。
 
-本轮按用户确认的顺序推进主线远端同步、平台模块评估和下一版 beta 准备。分支与产品范围遵循 [路线](../roadmap-and-prioritization.md#linux-main-and-daemon-experiment)，主 Todo 与发布证据由 [当前清单](2026-07-10-patinad-runtime-design.md) 管理。保持贡献 worktree 原状，不整支合并、不安装或切换 GNOME 扩展，不操作生产服务或数据库。
+本轮按用户确认的顺序推进主线远端同步、平台模块评估和下一版 beta 准备。分支与产品范围遵循 [路线](../roadmap-and-prioritization.md#linux-main-and-daemon-experiment)，主 Todo 与发布证据由 [当前清单](2026-07-10-patinad-runtime-design.md) 管理。保持贡献 worktree 原状，不整支合并。2026-09-22 用户授权继续扩展生产端及实机/AppImage 验收；本轮先在私有 HOME、D-Bus 和独立 Wayland Shell 中验证候选；随后用户单独授权备份安装扩展，记录见第三片。该阶段未变更生产服务与数据库；后续用户要求继续完成实装，安装及备份记录见本文末尾。
 
 ## 模块判断
 
@@ -11,7 +11,7 @@
 | GNOME 采样状态：窗口、无窗口、锁屏、不可用、未知 idle | 复用状态设计与合成场景，重写集成 | `platform/linux/foreground` 负责观测，`engine/tracking` 负责计时；保留主线现有 X11 支持与 daemon owner，不复制整套平台门面 |
 | 采样中断与恢复 | 已在 main 内修复，草稿不能直接回流 | 草稿 tracking 主要改动是 import 路由，poller 尚未接通新的 Linux 接口；main 的首片已实现并验证“恢复不补记未知间隙” |
 | GNOME 扩展的锁屏/overview、字段边界与 disable 清理 | 复用纯逻辑及测试场景 | 主线旧协议、旧客户端与已安装扩展必须兼容；JS 单元通过不代表真实 Shell 行为已验收 |
-| `WindowTracker1.GetSnapshot` 协议 | 消费端兼容已重写，生产端仍分阶段接入 | main 优先识别新接口，仅名称无 owner 时回退旧 `GetFocusedWindow`；现有分发扩展仍使用旧协议，不能原位替换同 UUID 扩展后使旧客户端失联 |
+| `WindowTracker1.GetSnapshot` 协议 | 主线双协议生产/消费端已实现 | main 优先识别新接口，仅名称无 owner 时回退旧 `GetFocusedWindow`；version 4 同时保留旧方法/信号，不能让同 UUID 升级使旧客户端失联 |
 | 扩展 legacy/ESM 双入口与构建 | 部分复用，需重新接入打包/验证 | 草稿 legacy42/ESM45 使用共享 JS 和 XML；主线当前只复制两个文件，直接复制会漏依赖。更多 Shell 版本需各自真实验证 |
 | 上游 Windows consumer 路由、通用平台层重排 | 暂缓 | 为上游当前边界服务，不能作为 fork 修复的前置重构；Windows 冻结策略不变 |
 | tray/widget、KDE/wlroots、发行版与包格式扩展 | 暂缓 | 不属于本轮计时正确性修复；支持声明按独立验证矩阵决定 |
@@ -56,8 +56,8 @@ API 暂停和 power stop 在同一 transition lock 下采用更早的待结算�
 
 ## 后续片段
 
-- idle 可用性与新接口检测/字段校验已完成第二片；下一步验证扩展生产端的双协议兼容、锁屏/overview 与 disable 清理。
-- legacy/ESM 打包和实际 Shell 版本分别验证，不直接替换已安装扩展，不把消费端合成测试当成桌面支持证明。
+- idle 可用性与新接口检测/字段校验已完成第二片；扩展生产端的双协议兼容、锁屏/overview 与 disable 清理已在第三片完成。
+- GNOME 42 包与独立 Shell 已验证，生产扩展经后续明确授权备份安装；ESM/更多 Shell 版本仍分开验证，不把消费端合成测试当成桌面支持证明。
 - 下一 beta 的范围和版本准备以最终已验证差异为准；不会复用公开 beta.19 资产或提前解除 AppImage 门槛。打 tag、公开发布与本地源码/门禁分别记录。
 
 ## 第二片：idle 可信性与 GNOME 消费端兼容
@@ -112,5 +112,169 @@ API 暂停和 power stop 在同一 transition lock 下采用更早的待结算�
 - [x] 旧协议扩展小修及合成回归：新增 3 项测试与现有 4 项脚本测试、扩展源码检查通过；未安装或启用扩展。
 - [x] beta.20 版本、changelog 与发布门禁准备；尚未公开发布。
 - [x] idle 可用性、GNOME 新旧协议消费端兼容及完整门禁。
-- [ ] 扩展生产端双协议兼容、锁屏/overview 与 disable 清理。
+- [x] 扩展生产端双协议兼容、锁屏/overview 与 disable 清理；9 项合成回归与独立真实 GNOME 42.9 会话通过。
 - [ ] legacy/ESM 打包与逐 Shell 实机验证；不直接替换已安装扩展。
+
+## 第三片：扩展生产端与本地候选验收
+
+- 所有权仍在 GNOME 扩展：只观测，不计时、不写数据库。保持两个文件的 GNOME 42 包结构；ESM/更多 Shell 版本单列验证，不作为本轮 GNOME 42 修复前置条件。
+- version 4 同时持有旧 `WindowTracker` 与新 `WindowTracker1`。旧五元组/信号保持兼容；新快照提供版本、状态、带后缀 desktop ID 和十进制窗口 ID，身份沿用 `get_id()`。
+- 锁屏/屏幕遮蔽与 overview 在读取焦点前处理；字段按 UTF-8 字节限长，无效数值和读取异常返回 unavailable，日志不携带窗口或异常文本。无 screenShield 的会话仍可正常观测。
+- 明确启用 user/unlock-dialog 两种 session mode；锁屏只提供空事实。enable/disable 幂等，所有名称、导出对象、信号、定时器按生命周期清理；旧生命周期回调不能污染新实例。名称丢失只清理对应接口，可在重新取得名称后恢复。
+- 验收顺序：合成回归 → 打包扩展的独立真实 GNOME 42 会话 → AppImage 本地候选、持久 AppDir 与临时 systemd 单元 → 完整发布检查。真实用户认证、注销/登录、睡眠和正式签名升级不以夹具替代。
+- 私有 Shell 用独立总线承接 session/system 两种地址，禁止服务自动激活；GDM Version 属性仅用于开启真实 Shell 的 screenShield。测试锁屏不连接生产 GDM/logind，不证明密码认证或生产登录恢复。
+
+### 第三片验证证据
+
+- 最终扩展源码 SHA256：`57ec5449747f929d68322e79339c3a4ba35d7e3cfbc5e85629f9f17452b0e8db`。包仍为两个文件，独立 version 4；应用版本保持尚未公开的 beta.20。
+- `scripts/gnome-shell-acceptance.py` 对构建目录中的候选执行真实 Shell/GTK/D-Bus 调用。最终结果：`/tmp/patina-gnome-acceptance-i0m7wl7s/result.json`，包含 Shell 42.9、候选哈希、两个协议、overview/锁屏恢复和三轮 disable/enable；每次 disable 后两个名称均无 owner。
+- 锁屏时真实 screenShield 为 locked/active，session mode 为 unlock-dialog；两协议返回全空窗口事实。使用合成窗口，无生产窗口标题或数据库读取。私有环境缺少 GeoClue、账号与日历服务产生预期警告，不宣称零警告或生产认证通过。
+- 真实 Shell 首轮暴露无 screenShield 时启动失败，已修复并补回归；测试启动 overview 的竞争也已由等待真实焦点解决。最终字段复核保留合法的零窗口 ID，并对齐新协议应用身份条件。
+- 用户随后授权备份安装：用户目录已从 version 2 替换为经过验收的 version 4，前后哈希核对通过。旧文件与 receipt 位于 `/home/arinp22/.local/state/patina/acceptance/20260922-gnome-v4-a9cxs25d/`。系统目录仍为 version 2，未改包管理文件；当前 Shell 未强制重载，等待用户注销/登录后确认实际加载及锁屏恢复。安装文件不等于生产激活验收完成。
+
+- 最终 `npm run release:check` 通过：56 个 TypeScript 测试文件（扩展 9 项运行时 / 4 项脚本测试）、38 项浏览器回归、705 Rust passed / 15 ignored，以及构建/预算/边界/Clippy/扩展/版本/changelog。日志 `/tmp/patina-beta20-extension-release-check.log`。首次沙箱运行在子进程 `spawnSync EPERM` 处中止，宿主门禁已重跑通过。
+
+### AppImage 本地候选与证明范围
+
+候选保留于 `/tmp/patina-beta20-platform-candidate-sqr83d1y/`，包含 AppImage、version 4 扩展 ZIP 与 manifest。AppImage 为 `Patina_1.9.0-beta.20_amd64.AppImage`（103,184,888 bytes），SHA256 `1bf6c87b153da6dc2f16873a8a2ecdffa5ce781afc630ea876980b3199f9633d`。它基于 `4f6124ab` 和本轮工作区，只是本地未签名测试候选，未作为公开资产发布或更新生产 daemon。
+
+- 本地 release 编译通过；首次沙箱 linuxdeploy 失败，宿主仅重跑 bundle 成功。构建日志 `/tmp/patina-beta20-appimage-build.log`，最终打包日志 `/tmp/patina-beta20-appimage-bundle.log`。linuxdeploy 有依赖 copyright 定位警告，不记录为零警告。
+- 实际 AppImage 通过 extract-and-run 启动 `--patinad --version`，返回 `patinad 1.9.0-beta.20`，私有目录未创建数据库。证据 `/tmp/patina-appimage-launch-3m96alsv/result.json`。
+- `built_appdir_runs_from_durable_store` 通过；持久运行时 `/tmp/patina-durable-appimage-13202d0fbe050963/current`，完成复制、前后版本预检与原子激活。日志 `/tmp/patina-beta20-appimage-durable.log`。生成 user unit 另通过真实 `systemd-analyze` 解析，日志 `/tmp/patina-beta20-appimage-unit-parser.log`。
+- 持久 AppRun 在真实随机临时 systemd user unit 中完成本地与私有 WebDAV 的 replace/merge/注入失败回滚，共六组跨进程恢复，均通过并收尾；没有控制生产 `patinad.service`。日志 `/tmp/patina-beta20-appimage-systemd.log`、`/tmp/patina-beta20-appimage-webdav.log`。
+- 实际 AppImage 字节使用临时测试密钥签名，经回环 HTTP 和 Tauri updater 验签后进入原子替换；旧包保留，篡改下载与无效签名均拒绝且不改变目标。日志 `/tmp/patina-beta20-appimage-signature.log`；测试私钥已删除。此项使用测试 app handle，不是正式渠道/密钥的桌面升级验收。
+
+剩余清单：
+
+- [x] 扩展生产端、合成回归、独立真实 GNOME 42.9 验收。
+- [x] 经授权备份并安装用户扩展 version 4，哈希与候选一致。
+- [ ] 生产激活、锁屏恢复与持续记录全部通过：重新登录后的 v4 激活已确认，人工锁屏/挂起已完成，仍有下方会话环境诊断异常及边界自动证据限制。
+- [x] beta.20 未签名 AppImage 成品、实际 daemon 入口、持久 AppDir、真实临时 systemd 恢复和测试密钥验签替换。
+- [ ] AppImage 正式 Desktop 首次启动/接管、与 DEB 实装共存、真实登录启动。
+- [ ] 正式签名渠道升级、旧 AppImage 客户端更新路径；完成后再评估恢复双包 workflow/manifest。现阶段继续 DEB-only beta。
+- [ ] ESM 入口与更多 Shell 版本单独实现、打包和真实验证。
+
+本轮未新建分支、修改上游贡献草稿、推送、打 tag 或公开发布。`feat/linux-desktop` 仍基于 `80204c73`，保留 52 个既有未提交/未跟踪文件；旧 `/tmp` 草稿 SHA 清单当前不存在，因此本轮不声称重新完成逐文件旧哈希比对。
+
+### 用户重新登录后的生产核对（2026-09-22）
+
+用户确认注销并重新登录后，只读核对发现：GNOME 从用户目录加载 version 4，状态 ENABLED；旧/新 D-Bus 名称同属 `:1.40`，证明新代码已在生产 Shell 激活。未请求焦点窗口或标题。`managed` 15 项检查通过，后台版本仍为 beta.19，service PID 1559、NRestarts 0、lease owner 一致，数据库 quick_check 为 ok。证据 `/tmp/patina-gnome-v4-post-login-managed.json`。
+
+两次间隔 4 秒的 diagnostics 显示 probe_status=ok、连续 fallback=0，成功采样时间推进；但平台诊断仍为 unavailable / unknown-session-type。只读环境白名单确认：旧 daemon 仅持有 session bus 地址，缺少 XDG_SESSION_TYPE、XDG_CURRENT_DESKTOP、DISPLAY 和 WAYLAND_DISPLAY；当前 systemd manager 已持有 wayland/GNOME 及显示变量。服务启动时间早于本次桌面登录，PID 在注销后未改变。
+
+这不是扩展加载失败，也不能据此宣称所有平台观测均正常。已安装 beta.19 的旧 foreground 路径直接尝试 GNOME D-Bus，而 beta.20 新路径拒绝未知 session type，因此会话环境的获取/更新必须在 beta.20 生产安装前处理并验证。不能只用一次重启掩盖下次登录的相同竞态。本轮未重启生产 service、未修改 manager 环境或服务配置。
+
+- [x] 用户注销/登录后确认 version 4 实际激活、双名称 owner 与后台托管基本状态。
+- [x] 修复并验证 daemon 在桌面晚于 user service 启动、注销/重新登录时的会话环境识别；源码、私有总线生命周期及本机清空环境观测通过，生产 beta.19 尚未替换。
+- [x] 用户报告已完成锁屏/解锁与挂起操作，恢复后的采样已核实；边界自动证据不足单独记录。
+
+### 用户报告锁屏后的验证（2026-09-22）
+
+用户报告已手动锁屏/解锁。事后只读检查：ScreenSaver=false，daemon PID 1559、NRestarts 0，probe_status=ok，最近成功样本距检查 773 ms，最近会话已恢复写入；证据 `/tmp/patina-gnome-v4-after-user-lock.json`。仅读取会话时间边界和状态，不读取标题或网页内容。最近 15 分钟无 power watcher 固定日志事件，但该实现不会记录每次 lock/unlock，所以日志缺失不能证明未发生锁屏。
+
+随后启动 180 秒只读同步监测，等待用户在监测期间再操作一次；该窗口未观察到锁屏，且无观测调用错误。证据 `/tmp/patina-production-lock-dyaqjqar/result.json`。结果为 **未捕获完整周期、验收未完成**，不是发现锁屏功能失败。当前仍不能证明此前锁屏期间双协议全空、native/title/web 时间边界正确及恢复不补记。用户随后明确说明已测试锁屏与挂起，记为人工实机操作完成，解锁后恢复已有只读证据；未同步捕获的计时边界保持证据限制，不要求用户重复操作或以此阻塞开发。原有 unknown-session-type 问题已由下方第四片完成源码修复，生产安装验证另行推进。
+
+## 第四片：daemon 图形会话识别与监听重绑（源码及 AppImage 隔离验证完成，未安装）
+
+owner 为 `platform/linux`：新增窄的 logind 会话读取模块，供 foreground/diagnostics 和 power watcher 使用。受管 daemon 使用当前 UID 的 logind User.Display 与 Session 事实，不修改进程全局环境，不依赖重新启动继承 manager 环境；校验本地、活动、用户类型及 UID，缺失/失效时保守失败。直接桌面进程保留有效的显式会话环境路径。
+
+power 的全局睡眠/关机订阅不随图形会话缺失停止；当前 Display 变化或会话删除后丢弃旧会话订阅，重新订阅并读取当前 LockedHint（包括 unlocked），避免旧锁状态遗留。增加自动场景覆盖桌面晚启动、注销、新会话、锁屏状态重建和无有效图形会话；不会重启生产服务或要求重复人工锁屏。
+
+第四片使用当前 UID 的 `GetUser` + `User.Display`，读取 Session 的 Id/Type/Desktop/Display/User/Class/Active/Remote/State 并二次确认 Display 未切换。读取有 700 ms 超时，既不修改全局环境，也不永久缓存旧会话；采样和诊断共用这份平台事实。X11 连接和 idle 显式接收 Display，不让受管服务在缺失 Display 时隐式连接旧地址。
+
+power watcher 保持全局睡眠/关机订阅，每秒重新校验当前图形会话；接收会话信号时也检查其仍被选中。会话重绑时先订阅，再同步 LockedHint，包括 unlocked。新 helper 只拥有环境观测，不承接 engine 会话写入或服务控制。
+
+此前 AppImage SHA `1bf6c87b…9633d` 的证据仅覆盖第三片候选，不包含第四片运行时修改；不得将旧候选安装/升级结果记为本次源码结果。
+
+第四片本机只读观测已通过：以 `PATINA_SYSTEMD_SERVICE=patinad.service` 启动测试进程，移除 XDG_SESSION_TYPE/XDG_CURRENT_DESKTOP/DESKTOP_SESSION/DISPLAY/WAYLAND_DISPLAY 后，新的同步采样上下文和异步 logind 读取结果一致，识别 wayland；诊断返回 available / gnome-shell-extension。日志 `/tmp/patina-logind-host-test.log`。没有请求焦点窗口、重启生产后台或修改当前用户 manager 环境。该证据验证新源码能力，不意味着已安装 beta.19 的诊断随之改变。
+
+第四片验证收口（2026-09-22）：
+
+- 4 项普通会话校验回归通过，覆盖 UID、活动/本地/用户类型、缺失和畸形属性、X11 Display 与显式非图形环境。
+- 私有真实 D-Bus 夹具通过无图形会话、晚登录、LockedHint、注销与新会话重绑、旧会话信号隔离，以及全过程的全局睡眠/关机订阅。日志 `/tmp/patina-logind-private-test.log`。首次运行暴露属性订阅初始通知重复发送 unlock，现按每次绑定的最后锁状态去重；重绑仍主动同步当前状态。夹具不操作生产 logind 或真实锁屏。
+- `npm run release:check` 全部通过：56 个 TypeScript 测试文件、38 项浏览器回归、709 Rust passed / 17 ignored，以及构建、预算、边界、Clippy、扩展和 changelog 检查。日志 `/tmp/patina-session-release-check.log`。两个新增 opt-in 测试已分别显式执行通过，不把普通门禁的 ignored 计为执行。
+- 本批未重启、安装或修改生产服务，未构建新的 DEB/AppImage。下一候选需纳入第三、第四片的完整源码，再验证其打包行为；旧 AppImage 的通过记录不能替代新候选。正式 AppImage 实装与签名升级门槛继续保留。
+
+### 第四片候选打包与隔离验收（2026-09-22）
+
+用户同意后，已将第三、第四片完整源码构建为新的本地未签名 beta.20 AppImage。候选与日志保存在 `/tmp/patina-session-candidate-3f0v71k1/`；`source-manifest.json` 记录基准 `4f6124ab` 和构建时各文件 SHA256，验收结束后确认源码哈希未变化（随后仅更新本文等验收记录）。
+
+- 包：`Patina_1.9.0-beta.20_amd64.AppImage`，103,320,056 字节，SHA256 `98b23f6925b75f76afd6357c3f2e84090ffa0d17168888e744bf96326001272d`。
+- 实际包 `--appimage-extract-and-run --patinad --version` 返回准确版本，私有启动目录未生成数据库；持久 AppDir 发布和启动、真实 systemd 单元解析均通过。
+- 真实临时 systemd 单元使用该 AppDir 的 `AppRun --patinad`，本地与私有 WebDAV 各完成 replace、merge、故障回滚，共 6 个跨进程恢复场景。各阶段日志见候选目录 `results.json`。
+- 实际候选字节使用临时测试密钥，经 Tauri 下载验签后原子替换；篡改内容和无效签名均被拒绝。测试私钥及密钥生成日志已删除，不涉及正式发布密钥。
+- 本轮生产服务前后均为 PID 1496、NRestarts 0、active，启动时间 2026-09-22 12:06:50 +08。此前记录的 PID 1559 属于上一轮观察，本轮未重启服务。没有安装候选或改变生产数据。
+
+本候选取代旧第三片候选作为当前打包证据。版本仍为未发布 beta.20，所有验收采用新建私有目录；同版本不同内容的包不能覆盖已有持久运行时，这不是升级路径验收。正式 Desktop 首次接管、DEB 共存、真实登录启动和正式签名渠道升级仍未完成；继续保持 DEB-only beta 发布门槛。旧 `/tmp/patina-beta20-platform-candidate-sqr83d1y/` 本轮已不存在，前述旧候选条目仅保留历史记录。
+
+### 实际 Desktop 首次启动补验发现与修复（2026-09-22）
+
+新增 `scripts/appimage-startup-acceptance.py`，使用实际包入口、私有 X11 和不自动激活服务的 D-Bus，在 mount/PID/network 隔离环境覆盖 standalone、DEB unit 存在、自定义 unit、profile roots 不一致四条启动路径。systemd 是夹具，检查截止于运行时准备完成或预期拒绝，不将其计作真实后台接管/登录。
+
+旧 SHA `98b23f69…1272d` 的 Desktop 首次启动失败：Tauri 的 `.DirIcon` 绝对链接仍指向原构建 AppDir，实际解包后位于运行时根之外，触发 `package link escapes AppDir`。此前构建目录 AppDir 测试通过不能证明实际包可首次运行；该候选不再作为可安装候选。失败证据 `/tmp/patina-appimage-startup-5um5e51o/standalone/desktop.log`。更早的 Xvfb/NVIDIA 与门户等待属于夹具问题，已通过禁用 GLX、干净环境和禁止 D-Bus 自动激活修正。
+
+修复 owner 保持 `platform/linux/appimage_runtime`：复制持久运行时前忽略根 `.DirIcon` 元数据，不解析其目标；其他位置的同名文件及所有运行时链接仍遵守原有越界/悬空拒绝。增加回归验证根图标别名跳过、嵌套同名链接仍拒绝；持久解包验收改用实际候选解出的 AppDir。新候选构建和完整门禁已通过，详见下方结果。
+
+本次收口结果：
+
+- 修复后的候选：`/tmp/patina-startup-fixed-candidate-187v1ib3/Patina_1.9.0-beta.20_amd64.AppImage`，103,307,768 字节，SHA256 `eea0e8a041555337c502c3d937dd7fa7751f267a59e5aac3fd5ffc8b97b122b2`。仍是未发布、未安装的本地 beta.20，同版本候选之间不作持久运行时覆盖升级。
+- 实际包 Desktop 四条路径通过：standalone 完成持久运行时和 unit 落盘并 Reload；DEB presence 路径进入既有服务检查而不生成另一份运行时/unit；自定义 unit 原样保留并拒绝启动；manager roots 不一致时在落盘前拒绝。证据 `/tmp/patina-appimage-startup-5n7yxuiz/result.json`，包哈希与候选一致。夹具缺少 AT-SPI 服务产生预期警告，不宣称零警告或完整 UI 验收。
+- 实际包 daemon 入口、**实际包解出的** AppDir 持久化、真实 systemd parser、本地/WebDAV 共 6 个恢复场景及测试密钥验签原子替换全部通过。候选目录 `results.json` 收录每项日志和启动检查摘要；测试私钥已删除。
+- `npm run release:check` 全部通过：56 个 TypeScript 文件、38 项浏览器回归、710 Rust passed / 17 ignored，含新图标别名回归及 Clippy/构建/边界/扩展门禁。日志保存在候选目录 `patina-appimage-startup-check.log`。
+- 生产服务仍 active、PID 1496、NRestarts 0，本轮没有重启或安装生产后台，没有推送、打 tag 或发布。源文件哈希核对仅有后补验收文档变化。
+
+首次启动的运行时准备与 DEB 路径选择已获得实际包证据；**真实后台接管、DEB 安装后共存、真实登录启动及正式签名渠道升级**仍保留为实装门槛，不能由上述私有 systemd 夹具代替。后续实装使用新 SHA 候选，旧 `98b23f69…1272d` 不再推荐使用。
+
+### 完整进程接管、实际 DEB 文件共存与临时 systemd 故障恢复（2026-09-22）
+
+沿用 AppImage SHA `eea0e8a0…122b2`，本轮只扩展验收脚本，没有修改产品运行时源码。证据汇总在 `/tmp/patina-startup-fixed-candidate-187v1ib3/coexistence-summary.json`。
+
+- 同一批 release 二进制另打包本地 DEB：`Patina_1.9.0-beta.20_amd64.deb`，SHA256 `1cc4ebbb79ec32774732f9cf8b46c2b7bfa04c6615b33869bd7868639d855fd5`，保存在上述候选目录。DEB 契约检查通过。AppImage/DEB daemon 的 ELF build ID 同为 `3e2d1f7a7963e8de66ed2f82797a289e2203ed23`；linuxdeploy 给 AppImage 增加 RUNPATH，因此两个文件的 SHA 不相同，分别记录，不把它们说成逐字节一致。
+- 私有 dpkg root 完成旧本地 beta.19 安装 → beta.20 升级 → 卸载 → 重装，包文件/模式和合成用户数据保留检查通过。正常依赖检查使用宿主已安装包的元数据副本；没有验证依赖 payload 安装。证据 `/tmp/patina-deb-acceptance-w4z68nzl/evidence.json`。
+- 实际 AppImage Desktop 在私有 X11/D-Bus 中运行六条路径：原四条保护/准备路径，加 standalone 与真实 DEB payload 两种完整进程接管。两者均由 Desktop 自己生成预约、自动重启，最终状态 completed；API 确认 daemon/tracking/service owned+ready；界面退出、重开后只启动过一次 daemon、PID 不变；daemon SIGINT 正常退出后数据库 quick_check=ok。证据 `/tmp/patina-appimage-startup-sapxvafa/result.json` 和两条 handoff 的 `cleanup.json`。
+- DEB 共存 case 使用前述私有 dpkg 实际安装的 `/usr/bin/patinad` 与 unit，AppImage 不生成另一个持久 runtime 或用户 unit；服务管理仍是私有夹具。首次完整接管试跑缺少 INVOCATION_ID，被新增 managed capability 断言拦截；补齐夹具后最终六条通过，不把早期 manual daemon 结果冒充受管验收。
+- 另用真实 user systemd 随机临时单元 `patina-hardening-6u6pf3te.service` 启动该 AppImage 的持久 AppDir。配置并回读发布 unit 的 NoNewPrivileges、PrivateTmp、ProtectSystem=strict、RestrictSUIDSGID、UMask=0077、Restart=on-failure；受管 API ready 后向该临时 daemon 注入 SIGKILL，systemd 自动恢复，PID 从 231836 变为 231917、NRestarts=1。随后正常 stop，observer exit=0、数据库 quick_check=ok，临时 unit 已收集。此项验证带这些配置的启动/恢复，不单独证明内核对每项限制的强制效果。
+- 临时 systemd 证据位于 `src-tauri/target/acceptance/patina-hardening-6u6pf3te/result.json`；该测试将运行时和数据放在仓库被忽略的 target 目录，避免 PrivateTmp 隐藏 `/tmp` 候选。复现用一次性 runner 保存在候选目录 `hardened-acceptance.py`。只连接不存在的私有采样总线/音频地址，没有读取生产窗口；这些 provider unavailable 日志是预期的。
+- 真实生产 patinad 的 PID、重启次数和启动时间前后完全一致。没有安装宿主 DEB、切换宿主后台、推送或公开发布。
+
+本轮补齐的是 **完整实际进程接管 + 真实 DEB 文件共存（服务管理夹具）**，以及单独的 **真实临时 systemd 安全配置与故障恢复**。尚未将两者组合成真实安装用户的端到端 systemd 接管；真实登录启动、正式签名渠道升级也仍未验证，继续保持 AppImage 发布门槛。脚本实跑、语法、文档契约和 diff 检查作为本轮验证；产品源码未变，复用上一轮完整发布门禁，不重复全量构建。
+
+### 本机 beta.20 安装及真实 AppImage/DEB 共存验收（2026-09-22）
+
+用户在明确说明实装流程后要求继续完成验收。候选复制至持久私有目录 `/home/arinp22/.local/state/patina/acceptance/20260922-beta20-6ytczb9e/`，目录 0700；数据库/配置备份和摘要 0600，包含私有数据，不进入 Git。`acceptance-summary.json` 为本轮实装汇总。DEB SHA 为 `1cc4ebbb…55fd5`、AppImage SHA 为 `eea0e8a0…122b2`，与前述隔离验收候选一致。
+
+- 安装前 beta.19 managed 检查通过；确认无未完成迁移/恢复/清缓存预约，SQLite backup API 在线备份与 profile 归档通过。系统认证后 dpkg 将 beta.19 升级为该本地 beta.20；所有安装文件 SHA 与候选 manifest 一致。
+- 旧 PID 1496 停止后确认 MainPID=0、获取 runtime owner 排他锁并建立停写备份；完整性、外键及 SQLx 校验通过后启动新后台 PID 1027382。没有自动降级数据库或恢复旧备份。
+- 新后台 managed 检查通过；实时平台诊断为 available / gnome-shell-extension / wayland，旧 unknown-session-type 异常已消除。
+- 实际 AppImage 在本机打开设置页并正确读取受管存储状态；关闭窗口、第二次启动单实例唤回、托盘正常退出均通过。UI 全流程后台 PID 不变；无 UI 的 15 秒中成功采样时间推进 15,602 ms。
+- 随后启动真正安装的 `/usr/bin/Patina`，设置页及托盘正常退出通过，继续复用同一后台。没有新建 AppImage 用户 unit 或 runtime store；正式 unit 仍由 DEB 提供。
+- 最终 managed 检查、数据库 quick_check/外键、SQLx 元数据以及固定历史 session/web/title/import 摘要与停写备份一致。运行中的活动与新增记录单独允许变化。未执行真实数据迁移或清缓存。
+- 后台登录启动已经 enabled，注销前 logind 会话基线存为 `login-baseline.json`。目前仅 daemon 在后台，等待用户保存工作后注销、重新登录，再核对新会话、自动启动和持续采样。之前用户已完成的锁屏/挂起不要求重复。
+
+当前结论：**本机 DEB beta.20 升级与实际 AppImage/DEB 共存验收通过**。纯 AppImage 首次部署的真实 systemd 安装用户接管仍只具备分层隔离证据；新版本的实际注销/登录与正式签名渠道升级仍未完成。没有打 tag、推送或公开发布，AppImage 发布门槛继续保留。
+
+### beta.20 重新登录后只读验收（2026-09-22）
+
+用户确认已重新登录后，本轮没有启动 Desktop、重启服务或触发锁屏/挂起。持久证据仍位于 `20260922-beta20-6ytczb9e/`：`post-login-managed.json`、`post-login-session.json`、`ui-post-login-background.json`、`post-login-comparison.json`；汇总已更新。
+
+- logind 当前图形会话为 25，Wayland、本地、active/user；其创建时间晚于注销前保存的观测时刻。旧 `login-baseline.json` 的 session 字段为空，原因是原采集命令使用了 loginctl 不支持的逗号属性列表；本轮通过 D-Bus 直接取属性，以创建时间交叉确认新登录，不声称比较过旧新会话 ID。
+- daemon 仍为 beta.20、PID 1027382、NRestarts 0、enabled/active，跨注销持续运行，没有被 Desktop 或验收工具重新拉起。GNOME 两协议名称均属于同一 owner `:1.32`，平台诊断 available / gnome-shell-extension / wayland。
+- 无 Desktop 的观测窗口中成功采样时间推进 12,578 ms，心跳也推进；managed 检查及固定历史摘要、SQLite 完整性、外键与 schema 核对全部通过。
+
+**新版真实注销/登录后的后台延续与会话恢复验收通过。** 由于 daemon 在本轮注销期间未退出，此证据不覆盖冷启动自动拉起；该项明确保留，不能仅凭 enabled 状态记为通过。纯 AppImage 首次安装用户的 systemd 接管及正式签名升级门槛也继续保留。本轮只更新验收记录，无产品源码、包、安装或发布变更。
+
+### 当前批次收尾与发布准备（2026-09-22）
+
+用户要求关闭 Patina 桌面开机自启后完成剩余工作。只读核对发现 `launch_at_login=0`，用户及系统 autostart 目录均无 Patina 入口，已经满足要求，无需重复修改；`background_tracking_at_login=1` 且 `patinad.service` enabled 保留，以验证没有 UI 时的自动记录。
+
+- 已安装候选与当前产品源码 SHA 核对一致；后续差异仅为验收脚本和文档。复用完整门禁 710 Rust、56 TS 文件、38 浏览器回归；本轮发布契约另通过 25 项 policy、3 项 DEB、11 项 installed acceptance 测试，版本/changelog/文档契约/diff 检查通过。
+- beta.20 发布说明草稿已生成至持久验收目录 `release-notes-beta20.md`。继续 DEB-only beta；现有发布 workflow 会公开发布，尚未调用，不以准备步骤隐式授权 tag、push 或 release。正式签名由发布环境的 secret 提供，本地候选无正式签名。
+- `cold-boot-baseline.json` 记录当前 boot ID、自启设置和 daemon 状态；`cold-boot-verify.py` 已准备，在相同 boot ID 上明确拒绝通过。用户保存工作并真实重启后，不打开 Patina，执行该脚本可完成 managed/无 UI 采样/历史数据检查；本轮不会自行重启用户电脑。
+
+剩余门槛按顺序管理：
+
+1. 真实重启后的 DEB daemon 冷启动检查（需用户重启一次）。
+2. beta.20 正式签名及发布：核对最终提交/tag 与 DEB-only 资产、正式签名，公开发布需单独授权；正式升级不使用同版本本地候选互相覆盖。
+3. 恢复 AppImage 发布前：在无 DEB 的独立安装用户环境完成首次 systemd 接管、登录启动和正式签名升级。当前宿主已有 DEB，只验证了真实共存；不为凑齐证据卸载用户当前可用后台或伪造正式密钥。
+
+本批代码、验收脚本及文档固定为本地提交；不改上游贡献草稿、不推送或发布。

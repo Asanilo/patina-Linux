@@ -1,3 +1,5 @@
+pub(crate) mod appimage_runtime;
+pub(crate) mod appimage_update;
 pub mod audio;
 pub mod foreground;
 pub mod icon;
@@ -9,5 +11,5 @@ pub mod resource;
 pub mod systemd_user_service;
 pub mod widget_window;
 pub mod window_activation;
-pub(crate) mod appimage_update;
-pub(crate) mod appimage_runtime;
+
+pub(super) mod session;

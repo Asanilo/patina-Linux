@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::env;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Mutex, OnceLock,
@@ -90,15 +89,15 @@ pub fn cmd_set_afk_threshold(threshold_secs: u64) {
 }
 
 pub fn get_active_window() -> Result<WindowInfo, ForegroundProbeError> {
-    let session_type = current_session_type();
-    let desktop = current_desktop();
-    let window = query_focused_window_with(
-        session_type.as_deref(),
-        desktop.as_deref(),
-        gnome::query_focused_window,
-        query_focused_window_x11,
-    )?;
-    let idle_time = idle::query_idle_time_ms(session_type.as_deref())?;
+    let session =
+        super::session::current().map_err(|_| ForegroundProbeError::UnsupportedSession)?;
+    let session_type = Some(session.session_type.as_str());
+    let desktop = session.desktop.as_deref();
+    let window =
+        query_focused_window_with(session_type, desktop, gnome::query_focused_window, || {
+            query_focused_window_x11(session.display.as_deref())
+        })?;
+    let idle_time = idle::query_idle_time_ms(session_type, session.display.as_deref())?;
     Ok(attach_idle(
         window,
         idle_time,
@@ -149,19 +148,27 @@ fn query_focused_window_with(
 }
 
 pub fn window_tracking_diagnostics() -> WindowTrackingDiagnostics {
-    let session_type = current_session_type();
-    let desktop = current_desktop();
-    let has_gnome_owner = if is_wayland_session(session_type.as_deref()) {
+    let session = match super::session::current() {
+        Ok(session) => session,
+        Err(reason) => {
+            return WindowTrackingDiagnostics {
+                status: "unavailable".into(),
+                reason: Some(reason.into()),
+                provider: "none".into(),
+                session_type: None,
+                desktop: None,
+            }
+        }
+    };
+    let session_type = Some(session.session_type.as_str());
+    let desktop = session.desktop.as_deref();
+    let has_gnome_owner = if is_wayland_session(session_type) {
         gnome_tracker_has_owner().ok()
     } else {
         None
     };
 
-    resolve_window_tracking_diagnostics(
-        session_type.as_deref(),
-        desktop.as_deref(),
-        has_gnome_owner,
-    )
+    resolve_window_tracking_diagnostics(session_type, desktop, has_gnome_owner)
 }
 
 fn resolve_window_tracking_diagnostics(
@@ -238,19 +245,6 @@ fn is_gnome_desktop(desktop: Option<&str>) -> bool {
         .unwrap_or(false)
 }
 
-fn current_session_type() -> Option<String> {
-    env::var("XDG_SESSION_TYPE")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-}
-
-fn current_desktop() -> Option<String> {
-    env::var("XDG_CURRENT_DESKTOP")
-        .or_else(|_| env::var("DESKTOP_SESSION"))
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-}
-
 fn dbus_name_has_owner(name: &str) -> Result<bool, String> {
     let conn = zbus::blocking::Connection::session().map_err(|error| error.to_string())?;
     let proxy = zbus::blocking::Proxy::new(
@@ -279,12 +273,14 @@ fn gnome_tracker_has_owner() -> Result<bool, String> {
 
 // ── X11 fallback ────────────────────────────────────────────────────
 
-fn query_focused_window_x11() -> Result<Option<WindowInfo>, ForegroundProbeError> {
+fn query_focused_window_x11(
+    display: Option<&str>,
+) -> Result<Option<WindowInfo>, ForegroundProbeError> {
     use xcb::x;
     use xcb::Xid;
 
     let (conn, screen_num) =
-        xcb::Connection::connect(None).map_err(|_| ForegroundProbeError::WindowUnavailable)?;
+        xcb::Connection::connect(display).map_err(|_| ForegroundProbeError::WindowUnavailable)?;
 
     let setup = conn.get_setup();
     let screen = setup

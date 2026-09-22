@@ -65,6 +65,10 @@ export function validateGnomeShellExtensionSourceText(
     errors.push("GNOME Shell extension check failed. extension.js must emit FocusedWindowChanged.");
   }
 
+  if (!extensionJs.includes("org.patina.WindowTracker1") || !extensionJs.includes("GetSnapshot")) {
+    errors.push("GNOME Shell extension check failed. extension.js must export WindowTracker1.GetSnapshot.");
+  }
+
   return errors;
 }
 

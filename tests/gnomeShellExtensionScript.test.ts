@@ -20,6 +20,7 @@ const extensionJs = [
   "<method name=\"GetFocusedWindow\"></method>",
   "<signal name=\"FocusedWindowChanged\"></signal>",
   "</interface></node>`;",
+  "// org.patina.WindowTracker1 GetSnapshot",
 ].join("\n");
 
 let passed = 0;
@@ -45,6 +46,7 @@ await runTest("GNOME extension check rejects missing D-Bus methods", () => {
     "GNOME Shell extension check failed. extension.js must define org.patina.WindowTracker.",
     "GNOME Shell extension check failed. extension.js must export GetFocusedWindow.",
     "GNOME Shell extension check failed. extension.js must emit FocusedWindowChanged.",
+    "GNOME Shell extension check failed. extension.js must export WindowTracker1.GetSnapshot.",
   ]);
 });
 

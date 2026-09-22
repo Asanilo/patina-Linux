@@ -20,6 +20,8 @@
 
 GNOME Wayland 下，采样端先检查 `org.patina.WindowTracker1`，只有新名称明确没有 D-Bus owner 时才尝试旧 `org.patina.WindowTracker`；两者都不可用时必须报告扩展未安装、未启用或 D-Bus 不可用，不能静默退回 X11。新接口存在但响应失败或不合协议时不回退旧接口。实际可用的 GNOME companion 可以补足不完整的桌面环境标签；仅有名称 owner 的能力诊断不能替代实际采样健康状态。
 
+受管后台的会话类型来自 logind 当前用户的 `User.Display` 及对应 Session，校验 UID、本地/活动状态与 user class；不再把 daemon 启动时的桌面环境变量当作长期事实。没有有效图形会话或查询失败时不猜测 Wayland/X11，也不复用旧会话。普通桌面进程仍可使用有效的显式环境；X11 连接使用解析得到的 Display。后台重新登录后重新绑定锁屏订阅并同步当前锁状态；图形会话缺失期间，全局睡眠/关机监听仍保留。本机已于 2026-09-22 安装本地 beta.20 候选并确认 Wayland/GNOME 诊断可用；新版实际注销/登录验收单独记录。
+
 ## 3. Linux 平台能力
 
 | 能力 | 当前实现 | 降级行为 |
@@ -40,11 +42,13 @@ GNOME Wayland 下，采样端先检查 `org.patina.WindowTracker1`，只有新�
 
 ## 4. GNOME 扩展边界
 
-随产品分发的 GNOME Shell 扩展只负责读取 Shell 已知的焦点窗口，并通过旧 `org.patina.WindowTracker` 暴露最小 D-Bus 接口。它不拥有 session 切分、分类、AFK 决策、数据库或 API。
+随产品分发的 GNOME Shell 扩展只负责读取 Shell 已知的焦点窗口，并通过 `org.patina.WindowTracker` 和 `org.patina.WindowTracker1` 暴露最小 D-Bus 接口。它不拥有 session 切分、分类、AFK 决策、数据库或 API。
 
 main 的消费端另可识别版本 1 的 `org.patina.WindowTracker1.GetSnapshot`，校验消息类型/大小、版本/状态和窗口字段，再解析应用身份。正常无窗口/overview 和明确锁屏必须携带全空窗口事实；当前映射为无活动窗口，仍要求可信 idle，不生成永久 logind 锁状态。锁屏时 idle 同时失效则保守按最后可信采样停止记录。未知状态、不可用状态、无法解析的窗口身份和损坏响应均为失败，不作为正常空桌面推进成功时间戳。
 
-此兼容属于消费端源码能力；现有 version 3 扩展继续使用旧协议，GNOME Shell 42 是其声明范围。新协议扩展发行、legacy/ESM 双入口、更多 Shell 版本和真实锁屏/overview 验收仍需独立完成，不因消费端兼容自动扩大支持承诺。
+main 的 version 4 扩展同时提供旧五元组/信号和新快照；旧客户端继续可用。锁屏、屏幕遮蔽和 overview 在读取焦点前屏蔽窗口事实；读取异常在新协议中报告 unavailable。扩展保留于 user/unlock-dialog session mode，禁用时释放名称、对象、信号和定时器，迟到回调不恢复已禁用实例。
+
+GNOME Shell 42 是当前声明范围。打包候选已在本机独立 GNOME Shell 42.9 Wayland 会话中验证双协议、overview/锁屏恢复和三轮禁用/启用；测试使用私有总线与 GDM 能力夹具，不代表生产密码认证、登录或睡眠验收。version 4 尚未公开发布。本机用户目录已按授权备份并安装候选，重新登录后已确认生产激活；daemon 会话环境诊断已在本地 beta.20 实装后恢复，用户已报告完成锁屏/挂起；新版实际注销/登录后的后台延续与会话恢复已验证，冷启动自动拉起尚未验证；ESM 入口和更多 Shell 版本仍待独立实施验证。
 
 当前扩展不提供悬浮窗移动、置顶或全局指针状态接口。Wayland 原生窗口的边缘吸附尚未实现，不能用 GTK 返回的 `(0, 0)` 推断左侧位置；详见 [GTK 窗口位置限制](https://docs.gtk.org/gtk3/method.Window.get_position.html)。能力判断应使用实际显示后端，而非仅使用 `XDG_SESSION_TYPE`，以兼容 Wayland 会话内的 X11 客户端。
 

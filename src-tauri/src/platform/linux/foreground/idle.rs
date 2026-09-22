@@ -1,7 +1,10 @@
 use super::ForegroundProbeError;
 
-pub(super) fn query_idle_time_ms(session_type: Option<&str>) -> Result<u32, ForegroundProbeError> {
-    query_with(session_type, query_mutter, query_x11)
+pub(super) fn query_idle_time_ms(
+    session_type: Option<&str>,
+    display: Option<&str>,
+) -> Result<u32, ForegroundProbeError> {
+    query_with(session_type, query_mutter, || query_x11(display))
 }
 
 fn query_with(
@@ -41,8 +44,8 @@ fn mutter_idle_time_to_ms(value: u64) -> u32 {
     value.min(u64::from(u32::MAX)) as u32
 }
 
-fn query_x11() -> Option<u32> {
-    let (conn, screen_num) = xcb::Connection::connect(None).ok()?;
+fn query_x11(display: Option<&str>) -> Option<u32> {
+    let (conn, screen_num) = xcb::Connection::connect(display).ok()?;
     let setup = conn.get_setup();
     let root = setup.roots().nth(screen_num as usize)?.root();
     let cookie = conn.send_request(&xcb::screensaver::QueryInfo {
