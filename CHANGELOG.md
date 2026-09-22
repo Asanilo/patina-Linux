@@ -16,10 +16,20 @@ Release: 待定。
 App note: 待定。
 App note en: TBD.
 
+## [1.9.0-beta.21] - 2026-09-23
+
+Release: Linux DEB 测试版：修复后台启动较慢时桌面连接无法恢复的问题。
+App note: 后台启动较慢时继续等待连接，读取凭据失败时准确显示停止状态。
+App note en: Recover desktop connections after slow daemon startup and report credential read failures accurately.
+
 ### Fixed
 
 - 后台首次生成连接凭据较慢时，桌面客户端继续等待并允许取消，不再超过十秒就永久停止连接；不可恢复的读取错误明确报告停止。
-- 修复 AppImage 登录自启动引用临时解包路径的问题；独立使用时指向原始包，与 DEB 共存时优先使用已安装桌面程序。
+
+### Internal
+
+- 修复本地 AppImage 登录自启动引用临时解包路径的问题；独立使用时指向原始包，与 DEB 共存时优先使用已安装桌面程序。AppImage 仍未恢复公开发布。
+- 补充 11 秒延迟接管、自启动入口、真实 GIO 路径解析与隔离 systemd 生命周期回归；headless 验收显式保持 Xvfb 显示服务器运行。
 
 ## [1.9.0-beta.20] - 2026-09-21
 

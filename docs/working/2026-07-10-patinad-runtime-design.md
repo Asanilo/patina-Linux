@@ -1,7 +1,7 @@
 # `patinad` 当前实施与验收
 
-> 更新：2026-09-22。daemon 分离已通过第一阶段验收并经用户明确授权合入本地 `main`；本文继续管理平台成果评估、候选证据与剩余发布门槛。历史阶段与实验详见 [归档](../archive/2026-09-19-patinad-runtime-history.md)。
-> 方向以 [路线](../roadmap-and-prioritization.md#linux-main-and-daemon-experiment) 为准，协议与 owner 以 [架构](../architecture.md) 为准。当前执行见下方 Todo；历史验收不自动覆盖后续候选。隔离安装、真实临时 systemd、界面重启及本机实装验收均已通过；源码合入不改变公开发布状态。
+> 更新：2026-09-23。daemon 分离已通过第一阶段验收并经用户明确授权合入本地 `main`；本文继续管理平台成果评估、候选证据与剩余发布门槛。历史阶段与实验详见 [归档](../archive/2026-09-19-patinad-runtime-history.md)。
+> 方向以 [路线](../roadmap-and-prioritization.md#linux-main-and-daemon-experiment) 为准，协议与 owner 以 [架构](../architecture.md) 为准。当前执行见下方 Todo 与 [beta.21 候选记录](2026-09-21-linux-platform-reuse.md)；历史验收不自动覆盖后续候选。隔离安装、真实临时 systemd、界面重启及本机实装验收均已通过；源码合入不改变公开发布状态。
 
 ## 推进 Todo（2026-09-20）
 
@@ -13,9 +13,9 @@
 - [x] **T4：验证候选。** 最新 `check:full` 通过：55 个 TypeScript 测试文件、38 项浏览器回归、677 Rust passed / 15 ignored，以及构建/预算/边界/Clippy。main 实际 v1–6 schema 的合成 16 表升级回归通过。私有 dpkg root 完成 beta.18 安装→候选升级→卸载→重装；候选 daemon 配合真实临时 systemd、四次界面 `app.restart` 完成五阶段存储验收，50,000 条记录与总时长正确。用户随后明确授权本机实装；备份校验后完成 beta.18→本地候选升级，正式 Desktop 的存储页、关闭隐藏、单实例唤回、正常退出和新进程重开通过，退出后真实采样继续，daemon PID 不变。最终 15 项托管检查、历史记录摘要、SQLx 校验和及数据库完整性通过。候选身份、一次短暂数据库锁重试及证明范围见 [合并前证据](../archive/2026-09-21-main-merge-readiness.md)。
 - [x] **T5：达到合入条件并收敛到 main。** 用户明确要求合并后，本地 main 从 `a13a64a669849234df5575994673cb7a90cc3003` 快进至已验收提交 `bc5c2e9c7f56251857add5b91dd527cb1340288f`，无冲突，保留全部开发及 beta 历史。主线文档同步提交为 `5eefcf4e`，用户随后同意交付收尾，已将该提交普通快进推送至 `origin/main`。后续产品开发在 main，原 daemon 分支保留；未打 tag 或改变公开发布状态。
 - [ ] **T6：按模块评估并选择性回流平台成果。** [当前执行记录](2026-09-21-linux-platform-reuse.md)中的采样中断、idle 可信性、GNOME 双协议及会话重绑已实现并通过完整门禁；version 4 扩展已在本机激活，用户已完成锁屏/挂起。beta.20 本机 DEB 升级、实际 AppImage/DEB 共存、无界面持续采样、重新登录后的会话恢复及真实系统重启后的后台自动启动均通过。随后独立真实 systemd 验收发现并修复首次凭据竞态，新候选通过两秒延迟接管、界面重开、崩溃恢复、容器重启启动和六条隔离路由；714 Rust / 17 ignored 的完整门禁通过。新候选未替换本机安装。剩余为纯 AppImage 独立 GNOME 登录/FUSE、正式签名升级及后续 ESM/更多 Shell 验证；上游草稿仍保留，不整支合并。
-- [x] **T7：准备合流后的下一版 beta。** 按公开 beta.19 `fbdad8eb` 之后的完整范围整理 beta.20 版本与 changelog，源码发布门禁通过；本项只表示源码准备完成，尚未打 tag 或公开发布；2026-09-22 另完成未签名 AppImage 本地候选与隔离验收，不等于恢复该格式发布。AppImage 实装/正式升级门槛保持不变。
+- [x] **T7：准备合流后的下一版 beta。** 按公开 beta.19 `fbdad8eb` 之后的完整范围整理 beta.20 版本与 changelog，源码发布门禁通过；beta.20 已于 2026-09-22 公开预发布，后续审核修复已提交 main（`fa1cec27`），当前准备 beta.21，本项不代表 beta.21 已发布；2026-09-22 另完成未签名 AppImage 本地候选与隔离验收，不等于恢复该格式发布。AppImage 实装/正式升级门槛保持不变。
 
-第一阶段不要求实现新客户端、补齐所有桌面或清零客户端私有持久化。受控读取可以保留明确例外；runtime 写入必须由当前 owner 执行。AppImage 实机验收仍约束该格式及 daemon 稳定发布，不以源码合并代替。本机现运行 2026-09-22 实装验收的本地未签名 beta.20 候选，生产 service 已受控重启；真实数据库继续记录，既有历史及 schema 校验通过。公开发布资产未改变。
+第一阶段不要求实现新客户端、补齐所有桌面或清零客户端私有持久化。受控读取可以保留明确例外；runtime 写入必须由当前 owner 执行。AppImage 实机验收仍约束该格式及 daemon 稳定发布，不以源码合并代替。本机现运行 2026-09-22 实装验收的本地未签名 beta.20 候选，生产 service 已受控重启；真实数据库继续记录，既有历史及 schema 校验通过。当前最新公开预发布为 beta.20；beta.21 的源码、包和本机安装状态由候选执行记录管理。
 
 ## 当前状态
 
