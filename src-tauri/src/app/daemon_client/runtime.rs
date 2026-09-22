@@ -156,14 +156,10 @@ impl PatinadDesktopRuntimeHandle {
         let task = tauri::async_runtime::spawn(async move {
             output.connection_changed(PatinadRuntimeConnectionStatus::Connecting, None);
             let configured = async {
-                let Some(token) = wait_for_client_credential(
-                    &credentials,
-                    &credential_path,
-                    shutdown_rx.clone(),
-                    Duration::from_secs(10),
-                )
-                .await
-                .map_err(PatinadClientError::InvalidConfiguration)?
+                let Some(token) =
+                    wait_for_client_credential(&credentials, &credential_path, shutdown_rx.clone())
+                        .await
+                        .map_err(PatinadClientError::InvalidConfiguration)?
                 else {
                     return Ok(false);
                 };
@@ -178,10 +174,8 @@ impl PatinadDesktopRuntimeHandle {
                     return;
                 }
                 Err(error) => {
-                    output.connection_changed(
-                        PatinadRuntimeConnectionStatus::Reconnecting,
-                        Some(&error),
-                    );
+                    output
+                        .connection_changed(PatinadRuntimeConnectionStatus::Stopped, Some(&error));
                     return;
                 }
             }
@@ -240,28 +234,25 @@ async fn wait_for_client_credential(
     credentials: &crate::engine::api::auth::ApiCredentialStore,
     path: &std::path::Path,
     mut shutdown: watch::Receiver<bool>,
-    timeout: Duration,
 ) -> Result<Option<String>, String> {
-    tokio::time::timeout(timeout, async {
-        loop {
-            if *shutdown.borrow() {
-                return Ok(None);
-            }
-            if let Some(token) = credentials.load_existing_if_present_at(path)? {
-                return Ok(Some(token));
-            }
-            tokio::select! {
-                _ = tokio::time::sleep(Duration::from_millis(50)) => {}
-                changed = shutdown.changed() => {
-                    if changed.is_err() || *shutdown.borrow() {
-                        return Ok(None);
-                    }
+    loop {
+        if *shutdown.borrow() {
+            return Ok(None);
+        }
+        if let Some(token) = credentials.load_existing_if_present_at(path)? {
+            return Ok(Some(token));
+        }
+        // Cutover confirmation owns its deadline. A missing credential must not
+        // permanently terminate the client: the service can become ready later.
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_millis(250)) => {}
+            changed = shutdown.changed() => {
+                if changed.is_err() || *shutdown.borrow() {
+                    return Ok(None);
                 }
             }
         }
-    })
-    .await
-    .map_err(|_| "timed out waiting for the daemon API credential".to_string())?
+    }
 }
 
 struct TauriPatinadRuntimeOutput<R: Runtime> {
@@ -684,7 +675,7 @@ mod tests {
         let credentials = crate::engine::api::auth::ApiCredentialStore::new();
         let (_shutdown, receiver) = watch::channel(false);
         let delayed_write = async {
-            tokio::time::sleep(Duration::from_millis(75)).await;
+            tokio::time::sleep(Duration::from_secs(11)).await;
             assert!(
                 !path.exists(),
                 "Desktop must not create the daemon credential"
@@ -694,7 +685,7 @@ mod tests {
                 .unwrap();
         };
         let (result, ()) = tokio::join!(
-            wait_for_client_credential(&credentials, &path, receiver, Duration::from_secs(2)),
+            wait_for_client_credential(&credentials, &path, receiver),
             delayed_write
         );
         assert_eq!(result.unwrap().as_deref(), Some("daemon-owned-test-token"));
@@ -703,16 +694,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn credential_startup_timeout_never_creates_a_token() {
-        let path = credential_test_path("timeout");
+    async fn credential_startup_keeps_waiting_without_creating_a_token() {
+        let path = credential_test_path("missing");
         let credentials = crate::engine::api::auth::ApiCredentialStore::new();
-        let (_shutdown, receiver) = watch::channel(false);
-        let result =
-            wait_for_client_credential(&credentials, &path, receiver, Duration::from_millis(30))
-                .await;
-        assert!(result.unwrap_err().contains("timed out"));
+        let (shutdown, receiver) = watch::channel(false);
+        let wait = wait_for_client_credential(&credentials, &path, receiver);
+        tokio::pin!(wait);
+        assert!(tokio::time::timeout(Duration::from_millis(30), &mut wait)
+            .await
+            .is_err());
         assert!(!path.exists());
         assert!(credentials.token().is_err());
+        shutdown.send(true).unwrap();
+        assert!(wait.await.unwrap().is_none());
     }
 
     #[tokio::test]
@@ -726,7 +720,7 @@ mod tests {
         };
         let wait = tokio::time::timeout(
             Duration::from_secs(1),
-            wait_for_client_credential(&credentials, &path, receiver, Duration::from_secs(10)),
+            wait_for_client_credential(&credentials, &path, receiver),
         );
         let (result, ()) = tokio::join!(wait, cancel);
         assert!(result.unwrap().unwrap().is_none());
@@ -741,7 +735,7 @@ mod tests {
         let (_shutdown, receiver) = watch::channel(false);
         let result = tokio::time::timeout(
             Duration::from_secs(1),
-            wait_for_client_credential(&credentials, &path, receiver, Duration::from_secs(10)),
+            wait_for_client_credential(&credentials, &path, receiver),
         )
         .await;
         assert!(result

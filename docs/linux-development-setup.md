@@ -320,8 +320,16 @@ performs owner cutover. The runner checks managed API readiness, Desktop
 exit/reopen without daemon replacement, SIGKILL recovery, clean stop and database
 integrity. It then restarts the container and verifies the enabled daemon starts
 without opening Desktop or manually starting the service.
-An isolated test-only unit drop-in delays daemon startup by two seconds to
-reproduce first-launch credential availability races deterministically.
+An isolated test-only unit drop-in delays daemon startup by eleven seconds to
+cover recovery beyond the former ten-second credential deadline. The runner also
+reopens Desktop using the generated autostart command after closing its original
+process, rejecting commands that point into temporary extraction directories.
+Standalone autostart uses the original AppImage package; moving or deleting that
+package requires setting up autostart again. DEB coexistence uses the installed
+Desktop executable.
+The headless display uses software rendering and disables Xvfb reset between
+clients. This isolates launcher/service lifecycle checks from GPU availability
+and display regeneration; it does not validate graphical-session rendering.
 
 Nested systemd requires SYS_ADMIN and relaxed container seccomp/AppArmor; the
 container has a private cgroup namespace, no network, no host mounts, no extra

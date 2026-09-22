@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -86,9 +87,12 @@ if phase == 'first':
     # first credential. This is a test-only drop-in, not a production unit change.
     delay = home / '.config/systemd/user/patinad.service.d/acceptance-delay.conf'
     delay.parent.mkdir(parents=True)
-    delay.write_text('[Service]\nExecStartPre=/bin/sleep 2\n')
+    delay.write_text('[Service]\nExecStartPre=/bin/sleep 11\n')
     image = Path('/candidate.AppImage')
-    env = {**os.environ, 'APPIMAGE_EXTRACT_AND_RUN': '1', 'GDK_BACKEND': 'x11'}
+    # Xvfb has neither a GPU nor a compositor. Exercise launcher/lifecycle
+    # behavior with software rendering, including the autostart widget path.
+    env = {**os.environ, 'APPIMAGE_EXTRACT_AND_RUN': '1', 'GDK_BACKEND': 'x11',
+           'WEBKIT_DISABLE_COMPOSITING_MODE': '1'}
     log = (output / 'desktop.log').open('w')
     child = subprocess.Popen([str(image)], env=env, stdout=log,
                              stderr=subprocess.STDOUT, start_new_session=True)
@@ -103,13 +107,21 @@ if phase == 'first':
         assert initial['FragmentPath'] == str(unit)
         assert systemctl('is-enabled', 'patinad.service') == 'enabled'
         assert (data / 'runtime-appimage/current/AppRun').is_file()
+        autostart = home / '.config/autostart/Patina.desktop'
+        command = next(line[5:] for line in autostart.read_text().splitlines() if line.startswith('Exec='))
+        assert command == '/candidate.AppImage --autostart', command
+        extracted = {Path(os.readlink(f'/proc/{pid}/exe')).parents[2] for pid in desktop_running()}
         close_desktop(child)
+        for path in extracted:
+            assert path.parent == Path('/tmp') and path.name.startswith('appimage_extracted_'), path
+            if path.exists():
+                shutil.rmtree(path)
         assert wait_for(ready)['InvocationID'] == initial['InvocationID']
-        child = subprocess.Popen([str(image)], env=env, stdout=log,
+        child = subprocess.Popen(command.split(), env=env, stdout=log,
                                  stderr=subprocess.STDOUT, start_new_session=True)
         wait_for(desktop_running)
         time.sleep(5)
-        assert child.poll() is None
+        assert child.poll() is None, f'Desktop autostart exited: {child.returncode}'
         assert ready()['InvocationID'] == initial['InvocationID']
         close_desktop(child)
         # Kill only this disposable user's actual systemd-owned daemon.
@@ -126,7 +138,9 @@ if phase == 'first':
                   'sha256': hashlib.sha256(image.read_bytes()).hexdigest(),
                   'initial': initial, 'recovered': recovered_state,
                   'desktop_exit_reopen_same_invocation': True,
-                  'test_only_daemon_start_delay_seconds': 2,
+                  'desktop_reopened_via_persisted_autostart': True,
+                  'headless_software_rendering': True,
+                  'test_only_daemon_start_delay_seconds': 11,
                   'database_quick_check': 'ok', 'foreign_key_check': 'ok',
                   'scope': 'Real container user manager; no GNOME/login or formal signed upgrade'}
         (output / 'first.json').write_text(json.dumps(result, indent=2) + '\n')

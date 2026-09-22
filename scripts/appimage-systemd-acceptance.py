@@ -62,7 +62,9 @@ def main():
         docker('cp', str(sources / 'accept.py'), name + ':/accept.py')
         docker('start', name)
         wait_manager()
-        user('xvfb-run', '-a', '-s', '-screen 0 1280x720x24 -extension GLX',
+        # Keep the display alive between clients, as a real desktop session does.
+        # Xvfb reset on the last disconnect can invalidate GTK/XInput devices.
+        user('xvfb-run', '-a', '-s', '-screen 0 1280x720x24 -extension GLX -noreset',
              'python3', '/accept.py', 'first')
         docker('restart', '--timeout', '25', name)
         wait_manager()

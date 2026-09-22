@@ -15,14 +15,58 @@ impl AutostartDesktopFileInspection {
 }
 
 pub(crate) fn inspect_autostart_desktop_file() -> AutostartDesktopFileInspection {
-    inspect_autostart_desktop_file_at(&autostart_desktop_file_path())
+    let expected = current_autostart_executable().ok();
+    inspect_autostart_desktop_file_at(&autostart_desktop_file_path(), expected.as_deref())
 }
 
 pub(crate) fn repair_current_exe_autostart_desktop_file() -> Result<(), String> {
-    let executable_path = std::env::current_exe()
-        .map_err(|error| format!("failed to resolve current executable path: {error}"))?;
+    let executable_path = current_autostart_executable()?;
     repair_autostart_desktop_file(&autostart_desktop_file_path(), &executable_path)
         .map_err(|error| format!("failed to repair autostart desktop file: {error}"))
+}
+
+fn current_autostart_executable() -> Result<PathBuf, String> {
+    #[cfg(target_os = "linux")]
+    if tauri::utils::platform::bundle_type() == Some(tauri::utils::config::BundleType::AppImage) {
+        let packaged = [
+            "/usr/lib/systemd/user/patinad.service",
+            "/lib/systemd/user/patinad.service",
+        ]
+        .iter()
+        .any(|path| Path::new(path).is_file());
+        return appimage_autostart_executable(
+            std::env::var_os("APPIMAGE").as_deref().map(Path::new),
+            packaged.then_some(Path::new("/usr/bin/Patina")),
+        );
+    }
+    std::env::current_exe()
+        .map_err(|error| format!("failed to resolve current executable path: {error}"))
+}
+
+#[cfg(target_os = "linux")]
+fn appimage_autostart_executable(
+    image: Option<&Path>,
+    packaged: Option<&Path>,
+) -> Result<PathBuf, String> {
+    // Coexistence follows the installed Desktop. A standalone AppImage must
+    // restart through its original package so its runtime restores the AppDir
+    // environment; current_exe points inside an ephemeral mount/extraction.
+    let executable = packaged
+        .filter(|path| path.is_file())
+        .or(image)
+        .ok_or("AppImage package path is unavailable; autostart entry was not changed")?;
+    if !executable.is_absolute()
+        || !executable.is_file()
+        || executable
+            .to_str()
+            .is_none_or(|value| value.chars().any(char::is_control))
+    {
+        return Err(
+            "autostart requires an existing absolute UTF-8 package path without control characters"
+                .into(),
+        );
+    }
+    Ok(executable.to_path_buf())
 }
 
 #[cfg(target_os = "linux")]
@@ -35,14 +79,24 @@ pub(crate) fn apply_linux_autostart(launch_at_login: bool) -> Result<(), String>
     }
 }
 
-fn inspect_autostart_desktop_file_at(path: &Path) -> AutostartDesktopFileInspection {
+fn inspect_autostart_desktop_file_at(
+    path: &Path,
+    expected: Option<&Path>,
+) -> AutostartDesktopFileInspection {
     let content = std::fs::read_to_string(path).ok();
     let exec = content
         .as_deref()
         .and_then(extract_desktop_exec)
         .map(str::to_string);
     let exists = path.exists();
-    let reason = resolve_autostart_reason(exists, exec.as_deref());
+    // An AppImage may have any filename; recognize the exact selected command
+    // instead of requiring "patina" to occur in that filename.
+    let expected_exec = expected.map(autostart_exec);
+    let reason = if exists && expected_exec.is_some() && exec == expected_exec {
+        None
+    } else {
+        resolve_autostart_reason(exists, exec.as_deref())
+    };
 
     AutostartDesktopFileInspection {
         path: path.to_path_buf(),
@@ -75,27 +129,43 @@ fn remove_autostart_desktop_file(desktop_file_path: &Path) -> std::io::Result<()
 }
 
 fn build_autostart_desktop_file(executable_path: &Path) -> String {
-    let executable = quote_desktop_exec_argument(&executable_path.display().to_string());
+    let executable = autostart_exec(executable_path);
     format!(
         "[Desktop Entry]\n\
 Type=Application\n\
 Version=1.0\n\
 Name=Patina\n\
 Comment=Start Patina in the background\n\
-Exec={executable} {}\n\
+Exec={executable}\n\
 StartupNotify=false\n\
 Terminal=false\n\
-X-GNOME-Autostart-enabled=true\n",
+X-GNOME-Autostart-enabled=true\n"
+    )
+}
+
+fn autostart_exec(executable_path: &Path) -> String {
+    let path = executable_path.display().to_string();
+    // GLib checks argv[0] before expanding %% field codes. Keep a real
+    // executable in argv[0] when the selected package has a literal percent.
+    let prefix = if path.contains('%') {
+        "/usr/bin/env -- "
+    } else {
+        ""
+    };
+    format!(
+        "{prefix}{} {}",
+        quote_desktop_exec_argument(&path),
         crate::app::runtime::AUTOSTART_ARG
     )
 }
 
 fn quote_desktop_exec_argument(argument: &str) -> String {
+    let argument = argument.replace('%', "%%");
     if !argument
         .chars()
         .any(|character| character.is_whitespace() || matches!(character, '"' | '\\' | '$' | '`'))
     {
-        return argument.to_string();
+        return argument;
     }
 
     let escaped = argument
@@ -199,13 +269,13 @@ mod tests {
         )
         .expect("write stale desktop file");
 
-        let before = inspect_autostart_desktop_file_at(&path);
+        let before = inspect_autostart_desktop_file_at(&path, None);
         assert_eq!(before.reason.as_deref(), Some("exec-not-patina"));
 
         repair_autostart_desktop_file(&path, Path::new("/opt/Patina/patina"))
             .expect("repair stale desktop file");
 
-        let after = inspect_autostart_desktop_file_at(&path);
+        let after = inspect_autostart_desktop_file_at(&path, None);
         assert!(after.valid());
         assert_eq!(
             after.exec.as_deref(),
@@ -226,10 +296,78 @@ mod tests {
 
         remove_autostart_desktop_file(&path).expect("remove desktop file");
 
-        let inspection = inspect_autostart_desktop_file_at(&path);
+        let inspection = inspect_autostart_desktop_file_at(&path, None);
         assert!(!inspection.exists);
         assert_eq!(inspection.reason.as_deref(), Some("desktop-file-missing"));
 
+        cleanup_temp_desktop_file(&path);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn appimage_autostart_selects_existing_package_or_installed_desktop() {
+        let path = temp_desktop_file_path("appimage");
+        let root = path.parent().unwrap().parent().unwrap();
+        std::fs::create_dir_all(root).unwrap();
+        let image = root.join("My Tracker 100%.AppImage");
+        let installed = root.join("installed/Patina");
+        std::fs::write(&image, "package").unwrap();
+        let selected =
+            super::appimage_autostart_executable(Some(&image), Some(&installed)).unwrap();
+        repair_autostart_desktop_file(&path, &selected).unwrap();
+        assert_eq!(selected, image);
+        assert!(selected.is_file());
+        let inspection = inspect_autostart_desktop_file_at(&path, Some(&selected));
+        assert!(inspection.valid());
+        assert!(inspection.exec.unwrap().contains("100%%.AppImage"));
+
+        std::fs::create_dir_all(installed.parent().unwrap()).unwrap();
+        std::fs::write(&installed, "installed Desktop").unwrap();
+        let selected =
+            super::appimage_autostart_executable(Some(&image), Some(&installed)).unwrap();
+        assert_eq!(selected, installed);
+        repair_autostart_desktop_file(&path, &selected).unwrap();
+        std::fs::remove_file(&image).unwrap();
+        assert!(super::appimage_autostart_executable(Some(&image), None).is_err());
+        assert!(super::appimage_autostart_executable(None, None).is_err());
+        assert!(
+            super::appimage_autostart_executable(Some(Path::new("relative.AppImage")), None)
+                .is_err()
+        );
+        cleanup_temp_desktop_file(&path);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "requires gio; launches only a private test script, not Patina"]
+    fn appimage_autostart_launches_through_real_desktop_entry_parser() {
+        use std::os::unix::fs::PermissionsExt;
+        let path = temp_desktop_file_path("gio-parser");
+        let root = path.parent().unwrap().parent().unwrap();
+        std::fs::create_dir_all(root).unwrap();
+        let image = root.join("My Tracker 100%.AppImage");
+        let marker = root.join("arguments");
+        std::fs::write(
+            &image,
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\n",
+                marker.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&image, std::fs::Permissions::from_mode(0o700)).unwrap();
+        repair_autostart_desktop_file(&path, &image).unwrap();
+        assert!(std::process::Command::new("gio")
+            .arg("launch")
+            .arg(&path)
+            .status()
+            .unwrap()
+            .success());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !marker.exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert_eq!(std::fs::read_to_string(marker).unwrap(), "--autostart\n");
         cleanup_temp_desktop_file(&path);
     }
 

@@ -216,7 +216,7 @@ domain ─────────┘          │
 - 默认 owner 切换前，Production embedded Desktop 启动会停止提前运行的 packaged daemon，再依靠 RuntimeLease 获取唯一 owner；Dev/Local profile 不控制 production unit
 - browser UI 由 `patinad` 在 loopback 提供，通过 HTTP API 和本机 event stream 访问同一运行时，不直接打开 SQLite
 - 未来 TUI / CLI 只能作为 daemon 客户端，不建立第二套 tracking 或数据库写侧
-- AppImage 的打包编排归 `app/daemon_service/appimage`，文件系统发布与包替换归显式 Linux 平台边界；不为 AppImage 新建追踪 owner。完整 AppDir 按包指纹持久保存，固定 user unit 只引用原子 `current` 指针，不引用临时 FUSE 挂载。已有 DEB service 可复用，已有自定义 unit/mask 必须保留；同一 profile 始终由既有 RuntimeLease 互斥。复制/版本预检失败不能切换指针，数据库迁移后的二进制降级不得自动执行。实现不等于通过 AppImage 发布门禁，交付状态见 release policy 与当前 working 文档。
+- AppImage 的打包编排归 `app/daemon_service/appimage`，文件系统发布与包替换归显式 Linux 平台边界；不为 AppImage 新建追踪 owner。完整 AppDir 按包指纹持久保存，固定 user unit 只引用原子 `current` 指针，不引用临时 FUSE 挂载。已有 DEB service 可复用，已有自定义 unit/mask 必须保留；同一 profile 始终由既有 RuntimeLease 互斥。复制/版本预检失败不能切换指针，数据库迁移后的二进制降级不得自动执行。桌面登录自启动由既有 autostart owner 选择持久入口：与 DEB 共存时优先使用已安装 Desktop，否则使用原始 AppImage 包路径，让包负责恢复运行环境；不得写入临时解包二进制路径。原始包移动或删除后需要重新设置自启动。实现不等于通过 AppImage 发布门禁，交付状态见 release policy 与当前 working 文档。
 - 迁移完成前允许 desktop 继续内嵌运行时，但必须通过显式模式和 `RuntimeLease` 保证同一 profile 只有一个后台 owner
 
 首个 daemon-backed Linux 安装使用一个产品包原子交付 Patina Desktop、`patinad` 与 systemd user unit，不先拆分独立 daemon 包。包安装阶段只放置 unit；首次桌面迁移在当前用户会话中通过 owner-only reservation 分两次进程完成：embedded owner 只准备 unit 与重启意图，释放 RuntimeLease 后的新进程才启动 daemon 并进入 client 模式，避免 `postinst` 对多用户环境做全局选择，也避免交接窗口出现双 owner。“后台追踪随登录启动”由 host-owned `background_tracking_at_login` 表达，“桌面客户端随登录打开”继续由 `launch_at_login` 表达；新键缺失时只继承一次旧值，此后独立持久化，启动时最小化只属于桌面客户端。两个偏好都不能由普通 app-settings API 直接驱动系统资源。
@@ -225,7 +225,7 @@ owner 交接 reservation 位于 profile 的稳定 control root，不跟随可迁
 
 Tauri 受控重启可能短暂拉起新进程后旧进程才完全退出，因此 managed client 在启动 unit 前必须以只读锁探测等待旧 `RuntimeLease` 释放，不得用 Desktop 临时取得 lease 再转交。daemon 启动后，Desktop 只有在 capability 确认 daemon runtime host、协议兼容、tracking owner 和 `tracking.ready` 后才能提交 completed；暂时不可达在有界窗口内重试，永久协商错误或超时写入 failed。显式 preview、Dev 和 Local profile 不执行该持久交接。
 
-systemd 接受启动请求不表示 API 凭据已经生成。Desktop 客户端启动协调归 `app/daemon_client/runtime`，异步、有界、可取消地等待读取 daemon 已有凭据；不得自行创建 Token。凭据缺失时也必须启动接管确认任务，确保超时能进入 failed，而不是永久遗留 activating。
+systemd 接受启动请求不表示 API 凭据已经生成。Desktop 客户端启动协调归 `app/daemon_client/runtime`，异步、可取消地等待读取 daemon 已有凭据；缺失或空文件持续重试，不得自行创建 Token。不可恢复的读取错误报告 Stopped，不能报告正在重连后永久退出。接管确认任务独立持有 15 秒期限，确保超时能进入 failed，而不是永久遗留 activating；客户端等待不设更短的终止期限，服务晚到仍能恢复连接，但不擅自清除已经记录的接管失败。
 
 failed 或损坏的交接只能从本机 Tauri 专用入口显式重试，且必须先验证状态，再停止可能残留的 daemon 并等待 lease 释放，最后以新 request ID 重建 reservation 和重启。健康、进行中或未请求的交接不得触发 systemd 变更；HTTP、MCP、browser UI 与普通 app-settings patch 不拥有该恢复动作。
 

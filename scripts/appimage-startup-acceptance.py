@@ -159,6 +159,9 @@ def inner(root, image, case):
                     assert data["daemon_service"]["owned"] and data["daemon_service"]["ready"]
                     return data
                 capabilities()
+                autostart = (root / "config/autostart/Patina.desktop").read_text()
+                expected = "/usr/bin/Patina" if case == "deb-handoff" else str(image)
+                assert f"Exec={expected} --autostart\n" in autostart, autostart
                 os.killpg(child.pid, signal.SIGTERM)
                 # Desktop restart descendants remain in its process group; daemon has its own.
                 for _ in range(20):
@@ -224,6 +227,7 @@ def main():
                 "scope": "Packaged Desktop startup and real process handoff; fixture systemd; no installed systemd or login", "cases": []}
     if installed:
         for source, target in [(installed / "usr/bin/patinad", root / "deb-patinad"),
+                               (installed / "usr/bin/Patina", root / "deb-desktop"),
                                (installed / "usr/lib/systemd/user/patinad.service", root / "deb-unit")]:
             if source.is_symlink() or not source.is_file():
                 raise RuntimeError("Expected a regular private dpkg payload: " + str(source))
@@ -251,6 +255,7 @@ def main():
                 args += ["--ro-bind", str(units), "/lib/systemd/user"]
             if case == "deb-handoff":
                 args += ["--ro-bind", str(root / "deb-patinad"), "/usr/bin/patinad"]
+                args += ["--ro-bind", str(root / "deb-desktop"), "/usr/bin/Patina"]
             args += ["--", "dbus-run-session", "--config-file=" + str(bus_config), "--", "xvfb-run", "-a", "-s", "-screen 0 1280x720x24 -extension GLX", "-e", str(directory / "xvfb.log"), "/usr/bin/python3",
                      str(root / "runner.py"), "--inner", str(directory), str(root / "candidate.AppImage"), case]
             with (directory / "runner.log").open("w") as log:

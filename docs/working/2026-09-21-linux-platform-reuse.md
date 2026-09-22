@@ -313,3 +313,19 @@ power watcher 保持全局睡眠/关机订阅，每秒重新校验当前图形�
 - 临时容器已全部删除，仅保留可复用的本地验收镜像。生产后台仍 PID 1477、NRestarts=0、active；没有安装新候选、修改宿主服务、推送、tag 或发布。本机此前的实装证据继续对应旧包 `1cc4ebbb…55fd5`，不冒充新修复已经实装。
 
 当前批次的代码修复、完整门禁、新候选打包、独立真实 systemd 接管/恢复和共存回归已完成。下一发布动作是按既定策略发布 DEB-only beta.20，必须另获 push/tag/公开发布授权并由 CI 正式签名；不能发布本地未签名候选。AppImage 恢复公开发布前仍需独立 GNOME 安装环境的图形登录与正式签名渠道升级验收，当前不解除门槛；ESM/更多 Shell 版本仍属于后续兼容阶段。
+
+
+### 审核后修复：凭据恢复与桌面自启动（2026-09-23）
+
+本轮在 `main` 工作区修复审核确认的两项问题，发布说明记入 Unreleased，不修改已发布版本的条目。owner 保持不变：凭据等待归 `app/daemon_client/runtime`，桌面登录入口归既有 `app/autostart`。
+
+- 移除客户端独立的 10 秒终止期限。缺失或空凭据持续等待、支持取消，15 秒接管确认仍独立记录成功或失败；服务晚到可恢复客户端连接，但不会擅自清除已记录的接管失败。不可恢复的读取错误报告 Stopped，不再留下没有任务工作的 Reconnecting。
+- AppImage 登录入口使用原始包路径，DEB 共存优先使用已安装 Desktop；缺少有效包路径时拒绝写入临时二进制路径。原始包移动或删除后需要重新设置自启动。带空格、百分号的包名经过实际 GIO Desktop Entry 解析验证。
+- `npm run check:full` 通过：56 个 TypeScript 测试文件、38 项浏览器 smoke、715 Rust passed / 18 ignored、Clippy 与前端构建。另显式运行 7 项 autostart 测试（包含默认忽略的真实 GIO 启动），全部通过。凭据回归实际等待 11 秒后生成 Token，并覆盖取消、持续缺失不创建 Token、无效字节不重写。文档契约、changelog、Python 语法、定向 rustfmt 与 diff 检查通过。
+- 本地未签名 AppImage 候选：`/tmp/patina-review-fixes-candidate-mxmefj0v/Patina_1.9.0-beta.20_amd64.AppImage`，SHA256 `833d273a230a20a37a744eda941f7ba287a240d32282064c27c57ab9b86a8353`。仅用于全新隔离配置，不是公开 beta.20 原包，不安装或覆盖本机运行时。该目录保存源码哈希、构建/检查日志与结果摘要。
+- 六条私有启动路径通过，证据 `/tmp/patina-appimage-startup-fczpmk2z/result.json`。独立部署和真实 DEB payload 共存分别断言原始 AppImage 与 `/usr/bin/Patina` 自启动入口；服务管理仍为夹具，不冒充真实 systemd。
+- 真实 Docker user systemd 验收使用 11 秒 daemon 启动延迟；先删除旧临时解包目录，再执行生成的自启动命令。验证接管 completed、桌面重开不替换 daemon、SIGKILL 恢复、数据库完整性和容器冷启动。固定显示配置下连续两个全新容器通过，证据为 `/tmp/patina-appimage-systemd-tehp9l4l/result.json` 和 `/tmp/patina-appimage-systemd-u3945lyi/result.json`。
+- 失败证据保留：首次 `/tmp/patina-appimage-systemd-qe79jkad/` 在自启动重开后退出，原样复跑 `/tmp/patina-appimage-systemd-0badbe39/` 全流程通过；软件渲染下 `/tmp/patina-appimage-systemd-v5lu13nh/` 捕获退出码 127 和 `XI_BadDevice`。最终 headless 夹具显式使用软件渲染与 Xvfb `-noreset`，模拟持续存在的显示服务器；不把早期失败记成成功，也不据此宣称 GNOME 渲染或 FUSE 已验收。
+- 沙箱中的 Node 子进程 EPERM 后在宿主完成全量检查；首轮打包等待期间终止了本轮打包任务，随后复用已编译产物完成正常 Tauri bundle。重复打包提示二进制已无法再次写入 bundle 标记，核对已有且唯一的 AppImage 标记，并通过实际包启动路由验证。
+
+本轮没有安装、推送、打 tag 或公开发布，也没有更改本机桌面开机自启动设置。AppImage 的真实 GNOME 图形登录、FUSE 和正式签名升级门槛继续保留。
