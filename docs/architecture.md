@@ -225,6 +225,8 @@ owner 交接 reservation 位于 profile 的稳定 control root，不跟随可迁
 
 Tauri 受控重启可能短暂拉起新进程后旧进程才完全退出，因此 managed client 在启动 unit 前必须以只读锁探测等待旧 `RuntimeLease` 释放，不得用 Desktop 临时取得 lease 再转交。daemon 启动后，Desktop 只有在 capability 确认 daemon runtime host、协议兼容、tracking owner 和 `tracking.ready` 后才能提交 completed；暂时不可达在有界窗口内重试，永久协商错误或超时写入 failed。显式 preview、Dev 和 Local profile 不执行该持久交接。
 
+systemd 接受启动请求不表示 API 凭据已经生成。Desktop 客户端启动协调归 `app/daemon_client/runtime`，异步、有界、可取消地等待读取 daemon 已有凭据；不得自行创建 Token。凭据缺失时也必须启动接管确认任务，确保超时能进入 failed，而不是永久遗留 activating。
+
 failed 或损坏的交接只能从本机 Tauri 专用入口显式重试，且必须先验证状态，再停止可能残留的 daemon 并等待 lease 释放，最后以新 request ID 重建 reservation 和重启。健康、进行中或未请求的交接不得触发 systemd 变更；HTTP、MCP、browser UI 与普通 app-settings patch 不拥有该恢复动作。
 
 交接完成后，`background_tracking_at_login` 属于主机集成意图而不是普通业务设置。completed reservation 先原子记录新意图，Tauri 专用命令再串行应用固定 unit 的 enable/disable 和 SQLite 镜像；managed Desktop 每次启动按 reservation 重新对账外部状态与 host-owned 数据。这样中断可恢复，同时不让 daemon 当前运行状态与“下次登录启动”混为一个开关。

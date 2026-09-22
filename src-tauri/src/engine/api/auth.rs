@@ -54,18 +54,24 @@ impl ApiCredentialStore {
     }
 
     pub fn load_existing_at(&self, path: &Path) -> Result<String, String> {
+        self.load_existing_if_present_at(path)?
+            .ok_or_else(|| format!("patinad API credential is missing at `{}`", path.display()))
+    }
+
+    pub fn load_existing_if_present_at(&self, path: &Path) -> Result<Option<String>, String> {
         let _mutation = match self.mutation.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         };
-        let token = load_token_file(path)?
-            .ok_or_else(|| format!("patinad API credential is missing at `{}`", path.display()))?;
+        let Some(token) = load_token_file(path)? else {
+            return Ok(None);
+        };
         self.replace_state(ApiCredentialState {
             token: token.clone(),
             path: path.to_path_buf(),
             revision: self.next_revision(),
         });
-        Ok(token)
+        Ok(Some(token))
     }
 
     pub fn token(&self) -> Result<String, String> {

@@ -34,6 +34,7 @@ App note en: Restore background storage maintenance, avoid counting sampling gap
 - 修复前台窗口采样或空闲查询失败后仍将未知间隙计入会话的问题；Wayland 不再用 X11 查询掩盖未知空闲，结算失败时先完成重试再恢复记录。
 - GNOME 扩展不再把窗口标题和应用标识写入 Shell 日志。
 - 修复后台早于桌面启动或跨越注销/重新登录时，沿用缺失会话环境和旧锁屏订阅的问题；当前图形会话不可用时停止可信采样，重新登录后重新绑定。
+- 修复首次启动时后台尚未生成连接凭据，导致桌面客户端无法连接、后台接管一直未完成的问题。
 
 ### Internal
 

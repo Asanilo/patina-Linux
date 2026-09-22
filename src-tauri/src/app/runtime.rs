@@ -204,50 +204,19 @@ fn setup_daemon_client_runtime(
         .map_err(std::io::Error::other)?
         .api_token_path;
     let local_api_settings = load_local_api_settings(app.handle().clone());
-    let api_credentials = app.state::<crate::engine::api::auth::ApiCredentialStore>();
-    let token = match api_credentials.load_existing_at(&api_token_path) {
-        Ok(token) => token,
-        Err(error) => {
-            report_daemon_client_configuration_error(app, error);
-            return Ok(());
-        }
-    };
-    let client =
-        match crate::platform::daemon_client::PatinadClient::new(local_api_settings.port, token) {
-            Ok(client) => client,
-            Err(error) => {
-                report_daemon_client_error(app, error);
-                return Ok(());
-            }
-        };
     let client_state = app
         .state::<crate::app::daemon_client::PatinadClientState>()
         .inner()
         .clone();
-    client_state.install(client);
     let handle = crate::app::daemon_client::runtime::PatinadDesktopRuntimeHandle::start(
         app.handle().clone(),
         client_state,
         runtime_health,
+        local_api_settings.port,
+        api_token_path,
     );
     app.manage(handle);
     Ok(())
-}
-
-fn report_daemon_client_configuration_error(app: &tauri::App, message: String) {
-    report_daemon_client_error(
-        app,
-        crate::platform::daemon_client::PatinadClientError::InvalidConfiguration(message),
-    );
-}
-
-fn report_daemon_client_error(
-    app: &tauri::App,
-    error: crate::platform::daemon_client::PatinadClientError,
-) {
-    eprintln!("[patinad-client] preview unavailable: {error}");
-    app.state::<crate::app::daemon_client::runtime::PatinadRuntimeState>()
-        .report_connection_error(&error);
 }
 
 fn load_local_api_settings(app: tauri::AppHandle) -> crate::domain::settings::LocalApiSettings {

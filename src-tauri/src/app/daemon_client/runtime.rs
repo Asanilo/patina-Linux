@@ -135,6 +135,8 @@ impl PatinadDesktopRuntimeHandle {
         app: AppHandle<R>,
         client_state: crate::app::daemon_client::PatinadClientState,
         runtime_health: Arc<RuntimeHealthState>,
+        port: u16,
+        credential_path: std::path::PathBuf,
     ) -> Self {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let output = Arc::new(TauriPatinadRuntimeOutput {
@@ -144,8 +146,45 @@ impl PatinadDesktopRuntimeHandle {
             tools_refresh: Arc::new(ToolsSnapshotRefresh::default()),
             shutdown: shutdown_rx.clone(),
         });
-        let adapter = PatinadRuntimeAdapter::new_with_client_state(client_state.clone(), output);
+        let adapter =
+            PatinadRuntimeAdapter::new_with_client_state(client_state.clone(), output.clone());
+        let credentials = app
+            .state::<crate::engine::api::auth::ApiCredentialStore>()
+            .inner()
+            .clone();
+        let initial_client_state = client_state.clone();
         let task = tauri::async_runtime::spawn(async move {
+            output.connection_changed(PatinadRuntimeConnectionStatus::Connecting, None);
+            let configured = async {
+                let Some(token) = wait_for_client_credential(
+                    &credentials,
+                    &credential_path,
+                    shutdown_rx.clone(),
+                    Duration::from_secs(10),
+                )
+                .await
+                .map_err(PatinadClientError::InvalidConfiguration)?
+                else {
+                    return Ok(false);
+                };
+                initial_client_state.install(PatinadClient::new(port, token)?);
+                Ok::<_, PatinadClientError>(true)
+            }
+            .await;
+            match configured {
+                Ok(true) => {}
+                Ok(false) => {
+                    output.connection_changed(PatinadRuntimeConnectionStatus::Stopped, None);
+                    return;
+                }
+                Err(error) => {
+                    output.connection_changed(
+                        PatinadRuntimeConnectionStatus::Reconnecting,
+                        Some(&error),
+                    );
+                    return;
+                }
+            }
             adapter.run(shutdown_rx).await;
         });
         let mut tasks = vec![task];
@@ -193,6 +232,36 @@ impl PatinadDesktopRuntimeHandle {
             }
         }
     }
+}
+
+// StartUnit queues startup; it does not guarantee the daemon has written its
+// credential yet. Only a missing/empty credential is retryable; Desktop never creates one.
+async fn wait_for_client_credential(
+    credentials: &crate::engine::api::auth::ApiCredentialStore,
+    path: &std::path::Path,
+    mut shutdown: watch::Receiver<bool>,
+    timeout: Duration,
+) -> Result<Option<String>, String> {
+    tokio::time::timeout(timeout, async {
+        loop {
+            if *shutdown.borrow() {
+                return Ok(None);
+            }
+            if let Some(token) = credentials.load_existing_if_present_at(path)? {
+                return Ok(Some(token));
+            }
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_millis(50)) => {}
+                changed = shutdown.changed() => {
+                    if changed.is_err() || *shutdown.borrow() {
+                        return Ok(None);
+                    }
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|_| "timed out waiting for the daemon API credential".to_string())?
 }
 
 struct TauriPatinadRuntimeOutput<R: Runtime> {
@@ -597,6 +666,91 @@ mod tests {
     use super::*;
     use crate::app::daemon_client::PatinadClientState;
     use crate::domain::tools::ToolsRuntimeSnapshot;
+
+    fn credential_test_path(label: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "patina-client-credential-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    #[tokio::test]
+    async fn credential_startup_waits_for_daemon_without_creating_a_token() {
+        let path = credential_test_path("delayed");
+        let credentials = crate::engine::api::auth::ApiCredentialStore::new();
+        let (_shutdown, receiver) = watch::channel(false);
+        let delayed_write = async {
+            tokio::time::sleep(Duration::from_millis(75)).await;
+            assert!(
+                !path.exists(),
+                "Desktop must not create the daemon credential"
+            );
+            crate::engine::api::auth::ApiCredentialStore::new()
+                .initialize_at(&path, Some("daemon-owned-test-token"))
+                .unwrap();
+        };
+        let (result, ()) = tokio::join!(
+            wait_for_client_credential(&credentials, &path, receiver, Duration::from_secs(2)),
+            delayed_write
+        );
+        assert_eq!(result.unwrap().as_deref(), Some("daemon-owned-test-token"));
+        assert_eq!(credentials.token().unwrap(), "daemon-owned-test-token");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn credential_startup_timeout_never_creates_a_token() {
+        let path = credential_test_path("timeout");
+        let credentials = crate::engine::api::auth::ApiCredentialStore::new();
+        let (_shutdown, receiver) = watch::channel(false);
+        let result =
+            wait_for_client_credential(&credentials, &path, receiver, Duration::from_millis(30))
+                .await;
+        assert!(result.unwrap_err().contains("timed out"));
+        assert!(!path.exists());
+        assert!(credentials.token().is_err());
+    }
+
+    #[tokio::test]
+    async fn credential_startup_cancels_without_waiting_for_deadline() {
+        let path = credential_test_path("cancel");
+        let credentials = crate::engine::api::auth::ApiCredentialStore::new();
+        let (shutdown, receiver) = watch::channel(false);
+        let cancel = async {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            shutdown.send(true).unwrap();
+        };
+        let wait = tokio::time::timeout(
+            Duration::from_secs(1),
+            wait_for_client_credential(&credentials, &path, receiver, Duration::from_secs(10)),
+        );
+        let (result, ()) = tokio::join!(wait, cancel);
+        assert!(result.unwrap().unwrap().is_none());
+        assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn credential_startup_does_not_retry_or_replace_invalid_bytes() {
+        let path = credential_test_path("invalid");
+        std::fs::write(&path, [0xff]).unwrap();
+        let credentials = crate::engine::api::auth::ApiCredentialStore::new();
+        let (_shutdown, receiver) = watch::channel(false);
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            wait_for_client_credential(&credentials, &path, receiver, Duration::from_secs(10)),
+        )
+        .await;
+        assert!(result
+            .unwrap()
+            .unwrap_err()
+            .contains("failed to read API token file"));
+        assert_eq!(std::fs::read(&path).unwrap(), [0xff]);
+        std::fs::remove_file(path).unwrap();
+    }
 
     #[tokio::test]
     async fn tools_refresh_serializes_delayed_responses_through_publication() {

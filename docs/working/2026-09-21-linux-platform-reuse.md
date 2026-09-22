@@ -289,3 +289,27 @@ power watcher 保持全局睡眠/关机订阅，每秒重新校验当前图形�
 - 持久证据目录 `20260922-beta20-6ytczb9e/` 中保存 `cold-boot-managed-1790086803.json`、`ui-cold-boot-1790086803.json`、`cold-boot-comparison-1790086803.json`、`cold-boot-result-1790086803.json` 与 `cold-boot-platform.json`；汇总已将冷启动标记为通过。
 
 本机 DEB beta.20 的实装、实际 AppImage 共存、注销/登录恢复和冷启动验收现已收口。剩余正式签名/发布与纯 AppImage 独立安装环境门槛不变；本轮只有只读验收及文档更新，没有修改产品代码或重新打包。
+
+### 独立 systemd 首次接管发现与修复（2026-09-22）
+
+用户要求完成剩余工作后，使用 Docker 创建无 Patina DEB 的 Ubuntu 22.04 独立用户环境，运行真实 PID 1、user manager 与实际 AppImage。容器使用私有 cgroup、无网络及无宿主挂载，不卸载或改变生产 DEB。新增可复跑脚本 `scripts/appimage-systemd-acceptance.py`，范围见开发文档。
+
+- 首次夹具试跑的 `/tmp` 默认 noexec 阻止 AppImage 解包执行，已显式设置临时目录 exec；该次没有进入应用逻辑，不记为产品失败。证据 `/tmp/patina-appimage-systemd-jj1i7h6b/`。
+- 真实 manager 下，旧候选 SHA `eea0e8a0…122b2` 暴露凭据生成竞态：Desktop 在 daemon 生成 `api_token` 前读取失败，提前返回导致客户端适配器与接管确认任务均未启动；daemon 已 active，但预约永久停留 activating。证据 `/tmp/patina-appimage-systemd-njlsjpl4/desktop.log` 与 `driver.log`。旧候选的共存/冷启动结论保持原范围，不能据此宣称纯 AppImage 首次接管通过。
+- 边界判断：凭据读取仍归 `engine/api/auth`；等待和客户端初始化归 `app/daemon_client/runtime`，`app/runtime` 只装配参数。客户端异步等待读取现有凭据，10 秒上限、可取消；读取错误不重写文件。接管确认任务始终启动，沿用 15 秒确认/失败窗口，避免缺失凭据时无限 activating。没有新增 runtime owner 或 embedded 回退。
+- 4 项专项覆盖延迟生成、超时不创建凭据、取消及无效字节保留。完整 `release:check` 通过：56 个 TypeScript 文件、38 项浏览器回归、714 Rust passed / 17 ignored，以及 Clippy、扩展与版本/changelog 检查。沙箱内子进程 EPERM 后在宿主重跑通过，两次日志分别为 `/tmp/patina-credential-release-check.log` 与 `/tmp/patina-credential-release-check-host.log`。
+- 独立验收给容器用户 unit 加入仅用于测试的两秒 `ExecStartPre` 延迟，以确定性复现首次凭据晚到。新候选打包与回归结果续记于下方；本机仍运行先前实装的 beta.20，不能把新候选称为已经安装。
+
+只读发布准备确认 GitHub 登录有效、两个 Tauri 签名 Secret 名称均存在，远端 main 为 `4f6124ab`，最新预发布 beta.19，beta.20 无远端 tag。Secret 存在不证明本次候选已经正式签名；现有 workflow 会公开发布，尚未调用。
+
+本次修复的新候选与收口结果：
+
+- 持久目录 `/home/arinp22/.local/state/patina/acceptance/20260922-credential-startup-dyrh0uxe/`（0700）保存实际包、`source-manifest.json`、`artifacts.json`、完整门禁、两次失败证据及成功报告；不依赖重启后可能消失的 `/tmp`。产品源码在构建前后逐文件 SHA 校验一致。
+- AppImage SHA256 `84da760d5ded1833a951b16424b5c2cd5e81e53cf78693a1c1c6a521c438de75`，DEB SHA256 `134bab945bd04f99dd8d70d9507de8293e72021005a9ddf1d1b00fd6fd16d838`；均为本地未签名 beta.20，不与旧同版本持久运行时互相覆盖升级。
+- 无 DEB 的独立容器用户由 Desktop 自行生成持久运行时、user unit 并完成接管；两秒 daemon 启动延迟下也自动连上。真实 systemd 初始 PID 271，界面退出/重开保持同一 InvocationID；SIGKILL 后自动恢复至 PID 459、NRestarts=1。正常 stop 后退出状态 0、SQLite quick_check 与外键检查通过。
+- 重启容器 PID 1 与 lingering user manager 后，enabled daemon 自行启动为 PID 64、新 InvocationID、NRestarts=0；没有手动 start 服务或打开 Desktop。证据 `systemd/result.json`。这是独立真实 user manager 的安装接管与容器重启证明，不是 GNOME 图形登录、宿主冷启动、真实窗口采样或 FUSE 挂载证明。
+- 新 DEB 发布契约通过；私有 dpkg root 完成 beta.19 安装、beta.20 升级、卸载与重装，保留合成数据。使用宿主依赖元数据副本，仍不宣称验证干净发行版的依赖 payload 安装。证据 `deb/evidence.json`。
+- 新 AppImage 六条隔离启动路径全部通过：standalone、DEB presence、custom unit、profile mismatch、完整 handoff，以及复用上述实际私有 dpkg daemon/unit 的 deb-handoff。此组服务管理是夹具，与独立真实 systemd 证据分开保存于 `startup/`。
+- 临时容器已全部删除，仅保留可复用的本地验收镜像。生产后台仍 PID 1477、NRestarts=0、active；没有安装新候选、修改宿主服务、推送、tag 或发布。本机此前的实装证据继续对应旧包 `1cc4ebbb…55fd5`，不冒充新修复已经实装。
+
+当前批次的代码修复、完整门禁、新候选打包、独立真实 systemd 接管/恢复和共存回归已完成。下一发布动作是按既定策略发布 DEB-only beta.20，必须另获 push/tag/公开发布授权并由 CI 正式签名；不能发布本地未签名候选。AppImage 恢复公开发布前仍需独立 GNOME 安装环境的图形登录与正式签名渠道升级验收，当前不解除门槛；ESM/更多 Shell 版本仍属于后续兼容阶段。

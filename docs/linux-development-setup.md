@@ -305,6 +305,33 @@ INVOCATION_ID; these cases do not prove installed systemd takeover, UI behavior,
 login or formal signed upgrades. Evidence and failures are
 retained under the printed `/tmp/patina-appimage-startup-*` directory.
 
+### AppImage With A Real Isolated User Manager
+
+To check the standalone path without uninstalling a working host DEB:
+
+```bash
+python3 scripts/appimage-systemd-acceptance.py /absolute/Patina.AppImage
+```
+
+This opt-in runner requires an amd64 Linux Docker host with cgroup v2 and builds
+an Ubuntu 22.04 test image. It creates a disposable user with a real systemd user
+manager and no Patina DEB. The actual Desktop stages its runtime and unit and
+performs owner cutover. The runner checks managed API readiness, Desktop
+exit/reopen without daemon replacement, SIGKILL recovery, clean stop and database
+integrity. It then restarts the container and verifies the enabled daemon starts
+without opening Desktop or manually starting the service.
+An isolated test-only unit drop-in delays daemon startup by two seconds to
+reproduce first-launch credential availability races deterministically.
+
+Nested systemd requires SYS_ADMIN and relaxed container seccomp/AppArmor; the
+container has a private cgroup namespace, no network, no host mounts, no extra
+devices and no Docker socket. Only the candidate and test script are copied in.
+The container is removed in cleanup; its local build image and private evidence
+under the printed `/tmp/patina-appimage-systemd-*` directory are retained.
+This checks real service ownership and container/user-manager restart, not GNOME
+login, real window sampling, FUSE mounting or formal signed updater delivery.
+These remaining release gates must retain their own evidence.
+
 ### Published Bundles
 
 Stable tagged releases build on Ubuntu 22.04 and publish:
