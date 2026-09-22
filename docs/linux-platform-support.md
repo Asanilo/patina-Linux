@@ -48,7 +48,7 @@ main 的消费端另可识别版本 1 的 `org.patina.WindowTracker1.GetSnapshot
 
 main 的 version 4 扩展同时提供旧五元组/信号和新快照；旧客户端继续可用。锁屏、屏幕遮蔽和 overview 在读取焦点前屏蔽窗口事实；读取异常在新协议中报告 unavailable。扩展保留于 user/unlock-dialog session mode，禁用时释放名称、对象、信号和定时器，迟到回调不恢复已禁用实例。
 
-GNOME Shell 42 是当前声明范围。打包候选已在本机独立 GNOME Shell 42.9 Wayland 会话中验证双协议、overview/锁屏恢复和三轮禁用/启用；测试使用私有总线与 GDM 能力夹具，不代表生产密码认证、登录或睡眠验收。version 4 尚未公开发布。本机用户目录已按授权备份并安装候选，重新登录后已确认生产激活；daemon 会话环境诊断已在本地 beta.20 实装后恢复，用户已报告完成锁屏/挂起；新版实际注销/登录后的后台延续与会话恢复已验证，冷启动自动拉起尚未验证；ESM 入口和更多 Shell 版本仍待独立实施验证。
+GNOME Shell 42 是当前声明范围。打包候选已在本机独立 GNOME Shell 42.9 Wayland 会话中验证双协议、overview/锁屏恢复和三轮禁用/启用；测试使用私有总线与 GDM 能力夹具，不代表生产密码认证、登录或睡眠验收。version 4 尚未公开发布。本机用户目录已按授权备份并安装候选，重新登录后已确认生产激活；daemon 会话环境诊断已在本地 beta.20 实装后恢复，用户已报告完成锁屏/挂起；新版实际注销/登录后的后台延续与会话恢复已验证，真实系统重启后的后台自动启动也已验证；ESM 入口和更多 Shell 版本仍待独立实施验证。
 
 当前扩展不提供悬浮窗移动、置顶或全局指针状态接口。Wayland 原生窗口的边缘吸附尚未实现，不能用 GTK 返回的 `(0, 0)` 推断左侧位置；详见 [GTK 窗口位置限制](https://docs.gtk.org/gtk3/method.Window.get_position.html)。能力判断应使用实际显示后端，而非仅使用 `XDG_SESSION_TYPE`，以兼容 Wayland 会话内的 X11 客户端。
 

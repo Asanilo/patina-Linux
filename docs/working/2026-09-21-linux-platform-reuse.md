@@ -1,6 +1,6 @@
 # Linux 平台草稿评估与回流
 
-状态：T6 首片/第二片、扩展生产端第三片及 daemon 会话识别第四片已实现并通过源码验证；第四片及 AppImage 首次启动修复已通过隔离验收；2026-09-22 本机已安装 beta.20 DEB，并完成真实 AppImage/DEB 共存与后台持续记录检查，新版本实际注销/登录后的会话识别和无界面采样已通过；冷启动自动拉起另行验证。version 4 双协议、锁屏/overview 与生命周期已通过本机独立 GNOME 42.9 会话验收；AppImage 本地候选与隔离验收通过，完整实装矩阵仍待补齐。生产会话切换、ESM/更多 Shell 和正式 AppImage 发布门槛仍分开管理。首片 beta.20 准备提交 `e42ba3c9` 的远端 Verify 已通过；beta.20 继续保持未发布，不打 tag 或公开资产。产品主线为 `main`，评估基准为 `5eefcf4e`；贡献草稿位于 `feat/linux-desktop`，基于上游 `80204c73`，另含未提交改动。草稿没有完成整体 Rust 集成或实机验收，不视为可直接合入的实现。
+状态：T6 首片/第二片、扩展生产端第三片及 daemon 会话识别第四片已实现并通过源码验证；第四片及 AppImage 首次启动修复已通过隔离验收；2026-09-22 本机已安装 beta.20 DEB，并完成真实 AppImage/DEB 共存与后台持续记录检查，新版本实际注销/登录后的会话识别和无界面采样已通过；真实系统重启后的后台自动启动也已验证。version 4 双协议、锁屏/overview 与生命周期已通过本机独立 GNOME 42.9 会话验收；AppImage 本地候选与隔离验收通过，完整实装矩阵仍待补齐。生产会话切换、ESM/更多 Shell 和正式 AppImage 发布门槛仍分开管理。首片 beta.20 准备提交 `e42ba3c9` 的远端 Verify 已通过；beta.20 继续保持未发布，不打 tag 或公开资产。产品主线为 `main`，评估基准为 `5eefcf4e`；贡献草稿位于 `feat/linux-desktop`，基于上游 `80204c73`，另含未提交改动。草稿没有完成整体 Rust 集成或实机验收，不视为可直接合入的实现。
 
 本轮按用户确认的顺序推进主线远端同步、平台模块评估和下一版 beta 准备。分支与产品范围遵循 [路线](../roadmap-and-prioritization.md#linux-main-and-daemon-experiment)，主 Todo 与发布证据由 [当前清单](2026-07-10-patinad-runtime-design.md) 管理。保持贡献 worktree 原状，不整支合并。2026-09-22 用户授权继续扩展生产端及实机/AppImage 验收；本轮先在私有 HOME、D-Bus 和独立 Wayland Shell 中验证候选；随后用户单独授权备份安装扩展，记录见第三片。该阶段未变更生产服务与数据库；后续用户要求继续完成实装，安装及备份记录见本文末尾。
 
@@ -273,8 +273,19 @@ power watcher 保持全局睡眠/关机订阅，每秒重新校验当前图形�
 
 剩余门槛按顺序管理：
 
-1. 真实重启后的 DEB daemon 冷启动检查（需用户重启一次）。
+1. 真实重启后的 DEB daemon 冷启动检查已通过，见下方记录。
 2. beta.20 正式签名及发布：核对最终提交/tag 与 DEB-only 资产、正式签名，公开发布需单独授权；正式升级不使用同版本本地候选互相覆盖。
 3. 恢复 AppImage 发布前：在无 DEB 的独立安装用户环境完成首次 systemd 接管、登录启动和正式签名升级。当前宿主已有 DEB，只验证了真实共存；不为凑齐证据卸载用户当前可用后台或伪造正式密钥。
 
 本批代码、验收脚本及文档固定为本地提交；不改上游贡献草稿、不推送或发布。
+
+### 真实系统重启后的冷启动验收（2026-09-22）
+
+用户确认重启后运行预先准备的只读脚本，当前 boot ID 与 `cold-boot-baseline.json` 不同。未启动 Desktop 或控制服务；`patinad.service` 已自动进入 enabled/active，PID 1477、NRestarts 0，启动时刻为 22:17:42 +08。
+
+- `launch_at_login=0`、`background_tracking_at_login=1` 保持不变；无 Desktop 的观测窗口中成功采样时间推进 18,733 ms，心跳也推进。
+- 新 Wayland 会话 3 为本地 active；GNOME 新旧协议属于同一 owner，采样诊断 available / gnome-shell-extension / wayland。
+- beta.20 managed 检查、数据库完整性/外键/schema 和固定历史数据摘要全部通过。
+- 持久证据目录 `20260922-beta20-6ytczb9e/` 中保存 `cold-boot-managed-1790086803.json`、`ui-cold-boot-1790086803.json`、`cold-boot-comparison-1790086803.json`、`cold-boot-result-1790086803.json` 与 `cold-boot-platform.json`；汇总已将冷启动标记为通过。
+
+本机 DEB beta.20 的实装、实际 AppImage 共存、注销/登录恢复和冷启动验收现已收口。剩余正式签名/发布与纯 AppImage 独立安装环境门槛不变；本轮只有只读验收及文档更新，没有修改产品代码或重新打包。
