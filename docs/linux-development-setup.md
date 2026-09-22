@@ -322,7 +322,7 @@ integrity. It then restarts the container and verifies the enabled daemon starts
 without opening Desktop or manually starting the service.
 An isolated test-only unit drop-in delays daemon startup by eleven seconds to
 cover recovery beyond the former ten-second credential deadline. The runner also
-reopens Desktop using the generated autostart command after closing its original
+reopens Desktop five times using the generated autostart command after closing its original
 process, rejecting commands that point into temporary extraction directories.
 Standalone autostart uses the original AppImage package; moving or deleting that
 package requires setting up autostart again. DEB coexistence uses the installed
@@ -470,6 +470,18 @@ it is no longer derived from `VmData`. Unavailable fields remain null.
 Capture comparable foreground, tray-hidden, low-resource-background after its delay, and reopened states with different output filenames. The current low-resource setting defaults off; when enabled, main-window close schedules destruction after five minutes and rechecks visibility/generation. Hiding is not immediate destruction. Do not change the setting or close the user's window automatically for a measurement. Keep tracking enabled and verify it continues across UI reclamation.
 
 ## Native Window Lifecycle Regression
+
+For the shorter widget startup regression (20 creations without a Main window):
+
+```bash
+node scripts/native-window-lifecycle.mjs --autostart-only
+node scripts/native-window-lifecycle.mjs --autostart-only --x11
+```
+
+The first uses the current Wayland display with private application roots; the
+second creates its own Xvfb and enables synchronous GDK errors. Both start the
+widget from an async worker and exercise monitor discovery on the UI thread.
+They do not replace packaged AppImage or graphical login acceptance.
 
 From a GNOME Wayland session, explicitly run:
 

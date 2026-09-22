@@ -65,13 +65,19 @@ fn make_main(app: &tauri::AppHandle) {
 #[test]
 #[ignore = "real Wayland windows and two five-minute waits; use scripts/native-window-lifecycle.mjs"]
 fn native_window_lifecycle() {
-    run_native_window_test(false);
+    run_native_window_test(false, false);
 }
 
 #[test]
 #[ignore = "real Wayland timers; use scripts/native-window-lifecycle.mjs --background-delay"]
 fn native_background_delay() {
-    run_native_window_test(true);
+    run_native_window_test(true, false);
+}
+
+#[test]
+#[ignore = "requires the isolated native window runner and a real display"]
+fn native_widget_autostart() {
+    run_native_window_test(false, true);
 }
 
 async fn apply_background_policy(app: &tauri::AppHandle, enabled: bool, minutes: u32) {
@@ -155,9 +161,10 @@ async fn verify_background_delay(app: &tauri::AppHandle) {
     wait_window(app, "main", false).await;
 }
 
-fn run_native_window_test(delay_test: bool) {
+fn run_native_window_test(delay_test: bool, autostart_only: bool) {
     let root = isolated_root();
-    assert_eq!(std::env::var("GDK_BACKEND").unwrap(), "wayland");
+    let backend = std::env::var("GDK_BACKEND").unwrap();
+    assert!(backend == "wayland" || (autostart_only && backend == "x11"));
     let pool = tauri::async_runtime::block_on(open_prepared_sqlite_pool_at_path(
         &root.join("fixture.db"),
         true,
@@ -197,6 +204,23 @@ fn run_native_window_test(delay_test: bool) {
             tauri::async_runtime::spawn(async move {
                 let worker_app = handle.clone();
                 let worker = tauri::async_runtime::spawn(async move {
+                    if autostart_only {
+                        // No main window exists: every creation takes the
+                        // app-level monitor fallback from an async worker.
+                        for _ in 0..20 {
+                            widget::show_widget_window(&worker_app, None).await.unwrap();
+                            let window = worker_app.get_webview_window("widget").unwrap();
+                            assert!(window.is_visible().unwrap());
+                            assert!(worker_app.get_webview_window("main").is_none());
+                            widget::close_widget_window(&worker_app);
+                            window.destroy().unwrap();
+                            wait_window(&worker_app, "widget", false).await;
+                        }
+                        crate::data::repositories::backup_restore::test_support::assert_integrity(&pool).await;
+                        pool.close().await;
+                        eprintln!("NATIVE widget-autostart-without-main-20-cycles");
+                        return;
+                    }
                     if delay_test {
                         verify_background_delay(&worker_app).await;
                         crate::data::repositories::backup_restore::test_support::assert_integrity(&pool).await;

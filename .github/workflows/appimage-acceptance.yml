@@ -1,0 +1,65 @@
+name: Build signed AppImage acceptance candidate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    if: github.repository == 'Asanilo/patina-Linux' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install build and verification dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl file libayatana-appindicator3-dev \
+            libpulse-dev librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev libx11-xcb-dev \
+            libxcb-randr0-dev libxcb-screensaver0-dev patchelf wget zip cmake libsodium-dev
+      - name: Build the pinned signature verifier
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fL --retry 3 -o minisign.tar.gz https://github.com/jedisct1/minisign/archive/refs/tags/0.11.tar.gz
+          echo '74c2c78a1cd51a43a6c98f46a4eabefbc8668074ca9aa14115544276b663fc55  minisign.tar.gz' | sha256sum --check
+          tar -xzf minisign.tar.gz
+          cmake -S minisign-0.11 -B minisign-build -DCMAKE_BUILD_TYPE=Release
+          cmake --build minisign-build --parallel 2
+          echo "$RUNNER_TEMP/minisign-build" >> "$GITHUB_PATH"
+      - run: npm ci
+      - run: npm run release:check
+      - run: python3 scripts/acceptance/test_signed_appimage.py
+      - name: Build with the existing production signing key
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$TAURI_SIGNING_PRIVATE_KEY"
+          npm run tauri -- build --bundles appimage
+      - name: Verify signature and record candidate identity
+        env:
+          CANDIDATE_SHA: ${{ github.sha }}
+          CANDIDATE_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 scripts/acceptance/signed-appimage.py \
+            src-tauri/target/release/bundle/appimage \
+            src-tauri/tauri.conf.json dist-appimage-acceptance
+      - name: Store acceptance artifacts only
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-appimage-${{ github.sha }}
+          path: dist-appimage-acceptance/
+          if-no-files-found: error
+          retention-days: 3

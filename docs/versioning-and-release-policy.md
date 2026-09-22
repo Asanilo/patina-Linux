@@ -367,6 +367,8 @@ GitHub Release 继续作为正式发布源、主下载入口和主更新清单�
 
 main 已合入 daemon 架构，现有 AppImage 实现仍不自动解除 DEB-only beta 限制：持久 AppDir、固定 user unit、验签后原子文件替换已有源码及隔离验证；实际首次启动/接管、DEB 共存、登录启动和正式签名升级仍需候选验收。保留旧运行时/包不等于允许自动降级数据库。后续恢复 AppImage 发布时，应同时复核 release workflow、双包 manifest 与旧客户端 fallback，不能仅修改 bundles 列表。开发时通过 `createUpdaterArtifacts=false` 构建的本地未签名包不得作为公开更新资产使用。
 
+正式签名候选可通过手动的 [`appimage-acceptance.yml`](../.github/workflows/appimage-acceptance.yml) 独立验收：仅允许本仓库 `main` 的确定提交，使用既有 Actions 签名 Secret，先运行完整门禁，再构建并用应用配置中的公钥验证 AppImage。候选与源码 SHA/摘要只保存为短期 Actions artifact；该流程没有 tag、Release 或 updater manifest 发布步骤，token 只读。推送及运行远端流程仍需用户授权。正式私钥不导出到本机，也不用临时测试密钥冒充正式签名。以本地 HTTP fixture 验证生产公钥、Tauri 下载和原子替换时，必须明确它不覆盖公开更新源分发；真实运行时升级另需隔离安装用户的生命周期、服务版本和数据验收。
+
 发布前至少应完成以下验证：
 
 - `npm run release:validate-version-files -- <version>` 或工作流中的等价校验

@@ -9,16 +9,21 @@ import { fileURLToPath } from "node:url";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
-if (args.some(arg => arg !== "--background-delay") || args.length > 1) {
-  throw new Error("Usage: node scripts/native-window-lifecycle.mjs [--background-delay]");
+if (args.some(arg => !["--background-delay", "--autostart-only", "--x11"].includes(arg))
+    || new Set(args).size !== args.length
+    || (args.includes("--background-delay") && args.includes("--autostart-only"))
+    || (args.includes("--x11") && !args.includes("--autostart-only"))) {
+  throw new Error("Usage: node scripts/native-window-lifecycle.mjs [--background-delay | --autostart-only [--x11]]");
 }
 const delayTest = args.includes("--background-delay");
-const testName = delayTest ? "native_background_delay" : "native_window_lifecycle";
-if (process.platform !== "linux" || !process.env.WAYLAND_DISPLAY || !process.env.XDG_RUNTIME_DIR) {
+const autostartOnly = args.includes("--autostart-only");
+const x11 = args.includes("--x11");
+const testName = autostartOnly ? "native_widget_autostart" : delayTest ? "native_background_delay" : "native_window_lifecycle";
+if (process.platform !== "linux" || (!x11 && (!process.env.WAYLAND_DISPLAY || !process.env.XDG_RUNTIME_DIR))) {
   throw new Error("Run from a Linux Wayland session; no X11 fallback is used.");
 }
-const socket = path.resolve(process.env.XDG_RUNTIME_DIR, process.env.WAYLAND_DISPLAY);
-if (!(await stat(socket)).isSocket()) throw new Error("Wayland display is not a socket");
+const socket = x11 ? undefined : path.resolve(process.env.XDG_RUNTIME_DIR, process.env.WAYLAND_DISPLAY);
+if (socket && !(await stat(socket)).isSocket()) throw new Error("Wayland display is not a socket");
 let binary;
 const build = spawn("cargo", ["test", "--manifest-path", "src-tauri/Cargo.toml", "--lib", "--no-run", "--message-format=json"], {
   cwd: repo, stdio: ["ignore", "pipe", "inherit"],
@@ -45,13 +50,17 @@ const env = {
   PATH: process.env.PATH, LANG: "C.UTF-8", HOME: path.join(root, "home"),
   XDG_CONFIG_HOME: path.join(root, "config"), XDG_DATA_HOME: path.join(root, "data"),
   XDG_CACHE_HOME: path.join(root, "cache"), XDG_RUNTIME_DIR: path.join(root, "runtime"),
-  WAYLAND_DISPLAY: socket, GDK_BACKEND: "wayland", XDG_SESSION_TYPE: "wayland",
+  ...(x11 ? { GDK_BACKEND: "x11", XDG_SESSION_TYPE: "x11", GDK_SYNCHRONIZE: "1", WEBKIT_DISABLE_COMPOSITING_MODE: "1" }
+    : { WAYLAND_DISPLAY: socket, GDK_BACKEND: "wayland", XDG_SESSION_TYPE: "wayland" }),
   PATINA_NATIVE_TEST_ROOT: root,
   PATINA_NATIVE_TEST_URL: `http://127.0.0.1:${server.address().port}`,
 };
-console.log(`Native evidence: ${root} (${delayTest ? "about five" : "about eleven"} minutes; no production runtime)`);
+console.log(`Native evidence: ${root} (${autostartOnly ? "20 creation cycles" : delayTest ? "about five minutes" : "about eleven minutes"}; no production runtime)`);
 const log = createWriteStream(path.join(root, "native.log"), { flags: "wx", mode: 0o600 });
-const child = spawn("dbus-run-session", ["--", binary, `app::native_window_tests::${testName}`, "--exact", "--ignored", "--nocapture", "--test-threads=1"], {
+const testArgs = ["--", binary, `app::native_window_tests::${testName}`, "--exact", "--ignored", "--nocapture", "--test-threads=1"];
+const child = spawn(x11 ? "xvfb-run" : "dbus-run-session", x11
+  ? ["-a", "-s", "-screen 0 1280x720x24 -noreset", "dbus-run-session", ...testArgs]
+  : testArgs, {
   cwd: root, env, detached: true, stdio: ["ignore", "pipe", "pipe"],
 });
 let timedOut = false;

@@ -92,7 +92,7 @@ if phase == 'first':
     # Xvfb has neither a GPU nor a compositor. Exercise launcher/lifecycle
     # behavior with software rendering, including the autostart widget path.
     env = {**os.environ, 'APPIMAGE_EXTRACT_AND_RUN': '1', 'GDK_BACKEND': 'x11',
-           'WEBKIT_DISABLE_COMPOSITING_MODE': '1'}
+           'WEBKIT_DISABLE_COMPOSITING_MODE': '1', 'GDK_SYNCHRONIZE': '1'}
     log = (output / 'desktop.log').open('w')
     child = subprocess.Popen([str(image)], env=env, stdout=log,
                              stderr=subprocess.STDOUT, start_new_session=True)
@@ -117,13 +117,21 @@ if phase == 'first':
             if path.exists():
                 shutil.rmtree(path)
         assert wait_for(ready)['InvocationID'] == initial['InvocationID']
-        child = subprocess.Popen(command.split(), env=env, stdout=log,
-                                 stderr=subprocess.STDOUT, start_new_session=True)
-        wait_for(desktop_running)
-        time.sleep(5)
-        assert child.poll() is None, f'Desktop autostart exited: {child.returncode}'
-        assert ready()['InvocationID'] == initial['InvocationID']
-        close_desktop(child)
+        # Exercise the default widget path on every fresh Desktop. A single
+        # successful reopen previously hid an intermittent Xlib failure.
+        reopen_cycles = []
+        for cycle in range(5):
+            child = subprocess.Popen(command.split(), env=env, stdout=log,
+                                     stderr=subprocess.STDOUT, start_new_session=True)
+            def reopened():
+                assert child.poll() is None, f'Desktop autostart exited: {child.returncode}'
+                return desktop_running()
+            pids = wait_for(reopened)
+            time.sleep(5)
+            assert child.poll() is None, f'Desktop autostart exited in cycle {cycle}: {child.returncode}'
+            assert ready()['InvocationID'] == initial['InvocationID']
+            reopen_cycles.append({'cycle': cycle + 1, 'desktop_pids': pids})
+            close_desktop(child)
         # Kill only this disposable user's actual systemd-owned daemon.
         os.kill(int(initial['MainPID']), signal.SIGKILL)
         def recovered():
@@ -139,7 +147,9 @@ if phase == 'first':
                   'initial': initial, 'recovered': recovered_state,
                   'desktop_exit_reopen_same_invocation': True,
                   'desktop_reopened_via_persisted_autostart': True,
+                  'autostart_reopen_cycles': reopen_cycles,
                   'headless_software_rendering': True,
+                  'synchronous_x11_errors': True,
                   'test_only_daemon_start_delay_seconds': 11,
                   'database_quick_check': 'ok', 'foreign_key_check': 'ok',
                   'scope': 'Real container user manager; no GNOME/login or formal signed upgrade'}

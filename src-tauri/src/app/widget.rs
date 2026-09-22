@@ -131,16 +131,30 @@ fn is_main_window_visible<R: Runtime>(app: &AppHandle<R>) -> bool {
         .unwrap_or(false)
 }
 
-pub(crate) fn resolve_widget_monitor<R: Runtime>(
+async fn resolve_widget_monitor<R: Runtime>(
     app: &AppHandle<R>,
     preferred_monitor: Option<Monitor>,
+    window: Option<WebviewWindow<R>>,
 ) -> Result<Monitor, String> {
-    preferred_monitor
-        .or_else(|| {
-            app.get_webview_window(crate::app::tray::MAIN_WINDOW_LABEL)
-                .and_then(|window| window.current_monitor().ok().flatten())
-        })
-        .or_else(|| app.primary_monitor().ok().flatten())
+    if let Some(monitor) = preferred_monitor {
+        return Ok(monitor);
+    }
+    // AppHandle::primary_monitor reads Tao's GTK display directly, unlike the
+    // window getters that dispatch to the event loop. Copy the monitor on the
+    // UI thread before returning it to the asynchronous widget task.
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let handle = app.clone();
+    app.run_on_main_thread(move || {
+        let monitor = window
+            .or_else(|| handle.get_webview_window(crate::app::tray::MAIN_WINDOW_LABEL))
+            .and_then(|window| window.current_monitor().ok().flatten())
+            .or_else(|| handle.primary_monitor().ok().flatten());
+        let _ = sender.send(monitor);
+    })
+    .map_err(|error| format!("failed to schedule widget monitor discovery: {error}"))?;
+    receiver
+        .await
+        .map_err(|_| "widget monitor discovery was cancelled".to_string())?
         .ok_or_else(|| "failed to resolve widget monitor".to_string())
 }
 
@@ -178,7 +192,9 @@ async fn apply_widget_layout_internal<R: Runtime + 'static>(
         return Ok(());
     }
 
-    let monitor = resolve_widget_monitor(app, preferred_monitor.clone()).ok();
+    let monitor = resolve_widget_monitor(app, preferred_monitor.clone(), None)
+        .await
+        .ok();
     let lifecycle = app.state::<WidgetWindowLifecycleState>();
 
     if let Some(window) = app.get_webview_window(WIDGET_WINDOW_LABEL) {
@@ -310,10 +326,8 @@ async fn resolve_widget_monitor_after_creation<R: Runtime>(
         .map_err(|error| format!("failed to map widget window for monitor discovery: {error}"))?;
 
     for _ in 0..40 {
-        if let Some(monitor) = preferred_monitor
-            .clone()
-            .or_else(|| window.current_monitor().ok().flatten())
-            .or_else(|| app.primary_monitor().ok().flatten())
+        if let Ok(monitor) =
+            resolve_widget_monitor(app, preferred_monitor.clone(), Some(window.clone())).await
         {
             return Ok(monitor);
         }

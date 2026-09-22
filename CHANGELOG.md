@@ -25,11 +25,13 @@ App note en: Recover desktop connections after slow daemon startup and report cr
 ### Fixed
 
 - 后台首次生成连接凭据较慢时，桌面客户端继续等待并允许取消，不再超过十秒就永久停止连接；不可恢复的读取错误明确报告停止。
+- 悬浮窗从后台任务启动时，显示器查询切回 UI 主线程，避免并发访问 GTK/Xlib 导致 X11 自启动崩溃。
 
 ### Internal
 
 - 修复本地 AppImage 登录自启动引用临时解包路径的问题；独立使用时指向原始包，与 DEB 共存时优先使用已安装桌面程序。AppImage 仍未恢复公开发布。
 - 补充 11 秒延迟接管、自启动入口、真实 GIO 路径解析与隔离 systemd 生命周期回归；headless 验收显式保持 Xvfb 显示服务器运行。
+- 增加无主窗口的原生悬浮窗循环回归；正式签名候选使用单独的手动 Actions artifact 流程，不改变公开发布门槛。
 
 ## [1.9.0-beta.20] - 2026-09-21
 

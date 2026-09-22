@@ -145,6 +145,98 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore = "requires isolated real AppImages and a production-signed candidate, never a private key"]
+    async fn production_signed_appimage_upgrade() {
+        use tauri_plugin_updater::UpdaterExt;
+        let root = PathBuf::from(std::env::var_os("PATINA_SIGNED_UPGRADE_TEST_ROOT").unwrap());
+        assert!(root.is_absolute());
+        assert_eq!(fs::canonicalize(&root).unwrap(), root);
+        assert_eq!(
+            fs::metadata(&root).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("marker")).unwrap(),
+            "isolated-signed-upgrade\n"
+        );
+        let target = root.join("installed.AppImage");
+        let old_hash = fingerprint(&target).unwrap();
+        let input: serde_json::Value =
+            serde_json::from_slice(&fs::read(root.join("input.json")).unwrap()).unwrap();
+        let old_version = semver::Version::parse(input["old_version"].as_str().unwrap()).unwrap();
+        let new_version = semver::Version::parse(input["new_version"].as_str().unwrap()).unwrap();
+        assert!(new_version > old_version);
+        assert_eq!(input["old_sha256"].as_str().unwrap(), old_hash);
+        let bytes = fs::read(root.join("candidate.AppImage")).unwrap();
+        let new_hash = format!("{:x}", Sha256::digest(&bytes));
+        assert_eq!(input["new_sha256"].as_str().unwrap(), new_hash);
+        let signature = fs::read_to_string(root.join("candidate.AppImage.sig")).unwrap();
+        // The trust anchor comes from the application config, never from the
+        // candidate directory or a test-generated key.
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../../../tauri.conf.json")).unwrap();
+        let public_key = config["plugins"]["updater"]["pubkey"].as_str().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let manifest = serde_json::json!({
+            "version": new_version.to_string(), "url": format!("http://{address}/image"),
+            "signature": signature.trim(),
+        });
+        let payload = bytes.clone();
+        let mut tampered = bytes.clone();
+        *tampered.last_mut().unwrap() ^= 1;
+        let router = axum::Router::new()
+            .route(
+                "/latest",
+                axum::routing::get(move || async move { axum::Json(manifest) }),
+            )
+            .route("/image", axum::routing::get(move || async move { payload }))
+            .route(
+                "/tampered",
+                axum::routing::get(move || async move { tampered }),
+            );
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context.package_info_mut().version = old_version;
+        context.config_mut().plugins.0.insert(
+            "updater".into(),
+            serde_json::json!({
+                "dangerousInsecureTransportProtocol": true, "pubkey": public_key,
+            }),
+        );
+        let app = tauri::test::mock_builder()
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            .build(context)
+            .unwrap();
+        let updater = app
+            .updater_builder()
+            .no_proxy()
+            .timeout(std::time::Duration::from_secs(60))
+            .endpoints(vec![format!("http://{address}/latest").parse().unwrap()])
+            .unwrap()
+            .build()
+            .unwrap();
+        let mut update = updater.check().await.unwrap().unwrap();
+        let download_url = update.download_url.clone();
+        update.download_url = format!("http://{address}/tampered").parse().unwrap();
+        assert!(update.download(|_, _| {}, || {}).await.is_err());
+        assert_eq!(fingerprint(&target).unwrap(), old_hash);
+        update.download_url = download_url;
+        let verified = update.download(|_, _| {}, || {}).await.unwrap();
+        assert_eq!(verified, bytes);
+        let previous = install_verified_image(&target, &verified).unwrap();
+        assert_eq!(fingerprint(&previous).unwrap(), old_hash);
+        assert_eq!(fingerprint(&target).unwrap(), new_hash);
+        fs::write(root.join("verified-install.json"), serde_json::to_vec_pretty(&serde_json::json!({
+            "production_key_verified": true, "tampered_rejected_before_install": true,
+            "old_sha256": old_hash, "new_sha256": new_hash, "previous": previous,
+            "scope": "Tauri download and atomic install over isolated loopback; not public update-channel delivery",
+        })).unwrap()).unwrap();
+        server.abort();
+        let _ = server.await;
+    }
+
+    #[tokio::test]
     #[ignore = "requires an isolated signed fixture and loopback networking; never a release key"]
     async fn tauri_download_verifies_before_atomic_install() {
         use tauri_plugin_updater::UpdaterExt;
