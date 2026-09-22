@@ -327,8 +327,8 @@ process, rejecting commands that point into temporary extraction directories.
 Standalone autostart uses the original AppImage package; moving or deleting that
 package requires setting up autostart again. DEB coexistence uses the installed
 Desktop executable.
-The headless display uses software rendering and disables Xvfb reset between
-clients. This isolates launcher/service lifecycle checks from GPU availability
+The headless display uses software rendering, synchronous GDK X11 calls, and
+disables Xvfb reset between clients. This isolates launcher/service lifecycle checks from GPU availability
 and display regeneration; it does not validate graphical-session rendering.
 
 Nested systemd requires SYS_ADMIN and relaxed container seccomp/AppArmor; the
@@ -339,6 +339,14 @@ under the printed `/tmp/patina-appimage-systemd-*` directory are retained.
 This checks real service ownership and container/user-manager restart, not GNOME
 login, real window sampling, FUSE mounting or formal signed updater delivery.
 These remaining release gates must retain their own evidence.
+
+For actual graphical login, FUSE and foreground-window recording, use the
+[independent GNOME VM procedure](../scripts/acceptance/appimage-gnome/README.md).
+It verifies first installation and a real GDM login after a guest cold boot in a
+private user profile with no Patina DEB. It records the Wayland login session
+separately from the AppImage's XWayland client backend. The same procedure defines
+production-key upgrade acceptance using the non-publishing Actions candidate;
+preparing that workflow does not constitute signed-upgrade acceptance.
 
 ### Published Bundles
 

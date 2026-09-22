@@ -362,3 +362,42 @@ power watcher 保持全局睡眠/关机订阅，每秒重新校验当前图形�
 - 持久目录中的 `acceptance-summary.json` 汇总当前证据，`service-upgrade.json`、`after-ui.json`、`final-comparison.json`、`ui-*.json` 记录具名动作；在线/停写备份和配置归档保留在同一私有目录。源码 manifest 与构建时提交 `0fe0838e` 逐文件一致，收尾只修改文档，不重复构建候选。
 
 当前结论：**beta.21 本地 DEB 候选实装、本机 GNOME 生命周期与 AppImage FUSE/DEB 共存验收通过。** 完整发布门禁为 715 Rust passed / 18 ignored、56 个 TypeScript 文件、38 项浏览器回归与 Clippy；发布策略/DEB/installed acceptance 专项为 25/3/11 项。此结论不覆盖独立无 DEB 的 GNOME 登录、失败的 Xvfb 悬浮窗路径或正式签名升级。修复与版本准备已提交本地 main，当前公开版本仍为 beta.20；本轮未 push、tag 或公开发布，AppImage 发布门槛不解除。
+
+### AppImage 剩余门槛专项（2026-09-23，等待正式签名远端执行）
+
+用户明确要求解决上述三项剩余问题。本轮按以下顺序推进，不以旧候选的通过覆盖失败：
+
+- [x] 定位 Xvfb `XI_BadDevice`，修复真正的责任边界并回归默认悬浮窗自启动。
+- [x] 建立无 Patina DEB 的独立 GNOME 虚拟机，验证首次接管、真实图形登录自启动和退出后的后台采样。
+- [x] 准备不公开发布的正式签名候选流程及升级验收程序；正式私钥保留在 GitHub Actions，不导出到本机。
+- [ ] 获准推送后运行正式签名工作流，完成正式密钥验签、升级与升级后的运行时/登录验收。
+- [x] 固定当前证据、失败范围与可复跑脚本，按实际结果更新发布门槛。
+
+本机 KVM 可用，可在隔离容器内运行一次性 QEMU 虚拟机。此项不需要卸载生产 DEB 或改变宿主登录配置。当前构建产物的 linuxdeploy GTK hook 强制 `GDK_BACKEND=x11`；上一节“GNOME Wayland”指宿主图形会话，不能据此宣称 AppImage 使用原生 Wayland 客户端，独立验收必须记录实际后端。
+
+#### 崩溃修复与默认悬浮窗回归
+
+旧 beta.21 原包在同步 X11 诊断中复现 Xlib 请求队列损坏，GDB 栈落在 GTK/XKB。代码核对发现 Tauri 的 `AppHandle::primary_monitor()` 直接访问 GTK 显示对象；默认悬浮窗在尚无主窗口时从异步 worker 调用它。修复保留 `app/widget` owner，把显示器读取和转换调度到主线程，异步任务只接收已经复制的显示器信息。没有屏蔽 X 错误、禁用默认悬浮窗或扩大已暂停的悬浮窗交互改造。
+
+- 修复与正式签名验收准备提交：`d3418d1d`。新本地未签名 AppImage SHA256：`dae1bb5a3a756cc91223759425498850c09f6ffb2fdf93f49c7de41d1097bd8a`。仍为 beta.21，仅用于全新隔离环境，没有替换宿主已安装的同版本旧候选。
+- 两个全新真实 systemd 容器分别通过普通 X11 与 `GDK_SYNCHRONIZE=1` 全流程，包含 11 秒延迟接管、共 10 次默认悬浮窗重开、daemon 不随桌面更换、SIGKILL 恢复、数据库完整性及容器冷启动。
+- 新增 opt-in native 回归从异步 worker、无主窗口条件连续创建/销毁悬浮窗。Xvfb X11 与独立 GNOME 原生 Wayland 各 20 次通过；后者是 native 测试二进制，不能冒充 AppImage 的原生 Wayland 渲染证明。
+- `release:check` 通过：715 Rust passed / 20 ignored、56 个 TypeScript 文件、38 项浏览器回归，以及 Clippy、边界、扩展、版本/changelog 检查。发布策略/DEB/installed 专项为 25/3/11 项；签名准备脚本 5 项测试通过，含 Tauri CLI 签名互操作、错误密钥和篡改拒绝。新增两项 native/正式升级验收默认忽略，各自需按前置条件显式执行，完整门禁不代表正式签名升级已完成。
+
+#### 无 DEB 的独立 GNOME 登录验收
+
+在仅暴露 KVM、无宿主目录挂载和公开端口的工具容器内，运行私有 QEMU VM：Ubuntu 22.04、GNOME 42.9、GDM、4 vCPU/5 GiB RAM、真实 FUSE。官方 cloud image 为 `jammy/20260918/jammy-server-cloudimg-amd64.img`，下载后比对官方 HTTPS 校验文件，SHA256 为 `48c7e1ab2005bff1c5450bd6c74d0f38482f0d750e14f320367e3e1c795035f9`。测试用户未安装 Patina DEB，使用 version 4 扩展和合成数据。
+
+- 首次启动实际 AppImage 完成真实 user unit 接管；由自身托盘正常退出后后台采样推进 15,358 ms，daemon InvocationID 不变。
+- 冷重启该 VM，GDM 自动登录到真实 Wayland 本地会话；没有手动启动 Desktop 或服务。新 boot/session 和 daemon InvocationID 已核对，生成的登录入口自行启动真实 FUSE Desktop，`--autostart` 默认悬浮窗保持运行；正常退出后采样推进 15,355 ms。
+- 合成原生 Wayland GTK 前台窗口的标题和 PID 通过扩展协议匹配，随后出现在 daemon 的实际 SQLite session 记录中。该证明补齐真实前台采样链路，不能只用心跳替代。
+- 保留夹具失败：仅 restart GDM 留下旧会话导致 Xorg 回退，严格检查拒绝；最初用 FUSE 可执行文件所有者判进程 UID 的错误已修正，并从安装前快照重跑；GNOME overview 中前台事实不可用，退出 overview 后见证窗口通过。它们与旧候选的真实 Xlib 崩溃分别记录。
+- 可复跑程序及环境要求见 [独立 GNOME 验收](../../scripts/acceptance/appimage-gnome/README.md)。该结果覆盖 GDM 自动图形登录，不覆盖手动密码认证、所有 GNOME 版本或真实硬件挂起。AppImage 实际为 Wayland 会话内的 XWayland 客户端。
+
+#### 正式签名和当前边界
+
+新增 [手动签名验收工作流](../../.github/workflows/appimage-acceptance.yml)，限定本仓库 main，只在构建步骤使用既有 Actions 签名 Secret，产物保留为 3 天 artifact；不创建 tag、Release 或公开 updater manifest。独立验收程序使用产品配置的正式公钥和真实 Tauri 下载校验，先拒绝篡改包，再执行生产原子安装路径；这证明范围是隔离 loopback 交付，公开渠道投递需另有证据。程序已准备，尚无本次正式签名候选，不能勾选正式升级通过。
+
+已就推送 `d3418d1d`（含此前三个本地提交）及触发此工作流请求用户授权，尚未获答复。根 `AGENTS.md` 明确规定本地提交不自动授权推送。当前无 push/tag/公开发布，AppImage 发布门槛继续保留。
+
+全部实际包、源码 manifest、旧崩溃、新容器回归、GNOME 报告及构建/检查日志持久保存在 `/home/arinp22/.local/state/patina/acceptance/20260923-appimage-gates-7kp1c2hi/`（私有目录）；`acceptance-summary.json` 汇总通过与未完成项。测试 VM 已关机，工具容器停止，私有磁盘/安装前快照保留供后续签名升级使用。宿主生产 daemon PID 426291、InvocationID `54a3d8ae56354a7aa20ecdeb5d862cd4`、NRestarts 0 保持不变；桌面开机自启动关闭，后台登录启动开启。本轮没有安装宿主候选、改动生产数据或重启生产服务。
