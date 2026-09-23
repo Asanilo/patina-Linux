@@ -1,7 +1,7 @@
 # `patinad` 当前实施与验收
 
 > 更新：2026-09-23。daemon 分离已通过第一阶段验收并经用户明确授权合入本地 `main`；本文继续管理平台成果评估、候选证据与剩余发布门槛。历史阶段与实验详见 [归档](../archive/2026-09-19-patinad-runtime-history.md)。
-> 方向以 [路线](../roadmap-and-prioritization.md#linux-main-and-daemon-experiment) 为准，协议与 owner 以 [架构](../architecture.md) 为准。当前执行见下方 Todo 与 [beta.21 候选记录](2026-09-21-linux-platform-reuse.md)；历史验收不自动覆盖后续候选。beta.21 已完成 DEB 隔离升级、本机实装与 AppImage FUSE 共存；随后 `d3418d1d` 修复 Xvfb 悬浮窗崩溃，新隔离候选已通过容器回归和独立 GNOME 登录，尚未安装宿主。正式签名升级已获远端执行授权、正在验收，不能宣称 AppImage 全部验收通过。源码合入不改变公开发布状态。
+> 方向以 [路线](../roadmap-and-prioritization.md#linux-main-and-daemon-experiment) 为准，协议与 owner 以 [架构](../architecture.md) 为准。当前执行见下方 Todo 与 [beta.21 候选记录](2026-09-21-linux-platform-reuse.md)；历史验收不自动覆盖后续候选。beta.21 已完成 DEB 隔离升级、本机实装与 AppImage FUSE 共存；随后 `d3418d1d` 修复 Xvfb 悬浮窗崩溃。正式签名候选 `f9fb9b8b` 已通过准确成品容器回归、独立 GNOME 登录和正式密钥升级后的实际生命周期/数据验收，尚未安装宿主。不覆盖公开 updater 分发或所有 GNOME 版本；源码推送与验收不改变公开发布状态。
 
 ## 推进 Todo（2026-09-20）
 
@@ -12,8 +12,8 @@
 - [x] **T3：修复第一阶段阻塞项。** 分类写入和 missing-command SQL fallback、网页历史删除、客户端重连 schema 维护、无用 SQL load 权限、SSE 漏事件与 Tools 并发覆盖已修复。目录迁移/清缓存已接通受管模式离线维护，补齐 Desktop 跨进程屏障、旧客户端占用检测和迁移中断恢复；恢复默认目录误拒绝、双目录同时恢复默认时混淆文件种类的缺陷均已修复。不以删减 main 功能收口。专项与本批完整门禁通过，候选验收归 T4。
 - [x] **T4：验证候选。** 最新 `check:full` 通过：55 个 TypeScript 测试文件、38 项浏览器回归、677 Rust passed / 15 ignored，以及构建/预算/边界/Clippy。main 实际 v1–6 schema 的合成 16 表升级回归通过。私有 dpkg root 完成 beta.18 安装→候选升级→卸载→重装；候选 daemon 配合真实临时 systemd、四次界面 `app.restart` 完成五阶段存储验收，50,000 条记录与总时长正确。用户随后明确授权本机实装；备份校验后完成 beta.18→本地候选升级，正式 Desktop 的存储页、关闭隐藏、单实例唤回、正常退出和新进程重开通过，退出后真实采样继续，daemon PID 不变。最终 15 项托管检查、历史记录摘要、SQLx 校验和及数据库完整性通过。候选身份、一次短暂数据库锁重试及证明范围见 [合并前证据](../archive/2026-09-21-main-merge-readiness.md)。
 - [x] **T5：达到合入条件并收敛到 main。** 用户明确要求合并后，本地 main 从 `a13a64a669849234df5575994673cb7a90cc3003` 快进至已验收提交 `bc5c2e9c7f56251857add5b91dd527cb1340288f`，无冲突，保留全部开发及 beta 历史。主线文档同步提交为 `5eefcf4e`，用户随后同意交付收尾，已将该提交普通快进推送至 `origin/main`。后续产品开发在 main，原 daemon 分支保留；未打 tag 或改变公开发布状态。
-- [ ] **T6：按模块评估并选择性回流平台成果。** [当前执行记录](2026-09-21-linux-platform-reuse.md)中的采样中断、idle 可信性、GNOME 双协议及会话重绑已实现并通过完整门禁；version 4 扩展已在本机激活，用户已完成锁屏/挂起。beta.20 的重新登录及真实系统重启验收通过。凭据等待与 AppImage 自启动修复已进入 beta.21，本机 DEB 升级、两种客户端的实际 GNOME 生命周期、FUSE 共存与无界面持续采样通过。随后修复 GTK 显示器访问线程边界，新 AppImage 两轮容器回归、独立无 DEB 的 GNOME 42.9 首次安装/冷启动登录/真实窗口采样通过，完整门禁为 715 Rust / 20 ignored。正式签名候选工作流和升级程序已准备，等待推送/远端执行授权；此项及后续 ESM/更多 Shell 验证仍未完成。上游草稿保留，不整支合并。
-- [x] **T7：准备合流后的下一版 beta。** 按公开 beta.19 `fbdad8eb` 之后的完整范围整理 beta.20 版本与 changelog，源码发布门禁通过；beta.20 已于 2026-09-22 公开预发布，后续审核修复已提交 main（`fa1cec27`），当前准备 beta.21，本项不代表 beta.21 已发布；2026-09-22 另完成未签名 AppImage 本地候选与隔离验收，不等于恢复该格式发布。AppImage 实装/正式升级门槛保持不变。
+- [ ] **T6：按模块评估并选择性回流平台成果。** [当前执行记录](2026-09-21-linux-platform-reuse.md)中的采样中断、idle 可信性、GNOME 双协议及会话重绑已实现并通过完整门禁；version 4 扩展已在本机激活，用户已完成锁屏/挂起。beta.20 的重新登录及真实系统重启验收通过。凭据等待与 AppImage 自启动修复已进入 beta.21，本机 DEB 升级、两种客户端的实际 GNOME 生命周期、FUSE 共存与无界面持续采样通过。GTK 显示器访问线程边界已修复；本地候选和正式签名成品的容器默认悬浮窗回归、无 DEB 的 GNOME 42.9 首次接管/冷登录/真实窗口记录通过。正式公钥篡改拒绝、原子升级、实际设置页后台重载、数据保留和升级后冷登录也已通过；完整门禁为 715 Rust / 20 ignored、8 项签名专项，正式升级 opt-in 测试另显式通过。后续 ESM/更多 Shell 验证仍未完成；公开 updater 分发不在本次隔离验收范围。上游草稿保留，不整支合并。
+- [x] **T7：准备合流后的下一版 beta。** 按公开 beta.19 `fbdad8eb` 之后的完整范围整理 beta.20 版本与 changelog，源码发布门禁通过；beta.20 已于 2026-09-22 公开预发布，后续审核修复已进入 main，当前准备 beta.21，本项不代表 beta.21 已发布。AppImage 的准确正式签名成品已完成隔离升级/登录验收，但不自动恢复该格式发布；DEB-only beta 契约保持不变。
 
 第一阶段不要求实现新客户端、补齐所有桌面或清零客户端私有持久化。受控读取可以保留明确例外；runtime 写入必须由当前 owner 执行。AppImage 实机验收仍约束该格式及 daemon 稳定发布，不以源码合并代替。本机现运行 2026-09-23 实装验收的本地未签名 beta.21 候选，生产 service 已受控重启；真实数据库继续记录，既有历史及 schema 校验通过。桌面开机自启动保持关闭，后台登录启动保持开启。当前最新公开预发布为 beta.20；beta.21 源码及签名验收工作流已获授权推送 main，尚未打 tag 或公开发布。
 
@@ -24,7 +24,7 @@
 | daemon 与 Desktop 分离 | 独立二进制、profile/lease、HTTP/SSE、追踪与平台信号、主要写侧、服务交接和客户端适配已实现；既有 DEB 候选有实机验收 | 所有读取均已脱离 Desktop SQLite，或任意客户端均可直接替换 |
 | 后台生命周期 | 已验证关闭/重开、故障恢复、回退/接管、特定登录环境、锁屏/挂起与 Zen 网页边界 | 所有桌面、硬件、登录配置长期稳定 |
 | 数据与备份 | 有界趋势/分类读取、流式导出与预览、多表恢复回滚及隔离 systemd/WebDAV 恢复已有验证 | 完整恢复恒定内存、任意第三方 WebDAV 兼容 |
-| AppImage | beta.21 已通过本机 FUSE/GNOME/DEB 共存；`d3418d1d` 新隔离候选另通过 Xvfb 默认悬浮窗回归、无 DEB 的 GNOME 42.9 首次接管、真实 GDM 冷启动登录和窗口记录，见 [最新证据](2026-09-21-linux-platform-reuse.md) | 新修复已安装宿主；AppImage 为原生 Wayland 客户端；正式签名升级或公开渠道投递已通过；允许公开发布 |
+| AppImage | beta.21 已通过本机 FUSE/GNOME/DEB 共存；正式签名候选 `f9fb9b8b` 通过 Xvfb 默认悬浮窗、正式公钥原子升级、实际后台版本切换、数据保留及独立 GNOME 42.9 冷登录/窗口记录，见 [最新证据](2026-09-21-linux-platform-reuse.md) | 新修复已安装宿主；AppImage 为原生 Wayland 客户端；公开 updater 渠道投递或所有 GNOME 版本已通过；已获公开发布授权 |
 | 新客户端 | Tauri 保留；TUI、GPUI、本机浏览器 UI 是后续方向 | 已实现，或已决定三者开发顺序 |
 
 ## 版本与发布证据

@@ -369,6 +369,8 @@ main 已合入 daemon 架构，现有 AppImage 实现仍不自动解除 DEB-only
 
 正式签名候选可通过手动的 [`appimage-acceptance.yml`](../.github/workflows/appimage-acceptance.yml) 独立验收：仅允许本仓库 `main` 的确定提交，使用既有 Actions 签名 Secret，先运行完整门禁，再构建并用应用配置中的公钥验证 AppImage。候选与源码 SHA/摘要只保存为短期 Actions artifact；该流程没有 tag、Release 或 updater manifest 发布步骤，token 只读。推送及运行远端流程仍需用户授权。正式私钥不导出到本机，也不用临时测试密钥冒充正式签名。以本地 HTTP fixture 验证生产公钥、Tauri 下载和原子替换时，必须明确它不覆盖公开更新源分发；真实运行时升级另需隔离安装用户的生命周期、服务版本和数据验收。
 
+验收工作流在昂贵编译前先验证密钥身份：历史 Secret 编码只能规范化为结构完整的受支持 minisign key box，再签署私有临时 challenge 并用产品配置的公钥验签。仅有 decoder 输出不足以证明密钥可用，不能让 `export` 掩盖解码失败后直接构建。Secret 只注入密钥预检和签名构建步骤，不写入文件、日志或 artifact；临时 challenge 自动删除。该预检不代替成品 AppImage 验签和实际升级。
+
 发布前至少应完成以下验证：
 
 - `npm run release:validate-version-files -- <version>` 或工作流中的等价校验

@@ -363,14 +363,14 @@ power watcher 保持全局睡眠/关机订阅，每秒重新校验当前图形�
 
 当前结论：**beta.21 本地 DEB 候选实装、本机 GNOME 生命周期与 AppImage FUSE/DEB 共存验收通过。** 完整发布门禁为 715 Rust passed / 18 ignored、56 个 TypeScript 文件、38 项浏览器回归与 Clippy；发布策略/DEB/installed acceptance 专项为 25/3/11 项。此结论不覆盖独立无 DEB 的 GNOME 登录、失败的 Xvfb 悬浮窗路径或正式签名升级。修复与版本准备已提交本地 main，当前公开版本仍为 beta.20；本轮未 push、tag 或公开发布，AppImage 发布门槛不解除。
 
-### AppImage 剩余门槛专项（2026-09-23，正式签名验收执行中）
+### AppImage 剩余门槛专项（2026-09-23，三项隔离验收完成）
 
 用户明确要求解决上述三项剩余问题。本轮按以下顺序推进，不以旧候选的通过覆盖失败：
 
 - [x] 定位 Xvfb `XI_BadDevice`，修复真正的责任边界并回归默认悬浮窗自启动。
 - [x] 建立无 Patina DEB 的独立 GNOME 虚拟机，验证首次接管、真实图形登录自启动和退出后的后台采样。
 - [x] 准备不公开发布的正式签名候选流程及升级验收程序；正式私钥保留在 GitHub Actions，不导出到本机。
-- [ ] 获准推送后运行正式签名工作流，完成正式密钥验签、升级与升级后的运行时/登录验收。
+- [x] 获准推送后运行正式签名工作流，完成正式密钥验签、升级与升级后的运行时/登录验收。
 - [x] 固定当前证据、失败范围与可复跑脚本，按实际结果更新发布门槛。
 
 本机 KVM 可用，可在隔离容器内运行一次性 QEMU 虚拟机。此项不需要卸载生产 DEB 或改变宿主登录配置。当前构建产物的 linuxdeploy GTK hook 强制 `GDK_BACKEND=x11`；上一节“GNOME Wayland”指宿主图形会话，不能据此宣称 AppImage 使用原生 Wayland 客户端，独立验收必须记录实际后端。
@@ -396,9 +396,9 @@ power watcher 保持全局睡眠/关机订阅，每秒重新校验当前图形�
 
 #### 正式签名和当前边界
 
-新增 [手动签名验收工作流](../../.github/workflows/appimage-acceptance.yml)，限定本仓库 main，只在密钥预检及签名构建步骤使用既有 Actions 签名 Secret，产物保留为 3 天 artifact；不创建 tag、Release 或公开 updater manifest。独立验收程序使用产品配置的正式公钥和真实 Tauri 下载校验，先拒绝篡改包，再执行生产原子安装路径；这证明范围是隔离 loopback 交付，公开渠道投递需另有证据。程序已准备，尚无本次正式签名候选，不能勾选正式升级通过。
+新增 [手动签名验收工作流](../../.github/workflows/appimage-acceptance.yml)，限定本仓库 main，只在密钥预检及签名构建步骤使用既有 Actions 签名 Secret，产物保留为 3 天 artifact；不创建 tag、Release 或公开 updater manifest。独立验收程序使用产品配置的正式公钥和真实 Tauri 下载校验，先拒绝篡改包，再执行生产原子安装路径；这证明范围是隔离 loopback 交付，公开渠道投递需另有证据。正式候选及其实际升级/登录验收已完成，结果见末节。
 
-用户随后明确授权推送 `d3418d1d`（含此前三个本地提交）及触发此工作流。核对远端仍为 `f1e301f6` 后已快进推送到 `origin/main`，并运行 [正式签名验收工作流 35809090170](https://github.com/Asanilo/patina-Linux/actions/runs/35809090170)。该次源码不包含后续验收脚本/记录提交 `55bbb2b2`。当前无 tag/公开发布，AppImage 发布门槛在升级完成前继续保留。
+用户随后明确授权推送 `d3418d1d`（含此前三个本地提交）及触发此工作流。核对远端仍为 `f1e301f6` 后已快进推送到 `origin/main`，并运行 [正式签名验收工作流 35809090170](https://github.com/Asanilo/patina-Linux/actions/runs/35809090170)。该次源码不包含后续验收脚本/记录提交 `55bbb2b2`。必要的签名流程修复随后继续推送 main；没有创建 tag/公开发布，也没有修改现有 DEB-only beta 发布契约。
 
 全部实际包、源码 manifest、旧崩溃、新容器回归、GNOME 报告及构建/检查日志持久保存在 `/home/arinp22/.local/state/patina/acceptance/20260923-appimage-gates-7kp1c2hi/`（私有目录）；`acceptance-summary.json` 汇总通过与未完成项。测试 VM 已关机，工具容器停止，私有磁盘/安装前快照保留供后续签名升级使用。宿主生产 daemon PID 426291、InvocationID `54a3d8ae56354a7aa20ecdeb5d862cd4`、NRestarts 0 保持不变；桌面开机自启动关闭，后台登录启动开启。本轮没有安装宿主候选、改动生产数据或重启生产服务。
 
@@ -406,13 +406,28 @@ power watcher 保持全局睡眠/关机订阅，每秒重新校验当前图形�
 
 - [x] 核对并推送授权的源码，触发只生成 artifact 的正式签名工作流。
 - [x] 恢复无 DEB 的 GNOME VM 安装前快照，建立真实 beta.20 旧版基线、在线 SQLite 备份及合成窗口历史；记录 schema 校验和、偏好、服务实例与旧运行时。
-- [ ] 取得并独立验证 Actions 正式签名候选，完成篡改拒绝与原子安装。
-- [ ] 通过实际设置页切换 daemon 版本，验证历史/偏好/恢复材料和无 Desktop 采样，再冷重启 VM 验证新的登录入口。
+- [x] 取得并独立验证 Actions 正式签名候选，完成篡改拒绝与原子安装。
+- [x] 通过实际设置页切换 daemon 版本，验证历史/偏好/恢复材料和无 Desktop 采样，再冷重启 VM 验证新的登录入口。
 
 旧版基线使用此前保存的本地未签名 beta.20 AppImage（`84da760d…de75`），不是公开发行的 AppImage。首次接管和退出后采样通过；旧版 autostart 仍指向临时 `.mount_` 路径，升级后必须由新实现修复。安装前快照不含后加的验收 marker 和 AT-SPI 驱动，已仅在 VM 补齐；未修改宿主依赖。正式私钥始终留在 Actions。
 
 首次 Actions 运行的完整质量门禁及 5 项签名脚本测试通过，release 编译和 AppImage 打包也成功；最后签名因现有 Secret 的 Base64 表示未规范化而失败，没有产生验收 artifact。既有 `prepare-release.yml` 会先 decode/re-encode，新工作流缺失该步骤。已补齐相同规范化，且把赋值与 export 分开以确保无效编码立即失败；密钥只在签名步骤环境内处理，不输出或导出。新增临时密钥回归实际复现换行编码被 Tauri 拒绝，再运行工作流中的规范化命令签名，并用独立 verifier 验证；6 项通过，另断言无效编码在构建前失败。此修复只涉及验收流程，不修改产品源码或签名密钥。
 
-随后只读核对已成功的 beta.20 发布日志，发现其 GNU Base64 decoder 曾报 `invalid input`，但 `export` 掩盖管道失败，实际上继续使用了部分解码输出。因此主动取消刚启动的 [第二轮 35810795896](https://github.com/Asanilo/patina-Linux/actions/runs/35810795896)，避免重复已知失败。最终改为显式移除空白/冗余尾部 padding 后严格解码并重新编码，拒绝内部 padding、空值、非法字符及截断数据，不依赖失败后的部分输出。临时密钥回归覆盖换行与多余 padding 的真实 Tauri 签名，并验证无效输入无输出；现有公开发布 workflow 未在本轮调用或改写。
+随后只读核对已成功的 beta.20 发布日志，发现其 GNU Base64 decoder 曾报 `invalid input`，但 `export` 掩盖管道失败，实际上继续使用了部分解码输出。因此主动取消刚启动的 [第二轮 35810795896](https://github.com/Asanilo/patina-Linux/actions/runs/35810795896)，避免重复已知失败。当时改为显式移除空白/冗余尾部 padding 后严格解码并重新编码，拒绝内部 padding、空值、非法字符及截断数据，不依赖失败后的部分输出。临时密钥回归覆盖换行与多余 padding 的真实 Tauri 签名，并验证无效输入无输出；现有公开发布 workflow 未在本轮调用或改写。
 
-[第三轮 35811027935](https://github.com/Asanilo/patina-Linux/actions/runs/35811027935) 的质量门禁及 7 项脚本测试通过，但严格编码检查在编译前拒绝现有 Secret，表明兼容问题不止空白/padding。未读取或改写 Secret。最终兼容策略沿用既有发布流程的 GNU decoder 输出，但仅提取结构完整的受支持 minisign key box；不完整内容立即拒绝。另在昂贵编译前签署一次私有临时 challenge，并用产品公钥验证密钥身份，错误密钥/密码不能进入构建。签名步骤捕获 signer 输出，私钥不落盘，challenge 随临时目录删除。8 项回归覆盖空白/padding、旧式尾随传输内容、完整记录/截断记录、正式公钥对应及错误密钥拒绝；不把“decoder 有输出”当作签名成功。该策略取代上一轮的纯严格编码方案。
+[第三轮 35811027935](https://github.com/Asanilo/patina-Linux/actions/runs/35811027935) 的质量门禁及 7 项脚本测试通过，但严格编码检查在编译前拒绝现有 Secret，表明兼容问题不止空白/padding。未从 Actions 导出或改写 Secret。最终兼容策略沿用既有发布流程的 GNU decoder 输出，但仅提取结构完整的受支持 minisign key box；不完整内容立即拒绝。另在昂贵编译前签署一次私有临时 challenge，并用产品公钥验证密钥身份，错误密钥/密码不能进入构建。签名步骤捕获 signer 输出，私钥不落盘，challenge 随临时目录删除。8 项回归覆盖空白/padding、旧式尾随传输内容、完整记录/截断记录、正式公钥对应及错误密钥拒绝；不把“decoder 有输出”当作签名成功。该策略取代上一轮的纯严格编码方案。
+
+最终修复提交 `f9fb9b8b` 已推送，[第四轮 35811958233](https://github.com/Asanilo/patina-Linux/actions/runs/35811958233) 完整成功：真实正式密钥预检、8 项签名回归、完整质量门禁、AppImage 构建签名及成品验签均通过，artifact 保留 3 天。产品源码、Rust 测试与版本文件相对 `d3418d1d` 无差异；后续变更限于签名验收流程、脚本和记录。全部失败/取消运行保留。
+
+#### 正式成品验收结果与持久证据
+
+- 正式候选 SHA256：`9cbc8e54205a92f46609f20494afdf94dafd18b65f1817952a06b45cdf627598`，源码 `f9fb9b8b5839cfdfdea0f82557cb0e154e818cce`。下载遇到 EOF/慢连接后，使用同一 artifact 的直连分段传输；完整归档 SHA256 与 GitHub metadata 一致，再用该源码中的正式公钥独立验签，核对 run、版本与包摘要。
+- 对这个准确成品重新运行真实 systemd 容器验收：同步 X11、11 秒延迟接管、5 次默认悬浮窗重开、界面退出不替换 daemon、SIGKILL 恢复、完整性及冷启动全部通过。没有再出现 `XI_BadDevice`。
+- `production_signed_appimage_upgrade` 在真实 VM 中显式执行通过：Tauri 正式公钥拒绝篡改下载且旧文件未动；有效下载经生产原子替换路径安装，保留 SHA 匹配的旧 AppImage。此项使用隔离 loopback updater manifest，不冒充公开渠道投递。
+- 启动新签名 AppImage 后，持久运行时指针切换到新包摘要，旧 daemon 保持运行，直到实际设置页点击并确认“重新加载后台”。随后重启票据 completed，新实例版本为 beta.21；旧版合成历史逐行一致，schema 校验和、登录偏好、user unit 不变，旧包恢复材料保留。自启动入口从旧临时挂载路径修复为 `/home/tester/upgrade/installed.AppImage --autostart`。正常退出 Desktop 后采样推进 15,270 ms。
+- 冷重启 VM 后由真实 GDM 自动进入 GNOME 42.9 Wayland 会话，未手动启动 Desktop 或服务。正式新包以真实 FUSE、`--autostart` 启动，默认悬浮窗正常；新 daemon InvocationID 与升级后的旧 invocation 不同，NRestarts=0。正常退出后采样推进 15,333 ms。再用独有新标题/PID 的 GTK 窗口验证扩展到 daemon 的真实记录，旧历史再次逐行核对一致。
+- CI 完整门禁为 715 Rust passed / 20 ignored、56 个 TypeScript 文件、38 项浏览器回归，以及 Clippy、扩展、边界、版本/changelog 检查；8 项签名专项通过。实际正式升级测试另为 1 passed / 734 filtered out，不能与默认忽略状态混淆。
+
+持久证据目录：`/home/arinp22/.local/state/patina/acceptance/20260923-signed-appimage-dlahd_9e/`（0700），包含正式包/签名、artifact 摘要、CI 日志、独立验签脚本、`signed-atomic.log`、`signed-systemd/result.json`、VM 的 `verified-install.json`、`signed-runtime.json`、`login.json`、`signed-sample.json`、`signed-cold-final.json` 和汇总 `acceptance-summary.json`。原始旧候选与先前崩溃/登录证据保留在前述私有目录。VM 正常关机，工具容器停止，私有磁盘保留。
+
+宿主收尾只读复核：生产 daemon 仍 PID 426291、同一 InvocationID、NRestarts=0；桌面登录启动仍关闭，后台登录启动开启，没有替换宿主安装。当前已完成本轮要求的崩溃修复、独立 GNOME 登录及正式密钥签名升级隔离验收；不覆盖公开 updater 分发、所有 GNOME 版本或真实硬件挂起。未创建 tag 或 GitHub Release，公开版本仍为 beta.20，现有 DEB-only beta 发布契约保持不变。
