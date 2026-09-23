@@ -68,7 +68,8 @@ class CandidateSignatureTests(unittest.TestCase):
         config = json.loads(self.config.read_text())
         config['plugins']['updater']['pubkey'] = key.with_suffix('.key.pub').read_text().strip()
         self.config.write_text(json.dumps(config))
-        wrapped = '\n'.join(textwrap.wrap(key.read_text().strip(), 76)) + '\n'
+        # Both whitespace and redundant padding occur in legacy Secret values.
+        wrapped = '\n'.join(textwrap.wrap(key.read_text().strip(), 76)) + '==\n'
         environment = {**os.environ, 'TAURI_SIGNING_PRIVATE_KEY': wrapped}
         command = [str(cli), 'signer', 'sign', '--password', '', str(self.image)]
         raw = subprocess.run(command, env=environment, capture_output=True)
@@ -95,6 +96,14 @@ class CandidateSignatureTests(unittest.TestCase):
     def test_invalid_signature_is_not_staged(self):
         self.image.with_suffix('.AppImage.sig').write_text('invalid signature')
         self.verify(False)
+
+    def test_key_normalization_rejects_partial_or_empty_input(self):
+        script = Path(__file__).with_name('normalize-signing-key.py')
+        for value in [b'', b' \n===', b'TQ==TQ==', b'TQ==!invalid', b'A']:
+            with self.subTest(value=value):
+                result = subprocess.run(['python3', str(script)], input=value, capture_output=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, b'')
 
 
 if __name__ == '__main__':

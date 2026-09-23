@@ -412,3 +412,5 @@ power watcher 保持全局睡眠/关机订阅，每秒重新校验当前图形�
 旧版基线使用此前保存的本地未签名 beta.20 AppImage（`84da760d…de75`），不是公开发行的 AppImage。首次接管和退出后采样通过；旧版 autostart 仍指向临时 `.mount_` 路径，升级后必须由新实现修复。安装前快照不含后加的验收 marker 和 AT-SPI 驱动，已仅在 VM 补齐；未修改宿主依赖。正式私钥始终留在 Actions。
 
 首次 Actions 运行的完整质量门禁及 5 项签名脚本测试通过，release 编译和 AppImage 打包也成功；最后签名因现有 Secret 的 Base64 表示未规范化而失败，没有产生验收 artifact。既有 `prepare-release.yml` 会先 decode/re-encode，新工作流缺失该步骤。已补齐相同规范化，且把赋值与 export 分开以确保无效编码立即失败；密钥只在签名步骤环境内处理，不输出或导出。新增临时密钥回归实际复现换行编码被 Tauri 拒绝，再运行工作流中的规范化命令签名，并用独立 verifier 验证；6 项通过，另断言无效编码在构建前失败。此修复只涉及验收流程，不修改产品源码或签名密钥。
+
+随后只读核对已成功的 beta.20 发布日志，发现其 GNU Base64 decoder 曾报 `invalid input`，但 `export` 掩盖管道失败，实际上继续使用了部分解码输出。因此主动取消刚启动的 [第二轮 35810795896](https://github.com/Asanilo/patina-Linux/actions/runs/35810795896)，避免重复已知失败。最终改为显式移除空白/冗余尾部 padding 后严格解码并重新编码，拒绝内部 padding、空值、非法字符及截断数据，不依赖失败后的部分输出。临时密钥回归覆盖换行与多余 padding 的真实 Tauri 签名，并验证无效输入无输出；现有公开发布 workflow 未在本轮调用或改写。
