@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import textwrap
 import unittest
 
 
@@ -57,6 +58,32 @@ class CandidateSignatureTests(unittest.TestCase):
     def test_tampered_image_is_not_staged(self):
         self.image.write_bytes(self.image.read_bytes()[:-1] + b'x')
         self.verify(False)
+
+    def test_workflow_normalizes_wrapped_environment_key(self):
+        key = self.root / 'wrapped-test.key'
+        repo = Path(__file__).resolve().parents[2]
+        cli = repo / 'node_modules/.bin/tauri'
+        self.tool(str(cli), 'signer', 'generate', '--ci', '--password', '', '--write-keys', str(key))
+        key.chmod(0o600)
+        config = json.loads(self.config.read_text())
+        config['plugins']['updater']['pubkey'] = key.with_suffix('.key.pub').read_text().strip()
+        self.config.write_text(json.dumps(config))
+        wrapped = '\n'.join(textwrap.wrap(key.read_text().strip(), 76)) + '\n'
+        environment = {**os.environ, 'TAURI_SIGNING_PRIVATE_KEY': wrapped}
+        command = [str(cli), 'signer', 'sign', '--password', '', str(self.image)]
+        raw = subprocess.run(command, env=environment, capture_output=True)
+        self.assertNotEqual(raw.returncode, 0, 'Fixture must reproduce strict base64 decoding failure')
+        lines = (repo / '.github/workflows/appimage-acceptance.yml').read_text().splitlines()
+        normalization = [line.strip() for line in lines if line.strip().startswith('TAURI_SIGNING_PRIVATE_KEY="$')]
+        self.assertEqual(len(normalization), 1)
+        script = 'set -euo pipefail\n' + normalization[0] + '\nexport TAURI_SIGNING_PRIVATE_KEY\nexec "$@"'
+        normalized = subprocess.run(['bash', '-c', script, 'test-signing', *command],
+                                    env=environment, capture_output=True)
+        self.assertEqual(normalized.returncode, 0, normalized.stderr.decode())
+        self.verify(True)
+        invalid = subprocess.run(['bash', '-c', script, 'test-signing', 'true'],
+                                 env={**environment, 'TAURI_SIGNING_PRIVATE_KEY': 'not-base64!'}, capture_output=True)
+        self.assertNotEqual(invalid.returncode, 0, 'Invalid input must fail before building')
 
     def test_other_key_is_not_trusted(self):
         self.tool('minisign', '-G', '-W', '-p', 'other.pub', '-s', 'other.key')

@@ -1,7 +1,7 @@
 # `patinad` 当前实施与验收
 
 > 更新：2026-09-23。daemon 分离已通过第一阶段验收并经用户明确授权合入本地 `main`；本文继续管理平台成果评估、候选证据与剩余发布门槛。历史阶段与实验详见 [归档](../archive/2026-09-19-patinad-runtime-history.md)。
-> 方向以 [路线](../roadmap-and-prioritization.md#linux-main-and-daemon-experiment) 为准，协议与 owner 以 [架构](../architecture.md) 为准。当前执行见下方 Todo 与 [beta.21 候选记录](2026-09-21-linux-platform-reuse.md)；历史验收不自动覆盖后续候选。beta.21 已完成 DEB 隔离升级、本机实装与 AppImage FUSE 共存；随后 `d3418d1d` 修复 Xvfb 悬浮窗崩溃，新隔离候选已通过容器回归和独立 GNOME 登录，尚未安装宿主。正式签名升级等待远端执行授权，不能宣称 AppImage 全部验收通过。源码合入不改变公开发布状态。
+> 方向以 [路线](../roadmap-and-prioritization.md#linux-main-and-daemon-experiment) 为准，协议与 owner 以 [架构](../architecture.md) 为准。当前执行见下方 Todo 与 [beta.21 候选记录](2026-09-21-linux-platform-reuse.md)；历史验收不自动覆盖后续候选。beta.21 已完成 DEB 隔离升级、本机实装与 AppImage FUSE 共存；随后 `d3418d1d` 修复 Xvfb 悬浮窗崩溃，新隔离候选已通过容器回归和独立 GNOME 登录，尚未安装宿主。正式签名升级已获远端执行授权、正在验收，不能宣称 AppImage 全部验收通过。源码合入不改变公开发布状态。
 
 ## 推进 Todo（2026-09-20）
 

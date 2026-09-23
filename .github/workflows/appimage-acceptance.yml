@@ -47,6 +47,10 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$TAURI_SIGNING_PRIVATE_KEY"
+          # Match the established release workflow's base64 normalization.
+          # Keep the normalized value in this step's environment, never an artifact.
+          TAURI_SIGNING_PRIVATE_KEY="$(printf '%s' "$TAURI_SIGNING_PRIVATE_KEY" | base64 -d | base64 -w0)"
+          export TAURI_SIGNING_PRIVATE_KEY
           npm run tauri -- build --bundles appimage
       - name: Verify signature and record candidate identity
         env:

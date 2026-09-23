@@ -16,7 +16,8 @@ HTTPS checksum file before creating a writable qcow2 overlay.
 Prepare the guest with `gnome-shell`, `gnome-session`, `gdm3`, `xserver-xorg`,
 `xwayland`, `libgl1-mesa-dri`, `libfuse2`, `libwebkit2gtk-4.1-0`,
 `libayatana-appindicator3-1`, `libpulse0`, `libx11-xcb1`, `libxcb-randr0`,
-`libxcb-screensaver0`, `python3-gi`, `python3-dbus`, `gir1.2-atspi-2.0` and `dbus-x11`.
+`libxcb-screensaver0`, `python3-gi`, `python3-dbus`, `gir1.2-atspi-2.0`,
+`at-spi2-core`, `libatk-adaptor` and `dbus-x11`.
 Create the `tester` user, install this repository's GNOME extension in that user's
 extension directory, enable it in GSettings, and enable accessibility. Disable
 idle lock only in the test VM. Write `isolated-appimage-acceptance` followed by a
