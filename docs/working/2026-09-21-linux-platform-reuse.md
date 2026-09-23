@@ -396,7 +396,7 @@ power watcher 保持全局睡眠/关机订阅，每秒重新校验当前图形�
 
 #### 正式签名和当前边界
 
-新增 [手动签名验收工作流](../../.github/workflows/appimage-acceptance.yml)，限定本仓库 main，只在构建步骤使用既有 Actions 签名 Secret，产物保留为 3 天 artifact；不创建 tag、Release 或公开 updater manifest。独立验收程序使用产品配置的正式公钥和真实 Tauri 下载校验，先拒绝篡改包，再执行生产原子安装路径；这证明范围是隔离 loopback 交付，公开渠道投递需另有证据。程序已准备，尚无本次正式签名候选，不能勾选正式升级通过。
+新增 [手动签名验收工作流](../../.github/workflows/appimage-acceptance.yml)，限定本仓库 main，只在密钥预检及签名构建步骤使用既有 Actions 签名 Secret，产物保留为 3 天 artifact；不创建 tag、Release 或公开 updater manifest。独立验收程序使用产品配置的正式公钥和真实 Tauri 下载校验，先拒绝篡改包，再执行生产原子安装路径；这证明范围是隔离 loopback 交付，公开渠道投递需另有证据。程序已准备，尚无本次正式签名候选，不能勾选正式升级通过。
 
 用户随后明确授权推送 `d3418d1d`（含此前三个本地提交）及触发此工作流。核对远端仍为 `f1e301f6` 后已快进推送到 `origin/main`，并运行 [正式签名验收工作流 35809090170](https://github.com/Asanilo/patina-Linux/actions/runs/35809090170)。该次源码不包含后续验收脚本/记录提交 `55bbb2b2`。当前无 tag/公开发布，AppImage 发布门槛在升级完成前继续保留。
 
@@ -414,3 +414,5 @@ power watcher 保持全局睡眠/关机订阅，每秒重新校验当前图形�
 首次 Actions 运行的完整质量门禁及 5 项签名脚本测试通过，release 编译和 AppImage 打包也成功；最后签名因现有 Secret 的 Base64 表示未规范化而失败，没有产生验收 artifact。既有 `prepare-release.yml` 会先 decode/re-encode，新工作流缺失该步骤。已补齐相同规范化，且把赋值与 export 分开以确保无效编码立即失败；密钥只在签名步骤环境内处理，不输出或导出。新增临时密钥回归实际复现换行编码被 Tauri 拒绝，再运行工作流中的规范化命令签名，并用独立 verifier 验证；6 项通过，另断言无效编码在构建前失败。此修复只涉及验收流程，不修改产品源码或签名密钥。
 
 随后只读核对已成功的 beta.20 发布日志，发现其 GNU Base64 decoder 曾报 `invalid input`，但 `export` 掩盖管道失败，实际上继续使用了部分解码输出。因此主动取消刚启动的 [第二轮 35810795896](https://github.com/Asanilo/patina-Linux/actions/runs/35810795896)，避免重复已知失败。最终改为显式移除空白/冗余尾部 padding 后严格解码并重新编码，拒绝内部 padding、空值、非法字符及截断数据，不依赖失败后的部分输出。临时密钥回归覆盖换行与多余 padding 的真实 Tauri 签名，并验证无效输入无输出；现有公开发布 workflow 未在本轮调用或改写。
+
+[第三轮 35811027935](https://github.com/Asanilo/patina-Linux/actions/runs/35811027935) 的质量门禁及 7 项脚本测试通过，但严格编码检查在编译前拒绝现有 Secret，表明兼容问题不止空白/padding。未读取或改写 Secret。最终兼容策略沿用既有发布流程的 GNU decoder 输出，但仅提取结构完整的受支持 minisign key box；不完整内容立即拒绝。另在昂贵编译前签署一次私有临时 challenge，并用产品公钥验证密钥身份，错误密钥/密码不能进入构建。签名步骤捕获 signer 输出，私钥不落盘，challenge 随临时目录删除。8 项回归覆盖空白/padding、旧式尾随传输内容、完整记录/截断记录、正式公钥对应及错误密钥拒绝；不把“decoder 有输出”当作签名成功。该策略取代上一轮的纯严格编码方案。

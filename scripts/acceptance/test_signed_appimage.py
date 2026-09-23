@@ -72,19 +72,40 @@ class CandidateSignatureTests(unittest.TestCase):
         wrapped = '\n'.join(textwrap.wrap(key.read_text().strip(), 76)) + '==\n'
         environment = {**os.environ, 'TAURI_SIGNING_PRIVATE_KEY': wrapped}
         command = [str(cli), 'signer', 'sign', '--password', '', str(self.image)]
-        raw = subprocess.run(command, env=environment, capture_output=True)
-        self.assertNotEqual(raw.returncode, 0, 'Fixture must reproduce strict base64 decoding failure')
         lines = (repo / '.github/workflows/appimage-acceptance.yml').read_text().splitlines()
-        normalization = [line.strip() for line in lines if line.strip().startswith('TAURI_SIGNING_PRIVATE_KEY="$')]
+        normalization = sorted({line.strip() for line in lines if line.strip().startswith('TAURI_SIGNING_PRIVATE_KEY="$')})
         self.assertEqual(len(normalization), 1)
         script = 'set -euo pipefail\n' + normalization[0] + '\nexport TAURI_SIGNING_PRIVATE_KEY\nexec "$@"'
-        normalized = subprocess.run(['bash', '-c', script, 'test-signing', *command],
-                                    env=environment, capture_output=True)
-        self.assertEqual(normalized.returncode, 0, normalized.stderr.decode())
+        for value in [wrapped, key.read_text().strip() + '!legacy-transport-suffix', key.read_text().strip() + 'EOF']:
+            with self.subTest(encoding='wrapped' if value == wrapped else 'legacy suffix'):
+                environment['TAURI_SIGNING_PRIVATE_KEY'] = value
+                raw = subprocess.run(command, env=environment, capture_output=True)
+                self.assertNotEqual(raw.returncode, 0, 'Fixture must reproduce strict base64 decoding failure')
+                normalized = subprocess.run(['bash', '-c', script, 'test-signing', *command],
+                                            env=environment, capture_output=True)
+                self.assertEqual(normalized.returncode, 0, normalized.stderr.decode())
         self.verify(True)
         invalid = subprocess.run(['bash', '-c', script, 'test-signing', 'true'],
                                  env={**environment, 'TAURI_SIGNING_PRIVATE_KEY': 'not-base64!'}, capture_output=True)
         self.assertNotEqual(invalid.returncode, 0, 'Invalid input must fail before building')
+
+    def test_preflight_proves_key_identity_and_rejects_another_key(self):
+        repo = Path(__file__).resolve().parents[2]
+        key = self.root / 'preflight.key'
+        self.tool(str(repo / 'node_modules/.bin/tauri'), 'signer', 'generate',
+                  '--ci', '--password', '', '--write-keys', str(key))
+        key.chmod(0o600)
+        environment = {**os.environ, 'TAURI_SIGNING_PRIVATE_KEY': key.read_text().strip(),
+                       'TAURI_SIGNING_PRIVATE_KEY_PASSWORD': ''}
+        command = ['python3', str(Path(__file__).with_name('signing-preflight.py')), str(self.config)]
+        wrong = subprocess.run(command, env=environment, capture_output=True)
+        self.assertNotEqual(wrong.returncode, 0)
+        config = json.loads(self.config.read_text())
+        config['plugins']['updater']['pubkey'] = key.with_suffix('.key.pub').read_text().strip()
+        self.config.write_text(json.dumps(config))
+        correct = subprocess.run(command, env=environment, capture_output=True)
+        self.assertEqual(correct.returncode, 0, correct.stderr.decode())
+        self.assertNotIn(environment['TAURI_SIGNING_PRIVATE_KEY'].encode(), correct.stdout + correct.stderr)
 
     def test_other_key_is_not_trusted(self):
         self.tool('minisign', '-G', '-W', '-p', 'other.pub', '-s', 'other.key')
