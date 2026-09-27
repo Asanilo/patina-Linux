@@ -54,10 +54,22 @@ pub async fn load_capture_window_title_setting_for_app(
     };
 
     let setting_key = format!("{APP_OVERRIDE_KEY_PREFIX}{canonical_exe_name}");
-    let row = sqlx::query("SELECT value FROM settings WHERE key = ? LIMIT 1")
-        .bind(setting_key)
-        .fetch_optional(pool)
-        .await?;
+    // Older executable keys used a Windows suffix even for names without one.
+    // The current Linux classification UI writes the executable name as recorded.
+    let legacy_setting_key = if canonical_exe_name.ends_with(".exe") {
+        setting_key.clone()
+    } else {
+        format!("{setting_key}.exe")
+    };
+    let row = sqlx::query(
+        "SELECT value FROM settings WHERE key IN (?, ?)
+         ORDER BY CASE WHEN key = ? THEN 0 ELSE 1 END LIMIT 1",
+    )
+    .bind(&setting_key)
+    .bind(&legacy_setting_key)
+    .bind(&setting_key)
+    .fetch_optional(pool)
+    .await?;
 
     let Some(raw_value) = row.and_then(|row| row.try_get::<String, _>("value").ok()) else {
         return Ok(true);
@@ -156,12 +168,7 @@ fn normalize_exe_setting_key(exe_name: &str) -> Option<String> {
         return None;
     }
 
-    let mut key = trimmed.to_ascii_lowercase();
-    if !key.ends_with(".exe") {
-        key.push_str(".exe");
-    }
-
-    Some(key)
+    Some(trimmed.to_ascii_lowercase())
 }
 
 #[cfg(test)]
@@ -213,6 +220,41 @@ mod tests {
 
             let configured = load_timeline_merge_gap_secs(&pool, 180).await.unwrap();
             assert_eq!(configured, 240);
+        });
+    }
+
+    #[test]
+    fn title_privacy_prefers_recorded_linux_executable_key() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_test_db().await;
+            save_setting_value(
+                &pool,
+                "__app_override::python3.exe",
+                r#"{"captureTitle":false}"#,
+            )
+            .await
+            .unwrap();
+            assert!(!load_capture_window_title_setting_for_app(&pool, "python3")
+                .await
+                .unwrap());
+
+            save_setting_value(&pool, "__app_override::python3", r#"{"captureTitle":true}"#)
+                .await
+                .unwrap();
+            assert!(load_capture_window_title_setting_for_app(&pool, "python3")
+                .await
+                .unwrap());
+
+            save_setting_value(
+                &pool,
+                "__app_override::python3",
+                r#"{"captureTitle":false,"enabled":true}"#,
+            )
+            .await
+            .unwrap();
+            assert!(!load_capture_window_title_setting_for_app(&pool, "python3")
+                .await
+                .unwrap());
         });
     }
 }

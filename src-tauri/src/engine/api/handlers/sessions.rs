@@ -410,6 +410,66 @@ fn parse_summary_query(query: Option<&str>) -> SummaryQueryParams {
 mod local_summary_range_tests {
     use super::*;
     use chrono::{FixedOffset, TimeZone};
+    use sqlx::Executor;
+
+    #[tokio::test]
+    async fn summary_range_respects_current_app_override_after_import() {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        pool.execute(crate::data::schema::CURRENT_BASELINE_SCHEMA_SQL)
+            .await
+            .unwrap();
+        pool.execute(crate::data::schema::ACTIVITY_IMPORT_SCHEMA_SQL)
+            .await
+            .unwrap();
+        pool.execute(
+            "INSERT INTO import_batches (
+               id, imported_at, source_name, source_kind, source_fingerprint,
+               exact_session_count, hour_bucket_count
+             ) VALUES ('batch', 1, 'c1.csv', 'patina-csv',
+                       'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 1, 0)",
+        )
+        .await
+        .unwrap();
+        pool.execute(
+            "INSERT INTO import_exact_sessions (
+               batch_id, fingerprint, app_name, exe_name, window_title,
+               start_time, end_time, duration
+             ) VALUES ('batch',
+                       'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                       'C1 Synthetic', 'c1', '', 1000, 2000, 1000)",
+        )
+        .await
+        .unwrap();
+        pool.execute(
+            "INSERT INTO settings (key, value)
+             VALUES ('__app_override::c1', '{\"track\":false,\"enabled\":true}')",
+        )
+        .await
+        .unwrap();
+
+        let context = ApiRuntimeContext::new(
+            crate::engine::runtime_context::RuntimeContext::system(pool.clone()),
+        );
+        let excluded = get_summary_range(&context, Some("from=1000&to=2000")).await;
+        assert_eq!(excluded.status, 200);
+        assert_eq!(excluded.body["data"]["total_active_ms"], 0);
+        assert_eq!(excluded.body["data"]["apps"].as_array().unwrap().len(), 0);
+
+        pool.execute(
+            "UPDATE settings SET value='{\"track\":true,\"category\":\"Development\"}'
+             WHERE key='__app_override::c1'",
+        )
+        .await
+        .unwrap();
+        let included = get_summary_range(&context, Some("from=1000&to=2000")).await;
+        assert_eq!(included.status, 200);
+        assert_eq!(included.body["data"]["total_active_ms"], 1000);
+        assert_eq!(
+            included.body["data"]["categories"][0]["name"],
+            "Development"
+        );
+        pool.close().await;
+    }
 
     #[tokio::test]
     async fn calendar_summary_at_midnight_is_empty_but_explicit_empty_range_is_rejected() {

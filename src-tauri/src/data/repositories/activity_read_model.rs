@@ -166,12 +166,15 @@ pub async fn load_recorded_apps(pool: &Pool<Sqlite>) -> Result<Vec<RecordedAppFa
 pub async fn load_app_semantics(pool: &Pool<Sqlite>) -> Result<ActivityAppSemantics, String> {
     let rows = sqlx::query(
         "SELECT key, value FROM settings
-         WHERE key LIKE '__app_category::%' OR key LIKE '__app_excluded::%'",
+         WHERE key LIKE '__app_category::%'
+            OR key LIKE '__app_excluded::%'
+            OR key LIKE '__app_override::%'",
     )
     .fetch_all(pool)
     .await
     .map_err(|error| format!("failed to load activity app semantics: {error}"))?;
     let mut semantics = ActivityAppSemantics::default();
+    let mut current_overrides = HashMap::new();
     for row in rows {
         let key: String = row.get("key");
         let value: String = row.get("value");
@@ -180,9 +183,39 @@ pub async fn load_app_semantics(pool: &Pool<Sqlite>) -> Result<ActivityAppSemant
                 .categories
                 .insert(normalize_app_key(exe_name), value);
         } else if let Some(exe_name) = key.strip_prefix("__app_excluded::") {
-            if matches!(value.as_str(), "1" | "true") {
+            if crate::domain::settings::parse_boolean_setting(&value, false) {
                 semantics.excluded.insert(normalize_app_key(exe_name));
             }
+        } else if let Some(exe_name) = key.strip_prefix("__app_override::") {
+            let override_value: serde_json::Value = serde_json::from_str(&value)
+                .map_err(|_| "activity app override is invalid JSON".to_string())?;
+            let object = override_value
+                .as_object()
+                .ok_or("activity app override must be an object")?;
+            let category = object
+                .get("category")
+                .and_then(serde_json::Value::as_str)
+                .filter(|category| !category.trim().is_empty())
+                .map(str::to_string);
+            let excluded = object.get("enabled") != Some(&serde_json::Value::Bool(false))
+                && object.get("track") == Some(&serde_json::Value::Bool(false));
+            let app_key = normalize_app_key(exe_name);
+            if current_overrides
+                .insert(app_key, (category.clone(), excluded))
+                .is_some_and(|previous| previous != (category, excluded))
+            {
+                return Err("activity app aliases have conflicting overrides".to_string());
+            }
+        }
+    }
+    for (app_key, (category, excluded)) in current_overrides {
+        if let Some(category) = category {
+            semantics.categories.insert(app_key.clone(), category);
+        }
+        if excluded {
+            semantics.excluded.insert(app_key);
+        } else {
+            semantics.excluded.remove(&app_key);
         }
     }
     Ok(semantics)
@@ -347,6 +380,31 @@ mod tests {
             let semantics = load_app_semantics(&pool).await.unwrap();
             assert_eq!(semantics.category_for("zen"), Some("Browser"));
             assert!(semantics.is_excluded("ghostty"));
+        });
+    }
+
+    #[test]
+    fn current_app_override_updates_summary_semantics() {
+        tauri::async_runtime::block_on(async {
+            let pool = setup_pool().await;
+            sqlx::query(
+                "INSERT INTO settings (key, value) VALUES
+                 ('__app_category::C1', 'Legacy'),
+                 ('__app_excluded::C1', 'true'),
+                 ('__app_override::c1', '{\"category\":\"Development\",\"track\":true}'),
+                 ('__app_override::other', '{\"track\":false,\"enabled\":true}'),
+                 ('__app_excluded::disabled', 'true'),
+                 ('__app_override::disabled', '{\"track\":false,\"enabled\":false}')",
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+
+            let semantics = load_app_semantics(&pool).await.unwrap();
+            assert_eq!(semantics.category_for("C1"), Some("Development"));
+            assert!(!semantics.is_excluded("C1"));
+            assert!(semantics.is_excluded("other"));
+            assert!(!semantics.is_excluded("disabled"));
         });
     }
 }

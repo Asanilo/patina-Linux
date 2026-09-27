@@ -26,6 +26,8 @@ App note en: Recover desktop connections after slow daemon startup and report cr
 
 - 后台首次生成连接凭据较慢时，桌面客户端继续等待并允许取消，不再超过十秒就永久停止连接；不可恢复的读取错误明确报告停止。
 - 悬浮窗从后台任务启动时，显示器查询切回 UI 主线程，避免并发访问 GTK/Xlib 导致 X11 自启动崩溃。
+- 修复应用排除设置已生效于历史与热力图、却仍计入本地 API 汇总统计的问题；汇总同时读取当前应用分类设置。
+- 修复 Linux 应用关闭标题记录后，后台仍按旧 `.exe` 键读取设置并保存窗口标题的问题。
 
 ### Internal
 
