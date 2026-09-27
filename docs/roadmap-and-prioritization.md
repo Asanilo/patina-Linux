@@ -185,7 +185,7 @@ daemon 第一阶段差距审计、阻塞修复、候选验收与本地主线合�
 
 独立 daemon、平台信号、浏览器桥接、HTTP/SSE、主要写侧 owner、systemd 交接和 Desktop 适配已有实现及分批验证。趋势/分类有界聚合和备份流式化已纳入 beta.19，不撤销经过验证的改动，但不继续扩大此类通用优化。
 
-`1.9.0-rc.2` 已公开交付 AppImage 与 DEB，两个包按产品公钥验签，旧 `1.8.4` AppImage 从真实公开 manifest 下载并验签升级到 RC2。公开 GNOME 42 ZIP 与 GNOME 46/50 ESM ZIP 已从无预装目录的隔离客体直接安装；GNOME 42 的 beta.21→RC2 DEB 升级，以及 Fedora 44 公开 RC2 AppImage 的首启、关闭 UI 后记录和冷登录均通过。下一步是从准确 `1.9.0` 源码完成正式签名构建、稳定 tag 发布及 Latest 通道复验；宿主仍安装此前的 beta.21 本地候选，不以隔离验收冒充宿主实装。`beta.N` 保持 DEB-only，双包 `rc` 用于公开渠道验证。执行证据见[AppImage 正式版执行单](./working/2026-09-27-appimage-stable-release.md)，候选和原有安装证据见[当前工作清单](./working/2026-07-10-patinad-runtime-design.md)及[阶段执行单](./working/2026-09-23-sustainable-linux-release.md)。
+`1.9.0-rc.2` 已公开交付 AppImage 与 DEB，两个包按产品公钥验签，旧 `1.8.4` AppImage 从真实公开 manifest 下载并验签升级到 RC2。公开 GNOME 42 ZIP 与 GNOME 46/50 ESM ZIP 已从无预装目录的隔离客体直接安装；GNOME 42 的 beta.21→RC2 DEB 升级，以及 Fedora 44 公开 RC2 AppImage 的首启、关闭 UI 后记录和冷登录均通过。`v1.9.0` tag 的公开构建连续被浏览器烟测启动时序挡住，没有形成 Release 或安装包；下一步从修复该门禁的准确 `1.9.1` 源码完成正式签名构建、稳定 tag 发布及 Latest 通道复验。宿主仍安装此前的 beta.21 本地候选，不以隔离验收冒充宿主实装。`beta.N` 保持 DEB-only，双包 `rc` 用于公开渠道验证。执行证据见[AppImage 正式版执行单](./working/2026-09-27-appimage-stable-release.md)，候选和原有安装证据见[当前工作清单](./working/2026-07-10-patinad-runtime-design.md)及[阶段执行单](./working/2026-09-23-sustainable-linux-release.md)。
 
 #### 已通过的第一阶段条件与持续约束
 

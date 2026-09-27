@@ -90,7 +90,7 @@ The daemon separation developed on `feature/patinad-daemon` has been merged into
 
 Before installing a beta, export and verify a backup outside the Patina data directory. Reopen Desktop after package installation; if Settings reports different Desktop/Daemon versions, explicitly confirm **Reload background service**. Installation alone does not replace an already-running daemon. Reload briefly interrupts tracking and does not download a package.
 
-The **1.9.0** Linux release delivers signed x86_64 AppImage and DEB packages; check [Releases](https://github.com/Asanilo/patina-Linux/releases) for the published assets and current Latest version. The standalone daemon keeps tracking after the desktop closes. AppImage and DEB updates select the matching package type, and older AppImage clients retain a compatible update target. GNOME 42 Wayland remains the declared support environment; GNOME 46 and Fedora GNOME 50 have isolated technical acceptance without an expanded support promise. Widget flicker/docking remains deferred; Flatpak and additional browser/TUI clients are not included.
+The **1.9.1** Linux release delivers signed x86_64 AppImage and DEB packages; check [Releases](https://github.com/Asanilo/patina-Linux/releases) for the published assets and current Latest version. The standalone daemon keeps tracking after the desktop closes. AppImage and DEB updates select the matching package type, and older AppImage clients retain a compatible update target. GNOME 42 Wayland remains the declared support environment; GNOME 46 and Fedora GNOME 50 have isolated technical acceptance without an expanded support promise. Widget flicker/docking remains deferred; Flatpak and additional browser/TUI clients are not included.
 
 ## Quick Start On Linux
 

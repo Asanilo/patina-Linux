@@ -807,7 +807,7 @@ try {
     await waitForExpression(
       client!,
       sessionId,
-      `document.body.innerText.includes(${jsonString(DASHBOARD_MARKERS[0])})`,
+      `document.body?.innerText.includes(${jsonString(DASHBOARD_MARKERS[0])}) ?? false`,
       FIRST_RENDER_TIMEOUT_MS,
       "dashboard first render",
     );
@@ -816,7 +816,7 @@ try {
       await waitForExpression(
         client!,
         sessionId,
-        `document.body.innerText.includes(${jsonString(marker)})`,
+        `document.body?.innerText.includes(${jsonString(marker)}) ?? false`,
         FIRST_RENDER_TIMEOUT_MS,
         `dashboard marker ${marker}`,
       );

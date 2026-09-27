@@ -8,11 +8,11 @@
 
 ## 2. 当前支持承诺
 
-`Asanilo/patina-Linux` 的日常产品主线是 `main`，已合入 daemon 分离。`1.9.0` 稳定发布契约交付 AppImage 与 DEB；发行版支持承诺仍限 Debian 系，隔离验收另覆盖 Ubuntu 24.04 和 Fedora 44。下表区分桌面/显示协议，不能单凭“GNOME”或生成了 AppImage 就宣称其他发行版可用。版本、CPU 架构和包格式仍须随候选证据记录；上游 Linux PR 的首批支持矩阵另行讨论。
+`Asanilo/patina-Linux` 的日常产品主线是 `main`，已合入 daemon 分离。`1.9.1` 稳定发布契约交付 AppImage 与 DEB；发行版支持承诺仍限 Debian 系，隔离验收另覆盖 Ubuntu 24.04 和 Fedora 44。下表区分桌面/显示协议，不能单凭“GNOME”或生成了 AppImage 就宣称其他发行版可用。版本、CPU 架构和包格式仍须随候选证据记录；上游 Linux PR 的首批支持矩阵另行讨论。
 
 | 发行版与桌面 | 安装格式、登录会话、客户端显示后端 | 当前状态 |
 | --- | --- | --- |
-| 现有 Debian 系 / GNOME Shell 42，amd64 | 1.9.0 AppImage 与 DEB；GNOME Wayland；Desktop 为 X11/XWayland | 当前声明范围；公开 RC2 DEB 在隔离 GNOME 42 完成升级和冷登录，签名 AppImage 在该环境有独立验收；宿主正式包尚未实装 |
+| 现有 Debian 系 / GNOME Shell 42，amd64 | 1.9.1 AppImage 与 DEB；GNOME Wayland；Desktop 为 X11/XWayland | 当前声明范围；公开 RC2 DEB 在隔离 GNOME 42 完成升级和冷登录，签名 AppImage 在该环境有独立验收；宿主正式包尚未实装 |
 | Ubuntu 24.04 / GNOME Shell 46，amd64 | 隔离 AppImage；GDM Wayland；已签名 beta.21 Desktop 为 X11/XWayland | 隔离验收通过；ESM 扩展附件已公开，不等于扩大支持承诺 |
 | Fedora 44 / GNOME Shell 50.5，x86_64 | 公开 RC2 AppImage；GDM Wayland；Desktop 为 Wayland | 公开包和 ESM ZIP 在隔离客体通过首启与冷登录，未作公开支持承诺 |
 

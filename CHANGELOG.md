@@ -16,7 +16,7 @@ Release: 待定。
 App note: 待定。
 App note en: TBD.
 
-## [1.9.0] - 2026-09-28
+## [1.9.1] - 2026-09-28
 
 Release: Linux 正式版：独立后台持续记录，提供已签名的 AppImage 与 DEB，以及按安装包类型选择的更新。
 App note: 关闭桌面界面后继续记录；AppImage 与 DEB 均可通过签名更新，旧数据保持可用。
@@ -37,6 +37,17 @@ App note en: Keep tracking after closing the desktop and update signed AppImage 
 - 修复后台启动、重新登录、锁屏与睡眠后会话状态恢复，以及采样失败时未知时间间隙被误计的问题。
 - 修复目录维护与备份恢复边界、应用排除和窗口标题设置在后台汇总中的一致性。
 - 修复 AppImage 自启动路径与 GNOME 扩展 ZIP 的直接安装结构。
+- 修复发布浏览器烟测在页面刚导航、`document.body` 尚未出现时误报失败的问题。
+
+## [1.9.0] - 2026-09-28
+
+Release: 发布未完成：tag 已推送，但公开构建的浏览器烟测连续失败，没有生成 GitHub Release 或安装包；完整正式版内容进入 1.9.1。
+App note: 无公开安装包；请使用 1.9.1。
+App note en: No public packages were published for this tag; use 1.9.1.
+
+### Internal
+
+- 保留 `v1.9.0` tag 作为未完成发布的历史，不改写它或把后续包附加到该 tag。
 
 ## [1.9.0-rc.2] - 2026-09-27
 

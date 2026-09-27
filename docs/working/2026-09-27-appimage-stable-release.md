@@ -41,3 +41,9 @@
 - GNOME 42 隔离客体从已验收的公开 beta.21 DEB 状态升级到公开 RC2 DEB；包版本 `1.9.0-rc.2`，GDM Wayland 冷登录后 daemon 为 `1.9.0-rc.2`，旧会话 ID 1 保留且 SQLite `integrity_check=ok`。关闭 Desktop 后，Shell 双 D-Bus 名称存在，真实 GTK 前台窗口由 daemon 记录。首次窗口脚本失败因 GNOME Overview 未点选窗口，点选后同脚本通过。
 - Fedora 44 隔离客体从干净快照运行公开 RC2 AppImage，首次调用创建持久 user service 后前台退出；第二次打开显示真实 Dashboard 并完成 daemon 接管。退出 Desktop 后以及 GDM Wayland 冷登录后，版本化 AppImage 运行时的 daemon 保持 active，真实 GNOME 前台窗口记录通过，Shell 双 D-Bus 名称存在。冷登录窗口脚本同样需先在 Overview 点选窗口。此结果是隔离技术验收，不扩大 Fedora 公开支持承诺；首次前台退出仍按该客体首启行为记录，不隐去。
 - 已把版本同步至 `1.9.0` 并整理稳定版 changelog 和支持文档。下一门槛是正式版源码的 `test:release`、`release:check`、准确签名候选、干净源码导出校验，再推稳定 tag；公开稳定资产与 Latest 必须重新下载验签、检查双包及更新目标后才能标记完成。
+
+## 稳定版构建门禁修复（2026-09-28）
+
+- `1.9.0` 准备提交 `47b54303` 在本地通过 `test:release` 和 `release:check`（Rust 718 通过、21 忽略）；干净源码导出通过版本与 changelog 校验。[准确签名候选](https://github.com/Asanilo/patina-Linux/actions/runs/36330680692)也成功完成生产签名与验签。`v1.9.0` tag 因此推送到该提交。
+- [公开稳定版工作流](https://github.com/Asanilo/patina-Linux/actions/runs/36333393377)两次尝试均在 `tests/uiBrowserSmoke.test.ts` 的首次页面渲染等待中失败：Chrome 导航后短暂没有 `document.body`，测试直接读取 `innerText` 抛出异常。相同源码的私有候选和本地门禁已通过，但公开工作流连续复现；没有生成 GitHub Release 或安装包。tag 不改写，也不把未生成的资产称为已发布。
+- 首次 Dashboard 渲染等待改为在 `document.body` 尚不存在时返回 `false`，继续等待；只修复验收夹具，不改变应用行为。按已公开 tag 不复用的规则，新正式版号为 `1.9.1`；其 changelog 承接完整产品变化，并明确记录 `1.9.0` 只有未完成的 tag。下一门槛为准确 `1.9.1` 门禁、签名候选、公开双包和 Latest 实际验收。

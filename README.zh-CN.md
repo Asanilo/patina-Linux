@@ -136,7 +136,7 @@ ${XDG_DATA_HOME:-~/.local/share}/Patina/api_token
 
 安装前先导出并验证一份位于 Patina 数据目录之外的备份。覆盖安装后重新打开桌面端；设置诊断若显示 Desktop/Daemon 版本不同，再显式确认“重新加载后台”。安装软件包不等于运行中的后台已经更新；重新加载会短暂停止记录，不负责下载软件包。
 
-**1.9.0** Linux 正式版提供已签名的 x86_64 AppImage 和 DEB；公开资产与当前 Latest 版本以 [Releases](https://github.com/Asanilo/patina-Linux/releases) 为准。独立后台在关闭桌面界面后继续记录；更新会按当前安装包类型选择目标，旧 AppImage 客户端仍有兼容目标。公开支持环境仍为 GNOME 42 Wayland；GNOME 46 与 Fedora GNOME 50 已完成隔离技术验收，不自动扩大支持承诺。悬浮窗闪烁/吸附继续暂停，Flatpak 和新增浏览器/TUI 客户端不在本次范围内。
+**1.9.1** Linux 正式版提供已签名的 x86_64 AppImage 和 DEB；公开资产与当前 Latest 版本以 [Releases](https://github.com/Asanilo/patina-Linux/releases) 为准。独立后台在关闭桌面界面后继续记录；更新会按当前安装包类型选择目标，旧 AppImage 客户端仍有兼容目标。公开支持环境仍为 GNOME 42 Wayland；GNOME 46 与 Fedora GNOME 50 已完成隔离技术验收，不自动扩大支持承诺。悬浮窗闪烁/吸附继续暂停，Flatpak 和新增浏览器/TUI 客户端不在本次范围内。
 
 ## Linux 安装包
 
