@@ -16,6 +16,28 @@ Release: 待定。
 App note: 待定。
 App note en: TBD.
 
+## [1.9.0] - 2026-09-28
+
+Release: Linux 正式版：独立后台持续记录，提供已签名的 AppImage 与 DEB，以及按安装包类型选择的更新。
+App note: 关闭桌面界面后继续记录；AppImage 与 DEB 均可通过签名更新，旧数据保持可用。
+App note en: Keep tracking after closing the desktop and update signed AppImage or DEB packages without losing existing data.
+
+### Added
+
+- `patinad` 成为 Linux 后台记录与运行时写入的默认 owner；桌面客户端通过本地服务访问同一份状态。首次切换由当前用户确认，提供服务版本、状态和恢复入口。
+- 正式交付 x86_64 AppImage 与 DEB；AppImage 使用版本化持久运行时和固定 user service 路径，已签名更新下载后原子替换原包并保留旧包供恢复。更新清单按包类型提供目标，并保留旧客户端的 AppImage 通用目标。
+
+### Changed
+
+- 限制首页、趋势和分类统计的读取与渲染开销，并改善备份过程的内存使用；后台运行时由 daemon 统一处理设置写入、数据维护和备份恢复。
+- GNOME 42 扩展提供兼容的新旧窗口追踪协议；另附 GNOME 46/50 ESM 扩展供已完成的隔离技术验收使用，公开支持范围仍以 GNOME 42 Wayland 为准。
+
+### Fixed
+
+- 修复后台启动、重新登录、锁屏与睡眠后会话状态恢复，以及采样失败时未知时间间隙被误计的问题。
+- 修复目录维护与备份恢复边界、应用排除和窗口标题设置在后台汇总中的一致性。
+- 修复 AppImage 自启动路径与 GNOME 扩展 ZIP 的直接安装结构。
+
 ## [1.9.0-rc.2] - 2026-09-27
 
 Release: Linux 1.9.0 候选版：修复 GNOME 扩展压缩包的直接安装，继续验证 AppImage 与 DEB。

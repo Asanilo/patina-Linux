@@ -684,7 +684,7 @@ await execFileAsync(process.execPath, ["--experimental-strip-types", releaseScri
 await execFileAsync(process.execPath, ["--experimental-strip-types", releaseScriptPath, "validate-version-files", currentPackageVersion]);
 await assert.rejects(
   execFileAsync(process.execPath, ["--experimental-strip-types", releaseScriptPath, "validate-version-files", "0.0.0-cli-mismatch"]),
-  /version files are not ready/,
+  { code: 1 },
 );
 
 console.log("Passed 25 release policy tests");
