@@ -237,6 +237,85 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires a published dual-bundle RC and an isolated user-owned AppImage fixture"]
+    async fn production_public_release_appimage_upgrade() {
+        use tauri_plugin_updater::UpdaterExt;
+
+        let root = PathBuf::from(std::env::var_os("PATINA_PUBLIC_UPDATE_TEST_ROOT").unwrap());
+        assert!(root.is_absolute());
+        assert_eq!(fs::canonicalize(&root).unwrap(), root);
+        assert_eq!(fs::metadata(&root).unwrap().permissions().mode() & 0o777, 0o700);
+        assert_eq!(
+            fs::read_to_string(root.join("marker")).unwrap(),
+            "isolated-public-update-acceptance\n"
+        );
+        let input: serde_json::Value =
+            serde_json::from_slice(&fs::read(root.join("input.json")).unwrap()).unwrap();
+        let old_version = semver::Version::parse(input["old_version"].as_str().unwrap()).unwrap();
+        let new_version = semver::Version::parse(input["new_version"].as_str().unwrap()).unwrap();
+        assert!(new_version > old_version);
+        let manifest_url = format!(
+            "https://github.com/Asanilo/patina-Linux/releases/download/v{new_version}/latest.json"
+        );
+        assert_eq!(input["manifest_url"].as_str().unwrap(), manifest_url);
+        let expected_url = format!(
+            "https://github.com/Asanilo/patina-Linux/releases/download/v{new_version}/Patina_{new_version}_amd64.AppImage"
+        );
+        let target = root.join("installed.AppImage");
+        let old_hash = fingerprint(&target).unwrap();
+        assert_eq!(input["old_sha256"].as_str().unwrap(), old_hash);
+        // A plain test executable has no bundle marker and therefore exercises
+        // the generic linux-x86_64 key used by older AppImage clients.
+        assert_eq!(tauri::utils::platform::bundle_type(), None);
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../../../tauri.conf.json")).unwrap();
+        let public_key = config["plugins"]["updater"]["pubkey"].as_str().unwrap();
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context.package_info_mut().version = old_version;
+        context.config_mut().plugins.0.insert(
+            "updater".into(),
+            serde_json::json!({ "pubkey": public_key }),
+        );
+        let app = tauri::test::mock_builder()
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            .build(context)
+            .unwrap();
+        let updater = app
+            .updater_builder()
+            .timeout(std::time::Duration::from_secs(180))
+            .endpoints(vec![manifest_url.parse().unwrap()])
+            .unwrap()
+            .build()
+            .unwrap();
+        let update = updater.check().await.unwrap().unwrap();
+        assert_eq!(update.version, new_version.to_string());
+        assert_eq!(update.download_url.as_str(), expected_url);
+        let verified = update.download(|_, _| {}, || {}).await.unwrap();
+        let new_hash = format!("{:x}", Sha256::digest(&verified));
+        assert_eq!(input["new_sha256"].as_str().unwrap(), new_hash);
+        let recovery = install_verified_image(&target, &verified).unwrap();
+        assert_eq!(fingerprint(&target).unwrap(), new_hash);
+        assert_eq!(fingerprint(&recovery).unwrap(), old_hash);
+        fs::write(
+            root.join("public-update-result.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "passed": true,
+                "old_version": input["old_version"],
+                "new_version": input["new_version"],
+                "manifest_url": manifest_url,
+                "selected_appimage_url": expected_url,
+                "generic_fallback_selected": true,
+                "production_signature_verified_before_install": true,
+                "old_sha256": old_hash,
+                "new_sha256": new_hash,
+                "recovery": recovery,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
     #[ignore = "requires an isolated signed fixture and loopback networking; never a release key"]
     async fn tauri_download_verifies_before_atomic_install() {
         use tauri_plugin_updater::UpdaterExt;

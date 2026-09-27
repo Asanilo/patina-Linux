@@ -15,6 +15,7 @@ const HISTORY_LOADING_VIEW = COPY["zh-CN"].history.loading;
 const HISTORY_TITLE_DETAIL_COUNT = 10;
 const LONG_BACKGROUND_DELAY_MS = 5 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 15_000;
+const BROWSER_STARTUP_TIMEOUT_MS = process.env.CI ? 45_000 : DEFAULT_TIMEOUT_MS;
 const FIRST_RENDER_TIMEOUT_MS = process.env.CI ? 45_000 : DEFAULT_TIMEOUT_MS;
 
 let passed = 0;
@@ -550,6 +551,7 @@ async function launchBrowser() {
   const browser = spawn(browserPath, [
     "--headless=new",
     "--disable-gpu",
+    "--disable-dev-shm-usage",
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-extensions",
@@ -557,10 +559,30 @@ async function launchBrowser() {
     `--user-data-dir=${userDataDir}`,
     "about:blank",
   ], {
-    stdio: "ignore",
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  let browserError: Error | null = null;
+  let stderr = "";
+  browser.on("error", (error) => { browserError = error; });
+  browser.stderr?.on("data", (chunk: Buffer) => {
+    stderr = (stderr + chunk.toString()).slice(-4_000);
   });
 
-  const port = await waitFor("browser devtools port", () => readDevToolsPort(userDataDir));
+  let port: number;
+  try {
+    port = await waitFor("browser devtools port", () => {
+      if (browserError || browser.exitCode !== null || browser.signalCode !== null) {
+        throw new Error("browser exited before opening its devtools port");
+      }
+      return readDevToolsPort(userDataDir);
+    }, BROWSER_STARTUP_TIMEOUT_MS);
+  } catch (error) {
+    await stopBrowser(browser);
+    rmSync(userDataDir, { force: true, recursive: true });
+    throw new Error(
+      `${String(error)}; browser=${browserPath}; exit=${browser.exitCode ?? browser.signalCode ?? "running"}; ${stderr.trim()}`,
+    );
+  }
 
   return {
     browser,
