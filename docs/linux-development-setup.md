@@ -206,8 +206,9 @@ A manual preview reports startup stage `tracking-preview`, exposes service state
 
 ### Daemon-Backed AppImage Runtime (Development)
 
-Daemon-backed AppImage support on `main` is implemented but remains behind the
-independent packaging/acceptance gate; prerelease publishing is still DEB-only.
+Daemon-backed AppImage support on `main` is implemented and entering the
+independent public-channel acceptance gate. `beta.N` publishing remains DEB-only;
+an explicit dual-bundle `rc` candidate is used before stable publication.
 The AppImage includes both Desktop and `usr/bin/patinad`. `AppRun --patinad`
 executes the bundled daemon before Desktop initialization. First launch stages
 the entire AppDir, including its libraries, under the stable product data root:
@@ -370,7 +371,7 @@ Enable it for the current user after package installation:
 gnome-extensions enable patina-window-tracker@patina
 ```
 
-For AppImage installations, install the separately published extension archive:
+For AppImage installations, install the extension archive matching the active GNOME Shell. GNOME 42 uses the legacy archive:
 
 ```bash
 gnome-extensions install --force patina-gnome-shell-extension-v<version>.zip
@@ -381,9 +382,10 @@ gnome-extensions enable patina-window-tracker@patina
 
 GNOME Shell 45+ requires an ESM entry point, while the currently packaged GNOME 42
 extension uses the legacy entry point. They keep the same UUID and D-Bus contract
-but are separate build inputs; the DEB payload and current Release extension ZIP
-still contain the GNOME 42 version. The ESM source declares Shell 46 and 50
-for isolated compatibility testing and is not a published support claim.
+but are separate build inputs; the DEB payload and beta Release extension ZIP
+still contain the GNOME 42 version. Dual-bundle `rc` and stable Releases also
+attach `patina-gnome-shell-extension-esm-vX.zip` for the isolated GNOME 46/50
+candidate environments. Publishing the ESM asset is not a wider support claim.
 
 ```bash
 npm run extension:gnome:check
@@ -399,9 +401,9 @@ recording have evidence; GNOME 46 also has a production-signed candidate's isola
 support-matrix and public distribution gates are tracked in the
 [current stage checklist](./working/2026-09-23-sustainable-linux-release.md).
 
-For stable tags, the release workflow publishes a Linux-only `latest.json` with `linux-x86_64-appimage` and `linux-x86_64-deb` package-specific targets. It also keeps an AppImage-based `linux-x86_64` fallback for older clients. AppImage installations download the signed AppImage; Debian installations download the signed `.deb` and may request system authorization before installation.
+For stable and dual-bundle `rc` tags, the release workflow publishes a Linux-only `latest.json` with `linux-x86_64-appimage` and `linux-x86_64-deb` package-specific targets. It also keeps an AppImage-based `linux-x86_64` fallback for older clients. AppImage installations download the signed AppImage; Debian installations download the signed `.deb` and may request system authorization before installation.
 
-Daemon-backed prerelease tags use the narrow DEB-only beta contract. Their workflow builds only `--bundles deb`, uploads no AppImage, and writes `latest.json` with only `linux-x86_64-deb`. This manifest remains attached to the prerelease; it does not replace the stable `/releases/latest/download/latest.json` endpoint. Beta installation and later beta upgrades therefore remain an explicit acceptance flow until a dedicated prerelease updater channel is designed.
+Daemon-backed `beta.N` tags use the narrow DEB-only contract. Their workflow builds only `--bundles deb`, uploads no AppImage, and writes `latest.json` with only `linux-x86_64-deb`. A dual-bundle `rc` is also a prerelease, so its manifest remains attached to its version tag and does not replace the stable `/releases/latest/download/latest.json` endpoint. Public-channel acceptance fetches the actual tagged manifest and assets; beta installation and upgrades remain explicit until the stable release.
 
 Before publishing a Linux tag, run the release-focused local checks:
 
@@ -416,7 +418,8 @@ npm run extension:chromium:check
 npm run extension:firefox:check
 ```
 
-`npm run test:release` covers both Linux package release contracts. Stable tags request `--bundles appimage,deb`, require both signatures, and route each installation type to its matching artifact. Daemon-backed prerelease tags request `--bundles deb`, reject missing or empty DEB signatures, omit AppImage assets, and expose only the DEB updater target.
+`npm run test:release` covers both Linux package release contracts. Stable and explicit `rc` tags request `--bundles appimage,deb`, require both signatures, and route each installation type to its matching artifact. Daemon-backed `beta.N` tags request `--bundles deb`, reject missing or empty DEB signatures, omit AppImage assets, and expose only the DEB updater target.
+The release workflow proves the configured production key before compilation and verifies each finished bundle signature against the updater public key before uploading assets. The verifier also rejects a tampered published beta.21 DEB in the local acceptance fixture.
 
 When debugging Debian packaging locally, run a focused Tauri release build:
 

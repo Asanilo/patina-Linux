@@ -22,7 +22,7 @@
 
 截至当前发布线：
 
-- 代码版本为 `1.9.0-beta.21`
+- 代码版本为 `1.9.0-rc.1`
 - 稳定发布线为 `1.x`
 - 仓库已进入公开稳定阶段，后续版本按标准 `SemVer` 管理
 - 默认通过推送 `vX.Y.Z` / `vX.Y.Z-prerelease` 版本 tag 自动触发 GitHub Actions 工作流 [prepare-release.yml](../.github/workflows/prepare-release.yml) 中的 `Publish Linux Release` 流程；必要时也可手动触发已有 tag 的发布流程补跑
@@ -343,12 +343,14 @@ Linux 发布资产契约：
 - 如果任何必需 Linux 软件包或其配对签名缺失、为空，`prepare-linux-release-assets` 必须失败。
 - `npm run test:release` 必须持续覆盖 workflow bundle 请求、`.deb` 准备逻辑和 Linux-only updater manifest。
 
-以上双包资产契约适用于当前稳定发布线。首个 daemon-backed beta 是窄例外：Release 只要求 `.deb`、`.deb.sig` 对应签名内容、DEB updater target 与扩展资产，不得生成或上传一个无法稳定拥有 systemd service 的 AppImage。进入该 beta 实施前，release 脚本、workflow、测试和 README 必须一起切换到明确的 DEB-only contract。用户于 2026-09-18 确认继续支持 AppImage：daemon-backed 稳定版发布前，必须完成其版本化 daemon 持久解包、稳定服务路径、原子更新及失败恢复，并验证旧 AppImage 客户端不会循环更新、下载错误包或静默失去支持。当前不执行退役迁移；本项通过前维持 DEB-only beta，不恢复 AppImage 发布。
+以上双包资产契约适用于稳定版及明确用于公开渠道验收的 `rc` 预发布。daemon-backed `beta.N` 是窄例外：Release 只要求 `.deb`、`.deb.sig` 对应签名内容、DEB updater target 与扩展资产，不生成或上传 AppImage。用户于 2026-09-18 确认继续支持 AppImage：daemon-backed 稳定版发布前，必须完成其版本化 daemon 持久解包、稳定服务路径、原子更新及失败恢复，并验证旧 AppImage 客户端不会循环更新、下载错误包或静默失去支持。`rc` 双包候选只有在私有正式签名 AppImage 已验收后才进入公开分发，用独立 tag 验证真实 GitHub 资产和 updater 目标；失败时修复并发布新的候选版本，不覆盖旧 tag 或资产。`rc` 不被 GitHub 的 stable Latest 选中，验收时使用该 tag 的真实 `latest.json` 地址；正式版发布后再检查 `/releases/latest/download/latest.json`。不执行退役迁移。
 
 GitHub Release 中的浏览器扩展附件使用带扩展版本号的稳定命名模式：
 
 - `patina-chromium-extension-vX.Y.Z.zip`
 - `patina-firefox-extension-vX.Y.Z.xpi`
+
+双包 `rc` 与稳定版还提供 `patina-gnome-shell-extension-esm-vX.zip`，与 GNOME 42 旧入口的 `patina-gnome-shell-extension-vX.zip` 分开打包；两者 UUID 相同，用户按实际 Shell 版本只安装一个。ESM 包当前对应已隔离验收的 GNOME 46/50，附件出现不自动扩大公开支持承诺。DEB 内仍随包安装当前 GNOME 42 变体。
 
 这些浏览器扩展包可以随 Patina Release 一起分发，但扩展内部 `manifest.json` 的 `version` 独立管理。只有扩展自身发生可发布变化时，才更新扩展版本号。
 附件文件名中的 `vX.Y.Z` 必须来自扩展自己的 `manifest.json`，例如扩展版本为 `0.1.0` 时，附件名为 `patina-chromium-extension-v0.1.0.zip`。
@@ -359,7 +361,7 @@ Chromium zip 内部必须包含同名扩展目录，例如 `patina-chromium-exte
 
 GitHub Release 继续作为正式发布源、主下载入口和主更新清单来源。
 
-应用内 updater 读取 GitHub Release asset 上的 Linux-only `latest.json`。清单包含 `linux-x86_64`、`linux-x86_64-appimage` 和 `linux-x86_64-deb` 三个目标；当前发布线不维护 R2 镜像，避免更新源与主发布事实分叉。
+应用内 updater 读取 GitHub Release asset 上的 Linux-only `latest.json`。稳定版和双包 `rc` 的清单包含 `linux-x86_64`、`linux-x86_64-appimage` 和 `linux-x86_64-deb` 三个目标；`beta.N` 仍只有 DEB 目标。当前发布线不维护 R2 镜像，避免更新源与主发布事实分叉。
 
 ---
 
@@ -370,6 +372,8 @@ main 已合入 daemon 架构，现有 AppImage 实现仍不自动解除 DEB-only
 正式签名候选可通过手动的 [`appimage-acceptance.yml`](../.github/workflows/appimage-acceptance.yml) 独立验收：仅允许本仓库 `main` 的确定提交，使用既有 Actions 签名 Secret，先运行完整门禁，再构建并用应用配置中的公钥验证 AppImage。候选与源码 SHA/摘要只保存为短期 Actions artifact；该流程没有 tag、Release 或 updater manifest 发布步骤，token 只读。推送及运行远端流程仍需用户授权。正式私钥不导出到本机，也不用临时测试密钥冒充正式签名。以本地 HTTP fixture 验证生产公钥、Tauri 下载和原子替换时，必须明确它不覆盖公开更新源分发；真实运行时升级另需隔离安装用户的生命周期、服务版本和数据验收。
 
 验收工作流在昂贵编译前先验证密钥身份：历史 Secret 编码只能规范化为结构完整的受支持 minisign key box，再签署私有临时 challenge 并用产品配置的公钥验签。仅有 decoder 输出不足以证明密钥可用，不能让 `export` 掩盖解码失败后直接构建。Secret 只注入密钥预检和签名构建步骤，不写入文件、日志或 artifact；临时 challenge 自动删除。该预检不代替成品 AppImage 验签和实际升级。
+
+正式发布工作流也应在构建前用同一产品公钥预检签名身份，并在上传前独立验签实际生成的每个 Linux 安装包；`beta.N` 检查 DEB，双包 `rc` 与稳定版检查 AppImage 和 DEB。存在非空 `.sig` 文件本身不算验签通过。
 
 发布前至少应完成以下验证：
 
@@ -408,9 +412,9 @@ main 已合入 daemon 架构，现有 AppImage 实现仍不自动解除 DEB-only
 5. 将准备发布所需提交推送到远端，提交信息推荐使用 `chore: prepare vX.Y.Z release`。
 6. 只有在用户明确进入发布动作时，才推送对应的 `vX.Y.Z` 版本 tag，自动触发 GitHub Actions 的 `Publish Linux Release` 工作流。
 7. 工作流 checkout 到 tag 对应 commit，并校验版本文件、changelog 和长期版本文档与 tag 版本一致。
-8. Ubuntu 22.04 job 运行完整质量门槛；当前稳定线生成 release notes、AppImage、`.deb` 和 Linux updater manifest，首个 daemon-backed beta 按第 9.4 节的窄例外只生成 DEB updater 资产。
+8. Ubuntu 22.04 job 运行完整质量门槛；稳定版和明确用于公开渠道验收的 `rc` 生成 release notes、AppImage、`.deb` 和 Linux updater manifest，daemon-backed `beta.N` 按第 9.4 节的窄例外只生成 DEB updater 资产。
 9. 同一 job 打包 GNOME Shell、Chromium 与 Firefox / Zen 扩展。
-10. 当前稳定线的 GitHub Release 附件至少包含 Linux AppImage、Linux `.deb`、Linux-only `latest.json`、Chromium 扩展包、GNOME 扩展包与 Firefox / Zen XPI；daemon-backed beta 不要求 AppImage。
+10. 稳定版和双包 `rc` 的 GitHub Release 附件至少包含 Linux AppImage、Linux `.deb`、Linux-only `latest.json`、Chromium 扩展包、GNOME 42/ESM 两种扩展包与 Firefox / Zen XPI；daemon-backed `beta.N` 不要求 AppImage 或 ESM 附件。
 
 如果只是把版本号、changelog、发布脚本或 release 说明准备好并推到 `main`，提交信息应避免让人误以为已经发布完成。推荐使用能表达准备状态的提交信息，例如 `chore: prepare vX.Y.Z release`。默认不再使用 GitHub Actions 自动生成 `release: vX.Y.Z` 版本提交。
 

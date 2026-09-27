@@ -21,7 +21,7 @@ English · [简体中文](README.zh-CN.md)
 
 This fork is the Linux-only edition of Patina. It focuses on GNOME/Linux foreground tracking, browser webpage activity, and a localhost API/MCP surface for external AI analysis. Windows platform sources remain temporarily as frozen compatibility code, but upstream Windows features are no longer tracked and Windows is outside the default CI, release pipeline, validation matrix, and support commitment.
 
-The daemon-backed line on `main` remains in beta. GNOME Wayland is the primary supported environment; KDE and wlroots compositors still need dedicated adapters.
+The daemon-backed line on `main` is preparing a release candidate. GNOME Wayland is the primary supported environment; KDE and wlroots compositors still need dedicated adapters.
 
 ## Current Fork Focus
 
@@ -81,7 +81,7 @@ Upstream changes are reviewed for Linux correctness and data-safety value. They 
 | MCP wrapper and Agent Skill | Implemented | `npm run mcp:patina`; controlled writes cover app/settings, local API configuration, daemon restart verification, and Tools reminders, timers, and pomodoro. |
 | Chromium Web Sync | Implemented | `extensions/chromium`. |
 | Firefox / Zen Web Sync | Implemented | The signed `0.1.1` XPI can be installed directly and identifies Firefox-family forks before generic Firefox. |
-| Linux packaging | Stable and beta pipelines configured | Stable tags build x86_64 AppImage and `.deb`; daemon-backed betas publish DEB only while complete AppImage installation/coexistence acceptance remains pending. |
+| Linux packaging | Stable, candidate and beta pipelines configured | Stable and explicit `rc` tags build x86_64 AppImage and `.deb`; daemon-backed `beta.N` tags remain DEB-only. |
 | Local API token/port UI | Implemented | Settings applies ports atomically and rotates the owner-only API Token separately from browser Web Sync. |
 
 ### Daemon Beta Acceptance
@@ -90,7 +90,7 @@ The daemon separation developed on `feature/patinad-daemon` has been merged into
 
 Before installing a beta, export and verify a backup outside the Patina data directory. Reopen Desktop after package installation; if Settings reports different Desktop/Daemon versions, explicitly confirm **Reload background service**. Installation alone does not replace an already-running daemon. Reload briefly interrupts tracking and does not download a package.
 
-The current DEB prerelease candidate is **1.9.0-beta.19**; check [Releases](https://github.com/Asanilo/patina-Linux/releases) for published assets. Stable Latest remains 1.8.4. This candidate includes bounded trend/classification reads, streaming backup export/inspection, configurable background cleanup and narrow-window heatmap fixes. Earlier installed candidates have passed owner handover, UI close/reopen, backup, lock/suspend and Zen activity acceptance; isolated tests also cover multi-table restore rollback and real systemd remote recovery. These checks do not establish long-term stability or third-party WebDAV/TLS interoperability. AppImage runtime/updater implementation has isolated coverage but still lacks complete installation/coexistence acceptance, so this beta publishes DEB only. Widget flicker/docking remains deferred; Flatpak and additional browser/TUI clients are not included.
+The current public DEB prerelease is **1.9.0-beta.21**; check [Releases](https://github.com/Asanilo/patina-Linux/releases) for exact assets. Stable Latest remains 1.8.4. This beta includes daemon connection recovery, AppImage runtime preparation and Linux activity privacy fixes; its public asset remains DEB-only. The AppImage candidate has passed isolated GNOME startup, cold-login and signed loopback upgrade checks; public delivery and old-client update routing are being validated before a stable dual-bundle release. Widget flicker/docking remains deferred; Flatpak and additional browser/TUI clients are not included.
 
 ## Quick Start On Linux
 
@@ -146,6 +146,7 @@ The current stable release workflow produces:
 - `Patina_<version>_amd64.AppImage`
 - `Patina_<version>_amd64.deb`
 - `patina-gnome-shell-extension-v<version>.zip`
+- `patina-gnome-shell-extension-esm-v<version>.zip` (GNOME 46/50 candidate)
 - `patina-chromium-extension-v<version>.zip`
 - `patina-firefox-extension-v<version>.xpi`
 - `latest.json`
@@ -167,12 +168,14 @@ chmod +x Patina_<version>_amd64.AppImage
 ./Patina_<version>_amd64.AppImage
 ```
 
-GNOME Wayland users must also install the extension archive:
+GNOME Wayland users must also install the extension archive matching their Shell version. Use the legacy archive for GNOME 42; the separate ESM archive is available for the isolated GNOME 46/50 candidate environments and does not expand the current support promise:
 
 ```bash
 gnome-extensions install --force patina-gnome-shell-extension-v<version>.zip
 gnome-extensions enable patina-window-tracker@patina
 ```
+
+For GNOME 46/50, replace the archive name with `patina-gnome-shell-extension-esm-v<version>.zip`. Log out and back in after installing either variant.
 
 ### Release Validation
 
@@ -187,9 +190,9 @@ npm run extension:chromium:check
 npm run extension:firefox:check
 ```
 
-`npm run test:release` verifies both release contracts: stable tags build signed AppImage and `.deb` artifacts with package-aware updater targets, while daemon-backed prerelease tags build and publish only the signed Debian package and its DEB updater target.
+`npm run test:release` verifies both release contracts: stable and explicit `rc` tags build signed AppImage and `.deb` artifacts with package-aware updater targets, while daemon-backed `beta.N` tags publish only the signed Debian package and its DEB updater target.
 
-The first daemon-backed beta is a documented release-contract exception: it publishes only the DEB containing Patina Desktop, `patinad`, and the systemd user unit. AppImage returns to that release line only after versioned daemon extraction and atomic updater switching have separate validation.
+Daemon-backed `beta.N` releases are a documented exception: they publish only the DEB containing Patina Desktop, `patinad`, and the systemd user unit. A dual-bundle `rc` is reserved for public-channel AppImage validation before the stable release.
 
 ## Browser Web Sync
 

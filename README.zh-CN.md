@@ -21,7 +21,7 @@ Patina 的 Linux 移植与本地 AI/API 集成 fork。
 
 这个 fork 是 Patina 的 Linux-only 版本，重点放在 GNOME/Linux 前台窗口识别、浏览器网页活动记录、本地 HTTP API，以及面向外部 AI/MCP 的数据接口。Windows 平台源码暂时保留为冻结兼容代码，但不再跟踪上游功能，也不进入默认 CI、Release、验证矩阵或当前支持承诺。
 
-`main` 上的 daemon-backed 版本仍处于 beta 阶段。GNOME Wayland 是主要支持环境，KDE 和 wlroots 合成器仍需专门适配。
+`main` 上的 daemon-backed 版本正在准备发布候选。GNOME Wayland 是主要支持环境，KDE 和 wlroots 合成器仍需专门适配。
 
 ## 当前 fork 重点
 
@@ -80,7 +80,7 @@ Windows 代码采用冻结后删除策略：
 | MCP wrapper | 已实现 | `npm run mcp:patina`；受控写侧覆盖应用/设置，以及提醒、计时器和番茄钟。 |
 | Chromium 网页同步 | 已实现 | `extensions/chromium`。 |
 | Firefox / Zen 网页同步 | 原型已实现 | 已签名 XPI 可直接安装。 |
-| Linux 打包 | 稳定版与 beta 发布链已配置 | 稳定版 tag 会生成 x86_64 AppImage 和 `.deb`；daemon-backed beta 只发布 DEB，AppImage 仍需完成安装/共存验收。 |
+| Linux 打包 | 稳定版、候选版与 beta 发布链已配置 | 稳定版与明确用于验收的 `rc` tag 生成 x86_64 AppImage 和 `.deb`；daemon-backed `beta.N` 仍只发布 DEB。 |
 | 本地 API token/port UI | 已实现 | 设置页可管理本地 API port/token，和浏览器网页同步配置分开。 |
 
 ## Linux 快速开始
@@ -136,7 +136,7 @@ ${XDG_DATA_HOME:-~/.local/share}/Patina/api_token
 
 安装前先导出并验证一份位于 Patina 数据目录之外的备份。覆盖安装后重新打开桌面端；设置诊断若显示 Desktop/Daemon 版本不同，再显式确认“重新加载后台”。安装软件包不等于运行中的后台已经更新；重新加载会短暂停止记录，不负责下载软件包。
 
-当前 DEB 预发布候选为 **1.9.0-beta.19**，已公开资产以 [Releases](https://github.com/Asanilo/patina-Linux/releases) 为准，稳定 Latest 仍为 1.8.4。本候选包含趋势/分类有界读取、流式备份导出/预览、低耗后台延迟设置和窄窗口热力图修复。之前的安装候选已通过 owner 交接、关闭/重开 UI、备份、锁屏/挂起及 Zen 活动验收；隔离测试还覆盖多表恢复回滚和真实 systemd 远端恢复，不等同于长期稳定性或第三方 WebDAV/TLS 兼容性保证。AppImage 运行时和更新实现已有隔离验证，但完整安装/共存验收未完成，本 beta 只发布 DEB。悬浮窗闪烁/吸附继续暂停，Flatpak 和新增浏览器/TUI 客户端不在本次范围内。
+当前公开的 DEB 预发布版本为 **1.9.0-beta.21**，准确资产以 [Releases](https://github.com/Asanilo/patina-Linux/releases) 为准，稳定 Latest 仍为 1.8.4。本 beta 修复后台连接恢复、AppImage 运行时准备和 Linux 活动隐私问题，公开资产仍只有 DEB。AppImage 候选已通过隔离 GNOME 首次启动、冷登录及正式签名的 loopback 升级；正式双包发布前正在验证公开投递和旧客户端更新目标。悬浮窗闪烁/吸附继续暂停，Flatpak 和新增浏览器/TUI 客户端不在本次范围内。
 
 ## Linux 安装包
 
@@ -145,6 +145,7 @@ ${XDG_DATA_HOME:-~/.local/share}/Patina/api_token
 - `Patina_<version>_amd64.AppImage`
 - `Patina_<version>_amd64.deb`
 - `patina-gnome-shell-extension-v<version>.zip`
+- `patina-gnome-shell-extension-esm-v<version>.zip`（GNOME 46/50 候选）
 - `patina-chromium-extension-v<version>.zip`
 - `patina-firefox-extension-v<version>.xpi`
 - `latest.json`
@@ -166,12 +167,14 @@ chmod +x Patina_<version>_amd64.AppImage
 ./Patina_<version>_amd64.AppImage
 ```
 
-GNOME Wayland 用户还需要下载扩展 zip 并安装：
+GNOME Wayland 用户还需按 Shell 版本下载扩展：GNOME 42 使用以下旧入口包；GNOME 46/50 隔离候选环境使用独立 ESM 包，公开提供该候选包不扩大当前支持承诺。
 
 ```bash
 gnome-extensions install --force patina-gnome-shell-extension-v<version>.zip
 gnome-extensions enable patina-window-tracker@patina
 ```
+
+GNOME 46/50 将上述压缩包名称替换为 `patina-gnome-shell-extension-esm-v<version>.zip`。安装任一变体后注销并重新登录。
 
 ### 发布验证
 
@@ -186,9 +189,9 @@ npm run extension:chromium:check
 npm run extension:firefox:check
 ```
 
-`npm run test:release` 会同时验证两套发布契约：稳定 tag 构建带签名的 AppImage 与 `.deb`，并按安装包类型生成 updater target；daemon-backed 预发布 tag 只构建和发布带签名的 Debian 包及其 DEB updater target。
+`npm run test:release` 会同时验证两套发布契约：稳定版和明确用于验收的 `rc` tag 构建带签名的 AppImage 与 `.deb`，并按安装包类型生成 updater target；daemon-backed `beta.N` tag 只发布带签名的 Debian 包及其 DEB updater target。
 
-首个 daemon-backed beta 是上述稳定发布契约的明确例外：它只发布同时包含 Patina Desktop、`patinad` 和 systemd user unit 的 DEB。等版本化 daemon 解包与原子更新方案得到独立验证后，AppImage 才重新进入这条发布线。
+Daemon-backed `beta.N` 是上述双包发布契约的明确例外：它只发布同时包含 Patina Desktop、`patinad` 和 systemd user unit 的 DEB。双包 `rc` 用于正式版前的公开 AppImage 渠道验收。
 
 ## 浏览器网页同步
 

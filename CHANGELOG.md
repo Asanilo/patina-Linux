@@ -16,6 +16,26 @@ Release: 待定。
 App note: 待定。
 App note en: TBD.
 
+## [1.9.0-rc.1] - 2026-09-27
+
+Release: Linux 1.9.0 候选版：独立后台记录与 AppImage、DEB 双包更新进入公开渠道验收。
+App note: 独立后台持续记录，验证 AppImage 与 DEB 的签名更新及恢复。
+App note en: Validate daemon-backed tracking and signed AppImage and DEB updates.
+
+### Changed
+
+- Patina Desktop 改为通过本地服务访问独立的 `patinad`；首次切换由当前用户确认，关闭界面后后台继续记录，并提供服务版本与恢复诊断。
+- AppImage 使用版本化持久运行时和固定 user service 路径；签名下载完成后原子替换原包并保留旧包供恢复。本候选同时提供 AppImage 与 DEB，供公开下载及更新目标验收。
+
+### Fixed
+
+- 修复后台首次启动较慢时桌面连接失败、跨注销会话环境失效和未知采样间隙被误计的问题。
+- 修复 Linux 窗口标题设置及应用排除在本地汇总中未完全生效的问题，并完善数据库目录维护与备份恢复的错误边界。
+
+### Internal
+
+- GNOME 42 扩展和浏览器扩展随包交付；GNOME 46/50 的 ESM 适配已有隔离验收，仍不列入本候选的公开支持范围。
+
 ## [1.9.0-beta.21] - 2026-09-23
 
 Release: Linux DEB 测试版：修复后台启动较慢时桌面连接无法恢复的问题。

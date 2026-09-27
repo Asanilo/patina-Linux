@@ -95,10 +95,10 @@ export function releaseAssetNames(version, target) {
   throw new Error(`unsupported release target: ${target}`);
 }
 
-export function isDaemonBackedPrerelease(version) {
+export function isDebOnlyBeta(version) {
   return typeof version === "string"
     && VERSION_PATTERN.test(version)
-    && version.includes("-");
+    && /-beta\.[0-9]+$/.test(version);
 }
 
 export function buildLinuxUpdaterPlatforms({
@@ -123,7 +123,7 @@ export function buildLinuxUpdaterPlatforms({
     url: `https://github.com/${repository}/releases/download/${tagName}/${encodeURIComponent(names.installer)}`,
   };
 
-  if (isDaemonBackedPrerelease(version)) {
+  if (isDebOnlyBeta(version)) {
     return {
       "linux-x86_64-deb": debTarget,
     };
@@ -546,7 +546,7 @@ export function renderReleaseNotes(parsed) {
 
   lines.push("### 下载", "");
 
-  if (isDaemonBackedPrerelease(parsed.version)) {
+  if (isDebOnlyBeta(parsed.version)) {
     lines.push(
       "- Linux Debian beta：Debian / Ubuntu 用户可安装 `.deb` 包。此预发布版本用于验证 `patinad` 后台服务切换。",
       "",
@@ -653,7 +653,7 @@ async function readDirRecursive(rootDir) {
 async function prepareLinuxReleaseAssets(version, bundleDir, outputDir, repository) {
   const resolvedVersion = await resolveTargetVersion(version);
   await validateChangelog(resolvedVersion);
-  const debOnly = isDaemonBackedPrerelease(resolvedVersion);
+  const debOnly = isDebOnlyBeta(resolvedVersion);
 
   if (!bundleDir) {
     fail("missing bundle directory");

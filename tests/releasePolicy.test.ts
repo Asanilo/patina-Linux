@@ -16,7 +16,7 @@ import {
   buildUpdaterEndpoints,
   releaseAssetNames,
   fieldValue,
-  isDaemonBackedPrerelease,
+  isDebOnlyBeta,
   renderReleaseNotes,
   readVersionPolicyCurrentCodeVersion,
   renderUpdaterNotes,
@@ -30,6 +30,7 @@ const currentPackageVersion = JSON.parse(
   await readFile("package.json", "utf8"),
 ).version;
 const stableFixtureVersion = "1.8.4";
+const debOnlyFixtureVersion = "1.9.0-beta.21";
 const releaseScriptPath = path.resolve("scripts/release.ts");
 
 const versionPolicyExcerpt = [
@@ -180,8 +181,9 @@ function testDaemonBackedPrereleaseNotesOnlyOfferDebian() {
     bullets: [],
   });
 
-  assert.equal(isDaemonBackedPrerelease("1.9.0-beta.1"), true);
-  assert.equal(isDaemonBackedPrerelease("1.9.0"), false);
+  assert.equal(isDebOnlyBeta("1.9.0-beta.1"), true);
+  assert.equal(isDebOnlyBeta("1.9.0-rc.1"), false);
+  assert.equal(isDebOnlyBeta("1.9.0"), false);
   assert.match(notes, /Linux Debian beta/);
   assert.doesNotMatch(notes, /Linux AppImage/);
 }
@@ -198,6 +200,12 @@ function testUpdaterPlatformsKeepStableAndPrereleaseContractsSeparate() {
     repository: "Asanilo/patina-Linux",
     debSignature: "deb-signature",
   });
+  const candidatePlatforms = buildLinuxUpdaterPlatforms({
+    version: "1.9.0-rc.1",
+    repository: "Asanilo/patina-Linux",
+    appImageSignature: "appimage-signature",
+    debSignature: "deb-signature",
+  });
 
   assert.deepEqual(Object.keys(stablePlatforms), [
     "linux-x86_64",
@@ -210,6 +218,13 @@ function testUpdaterPlatformsKeepStableAndPrereleaseContractsSeparate() {
       url: "https://github.com/Asanilo/patina-Linux/releases/download/v1.9.0-beta.1/Patina_1.9.0-beta.1_amd64.deb",
     },
   });
+  assert.deepEqual(Object.keys(candidatePlatforms), [
+    "linux-x86_64",
+    "linux-x86_64-appimage",
+    "linux-x86_64-deb",
+  ]);
+  assert.match(candidatePlatforms["linux-x86_64"].url, /_amd64\.AppImage$/);
+  assert.match(candidatePlatforms["linux-x86_64-deb"].url, /_amd64\.deb$/);
 }
 
 function testReleaseAssetNamesCoverLinuxBundles() {
@@ -324,23 +339,46 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   assert.match(workflow, /--bundles "\$\{\{ steps\.release\.outputs\.bundle_targets \}\}"/);
   assert.match(workflow, /prepare-linux-release-assets/);
   assert.match(workflow, /Prepare updater signing key/);
+  assert.match(workflow, /Build pinned signature verifier/);
+  assert.match(workflow, /signing-preflight\.py/);
+  assert.match(workflow, /Verify updater bundle signatures/);
+  assert.match(workflow, /verify-release-bundles\.py/);
   assert.match(workflow, /TAURI_SIGNING_PRIVATE_KEY_PATH=/);
-  assert.match(workflow, /printf '%s\\n' "\$TAURI_SIGNING_PRIVATE_KEY" > "\$signing_key_path"/);
+  assert.match(workflow, /normalize-signing-key\.py > "\$signing_key_path"/);
   assert.match(workflow, /chmod 600 "\$signing_key_path"/);
   assert.match(workflow, /Cleanup updater signing key/);
   assert.match(workflow, /rm -f "\$RUNNER_TEMP\/tauri-signing\.key"/);
   assert.match(workflow, /Package Chromium extension/);
+  assert.match(workflow, /Package modern GNOME Shell extension/);
+  assert.match(workflow, /extension:gnome:build-esm/);
   assert.match(workflow, /npm run extension:firefox:verify-signed/);
   assert.match(workflow, /Verify daemon-backed Debian package/);
   assert.match(workflow, /npm run release:verify-daemon-deb/);
   assert.match(workflow, /Publish stable Linux release/);
-  assert.match(workflow, /Publish daemon-backed Linux prerelease/);
+  assert.match(workflow, /Publish daemon-backed Linux beta/);
+  assert.match(workflow, /Publish dual-bundle Linux release candidate/);
+  const stablePublishBlock = workflow.slice(
+    workflow.indexOf("- name: Publish stable Linux release"),
+    workflow.indexOf("- name: Publish daemon-backed Linux beta"),
+  );
+  assert.match(stablePublishBlock, /GNOME_ESM_EXTENSION_ASSET/);
+  assert.match(workflow, /deb_only=true/);
+  assert.match(workflow, /deb_only=false/);
   const prereleasePublishBlock = workflow.slice(
-    workflow.indexOf("- name: Publish daemon-backed Linux prerelease"),
+    workflow.indexOf("- name: Publish daemon-backed Linux beta"),
+    workflow.indexOf("- name: Publish dual-bundle Linux release candidate"),
   );
   assert.doesNotMatch(prereleasePublishBlock, /\.amd64\.AppImage/);
+  assert.doesNotMatch(prereleasePublishBlock, /GNOME_ESM_EXTENSION_ASSET/);
   assert.match(prereleasePublishBlock, /_amd64\.deb/);
   assert.match(prereleasePublishBlock, /prerelease: true/);
+  const candidatePublishBlock = workflow.slice(
+    workflow.indexOf("- name: Publish dual-bundle Linux release candidate"),
+  );
+  assert.match(candidatePublishBlock, /_amd64\.AppImage/);
+  assert.match(candidatePublishBlock, /_amd64\.deb/);
+  assert.match(candidatePublishBlock, /GNOME_ESM_EXTENSION_ASSET/);
+  assert.match(candidatePublishBlock, /prerelease: true/);
   assert.doesNotMatch(
     workflow,
     /Build Linux bundles[\s\S]*TAURI_SIGNING_PRIVATE_KEY:\s*\$\{\{\s*secrets\.TAURI_SIGNING_PRIVATE_KEY\s*\}\}/,
@@ -405,13 +443,13 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   );
 }
 
-async function testPrepareStableLinuxReleaseAssetsCreatesBothPackageTargets() {
+async function testPrepareStableLinuxReleaseAssetsCreatesBothPackageTargets(version = stableFixtureVersion) {
   const tempRoot = await mkdtemp(path.join(tmpdir(), "patina-linux-release-"));
   const bundleDir = path.join(tempRoot, "bundle");
   const outputDir = path.join(tempRoot, "output");
-  const appImageName = `Patina_${stableFixtureVersion}_amd64.AppImage`;
+  const appImageName = `Patina_${version}_amd64.AppImage`;
   const appImagePath = path.join(bundleDir, "appimage", appImageName);
-  const debName = `Patina_${stableFixtureVersion}_amd64.deb`;
+  const debName = `Patina_${version}_amd64.deb`;
 
   try {
     await mkdir(path.dirname(appImagePath), { recursive: true });
@@ -420,7 +458,7 @@ async function testPrepareStableLinuxReleaseAssetsCreatesBothPackageTargets() {
     await writeFile(path.join(tempRoot, "CHANGELOG.md"), [
       "# Changelog",
       "",
-      `## [${stableFixtureVersion}] - 2026-08-30`,
+      `## [${version}] - 2026-08-30`,
       "",
       "Release: Stable fixture.",
       "App note: Stable fixture.",
@@ -428,7 +466,7 @@ async function testPrepareStableLinuxReleaseAssetsCreatesBothPackageTargets() {
     ].join("\n"), "utf8");
     await writeFile(
       path.join(tempRoot, "docs", "versioning-and-release-policy.md"),
-      `- 代码版本为 \`${stableFixtureVersion}\`\n`,
+      `- 代码版本为 \`${version}\`\n`,
       "utf8",
     );
     await writeFile(appImagePath, "appimage", "utf8");
@@ -448,7 +486,7 @@ async function testPrepareStableLinuxReleaseAssetsCreatesBothPackageTargets() {
       "--experimental-strip-types",
       releaseScriptPath,
       "prepare-linux-release-assets",
-      stableFixtureVersion,
+      version,
       bundleDir,
       outputDir,
       "Asanilo/patina-Linux",
@@ -467,9 +505,9 @@ async function testPrepareStableLinuxReleaseAssetsCreatesBothPackageTargets() {
       await readFile(path.join(outputDir, "latest.json"), "utf8"),
     );
     const appImageUrl =
-      `https://github.com/Asanilo/patina-Linux/releases/download/v${stableFixtureVersion}/Patina_${stableFixtureVersion}_amd64.AppImage`;
+      `https://github.com/Asanilo/patina-Linux/releases/download/v${version}/Patina_${version}_amd64.AppImage`;
     const debUrl =
-      `https://github.com/Asanilo/patina-Linux/releases/download/v${stableFixtureVersion}/Patina_${stableFixtureVersion}_amd64.deb`;
+      `https://github.com/Asanilo/patina-Linux/releases/download/v${version}/Patina_${version}_amd64.deb`;
     assert.deepEqual(latest.platforms["linux-x86_64"], {
       signature: "appimage-signature",
       url: appImageUrl,
@@ -491,23 +529,38 @@ async function testPreparePrereleaseLinuxAssetsCreatesOnlyDebianTarget() {
   const tempRoot = await mkdtemp(path.join(tmpdir(), "patina-linux-prerelease-"));
   const bundleDir = path.join(tempRoot, "bundle");
   const outputDir = path.join(tempRoot, "output");
-  const debName = `Patina_${currentPackageVersion}_amd64.deb`;
+  const debName = `Patina_${debOnlyFixtureVersion}_amd64.deb`;
   const debPath = path.join(bundleDir, "deb", debName);
 
   try {
     await mkdir(path.dirname(debPath), { recursive: true });
+    await mkdir(path.join(tempRoot, "docs"), { recursive: true });
+    await writeFile(path.join(tempRoot, "CHANGELOG.md"), [
+      "# Changelog",
+      "",
+      `## [${debOnlyFixtureVersion}] - 2026-09-23`,
+      "",
+      "Release: Debian beta fixture.",
+      "App note: Debian beta fixture.",
+      "App note en: Debian beta fixture.",
+    ].join("\n"), "utf8");
+    await writeFile(
+      path.join(tempRoot, "docs", "versioning-and-release-policy.md"),
+      `- 代码版本为 \`${debOnlyFixtureVersion}\`\n`,
+      "utf8",
+    );
     await writeFile(debPath, "debian-beta", "utf8");
     await writeFile(`${debPath}.sig`, "deb-beta-signature\n", "utf8");
 
     await execFileAsync(process.execPath, [
       "--experimental-strip-types",
-      "scripts/release.ts",
+      releaseScriptPath,
       "prepare-linux-release-assets",
-      currentPackageVersion,
+      debOnlyFixtureVersion,
       bundleDir,
       outputDir,
       "Asanilo/patina-Linux",
-    ]);
+    ], { cwd: tempRoot });
 
     assert.equal(await readFile(path.join(outputDir, debName), "utf8"), "debian-beta");
     const outputEntries = await readdir(outputDir);
@@ -517,7 +570,7 @@ async function testPreparePrereleaseLinuxAssetsCreatesOnlyDebianTarget() {
     assert.deepEqual(latest.platforms, {
       "linux-x86_64-deb": {
         signature: "deb-beta-signature",
-        url: `https://github.com/Asanilo/patina-Linux/releases/download/v${currentPackageVersion}/${debName}`,
+        url: `https://github.com/Asanilo/patina-Linux/releases/download/v${debOnlyFixtureVersion}/${debName}`,
       },
     });
   } finally {
@@ -622,6 +675,7 @@ await testLinuxReleaseWorkflowAndBundleContract();
 await testPrepareLinuxReleaseAssetsRejectsEmptyDebSignature();
 await testPrepareLinuxReleaseAssetsRejectsMissingDebSignature();
 await testPrepareStableLinuxReleaseAssetsCreatesBothPackageTargets();
+await testPrepareStableLinuxReleaseAssetsCreatesBothPackageTargets("1.9.0-rc.1");
 await testPreparePrereleaseLinuxAssetsCreatesOnlyDebianTarget();
 
 await execFileAsync(process.execPath, ["--experimental-strip-types", releaseScriptPath, "validate-version-files"]);

@@ -26,9 +26,9 @@
 | R2 [x] | 故障恢复与诊断 | 隔离 VM 的短断连、扩展禁用/恢复、Desktop 崩溃/重连、daemon 异常退出与锁屏恢复均有前后状态、成功采样与 session 边界；短断连时 Settings 明确警告，恢复后清除，未知间隙没有被补记且没有第二 owner。最短诊断路径见下方。此项不证明宿主硬件挂起/唤醒。 |
 | F1 [x] | 修复、候选冻结与支持矩阵；依赖相关缺陷闭环 | AppImage 故障归属为旧 Tauri 打包器携带 Wayland 客户端库，固定 CLI 2.12.0 后以准确本地包完成 Fedora 重跑和 Ubuntu 24.04 页面回归；Shell 46/50 ESM 包与回归身份已固定。`docs/linux-platform-support.md` 区分当前声明范围与隔离已验收但未公开支持的环境，并列包格式、GNOME/会话和实际客户端后端。新 AppImage 未正式签名，不替代 D2 的公开渠道验收；版本文件仍为 beta.21。 |
 | D1 [x] | DEB-only beta 交付准备；可在 P2/P3 之外单独收口，依赖对应候选与核心回归 | 当时使用固定的 Tauri CLI 2.12.0 重新构建本地未签名 beta.21 DEB，SHA256 `41f0742ef005e6c1cfa7487ab1e0d30527ce81c824b24f315b3a04f8a891abf7`；版本/changelog、`release:check`、daemon/扩展载荷及私有 beta.20→beta.21 安装、升级、卸载、重装与数据哨兵保留通过。包内 daemon 与先前已在隔离 GNOME 客户端验证 C1 修复的字节一致，旧新 DEB 的解包载荷和 control 文件一致。该包后来被 Tauri 核心升级候选取代，准确新包身份见下方候选更新。 |
-| D2 [ ] | AppImage 公开分发决策与渠道验收；依赖 P2/P3、F1 和明确发布授权 | 决定是否调整 DEB-only 契约并审阅 workflow、双包 manifest、旧客户端 fallback；获相应授权后核对正式资产/签名、公开 manifest 实际目标与下载、失败恢复、安装后 Desktop/daemon 版本、冷登录和数据保留。隔离 loopback 的既有成功不能勾选公开渠道项。若本阶段保持 DEB-only，明确保留 D2 未完成而不阻塞 D1。 |
+| D2 [进行中] | AppImage 公开分发决策与渠道验收；依赖 P2/P3、F1 和明确发布授权 | 用户已要求完成 AppImage 并推进正式版；双包 `rc` 候选和稳定版的执行顺序、工作流与验收门槛转至[当前执行单](2026-09-27-appimage-stable-release.md)。需核对正式资产/签名、公开 manifest 实际目标与下载、旧客户端 fallback、失败恢复、安装后 Desktop/daemon 版本、冷登录和数据保留。隔离 loopback 的既有成功不能勾选公开渠道项。 |
 
-当前阶段：P1–P3、C1/R2、F1 与独立 DEB 候选 D1 已有证据；R1 按用户要求暂停，出现相关 issue 后再决定专项范围。D2 只在决定恢复公开 AppImage 分发且得到相应授权后进入，不阻塞 DEB-only 候选准备。上游草稿、KDE/wlroots、Flatpak、新客户端、Widget 暂停项、Windows 删除和 Cargo workspace 重排不在此队列。
+当前阶段：P1–P3、C1/R2、F1 与独立 DEB 候选 D1 已有证据；R1 按用户要求暂停，出现相关 issue 后再决定专项范围。D2 已获授权进入公开 AppImage 渠道验收，后续以[正式版执行单](2026-09-27-appimage-stable-release.md)为准。上游草稿、KDE/wlroots、Flatpak、新客户端、Widget 暂停项、Windows 删除和 Cargo workspace 重排不在此队列。
 
 **候选更新：** 上表 D1 中 CLI 2.12.0 的 DEB 已被 Tauri Rust 核心 2.11.5 的新候选替代；准确 DEB SHA256 为 `98eafa7d242dd4f83cd28752de9a2e88a32c5debe30bb79641f237fd5adae08c`，其包内 daemon 的 GNOME 真实客户端回归、隔离升级和完整门禁见[运行时升级执行单](2026-09-27-tauri-runtime-refresh.md)及私有 `$HOME/.local/state/patina/acceptance/20260927-tauri2115-candidate/manifest.json`。旧 D1 字节仅作历史证据，不能作为 beta.21 最终出包身份。
 

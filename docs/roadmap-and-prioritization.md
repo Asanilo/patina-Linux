@@ -185,7 +185,7 @@ daemon 第一阶段差距审计、阻塞修复、候选验收与本地主线合�
 
 独立 daemon、平台信号、浏览器桥接、HTTP/SSE、主要写侧 owner、systemd 交接和 Desktop 适配已有实现及分批验证。趋势/分类有界聚合和备份流式化已纳入 beta.19，不撤销经过验证的改动，但不继续扩大此类通用优化。
 
-beta.21 DEB 已公开预发布；本机仍安装此前的 beta.21 本地候选，正式包尚未在宿主实装。AppImage 在无 DEB 的 GNOME 42.9 完成首次接管、冷登录及正式签名成品的隔离升级，公开 updater 投递仍待验收，DEB-only beta 契约继续有效。候选与安装证据见[当前工作清单](./working/2026-07-10-patinad-runtime-design.md)、[当前阶段执行单](./working/2026-09-23-sustainable-linux-release.md)及[公开发布结果](./working/2026-09-27-tauri-runtime-refresh.md#公开发布结果2026-09-27)，不在路线中追加每轮测试数字。
+beta.21 DEB 已公开预发布；本机仍安装此前的 beta.21 本地候选，正式包尚未在宿主实装。AppImage 在无 DEB 的 GNOME 42.9 完成首次接管、冷登录及正式签名成品的隔离升级；用户已要求完成其公开渠道验收并推进 1.9.0 正式版。`beta.N` 继续维持 DEB-only，双包 `rc` 用于公开渠道验证。执行顺序见[AppImage 正式版执行单](./working/2026-09-27-appimage-stable-release.md)，候选和原有安装证据见[当前工作清单](./working/2026-07-10-patinad-runtime-design.md)及[阶段执行单](./working/2026-09-23-sustainable-linux-release.md)。
 
 #### 已通过的第一阶段条件与持续约束
 

@@ -50,6 +50,7 @@ Read only the references needed for the task:
 - [`working/2026-09-21-linux-platform-reuse.md`](./working/2026-09-21-linux-platform-reuse.md): T6 assessment, sampling/idle correctness, GNOME protocols, AppImage crash/login acceptance, and remaining signing/extension gates
 - [`working/2026-09-23-sustainable-linux-release.md`](./working/2026-09-23-sustainable-linux-release.md): next-stage execution plan, candidate identity, evidence index, and limited platform/reliability acceptance
 - [`working/2026-09-27-tauri-runtime-refresh.md`](./working/2026-09-27-tauri-runtime-refresh.md): Tauri runtime dependency refresh, package regression, and beta.21 DEB-only publication evidence
+- [`working/2026-09-27-appimage-stable-release.md`](./working/2026-09-27-appimage-stable-release.md): active AppImage public-channel acceptance and 1.9.0 stable-release execution basis
 
 The roadmap now places daemon and Desktop product work together on Linux `main`,
 with upstream Linux contributions kept separate. `feat/linux-desktop` was created

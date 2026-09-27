@@ -52,12 +52,18 @@ jobs:
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
-          if [[ "$version" == *-* ]]; then
+          if [[ "$version" =~ -beta\.[0-9]+$ ]]; then
             echo "bundle_targets=deb" >> "$GITHUB_OUTPUT"
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "deb_only=true" >> "$GITHUB_OUTPUT"
           else
             echo "bundle_targets=appimage,deb" >> "$GITHUB_OUTPUT"
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "deb_only=false" >> "$GITHUB_OUTPUT"
+            if [[ "$version" == *-* ]]; then
+              echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
       - name: Checkout release tag
@@ -92,8 +98,22 @@ jobs:
             libxcb-randr0-dev \
             libxcb-screensaver0-dev \
             patchelf \
+            cmake \
+            libsodium-dev \
             wget \
             zip
+
+      - name: Build pinned signature verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fL --retry 3 -o minisign.tar.gz https://github.com/jedisct1/minisign/archive/refs/tags/0.11.tar.gz
+          echo '74c2c78a1cd51a43a6c98f46a4eabefbc8668074ca9aa14115544276b663fc55  minisign.tar.gz' | sha256sum --check
+          tar -xzf minisign.tar.gz
+          cmake -S minisign-0.11 -B minisign-build -DCMAKE_BUILD_TYPE=Release
+          cmake --build minisign-build --parallel 2
+          echo "$RUNNER_TEMP/minisign-build" >> "$GITHUB_PATH"
 
       - name: Install dependencies
         run: npm ci
@@ -113,6 +133,7 @@ jobs:
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
 
@@ -122,9 +143,11 @@ jobs:
           }
 
           signing_key_path="$RUNNER_TEMP/tauri-signing.key"
-          printf '%s\n' "$TAURI_SIGNING_PRIVATE_KEY" > "$signing_key_path"
+          printf '%s' "$TAURI_SIGNING_PRIVATE_KEY" | python3 scripts/acceptance/normalize-signing-key.py > "$signing_key_path"
           chmod 600 "$signing_key_path"
           test -s "$signing_key_path"
+          export TAURI_SIGNING_PRIVATE_KEY="$(cat "$signing_key_path")"
+          python3 scripts/acceptance/signing-preflight.py src-tauri/tauri.conf.json
           echo "TAURI_SIGNING_PRIVATE_KEY_PATH=$signing_key_path" >> "$GITHUB_ENV"
 
       - name: Build Linux bundles
@@ -138,7 +161,7 @@ jobs:
             exit 1
           }
 
-          export TAURI_SIGNING_PRIVATE_KEY="$(base64 -d "$signing_key_path" | base64 -w0)"
+          export TAURI_SIGNING_PRIVATE_KEY="$(cat "$signing_key_path")"
           npm run tauri build -- --bundles "${{ steps.release.outputs.bundle_targets }}"
         env:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -154,6 +177,13 @@ jobs:
           npm run release:verify-daemon-deb -- \
             "src-tauri/target/release/bundle/deb/Patina_${{ steps.release.outputs.version }}_amd64.deb" \
             "${{ steps.release.outputs.version }}"
+
+      - name: Verify updater bundle signatures
+        run: |
+          python3 scripts/acceptance/verify-release-bundles.py \
+            src-tauri/target/release/bundle \
+            src-tauri/tauri.conf.json \
+            "${{ steps.release.outputs.bundle_targets }}"
 
       - name: Prepare Linux release assets
         run: |
@@ -174,6 +204,18 @@ jobs:
             zip -r "../../../dist-release/${extension_asset}" patina-window-tracker@patina
           )
           echo "GNOME_EXTENSION_ASSET=$extension_asset" >> "$GITHUB_ENV"
+
+      - name: Package modern GNOME Shell extension
+        shell: bash
+        run: |
+          npm run extension:gnome:build-esm
+          extension_version="$(node -p "require('./extensions/gnome-shell/patina-window-tracker@patina/esm/metadata.json').version")"
+          extension_asset="patina-gnome-shell-extension-esm-v${extension_version}.zip"
+          (
+            cd dist/extensions/gnome-shell-esm
+            zip -r "../../../dist-release/${extension_asset}" patina-window-tracker@patina
+          )
+          echo "GNOME_ESM_EXTENSION_ASSET=$extension_asset" >> "$GITHUB_ENV"
 
       - name: Package Chromium extension
         shell: bash
@@ -207,12 +249,13 @@ jobs:
             dist-release/Patina_${{ steps.release.outputs.version }}_amd64.AppImage
             dist-release/Patina_${{ steps.release.outputs.version }}_amd64.deb
             dist-release/${{ env.GNOME_EXTENSION_ASSET }}
+            dist-release/${{ env.GNOME_ESM_EXTENSION_ASSET }}
             dist-release/${{ env.CHROMIUM_EXTENSION_ASSET }}
             dist-release/${{ env.FIREFOX_EXTENSION_ASSET }}
             dist-release/latest.json
 
-      - name: Publish daemon-backed Linux prerelease
-        if: steps.release.outputs.prerelease == 'true'
+      - name: Publish daemon-backed Linux beta
+        if: steps.release.outputs.deb_only == 'true'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.release.outputs.tag }}
@@ -224,6 +267,25 @@ jobs:
           files: |
             dist-release/Patina_${{ steps.release.outputs.version }}_amd64.deb
             dist-release/${{ env.GNOME_EXTENSION_ASSET }}
+            dist-release/${{ env.CHROMIUM_EXTENSION_ASSET }}
+            dist-release/${{ env.FIREFOX_EXTENSION_ASSET }}
+            dist-release/latest.json
+
+      - name: Publish dual-bundle Linux release candidate
+        if: steps.release.outputs.prerelease == 'true' && steps.release.outputs.deb_only != 'true'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          name: Patina v${{ steps.release.outputs.version }}
+          body_path: dist-release/release-notes.md
+          draft: false
+          prerelease: true
+          overwrite_files: true
+          files: |
+            dist-release/Patina_${{ steps.release.outputs.version }}_amd64.AppImage
+            dist-release/Patina_${{ steps.release.outputs.version }}_amd64.deb
+            dist-release/${{ env.GNOME_EXTENSION_ASSET }}
+            dist-release/${{ env.GNOME_ESM_EXTENSION_ASSET }}
             dist-release/${{ env.CHROMIUM_EXTENSION_ASSET }}
             dist-release/${{ env.FIREFOX_EXTENSION_ASSET }}
             dist-release/latest.json
