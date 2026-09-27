@@ -365,7 +365,7 @@ GitHub Release 继续作为正式发布源、主下载入口和主更新清单�
 
 ## 10. 发布前的最低验证门槛
 
-main 已合入 daemon 架构，现有 AppImage 实现仍不自动解除 DEB-only beta 限制：持久 AppDir、固定 user unit、验签后原子文件替换已有源码及隔离验证；实际首次启动/接管、DEB 共存、登录启动和正式签名升级仍需候选验收。保留旧运行时/包不等于允许自动降级数据库。后续恢复 AppImage 发布时，应同时复核 release workflow、双包 manifest 与旧客户端 fallback，不能仅修改 bundles 列表。开发时通过 `createUpdaterArtifacts=false` 构建的本地未签名包不得作为公开更新资产使用。
+main 已合入 daemon 架构，现有 AppImage 实现仍不自动解除 DEB-only beta 限制：持久 AppDir、固定 user unit、验签后原子文件替换已有源码及验收；无 DEB 的 GNOME 42.9 首次接管、登录和正式签名成品隔离升级已有证据，公开 updater 投递及更广环境仍待验收。保留旧运行时/包不等于允许自动降级数据库。后续恢复 AppImage 发布时，应同时复核 release workflow、双包 manifest 与旧客户端 fallback，不能仅修改 bundles 列表。开发时通过 `createUpdaterArtifacts=false` 构建的本地未签名包不得作为公开更新资产使用。
 
 正式签名候选可通过手动的 [`appimage-acceptance.yml`](../.github/workflows/appimage-acceptance.yml) 独立验收：仅允许本仓库 `main` 的确定提交，使用既有 Actions 签名 Secret，先运行完整门禁，再构建并用应用配置中的公钥验证 AppImage。候选与源码 SHA/摘要只保存为短期 Actions artifact；该流程没有 tag、Release 或 updater manifest 发布步骤，token 只读。推送及运行远端流程仍需用户授权。正式私钥不导出到本机，也不用临时测试密钥冒充正式签名。以本地 HTTP fixture 验证生产公钥、Tauri 下载和原子替换时，必须明确它不覆盖公开更新源分发；真实运行时升级另需隔离安装用户的生命周期、服务版本和数据验收。
 
@@ -414,9 +414,9 @@ main 已合入 daemon 架构，现有 AppImage 实现仍不自动解除 DEB-only
 
 如果只是把版本号、changelog、发布脚本或 release 说明准备好并推到 `main`，提交信息应避免让人误以为已经发布完成。推荐使用能表达准备状态的提交信息，例如 `chore: prepare vX.Y.Z release`。默认不再使用 GitHub Actions 自动生成 `release: vX.Y.Z` 版本提交。
 
-`workflow_dispatch` 只用于补跑已有 tag 的发布流程，例如重新构建或补传 release assets。手动触发时输入不带 `v` 的版本号；如果对应 `vX.Y.Z` tag 不存在，工作流必须失败并提示先完成发布准备提交和 tag 推送。手动触发不应同步版本文件、创建 commit、创建 tag 或推送分支。
+发布工作流 `prepare-release.yml` 的 `workflow_dispatch` 只用于补跑已有 tag 的发布流程，例如重新构建或补传 release assets。手动触发时输入不带 `v` 的版本号；如果对应 `vX.Y.Z` tag 不存在，工作流必须失败并提示先完成发布准备提交和 tag 推送。手动触发不应同步版本文件、创建 commit、创建 tag 或推送分支。独立的 `appimage-acceptance.yml` 按第 9.5 节的候选验收规则运行，不属于此发布入口。
 
-默认发布执行到 `vX.Y.Z` tag 已推送、`Publish Linux Release` 工作流已触发即可。除非用户明确要求或正在排查发布流水线失败，不需要等待 GitHub Actions 完整构建、签名、上传和发布结束。
+默认发布协作仍可在 `vX.Y.Z` tag 已推送、`Publish Linux Release` 工作流已触发后结束，此时必须报告“发布已触发，结果尚未核验”，不能宣称发布成功。若用户明确要求完成发布、跟踪结果或完成验收，或任务正在排查发布流水线失败，则应继续核验工作流及任务约定的发布产物，直至满足对应完成条件或报告具体阻塞。失败修复、重新推送和重新发布仍须遵守已有授权范围，不因需要完成验收而自动获得额外操作权限。
 
 默认不在本地创建 `dist-release` 或 `updater-publish` 目录；它们属于工作流内部的临时产物目录。
 
@@ -447,8 +447,8 @@ main 已合入 daemon 架构，现有 AppImage 实现仍不自动解除 DEB-only
 - 不默认创建或推送发布 tag；只有用户明确要求发布、打 tag 或触发发布工作流时，才执行真正发布动作
 - 准备发布但尚未发布时，提交信息应表达“准备”而不是“已发布”；默认使用 `chore: prepare vX.Y.Z release`
 - GitHub Actions 不应生成 release commit、配置 commit author、同步版本文件、创建 tag 或推送 `HEAD` 到分支
-- `workflow_dispatch` 不应绕过已有 tag 边界，只能补跑已有 tag 的发布流程
-- 推送 `vX.Y.Z` tag 并确认 `Publish Linux Release` 已触发后即可结束默认发布协作；不要默认等待 Actions 的完整构建过程
+- 发布工作流 `prepare-release.yml` 的 `workflow_dispatch` 不应绕过已有 tag 边界；独立候选验收遵循第 9.5 节的专用规则
+- 按第 11 节区分“发布已触发”与“发布已核验”；用户要求完成发布、跟踪结果或完成验收时，不在触发 Actions 后提前结束
 - 默认不在本地手工构建安装包、生成 `dist-release` 或更新 updater 产物；正式出包以 GitHub Actions 为准
 - changelog 应优先记录用户可理解的变化，不写成 commit 列表
 - 架构级收口、关键边界调整与发布级修复，必须在发布说明里留下清楚但克制的痕迹

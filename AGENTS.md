@@ -23,7 +23,7 @@ These instructions apply to repository work; UI sections apply when UI is touche
 ## Execution And Communication
 
 - Check the current branch, working tree and existing implementation before planning new work; do not duplicate completed features.
-- Continue authorized work through implementation and verification. Routine reversible choices do not require repeated confirmation; ask when missing information materially changes scope, product behavior or data safety.
+- Continue authorized work through implementation and verification. Routine reversible choices do not require repeated confirmation; ask when missing information materially changes scope, product behavior or data safety. Reuse explicit approval for the same target, operation and effects; reassess approval when these materially change. While awaiting a required answer, continue independent authorized work.
 - Reassessing an ownership boundary means choosing and documenting the owner, not automatically stopping for permission. Escalate genuine unresolved decisions.
 - Default to one agent. Use subagents only when the user requests them or explicitly approves their cost for the current task.
 - Keep updates concise and evidence-based. Distinguish implemented, automatically tested, manually verified, packaged, pushed and publicly released states.
@@ -61,7 +61,7 @@ These instructions apply to repository work; UI sections apply when UI is touche
 
 - In the stable period, fix problems by deciding owner first and implementation second.
 - Use the lightest mode that fits the issue: small fix, boundary judgment, or execution plan.
-- If a fix requires a new shared abstraction, cross-layer relocation, or a new compatibility shell, stop and reassess before implementing.
+- If a fix requires a new shared abstraction, cross-layer relocation, or a new compatibility shell, assess the owner and scope before implementing and record a short execution plan when needed. Continue once the approach fits the authorized scope and existing architecture; ask only about unresolved decisions that materially change scope, product behavior or data safety.
 - Keep `app/*`, `shared/*`, `platform/*`, `lib.rs`, and `commands/*` under extra scrutiny because they are high-attraction layers.
 
 ## Release And Validation
