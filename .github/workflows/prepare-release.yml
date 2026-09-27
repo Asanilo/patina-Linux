@@ -15,6 +15,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: linux-release-${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   publish-linux:
     name: Build and publish Linux release
@@ -235,8 +239,37 @@ jobs:
           cp extensions/firefox/dist/patina-web-sync.xpi "dist-release/${extension_asset}"
           echo "FIREFOX_EXTENSION_ASSET=$extension_asset" >> "$GITHUB_ENV"
 
+      - name: Guard existing release assets
+        id: asset_guard
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          DEB_ONLY: ${{ steps.release.outputs.deb_only }}
+        run: |
+          set -euo pipefail
+          assets=(
+            "dist-release/Patina_${RELEASE_VERSION}_amd64.deb"
+            "dist-release/${GNOME_EXTENSION_ASSET}"
+            "dist-release/${CHROMIUM_EXTENSION_ASSET}"
+            "dist-release/${FIREFOX_EXTENSION_ASSET}"
+            "dist-release/latest.json"
+          )
+          if [[ "$DEB_ONLY" != 'true' ]]; then
+            assets+=(
+              "dist-release/Patina_${RELEASE_VERSION}_amd64.AppImage"
+              "dist-release/${GNOME_ESM_EXTENSION_ASSET}"
+            )
+          fi
+          plan="$(node --experimental-strip-types scripts/release.ts guard-release-assets \
+            "$RELEASE_VERSION" "$GITHUB_REPOSITORY" "${assets[@]}")"
+          echo "publish=$(jq -r '.publish' <<< "$plan")" >> "$GITHUB_OUTPUT"
+          echo 'files<<PATINA_RELEASE_FILES' >> "$GITHUB_OUTPUT"
+          jq -r '.files[]' <<< "$plan" >> "$GITHUB_OUTPUT"
+          echo 'PATINA_RELEASE_FILES' >> "$GITHUB_OUTPUT"
+
       - name: Publish stable Linux release
-        if: steps.release.outputs.prerelease != 'true'
+        if: steps.release.outputs.prerelease != 'true' && steps.asset_guard.outputs.publish == 'true'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.release.outputs.tag }}
@@ -244,18 +277,12 @@ jobs:
           body_path: dist-release/release-notes.md
           draft: false
           prerelease: false
-          overwrite_files: true
-          files: |
-            dist-release/Patina_${{ steps.release.outputs.version }}_amd64.AppImage
-            dist-release/Patina_${{ steps.release.outputs.version }}_amd64.deb
-            dist-release/${{ env.GNOME_EXTENSION_ASSET }}
-            dist-release/${{ env.GNOME_ESM_EXTENSION_ASSET }}
-            dist-release/${{ env.CHROMIUM_EXTENSION_ASSET }}
-            dist-release/${{ env.FIREFOX_EXTENSION_ASSET }}
-            dist-release/latest.json
+          overwrite_files: false
+          fail_on_unmatched_files: true
+          files: ${{ steps.asset_guard.outputs.files }}
 
       - name: Publish daemon-backed Linux beta
-        if: steps.release.outputs.deb_only == 'true'
+        if: steps.release.outputs.deb_only == 'true' && steps.asset_guard.outputs.publish == 'true'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.release.outputs.tag }}
@@ -263,16 +290,12 @@ jobs:
           body_path: dist-release/release-notes.md
           draft: false
           prerelease: true
-          overwrite_files: true
-          files: |
-            dist-release/Patina_${{ steps.release.outputs.version }}_amd64.deb
-            dist-release/${{ env.GNOME_EXTENSION_ASSET }}
-            dist-release/${{ env.CHROMIUM_EXTENSION_ASSET }}
-            dist-release/${{ env.FIREFOX_EXTENSION_ASSET }}
-            dist-release/latest.json
+          overwrite_files: false
+          fail_on_unmatched_files: true
+          files: ${{ steps.asset_guard.outputs.files }}
 
       - name: Publish dual-bundle Linux release candidate
-        if: steps.release.outputs.prerelease == 'true' && steps.release.outputs.deb_only != 'true'
+        if: steps.release.outputs.prerelease == 'true' && steps.release.outputs.deb_only != 'true' && steps.asset_guard.outputs.publish == 'true'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.release.outputs.tag }}
@@ -280,12 +303,6 @@ jobs:
           body_path: dist-release/release-notes.md
           draft: false
           prerelease: true
-          overwrite_files: true
-          files: |
-            dist-release/Patina_${{ steps.release.outputs.version }}_amd64.AppImage
-            dist-release/Patina_${{ steps.release.outputs.version }}_amd64.deb
-            dist-release/${{ env.GNOME_EXTENSION_ASSET }}
-            dist-release/${{ env.GNOME_ESM_EXTENSION_ASSET }}
-            dist-release/${{ env.CHROMIUM_EXTENSION_ASSET }}
-            dist-release/${{ env.FIREFOX_EXTENSION_ASSET }}
-            dist-release/latest.json
+          overwrite_files: false
+          fail_on_unmatched_files: true
+          files: ${{ steps.asset_guard.outputs.files }}

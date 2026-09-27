@@ -345,6 +345,8 @@ Linux 发布资产契约：
 
 以上双包资产契约适用于稳定版及明确用于公开渠道验收的 `rc` 预发布。daemon-backed `beta.N` 是窄例外：Release 只要求 `.deb`、`.deb.sig` 对应签名内容、DEB updater target 与扩展资产，不生成或上传 AppImage。用户于 2026-09-18 确认继续支持 AppImage：daemon-backed 稳定版发布前，必须完成其版本化 daemon 持久解包、稳定服务路径、原子更新及失败恢复，并验证旧 AppImage 客户端不会循环更新、下载错误包或静默失去支持。`rc` 双包候选只有在私有正式签名 AppImage 已验收后才进入公开分发，用独立 tag 验证真实 GitHub 资产和 updater 目标；失败时修复并发布新的候选版本，不覆盖旧 tag 或资产。`rc` 不被 GitHub 的 stable Latest 选中，验收时使用该 tag 的真实 `latest.json` 地址；正式版发布后再检查 `/releases/latest/download/latest.json`。不执行退役迁移。
 
+所有发布类型在上传前都运行 `guard-release-assets`：逐项核对同名远端附件的上传状态、大小和 GitHub SHA-256；相同字节保留，仅上传缺失项。摘要缺失、内容不同、远端读取失败或发布通道不符时停止，不允许覆盖既有包或 `latest.json`。完整且字节一致的已发布版本不再改动正文或 Latest 状态；同一 tag 的发布运行串行，上传步骤同时禁用覆盖。重新构建可能产生不同的包、ZIP 或清单时间戳，不能把“源码相同”当作字节相同；无法补齐原成品时使用新版本。
+
 GitHub Release 中的浏览器扩展附件使用带扩展版本号的稳定命名模式：
 
 - `patina-chromium-extension-vX.Y.Z.zip`
@@ -374,6 +376,8 @@ main 已合入 daemon 架构。首个 daemon-backed beta 保持 DEB-only，直�
 验收工作流在昂贵编译前先验证密钥身份：历史 Secret 编码只能规范化为结构完整的受支持 minisign key box，再签署私有临时 challenge 并用产品配置的公钥验签。仅有 decoder 输出不足以证明密钥可用，不能让 `export` 掩盖解码失败后直接构建。Secret 只注入密钥预检和签名构建步骤，不写入文件、日志或 artifact；临时 challenge 自动删除。该预检不代替成品 AppImage 验签和实际升级。
 
 正式发布工作流也应在构建前用同一产品公钥预检签名身份，并在上传前独立验签实际生成的每个 Linux 安装包；`beta.N` 检查 DEB，双包 `rc` 与稳定版检查 AppImage 和 DEB。存在非空 `.sig` 文件本身不算验签通过。
+
+`production_public_release_appimage_upgrade` 使用当前源码的 Tauri updater，并模拟旧版本号；旧 AppImage 只作为被替换文件。它证明公开清单通用目标、当前 updater 下载验签和原子替换，不证明旧版客户端自身执行了更新。真实旧客户端升级须有旧二进制实际运行的独立证据；RC2 客户端的实际应用内更新记录也不能替代 1.8.4 客户端的执行证明。
 
 发布前至少应完成以下验证：
 

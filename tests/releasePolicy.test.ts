@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import {
   mkdir,
@@ -17,6 +18,7 @@ import {
   releaseAssetNames,
   fieldValue,
   isDebOnlyBeta,
+  guardReleaseAssets,
   renderReleaseNotes,
   readVersionPolicyCurrentCodeVersion,
   renderUpdaterNotes,
@@ -363,7 +365,16 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
     workflow.indexOf("- name: Publish stable Linux release"),
     workflow.indexOf("- name: Publish daemon-backed Linux beta"),
   );
-  assert.match(stablePublishBlock, /GNOME_ESM_EXTENSION_ASSET/);
+  const assetGuardBlock = workflow.slice(
+    workflow.indexOf("- name: Guard existing release assets"),
+    workflow.indexOf("- name: Publish stable Linux release"),
+  );
+  assert.match(assetGuardBlock, /guard-release-assets/);
+  assert.match(assetGuardBlock, /if \[\[ "\$DEB_ONLY" != 'true' \]\]; then[\s\S]*_amd64\.AppImage[\s\S]*GNOME_ESM_EXTENSION_ASSET/);
+  assert.match(assetGuardBlock, /_amd64\.deb/);
+  assert.match(assetGuardBlock, /latest\.json/);
+  assert.match(workflow, /group: linux-release-/);
+  assert.match(workflow, /cancel-in-progress: false/);
   assert.match(workflow, /deb_only=true/);
   assert.match(workflow, /deb_only=false/);
   const prereleasePublishBlock = workflow.slice(
@@ -372,15 +383,18 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   );
   assert.doesNotMatch(prereleasePublishBlock, /\.amd64\.AppImage/);
   assert.doesNotMatch(prereleasePublishBlock, /GNOME_ESM_EXTENSION_ASSET/);
-  assert.match(prereleasePublishBlock, /_amd64\.deb/);
   assert.match(prereleasePublishBlock, /prerelease: true/);
   const candidatePublishBlock = workflow.slice(
     workflow.indexOf("- name: Publish dual-bundle Linux release candidate"),
   );
-  assert.match(candidatePublishBlock, /_amd64\.AppImage/);
-  assert.match(candidatePublishBlock, /_amd64\.deb/);
-  assert.match(candidatePublishBlock, /GNOME_ESM_EXTENSION_ASSET/);
   assert.match(candidatePublishBlock, /prerelease: true/);
+  for (const block of [stablePublishBlock, prereleasePublishBlock, candidatePublishBlock]) {
+    assert.match(block, /steps\.asset_guard\.outputs\.publish == 'true'/);
+    assert.match(block, /files: \$\{\{ steps\.asset_guard\.outputs\.files \}\}/);
+    assert.match(block, /overwrite_files: false/);
+    assert.match(block, /fail_on_unmatched_files: true/);
+  }
+  assert.doesNotMatch(workflow, /overwrite_files: true/);
   assert.doesNotMatch(
     workflow,
     /Build Linux bundles[\s\S]*TAURI_SIGNING_PRIVATE_KEY:\s*\$\{\{\s*secrets\.TAURI_SIGNING_PRIVATE_KEY\s*\}\}/,
@@ -654,6 +668,72 @@ async function testPrepareLinuxReleaseAssetsRejectsEmptyDebSignature() {
   }
 }
 
+async function testReleaseAssetGuard() {
+  const root = await mkdtemp(path.join(tmpdir(), "patina-release-guard-"));
+  const version = "1.9.2";
+  const files = [path.join(root, "Patina_1.9.2_amd64.AppImage"), path.join(root, "latest.json")];
+  const contents = ["signed bundle fixture", '{"version":"1.9.2"}'];
+  const assets = contents.map((content, index) => ({
+    name: path.basename(files[index]), state: "uploaded", size: Buffer.byteLength(content),
+    digest: `sha256:${createHash("sha256").update(content).digest("hex")}`,
+  }));
+  const release = { id: 17, tag_name: `v${version}`, prerelease: false, draft: false };
+  const base = "https://api.github.com/repos/Asanilo/patina-Linux";
+  const calls: string[] = [];
+  function api(remoteRelease: object | null, pages: object[][] = [assets], failure = 0) {
+    return async (url: string, options: RequestInit) => {
+      calls.push(url);
+      assert.equal(options.redirect, "error");
+      assert.equal(options.method, undefined, "preflight must use read-only GET requests");
+      if (failure) return new Response("failure", { status: failure });
+      if (url === `${base}/releases/tags/v${version}`) {
+        return remoteRelease
+          ? Response.json(remoteRelease)
+          : new Response("not found", { status: 404 });
+      }
+      const match = url.match(/\/releases\/17\/assets\?per_page=100&page=(\d+)$/);
+      assert.ok(match, `unexpected API request: ${url}`);
+      return Response.json(pages[Number(match[1]) - 1] ?? []);
+    };
+  }
+  const guard = (request) => guardReleaseAssets(version, "Asanilo/patina-Linux", files, request);
+  try {
+    await Promise.all(files.map((file, index) => writeFile(file, contents[index])));
+    assert.deepEqual(await guard(api(null)), { publish: true, files });
+    assert.deepEqual(await guard(api(release)), { publish: false, files: [] });
+    assert.deepEqual(await guard(api(release, [[assets[0]]])), { publish: true, files: [files[1]] });
+    assert.deepEqual(await guard(api({ ...release, draft: true })), { publish: true, files: [] });
+
+    for (const change of [
+      { digest: `sha256:${"0".repeat(64)}` }, { digest: null },
+      { size: assets[0].size + 1 }, { state: "starter" },
+    ]) {
+      await assert.rejects(guard(api(release, [[{ ...assets[0], ...change }, assets[1]]])),
+        /differs or cannot be verified/);
+    }
+    // Never mix a retained package with a newly generated incompatible manifest.
+    await writeFile(files[1], '{"version":"1.9.2","signature":"changed"}');
+    await assert.rejects(guard(api(release)), /latest\.json; use a new version/);
+    await writeFile(files[1], contents[1]);
+    for (const status of [401, 403, 500]) {
+      await assert.rejects(guard(api(null, [], status)), /release lookup failed/);
+    }
+    await assert.rejects(guard(async () => { throw new Error("offline"); }), /offline/);
+    await assert.rejects(guard(api({ ...release, prerelease: true })), /identity or channel/);
+    await assert.rejects(guard(api({ ...release, tag_name: "v1.9.1" })), /identity or channel/);
+    await assert.rejects(guard(api({ ...release, immutable: true }, [[]])), /immutable release/);
+    await assert.rejects(guard(api(release, [[assets[0], assets[0]]])), /duplicate existing/);
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({ name: `extra-${index}.txt` }));
+    assert.deepEqual(await guard(api(release, [firstPage, assets])), { publish: false, files: [] });
+    assert.ok(calls.includes(`${base}/releases/17/assets?per_page=100&page=2`));
+    await assert.rejects(guardReleaseAssets(version, "Asanilo/patina-Linux", [files[0], files[0]], api(null)), /duplicate/);
+    await writeFile(files[0], "");
+    await assert.rejects(guard(api(null)), /invalid or duplicate release asset/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
 testSyncsCurrentCodeVersion();
 testSupportsPrereleaseVersion();
 testMissingPolicyVersionIsNull();
@@ -679,6 +759,7 @@ await testPrepareLinuxReleaseAssetsRejectsMissingDebSignature();
 await testPrepareStableLinuxReleaseAssetsCreatesBothPackageTargets();
 await testPrepareStableLinuxReleaseAssetsCreatesBothPackageTargets("1.9.0-rc.1");
 await testPreparePrereleaseLinuxAssetsCreatesOnlyDebianTarget();
+await testReleaseAssetGuard();
 
 await execFileAsync(process.execPath, ["--experimental-strip-types", releaseScriptPath, "validate-version-files"]);
 await execFileAsync(process.execPath, ["--experimental-strip-types", releaseScriptPath, "validate-version-files", currentPackageVersion]);
@@ -687,4 +768,4 @@ await assert.rejects(
   { code: 1 },
 );
 
-console.log("Passed 25 release policy tests");
+console.log("Passed 26 release policy tests");

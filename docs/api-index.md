@@ -527,7 +527,7 @@ Current behavior:
 - Combines native sessions, imported exact sessions, and imported hour buckets using `native > import_exact > import_bucket` precedence.
 - Includes the current native active session and clips exact facts to the local-day range.
 - Treats hour buckets as aggregate quantities; a partial-hour query receives only its proportional share and never fabricates a timeline segment.
-- Omits apps marked excluded; a local category override takes priority over an imported source category.
+- Omits apps marked excluded; an enabled local category override takes priority over an imported source category. Disabled overrides do not supply a category; existing legacy categories and then imported categories remain fallbacks. Category/exclusion lookup uses the same executable alias policy as the daily read model.
 
 ### `GET /api/v1/summary/range`
 

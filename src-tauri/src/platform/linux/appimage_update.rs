@@ -244,7 +244,10 @@ mod tests {
         let root = PathBuf::from(std::env::var_os("PATINA_PUBLIC_UPDATE_TEST_ROOT").unwrap());
         assert!(root.is_absolute());
         assert_eq!(fs::canonicalize(&root).unwrap(), root);
-        assert_eq!(fs::metadata(&root).unwrap().permissions().mode() & 0o777, 0o700);
+        assert_eq!(
+            fs::metadata(&root).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
         assert_eq!(
             fs::read_to_string(root.join("marker")).unwrap(),
             "isolated-public-update-acceptance\n"
@@ -264,8 +267,10 @@ mod tests {
         let target = root.join("installed.AppImage");
         let old_hash = fingerprint(&target).unwrap();
         assert_eq!(input["old_sha256"].as_str().unwrap(), old_hash);
-        // A plain test executable has no bundle marker and therefore exercises
-        // the generic linux-x86_64 key used by older AppImage clients.
+        // This runs the current updater with a simulated old package version.
+        // The old AppImage is replacement input, not an executed legacy client.
+        // A plain test executable has no bundle marker, so this checks the
+        // generic linux-x86_64 target separately from real client upgrade UI.
         assert_eq!(tauri::utils::platform::bundle_type(), None);
         let config: serde_json::Value =
             serde_json::from_str(include_str!("../../../tauri.conf.json")).unwrap();
@@ -305,6 +310,8 @@ mod tests {
                 "manifest_url": manifest_url,
                 "selected_appimage_url": expected_url,
                 "generic_fallback_selected": true,
+                "current_updater_fixture": true,
+                "legacy_client_executed": false,
                 "production_signature_verified_before_install": true,
                 "old_sha256": old_hash,
                 "new_sha256": new_hash,

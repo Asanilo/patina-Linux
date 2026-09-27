@@ -192,13 +192,13 @@ pub async fn load_app_semantics(pool: &Pool<Sqlite>) -> Result<ActivityAppSemant
             let object = override_value
                 .as_object()
                 .ok_or("activity app override must be an object")?;
+            let enabled = object.get("enabled") != Some(&serde_json::Value::Bool(false));
             let category = object
                 .get("category")
                 .and_then(serde_json::Value::as_str)
-                .filter(|category| !category.trim().is_empty())
+                .filter(|category| enabled && !category.trim().is_empty())
                 .map(str::to_string);
-            let excluded = object.get("enabled") != Some(&serde_json::Value::Bool(false))
-                && object.get("track") == Some(&serde_json::Value::Bool(false));
+            let excluded = enabled && object.get("track") == Some(&serde_json::Value::Bool(false));
             let app_key = normalize_app_key(exe_name);
             if current_overrides
                 .insert(app_key, (category.clone(), excluded))
@@ -222,7 +222,7 @@ pub async fn load_app_semantics(pool: &Pool<Sqlite>) -> Result<ActivityAppSemant
 }
 
 fn normalize_app_key(exe_name: &str) -> String {
-    exe_name.trim().to_ascii_lowercase()
+    crate::domain::activity_read_policy::canonical_executable(exe_name)
 }
 
 #[cfg(test)]
@@ -406,5 +406,52 @@ mod tests {
             assert!(semantics.is_excluded("other"));
             assert!(!semantics.is_excluded("disabled"));
         });
+    }
+
+    #[tokio::test]
+    async fn disabled_override_does_not_replace_category_fallback() {
+        let pool = setup_pool().await;
+        pool.execute(
+            r#"INSERT INTO settings (key, value) VALUES
+               ('__app_override::zen', '{"category":"development","enabled":false}'),
+               ('__app_category::ghostty', 'Legacy'),
+               ('__app_override::ghostty', '{"category":"games","enabled":false}')"#,
+        )
+        .await
+        .unwrap();
+        let semantics = load_app_semantics(&pool).await.unwrap();
+        assert_eq!(semantics.category_for("zen"), None);
+        assert_eq!(semantics.category_for("ghostty"), Some("Legacy"));
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn app_semantics_use_read_policy_aliases_on_both_sides() {
+        let pool = setup_pool().await;
+        pool.execute(
+            r#"INSERT INTO settings (key, value) VALUES
+               ('__app_override::steam.exe', '{"category":"games","track":false}'),
+               ('__app_override::code-helper.exe', '{"category":"development"}')"#,
+        )
+        .await
+        .unwrap();
+        let semantics = load_app_semantics(&pool).await.unwrap();
+        assert!(semantics.is_excluded("SteamWebHelper.exe"));
+        assert_eq!(semantics.category_for("steamwebhelper.exe"), Some("games"));
+        assert_eq!(semantics.category_for("code.exe"), Some("development"));
+        // Do not guess Windows suffixes for distinct Linux executable identities.
+        assert!(!semantics.is_excluded("steam"));
+
+        pool.execute(
+            r#"INSERT INTO settings (key, value) VALUES
+               ('__app_override::steamwebhelper.exe', '{"track":true}')"#,
+        )
+        .await
+        .unwrap();
+        assert!(load_app_semantics(&pool)
+            .await
+            .unwrap_err()
+            .contains("conflicting overrides"));
+        pool.close().await;
     }
 }

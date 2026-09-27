@@ -468,6 +468,46 @@ mod local_summary_range_tests {
             included.body["data"]["categories"][0]["name"],
             "Development"
         );
+
+        pool.execute("UPDATE import_exact_sessions SET source_category='Imported'")
+            .await
+            .unwrap();
+        pool.execute(
+            r#"UPDATE settings SET value='{"category":"Development","enabled":false}'
+               WHERE key='__app_override::c1'"#,
+        )
+        .await
+        .unwrap();
+        let disabled = get_summary_range(&context, Some("from=1000&to=2000")).await;
+        assert_eq!(disabled.status, 200);
+        assert_eq!(disabled.body["data"]["categories"][0]["name"], "Imported");
+
+        pool.execute("UPDATE import_exact_sessions SET exe_name='SteamWebHelper.exe'")
+            .await
+            .unwrap();
+        pool.execute(
+            r#"UPDATE settings SET key='__app_override::steam.exe',
+               value='{"category":"games","track":false}'
+               WHERE key='__app_override::c1'"#,
+        )
+        .await
+        .unwrap();
+        let excluded_alias = get_summary_range(&context, Some("from=1000&to=2000")).await;
+        assert_eq!(excluded_alias.status, 200);
+        assert_eq!(excluded_alias.body["data"]["total_active_ms"], 0);
+        pool.execute(
+            r#"UPDATE settings SET value='{"category":"games","track":true}'
+               WHERE key='__app_override::steam.exe'"#,
+        )
+        .await
+        .unwrap();
+        let included_alias = get_summary_range(&context, Some("from=1000&to=2000")).await;
+        assert_eq!(included_alias.status, 200);
+        assert_eq!(included_alias.body["data"]["total_active_ms"], 1000);
+        assert_eq!(
+            included_alias.body["data"]["categories"][0]["name"],
+            "games"
+        );
         pool.close().await;
     }
 

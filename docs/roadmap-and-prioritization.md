@@ -185,7 +185,7 @@ daemon 第一阶段差距审计、阻塞修复、候选验收与本地主线合�
 
 独立 daemon、平台信号、浏览器桥接、HTTP/SSE、主要写侧 owner、systemd 交接和 Desktop 适配已有实现及分批验证。趋势/分类有界聚合和备份流式化已纳入 beta.19，不撤销经过验证的改动，但不继续扩大此类通用优化。
 
-`1.9.1` 已作为公开稳定 Latest 交付已签名的 AppImage 与 DEB。旧 `1.8.4` AppImage 从真实公开 manifest 下载验签并在隔离夹具中原子升级；Fedora 44 客体另从公开 RC2 AppImage 通过应用内更新升级到稳定版，在 Settings 确认后台重载后完成版本化 daemon 交接、旧数据保留及冷登录后的无 UI 记录。GNOME 42 客体从公开 RC2 DEB 升级到稳定版，旧会话与关闭 UI 后的真实窗口记录保持。两种公开稳定 GNOME ZIP 均从移走旧目录的客体直接安装。`v1.9.0` tag 因浏览器烟测时序失败没有形成 Release 或安装包；完整正式版由 `v1.9.1` 发布。宿主仍安装此前的 beta.21 本地候选，公开发布与宿主实装分别记录。下一阶段回到正常使用中的 issue 分诊和稳定期修复，R1 两周连续运行观察继续按用户要求暂停，不作为发布后门槛。发布证据见[已归档的 AppImage 正式版执行单](./archive/2026-09-27-appimage-stable-release.md)；候选和原有安装证据见[当前工作清单](./working/2026-07-10-patinad-runtime-design.md)及[阶段执行单](./working/2026-09-23-sustainable-linux-release.md)。
+`1.9.1` 已作为公开稳定 Latest 交付已签名的 AppImage 与 DEB。隔离夹具使用当前 updater 模拟 `1.8.4` 版本号，从真实公开 manifest 下载验签并原子替换旧 AppImage 文件，未执行旧客户端本身；Fedora 44 客体另从公开 RC2 AppImage 通过应用内更新升级到稳定版，在 Settings 确认后台重载后完成版本化 daemon 交接、旧数据保留及冷登录后的无 UI 记录。GNOME 42 客体从公开 RC2 DEB 升级到稳定版，旧会话与关闭 UI 后的真实窗口记录保持。两种公开稳定 GNOME ZIP 均从移走旧目录的客体直接安装。`v1.9.0` tag 因浏览器烟测时序失败没有形成 Release 或安装包；完整正式版由 `v1.9.1` 发布。宿主仍安装此前的 beta.21 本地候选，公开发布与宿主实装分别记录。下一阶段回到正常使用中的 issue 分诊和稳定期修复，R1 两周连续运行观察继续按用户要求暂停，不作为发布后门槛。发布证据见[已归档的 AppImage 正式版执行单](./archive/2026-09-27-appimage-stable-release.md)；候选和原有安装证据见[当前工作清单](./working/2026-07-10-patinad-runtime-design.md)及[阶段执行单](./working/2026-09-23-sustainable-linux-release.md)。
 
 #### 已通过的第一阶段条件与持续约束
 

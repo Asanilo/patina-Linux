@@ -1,4 +1,6 @@
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { copyFile, lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -701,6 +703,72 @@ async function prepareLinuxReleaseAssets(version, bundleDir, outputDir, reposito
   );
 }
 
+// Read-only preflight. Publication remains owned by the workflow, which uploads
+// only missing files with overwrite disabled and serializes runs for each tag.
+export async function guardReleaseAssets(version, repository, files, request = fetch) {
+  assertVersion(version);
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) || !files.length) {
+    throw new Error("release asset guard requires a repository and asset files");
+  }
+  const local = new Map();
+  for (const file of files) {
+    const name = path.basename(file);
+    const info = await lstat(file);
+    if (!info.isFile() || info.size === 0 || /[\r\n]/.test(file) || local.has(name)) {
+      throw new Error(`invalid or duplicate release asset: ${name}`);
+    }
+    const hash = createHash("sha256");
+    for await (const chunk of createReadStream(file)) hash.update(chunk);
+    local.set(name, { file, size: info.size, digest: `sha256:${hash.digest("hex")}` });
+  }
+  const base = `https://api.github.com/repos/${repository}`;
+  const headers = {
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    ...(process.env.GH_TOKEN ? { Authorization: `Bearer ${process.env.GH_TOKEN}` } : {}),
+  };
+  async function get(url) {
+    return request(url, { headers, redirect: "error", signal: AbortSignal.timeout(30_000) });
+  }
+  const response = await get(`${base}/releases/tags/v${version}`);
+  if (response.status === 404) return { publish: true, files };
+  if (!response.ok) throw new Error(`release lookup failed: HTTP ${response.status}`);
+  const release = await response.json();
+  if (!Number.isSafeInteger(release.id) || release.id <= 0 || release.tag_name !== `v${version}` ||
+      release.prerelease !== version.includes("-") || typeof release.draft !== "boolean") {
+    throw new Error("existing release identity or channel does not match the candidate");
+  }
+  const seen = new Set();
+  for (let page = 1; ; page += 1) {
+    if (page > 100) throw new Error("release asset listing exceeds budget");
+    const assetsResponse = await get(`${base}/releases/${release.id}/assets?per_page=100&page=${page}`);
+    if (!assetsResponse.ok) throw new Error(`release asset lookup failed: HTTP ${assetsResponse.status}`);
+    const assets = await assetsResponse.json();
+    if (!Array.isArray(assets)) throw new Error("invalid release asset listing");
+    for (const asset of assets) {
+      if (typeof asset.name !== "string" || seen.has(asset.name)) {
+        throw new Error("invalid or duplicate existing release asset");
+      }
+      seen.add(asset.name);
+      const candidate = local.get(asset.name);
+      if (!candidate) continue;
+      // GitHub's SHA-256 describes the uploaded bytes. Missing digests are not
+      // evidence of equality; never guess based on a filename or equal size.
+      if (asset.state !== "uploaded" || asset.size !== candidate.size || asset.digest !== candidate.digest) {
+        throw new Error(`existing release asset differs or cannot be verified: ${asset.name}; use a new version`);
+      }
+    }
+    if (assets.length < 100) break;
+  }
+  const missing = [...local].filter(([name]) => !seen.has(name)).map(([, asset]) => asset.file);
+  if (release.immutable === true && (missing.length || release.draft)) {
+    throw new Error("cannot complete an immutable release; use a new version");
+  }
+  // A draft with no missing assets can still be finalized. A complete published
+  // release is a no-op, including its existing release notes and Latest status.
+  return { publish: release.draft || missing.length > 0, files: missing };
+}
+
 function help() {
   console.log(`Usage:
   node --experimental-strip-types scripts/release.ts sync-version <version>
@@ -709,6 +777,7 @@ function help() {
   node --experimental-strip-types scripts/release.ts print-release-notes <version>
   node --experimental-strip-types scripts/release.ts write-release-notes <version> <output>
   node --experimental-strip-types scripts/release.ts prepare-linux-release-assets <version> <bundle-dir> <output-dir> <repository>
+  node --experimental-strip-types scripts/release.ts guard-release-assets <version> <repository> <asset-file>...
 `);
 }
 
@@ -733,6 +802,9 @@ async function main() {
       break;
     case "prepare-linux-release-assets":
       await prepareLinuxReleaseAssets(args[0], args[1], args[2], args[3]);
+      break;
+    case "guard-release-assets":
+      console.log(JSON.stringify(await guardReleaseAssets(args[0], args[1], args.slice(2))));
       break;
     default:
       help();
