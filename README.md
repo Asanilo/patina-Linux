@@ -84,11 +84,11 @@ Upstream changes are reviewed for Linux correctness and data-safety value. They 
 | Linux packaging | Stable, candidate and beta pipelines configured | Stable and explicit `rc` tags build x86_64 AppImage and `.deb`; daemon-backed `beta.N` tags remain DEB-only. |
 | Local API token/port UI | Implemented | Settings applies ports atomically and rotates the owner-only API Token separately from browser Web Sync. |
 
-### Daemon Beta Acceptance
+### Linux Daemon And Releases
 
-The daemon separation developed on `feature/patinad-daemon` has been merged into `main`, where subsequent Linux product development continues. This source merge does not publish a new package or change the stable release. Beta packages contain Desktop, `patinad`, the user unit and GNOME extension together, and publish DEB only. Use the [release list](https://github.com/Asanilo/patina-Linux/releases), not the stable latest-download link, to check for available prereleases.
+The daemon separation developed on `feature/patinad-daemon` is part of Linux `main`. The 1.9.1 stable release packages Desktop, `patinad`, the user unit, and GNOME extension for both AppImage and DEB delivery. Earlier daemon-backed `beta.N` releases remain DEB-only; use the [release list](https://github.com/Asanilo/patina-Linux/releases) to find prereleases.
 
-Before installing a beta, export and verify a backup outside the Patina data directory. Reopen Desktop after package installation; if Settings reports different Desktop/Daemon versions, explicitly confirm **Reload background service**. Installation alone does not replace an already-running daemon. Reload briefly interrupts tracking and does not download a package.
+Before upgrading, export and verify a backup outside the Patina data directory. Reopen Desktop after package installation; if Settings reports different Desktop/Daemon versions, explicitly confirm **Reload background service**. Installation alone does not replace an already-running daemon. Reload briefly interrupts tracking and does not download a package.
 
 The **1.9.1** Linux release delivers signed x86_64 AppImage and DEB packages; check [Releases](https://github.com/Asanilo/patina-Linux/releases) for the published assets and current Latest version. The standalone daemon keeps tracking after the desktop closes. AppImage and DEB updates select the matching package type, and older AppImage clients retain a compatible update target. GNOME 42 Wayland remains the declared support environment; GNOME 46 and Fedora GNOME 50 have isolated technical acceptance without an expanded support promise. Widget flicker/docking remains deferred; Flatpak and additional browser/TUI clients are not included.
 

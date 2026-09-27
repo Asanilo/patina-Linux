@@ -1,6 +1,6 @@
 # AppImage 公开分发与 1.9.0 正式版执行单
 
-状态：进行中。用户已要求把工作推进到正式发布并完成 AppImage。起点为已发布的 `v1.9.0-beta.21`（DEB-only）和干净的 Linux `main` `b1aa38eb`。R1 两周连续运行观察仍按用户要求暂停，不作为本轮门槛。
+状态：完成。`v1.9.1` 已作为公开稳定 Latest 发布 AppImage 与 DEB，并通过真实资产、更新通道和隔离 GNOME 客体验收。起点为已发布的 `v1.9.0-beta.21`（DEB-only）和 Linux `main` `b1aa38eb`。R1 两周连续运行观察仍按用户要求暂停，不作为本轮门槛。
 
 ## 发布边界
 
@@ -47,3 +47,12 @@
 - `1.9.0` 准备提交 `47b54303` 在本地通过 `test:release` 和 `release:check`（Rust 718 通过、21 忽略）；干净源码导出通过版本与 changelog 校验。[准确签名候选](https://github.com/Asanilo/patina-Linux/actions/runs/36330680692)也成功完成生产签名与验签。`v1.9.0` tag 因此推送到该提交。
 - [公开稳定版工作流](https://github.com/Asanilo/patina-Linux/actions/runs/36333393377)两次尝试均在 `tests/uiBrowserSmoke.test.ts` 的首次页面渲染等待中失败：Chrome 导航后短暂没有 `document.body`，测试直接读取 `innerText` 抛出异常。相同源码的私有候选和本地门禁已通过，但公开工作流连续复现；没有生成 GitHub Release 或安装包。tag 不改写，也不把未生成的资产称为已发布。
 - 首次 Dashboard 渲染等待改为在 `document.body` 尚不存在时返回 `false`，继续等待；只修复验收夹具，不改变应用行为。按已公开 tag 不复用的规则，新正式版号为 `1.9.1`；其 changelog 承接完整产品变化，并明确记录 `1.9.0` 只有未完成的 tag。下一门槛为准确 `1.9.1` 门禁、签名候选、公开双包和 Latest 实际验收。
+
+## 1.9.1 正式版公开验收（2026-09-28）
+
+- 准确源码 `1c5a8f55` 的本地 `test:release`、`release:check`、干净源码导出版本/changelog 校验通过；[私有生产签名候选](https://github.com/Asanilo/patina-Linux/actions/runs/36334244787)通过完整门禁、AppImage 构建及独立验签。[公开稳定版工作流](https://github.com/Asanilo/patina-Linux/actions/runs/36335635060)从同一 `v1.9.1` tag 完成质量门禁、双包构建、DEB 载荷检查、两包独立验签及附件上传。[Patina v1.9.1](https://github.com/Asanilo/patina-Linux/releases/tag/v1.9.1) 为非草稿、非预发布，并被 GitHub 标记为 Latest。
+- 从公开 Release 实际下载的 AppImage SHA256 `8b0c55bb1dd57dfd7d2a42b17c5ca8e9c8a333c666d2b82c4393cd6035697727`、DEB `914885de06c59484ea6af4e4e688b23326737d99bbbd81a1899203cc1de2fbb8` 均以产品公钥独立验签通过，DEB 载荷验证通过。`latest.json` SHA256 `0fe119294781716cdc68908fc9da63c7c40f4377df559b221b7f8bd738cd0a08`，包含 AppImage 专用、DEB 专用和旧客户端通用 AppImage 目标，URL 均指向 `v1.9.1`；稳定 `/releases/latest/download/latest.json` 与 tagged 清单逐字节相同。
+- 公开 GNOME 42 v4 ZIP SHA256 `f23ede925544e11309be3fb1034cc1970f46028709f358c0bd15c26a19b2b5ee`、GNOME 46/50 ESM v5 ZIP `e57d264dd5aae586393d3e23d3b07cbea13b5007e9f41e2fcd97ac3ca7f1e512` 均在 ZIP 根目录直接放 `metadata.json` 和 `extension.js`。移走 RC2 扩展目录后，GNOME 42 和 Fedora 50.5 客体分别直接安装公开稳定 ZIP；安装文件 SHA 与公开 ZIP 内容一致，冷登录后 Shell 持有双 D-Bus 名称。ESM 附件公开不扩大正式支持范围。
+- 旧公开 `1.8.4` AppImage 的私有 0700 夹具通过 Tauri updater 从 `v1.9.1` tagged manifest 选择旧客户端通用 AppImage 目标、下载公开稳定包、验证生产签名并原子替换；旧包恢复文件保留，结果在 `/tmp/patina-public-updater-stable.bJkmk9/public-update-result.json`。Fedora 44 客体另从公开 RC2 AppImage 在真实 About 页面检测到稳定 Latest，经确认下载完整 98.2 MB、验签并通过应用内安装原子替换原路径；旧 RC2 包 SHA256 `213d99fc856a11b85f516a485d114e1c565592c7306d85a8fd178bbd5f0e30e3` 保留为恢复文件。关闭旧单实例后从原路径重开，新 Desktop 显示 `1.9.1`、旧 daemon 显示 `1.9.0-rc.2`；在 Settings 确认灰色“重新加载后台”后，仅有一个来自稳定版持久运行时的 daemon。旧会话 ID 1、SQLite 完整性、GDM Wayland 冷登录后 daemon 活动和退出 UI 后真实前台窗口记录均通过。客体快照 `public-stable191-fedora-update-pass` 保留。
+- GNOME 42 隔离客体从公开 RC2 DEB 安装公开稳定 `1.9.1` DEB；GDM Wayland 冷登录后 daemon 报告 `1.9.1`，旧会话 ID 1 和 SQLite 完整性保持，关闭 Desktop 后真实 GTK 前台窗口仍被记录。快照 `public-stable191-gnome42-deb-pass` 保留。Fedora 与 GNOME 42 采样时需在自动出现的 Overview 中点选测试窗口；焦点获得后均通过，未把未聚焦的窗口误算为有效采样。
+- 本轮未在宿主机安装公开 1.9.1 包，宿主原有 beta.21 本地候选保持不变。发布状态、隔离安装验证与宿主实装分别记录；两周连续运行观察仍按用户要求暂停。

@@ -130,9 +130,9 @@ Token 路径：
 ${XDG_DATA_HOME:-~/.local/share}/Patina/api_token
 ```
 
-## Daemon 测试版验收
+## Linux 后台与发布
 
-`feature/patinad-daemon` 上完成的 daemon 分离已合入 `main`，后续 Linux 产品开发继续在 `main` 推进。这次源码合并不代表发布了新安装包，也不改变稳定版本。测试包同时包含 Desktop、`patinad`、user unit 和 GNOME 扩展，只提供 DEB；请在 [Release 列表](https://github.com/Asanilo/patina-Linux/releases) 查看是否已有预发布版本，不使用稳定版 latest 下载入口判断 beta 是否发布。
+`feature/patinad-daemon` 上完成的 daemon 分离已合入 Linux `main`。1.9.1 正式版通过 AppImage 和 DEB 一起交付 Desktop、`patinad`、user unit 与 GNOME 扩展。此前的 daemon-backed `beta.N` 版本仍为 DEB-only；预发布版本以 [Release 列表](https://github.com/Asanilo/patina-Linux/releases) 为准。
 
 安装前先导出并验证一份位于 Patina 数据目录之外的备份。覆盖安装后重新打开桌面端；设置诊断若显示 Desktop/Daemon 版本不同，再显式确认“重新加载后台”。安装软件包不等于运行中的后台已经更新；重新加载会短暂停止记录，不负责下载软件包。
 

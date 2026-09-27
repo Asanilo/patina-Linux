@@ -367,7 +367,7 @@ GitHub Release 继续作为正式发布源、主下载入口和主更新清单�
 
 ## 10. 发布前的最低验证门槛
 
-main 已合入 daemon 架构，现有 AppImage 实现仍不自动解除 DEB-only beta 限制：持久 AppDir、固定 user unit、验签后原子文件替换已有源码及验收；无 DEB 的 GNOME 42.9 首次接管、登录和正式签名成品隔离升级已有证据，公开 updater 投递及更广环境仍待验收。保留旧运行时/包不等于允许自动降级数据库。后续恢复 AppImage 发布时，应同时复核 release workflow、双包 manifest 与旧客户端 fallback，不能仅修改 bundles 列表。开发时通过 `createUpdaterArtifacts=false` 构建的本地未签名包不得作为公开更新资产使用。
+main 已合入 daemon 架构。首个 daemon-backed beta 保持 DEB-only，直到 AppImage 的持久 AppDir、固定 user unit、验签后原子替换、公开 updater 投递、旧客户端回退目标和隔离登录生命周期通过后，才在 `1.9.1` 稳定版恢复双包发布。保留旧运行时/包不等于允许自动降级数据库；后续版本仍须按变更影响复核 release workflow、双包 manifest、签名与升级恢复，不能仅修改 bundles 列表。Fedora 的隔离 AppImage 验收不自动扩大公开支持范围。开发时通过 `createUpdaterArtifacts=false` 构建的本地未签名包不得作为公开更新资产使用。
 
 正式签名候选可通过手动的 [`appimage-acceptance.yml`](../.github/workflows/appimage-acceptance.yml) 独立验收：仅允许本仓库 `main` 的确定提交，使用既有 Actions 签名 Secret，先运行完整门禁，再构建并用应用配置中的公钥验证 AppImage。候选与源码 SHA/摘要只保存为短期 Actions artifact；该流程没有 tag、Release 或 updater manifest 发布步骤，token 只读。推送及运行远端流程仍需用户授权。正式私钥不导出到本机，也不用临时测试密钥冒充正式签名。以本地 HTTP fixture 验证生产公钥、Tauri 下载和原子替换时，必须明确它不覆盖公开更新源分发；真实运行时升级另需隔离安装用户的生命周期、服务版本和数据验收。
 
