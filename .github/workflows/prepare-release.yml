@@ -200,8 +200,8 @@ jobs:
           extension_version="$(node -p "require('./extensions/gnome-shell/patina-window-tracker@patina/metadata.json').version")"
           extension_asset="patina-gnome-shell-extension-v${extension_version}.zip"
           (
-            cd dist/extensions/gnome-shell
-            zip -r "../../../dist-release/${extension_asset}" patina-window-tracker@patina
+            cd dist/extensions/gnome-shell/patina-window-tracker@patina
+            zip -j "$GITHUB_WORKSPACE/dist-release/${extension_asset}" metadata.json extension.js
           )
           echo "GNOME_EXTENSION_ASSET=$extension_asset" >> "$GITHUB_ENV"
 
@@ -212,8 +212,8 @@ jobs:
           extension_version="$(node -p "require('./extensions/gnome-shell/patina-window-tracker@patina/esm/metadata.json').version")"
           extension_asset="patina-gnome-shell-extension-esm-v${extension_version}.zip"
           (
-            cd dist/extensions/gnome-shell-esm
-            zip -r "../../../dist-release/${extension_asset}" patina-window-tracker@patina
+            cd dist/extensions/gnome-shell-esm/patina-window-tracker@patina
+            zip -j "$GITHUB_WORKSPACE/dist-release/${extension_asset}" metadata.json extension.js
           )
           echo "GNOME_ESM_EXTENSION_ASSET=$extension_asset" >> "$GITHUB_ENV"
 

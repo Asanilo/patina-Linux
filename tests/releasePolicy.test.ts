@@ -351,6 +351,8 @@ async function testLinuxReleaseWorkflowAndBundleContract() {
   assert.match(workflow, /Package Chromium extension/);
   assert.match(workflow, /Package modern GNOME Shell extension/);
   assert.match(workflow, /extension:gnome:build-esm/);
+  assert.match(workflow, /cd dist\/extensions\/gnome-shell\/patina-window-tracker@patina\s+zip -j [^\n]+ metadata\.json extension\.js/);
+  assert.match(workflow, /cd dist\/extensions\/gnome-shell-esm\/patina-window-tracker@patina\s+zip -j [^\n]+ metadata\.json extension\.js/);
   assert.match(workflow, /npm run extension:firefox:verify-signed/);
   assert.match(workflow, /Verify daemon-backed Debian package/);
   assert.match(workflow, /npm run release:verify-daemon-deb/);

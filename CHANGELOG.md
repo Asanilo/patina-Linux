@@ -16,6 +16,16 @@ Release: 待定。
 App note: 待定。
 App note en: TBD.
 
+## [1.9.0-rc.2] - 2026-09-27
+
+Release: Linux 1.9.0 候选版：修复 GNOME 扩展压缩包的直接安装，继续验证 AppImage 与 DEB。
+App note: 修复 GNOME 扩展包安装结构，继续验证双包更新。
+App note en: Fix GNOME extension archive installation and continue dual-bundle validation.
+
+### Fixed
+
+- GNOME 42 和 GNOME 46/50 两种 Release 扩展 ZIP 改为在压缩包根目录直接提供 `metadata.json` 与 `extension.js`，使 `gnome-extensions install --force` 能识别并安装；rc.1 的公开 ZIP 多包了一层目录。
+
 ## [1.9.0-rc.1] - 2026-09-27
 
 Release: Linux 1.9.0 候选版：独立后台记录与 AppImage、DEB 双包更新进入公开渠道验收。
