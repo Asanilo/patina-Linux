@@ -1,11 +1,11 @@
 # 可持续维护的 Linux 产品版本：阶段执行单
 
-> 建立：2026-09-23，更新：2026-09-27。本文记录阶段执行状态与证据入口；产品范围、支持承诺、架构和发布规则仍以 `docs/` 下对应长期文档为准。P1–P3、C1/R2、F1 和 DEB-only 候选准备已有隔离证据；用户已暂停 R1 的连续运行观察。未安装宿主新候选或公开发布。
+> 建立：2026-09-23，更新：2026-09-27。本文记录阶段执行状态与证据入口；产品范围、支持承诺、架构和发布规则仍以 `docs/` 下对应长期文档为准。P1–P3、C1/R2、F1 和 DEB-only 候选准备已有隔离证据；用户已暂停 R1 的连续运行观察。后续 Tauri 运行时升级及准确新候选以[独立执行单](2026-09-27-tauri-runtime-refresh.md)为准。未安装宿主新候选或公开发布。
 
 ## 当前基线
 
 - 开发主线为 `main`，接手时本地与 `origin/main` 均为 `d3a704c2193a4a0bb070985fa78b55314113e3c2`。接手时有 3 个未提交的规则文档修改：`AGENTS.md`、`docs/issue-fix-boundary-guardrails.md`、`docs/versioning-and-release-policy.md`；它们与本执行单分开审阅，不覆盖或代为提交。
-- 最新公开预发布为 beta.20；beta.21 是本地候选，DEB-only beta 契约继续有效。源码推送、候选构建、隔离验收与公开发布分别记录。
+- 最新公开预发布为 beta.20；beta.21 源码已推送，当前准确候选仍是本地未签名包，DEB-only beta 契约继续有效。源码推送、候选构建、隔离验收与公开发布分别记录。
 - 已完成的 daemon 分离、本机 beta.21 DEB 候选实装、AppImage 无 DEB 的 GNOME 42.9 登录、正式签名候选的隔离升级，不作为本阶段待重做功能。详见 [daemon 当前状态](2026-07-10-patinad-runtime-design.md)和[平台验收记录](2026-09-21-linux-platform-reuse.md#正式成品验收结果与持久证据)。
 - 正式签名 AppImage 的源码为 `f9fb9b8b5839cfdfdea0f82557cb0e154e818cce`，包 SHA256 为 `9cbc8e54205a92f46609f20494afdf94dafd18b65f1817952a06b45cdf627598`；[Actions 运行](https://github.com/Asanilo/patina-Linux/actions/runs/35811958233)成功。它已通过隔离 loopback 更新、原子替换、服务切换与数据保留；公开 updater 分发尚无验收。
 - 私有持久证据位于 `$HOME/.local/state/patina/acceptance/20260923-appimage-gates-7kp1c2hi/` 与 `$HOME/.local/state/patina/acceptance/20260923-signed-appimage-dlahd_9e/`，入口分别为 `acceptance-summary.json`。引用时只提取候选身份与测试结论，不复制真实活动数据或凭据。运行 VM 或容器前先核对其当前状态。
@@ -25,10 +25,12 @@
 | C1 [x] | 核心流程复核；可与 P1–P3、R1 同期 | 在隔离 GNOME 46 真实客户端完成 Dashboard、History、Settings、跨日精确导入/小时桶、排除刷新、标题隐私、备份导出/预览/Merge 恢复及损坏备份拒绝；发现并修复 Summary 当前 override 与 Linux 无 `.exe` 标题设置两个 owner 内缺陷。最终 DEB 包内 daemon 的准确字节在同一真实客户端/窗口下复验两项修复。时区/DST 的多时区自动回归通过；手动密码登录、其他系统时区、备份错误 toast 的截图不在已验范围。 |
 | R2 [x] | 故障恢复与诊断 | 隔离 VM 的短断连、扩展禁用/恢复、Desktop 崩溃/重连、daemon 异常退出与锁屏恢复均有前后状态、成功采样与 session 边界；短断连时 Settings 明确警告，恢复后清除，未知间隙没有被补记且没有第二 owner。最短诊断路径见下方。此项不证明宿主硬件挂起/唤醒。 |
 | F1 [x] | 修复、候选冻结与支持矩阵；依赖相关缺陷闭环 | AppImage 故障归属为旧 Tauri 打包器携带 Wayland 客户端库，固定 CLI 2.12.0 后以准确本地包完成 Fedora 重跑和 Ubuntu 24.04 页面回归；Shell 46/50 ESM 包与回归身份已固定。`docs/linux-platform-support.md` 区分当前声明范围与隔离已验收但未公开支持的环境，并列包格式、GNOME/会话和实际客户端后端。新 AppImage 未正式签名，不替代 D2 的公开渠道验收；版本文件仍为 beta.21。 |
-| D1 [x] | DEB-only beta 交付准备；可在 P2/P3 之外单独收口，依赖对应候选与核心回归 | 使用固定的 Tauri CLI 2.12.0 重新构建本地未签名 beta.21 DEB，准确 SHA256 `41f0742ef005e6c1cfa7487ab1e0d30527ce81c824b24f315b3a04f8a891abf7`；版本/changelog、`release:check`、daemon/扩展载荷及私有 beta.20→beta.21 安装、升级、卸载、重装与数据哨兵保留通过。包内 daemon 与先前已在隔离 GNOME 客户端验证 C1 修复的字节一致，旧新 DEB 的解包载荷和 control 文件一致；只把新包列为当前准确候选。与宿主已装旧 beta.21 包 SHA `1400104a…eb58cb2` 不同；未安装宿主、未签名、未推送/tag/公开发布。私有候选 manifest 和证据见下方。 |
+| D1 [x] | DEB-only beta 交付准备；可在 P2/P3 之外单独收口，依赖对应候选与核心回归 | 当时使用固定的 Tauri CLI 2.12.0 重新构建本地未签名 beta.21 DEB，SHA256 `41f0742ef005e6c1cfa7487ab1e0d30527ce81c824b24f315b3a04f8a891abf7`；版本/changelog、`release:check`、daemon/扩展载荷及私有 beta.20→beta.21 安装、升级、卸载、重装与数据哨兵保留通过。包内 daemon 与先前已在隔离 GNOME 客户端验证 C1 修复的字节一致，旧新 DEB 的解包载荷和 control 文件一致。该包后来被 Tauri 核心升级候选取代，准确新包身份见下方候选更新。 |
 | D2 [ ] | AppImage 公开分发决策与渠道验收；依赖 P2/P3、F1 和明确发布授权 | 决定是否调整 DEB-only 契约并审阅 workflow、双包 manifest、旧客户端 fallback；获相应授权后核对正式资产/签名、公开 manifest 实际目标与下载、失败恢复、安装后 Desktop/daemon 版本、冷登录和数据保留。隔离 loopback 的既有成功不能勾选公开渠道项。若本阶段保持 DEB-only，明确保留 D2 未完成而不阻塞 D1。 |
 
 当前阶段：P1–P3、C1/R2、F1 与独立 DEB 候选 D1 已有证据；R1 按用户要求暂停，出现相关 issue 后再决定专项范围。D2 只在决定恢复公开 AppImage 分发且得到相应授权后进入，不阻塞 DEB-only 候选准备。上游草稿、KDE/wlroots、Flatpak、新客户端、Widget 暂停项、Windows 删除和 Cargo workspace 重排不在此队列。
+
+**候选更新：** 上表 D1 中 CLI 2.12.0 的 DEB 已被 Tauri Rust 核心 2.11.5 的新候选替代；准确 DEB SHA256 为 `98eafa7d242dd4f83cd28752de9a2e88a32c5debe30bb79641f237fd5adae08c`，其包内 daemon 的 GNOME 真实客户端回归、隔离升级和完整门禁见[运行时升级执行单](2026-09-27-tauri-runtime-refresh.md)及私有 `$HOME/.local/state/patina/acceptance/20260927-tauri2115-candidate/manifest.json`。旧 D1 字节仅作历史证据，不能作为 beta.21 最终出包身份。
 
 每项执行记录至少包括：任务 ID、源码提交/工作区差异、包与扩展摘要、测试环境和会话/显示后端、实际动作、预期与结果、证据路径、未覆盖项、可复用旧证据的理由。合成数据和私有日志留在 owner-only 验收目录，工作文档只存摘要。失败不改写为“待优化”；记录最先失败的边界和重跑条件，修复后仅重跑受影响专项及相应质量门禁。
 

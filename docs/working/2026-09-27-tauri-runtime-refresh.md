@@ -1,6 +1,6 @@
 # Linux Tauri 运行时依赖升级执行单
 
-状态：实现与隔离验收通过，已本地提交；尚未推送、打 tag 或发布。当前 Linux `main` 的 beta.21 DEB-only 准备基点为 `cd6cafe9`；准确 CLI 2.12.0 DEB 与隔离升级证据保留在 `$HOME/.local/state/patina/acceptance/20260927-deb-refreeze-cli212/`。本执行单处理其后的依赖升级，不把新包称为已发布 beta.21。
+状态：实现与隔离验收通过，源码提交 `d56669c8` 已推送至 `origin/main`；尚未打 tag 或发布。当前 Linux `main` 的 beta.21 DEB-only 准备基点为 `cd6cafe9`；准确 CLI 2.12.0 DEB 与隔离升级证据保留在 `$HOME/.local/state/patina/acceptance/20260927-deb-refreeze-cli212/`。本执行单处理其后的依赖升级，不把本地未签名包称为已发布 beta.21。
 
 ## 范围与归属
 
