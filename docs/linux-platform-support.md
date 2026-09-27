@@ -12,7 +12,7 @@
 
 | 发行版与桌面 | 安装格式、登录会话、客户端显示后端 | 当前状态 |
 | --- | --- | --- |
-| 现有 Debian 系 / GNOME Shell 42，amd64 | beta.21 DEB；GNOME Wayland；Desktop 为 X11/XWayland | 当前声明范围；本地候选已实装，公开发布状态按发布文档区分 |
+| 现有 Debian 系 / GNOME Shell 42，amd64 | beta.21 DEB；GNOME Wayland；Desktop 为 X11/XWayland | 当前声明范围；beta.21 DEB 已公开预发布，宿主正式包尚未实装 |
 | Ubuntu 24.04 / GNOME Shell 46，amd64 | 隔离 AppImage；GDM Wayland；已签名 beta.21 Desktop 为 X11/XWayland | 隔离验收通过；ESM 扩展和 AppImage 尚未公开交付 |
 | Fedora 44 / GNOME Shell 50.5，x86_64 | 隔离 AppImage；GDM Wayland；Tauri CLI 2.12 QA Desktop 为 Wayland | 隔离技术验收通过；本地新候选未正式签名，未作公开支持承诺 |
 

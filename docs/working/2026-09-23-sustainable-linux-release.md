@@ -1,11 +1,11 @@
 # 可持续维护的 Linux 产品版本：阶段执行单
 
-> 建立：2026-09-23，更新：2026-09-27。本文记录阶段执行状态与证据入口；产品范围、支持承诺、架构和发布规则仍以 `docs/` 下对应长期文档为准。P1–P3、C1/R2、F1 和 DEB-only 候选准备已有隔离证据；用户已暂停 R1 的连续运行观察。后续 Tauri 运行时升级及准确新候选以[独立执行单](2026-09-27-tauri-runtime-refresh.md)为准。未安装宿主新候选或公开发布。
+> 建立：2026-09-23，更新：2026-09-27。本文记录阶段执行状态与证据入口；产品范围、支持承诺、架构和发布规则仍以 `docs/` 下对应长期文档为准。P1–P3、C1/R2、F1 和 DEB-only 候选准备已有隔离证据；用户已暂停 R1 的连续运行观察。后续 Tauri 运行时升级、正式出包及公开发布结果以[独立执行单](2026-09-27-tauri-runtime-refresh.md)为准。尚未在宿主安装新的正式包。
 
 ## 当前基线
 
 - 开发主线为 `main`，接手时本地与 `origin/main` 均为 `d3a704c2193a4a0bb070985fa78b55314113e3c2`。接手时有 3 个未提交的规则文档修改：`AGENTS.md`、`docs/issue-fix-boundary-guardrails.md`、`docs/versioning-and-release-policy.md`；它们与本执行单分开审阅，不覆盖或代为提交。
-- 最新公开预发布为 beta.20；beta.21 源码已推送，当前准确候选仍是本地未签名包，DEB-only beta 契约继续有效。源码推送、候选构建、隔离验收与公开发布分别记录。
+- 最新公开预发布为 beta.21，仍遵循 DEB-only beta 契约；正式发布包 SHA 与先前各本地候选不同，见[运行时升级执行单](2026-09-27-tauri-runtime-refresh.md#公开发布结果2026-09-27)。源码推送、候选构建、隔离验收与公开发布分别记录。
 - 已完成的 daemon 分离、本机 beta.21 DEB 候选实装、AppImage 无 DEB 的 GNOME 42.9 登录、正式签名候选的隔离升级，不作为本阶段待重做功能。详见 [daemon 当前状态](2026-07-10-patinad-runtime-design.md)和[平台验收记录](2026-09-21-linux-platform-reuse.md#正式成品验收结果与持久证据)。
 - 正式签名 AppImage 的源码为 `f9fb9b8b5839cfdfdea0f82557cb0e154e818cce`，包 SHA256 为 `9cbc8e54205a92f46609f20494afdf94dafd18b65f1817952a06b45cdf627598`；[Actions 运行](https://github.com/Asanilo/patina-Linux/actions/runs/35811958233)成功。它已通过隔离 loopback 更新、原子替换、服务切换与数据保留；公开 updater 分发尚无验收。
 - 私有持久证据位于 `$HOME/.local/state/patina/acceptance/20260923-appimage-gates-7kp1c2hi/` 与 `$HOME/.local/state/patina/acceptance/20260923-signed-appimage-dlahd_9e/`，入口分别为 `acceptance-summary.json`。引用时只提取候选身份与测试结论，不复制真实活动数据或凭据。运行 VM 或容器前先核对其当前状态。

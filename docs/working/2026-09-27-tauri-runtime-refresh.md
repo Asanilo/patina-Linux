@@ -1,6 +1,6 @@
 # Linux Tauri 运行时依赖升级执行单
 
-状态：实现与隔离验收通过，源码提交 `d56669c8` 已推送至 `origin/main`；尚未打 tag 或发布。当前 Linux `main` 的 beta.21 DEB-only 准备基点为 `cd6cafe9`；准确 CLI 2.12.0 DEB 与隔离升级证据保留在 `$HOME/.local/state/patina/acceptance/20260927-deb-refreeze-cli212/`。本执行单处理其后的依赖升级，不把本地未签名包称为已发布 beta.21。
+状态：实现与隔离验收通过，`v1.9.0-beta.21` 已作为 DEB-only 预发布公开发行。Tauri 升级源码提交为 `d56669c8`，tag 指向文档收口提交 `a1dc5ee8`；本地未签名候选与正式发布包分别标识。先前 CLI 2.12.0 DEB 的隔离升级证据保留在 `$HOME/.local/state/patina/acceptance/20260927-deb-refreeze-cli212/`。
 
 ## 范围与归属
 
@@ -28,3 +28,9 @@ R1 连续运行观察按用户要求暂停。beta.21 DEB-only 准备基点保持
 - 准确新核心 AppImage SHA256 `a03ac05a9009d2ed0fe35fa291089d84837b73de5066dc35a61886d3fa86f0bb`。Fedora 44/GNOME 50 客体通过首次运行接管、Dashboard/History/Settings 实际显示、设置写回与数据库检查、原生 Wayland 窗口记录、锁屏停止/解锁恢复、退出 Desktop 后继续记录及冷登录后记录。Ubuntu 24.04/GNOME 46 客体通过首次运行接管、冷登录自启动、Dashboard 实际显示、原生 Wayland 窗口记录和数据库检查。两客体的登录会话均为 Wayland；Fedora 扩展为 ACTIVE，Ubuntu 两个扩展 D-Bus 名称由 GNOME Shell 持有。
 - 首次 AppImage 构建在沙箱中因 `appimagetool` 下载官方 runtime 失败，允许官方下载后完整重建通过。两客体最初采样时 GNOME 概览遮挡了测试窗口，退出概览重跑通过；Ubuntu 干净夹具只有 GTK4，换用 GTK4 测试窗口后通过。这些是构建/夹具条件，不计作产品通过的替代证据。
 - 准确包、隔离安装记录、截图和逐项 JSON 存于 `$HOME/.local/state/patina/acceptance/20260927-tauri2115-candidate/`；Fedora VM 快照为 `post-tauri2115-fedora-pass`，Ubuntu VM 快照为 `post-tauri2115-ubuntu46-pass`，验收后已恢复原 `pre-tauri212-regression` 活动基线。仍未验收宿主安装、真实硬件挂起、公开 updater 渠道或正式 AppImage 分发。
+
+## 公开发布结果（2026-09-27）
+
+- [发布工作流运行 36313336376](https://github.com/Asanilo/patina-Linux/actions/runs/36313336376) 成功：干净 tag 源码版本/changelog、完整质量门禁、正式签名 DEB 构建、包内 daemon 校验、更新资产与扩展包准备均通过。[Patina v1.9.0-beta.21](https://github.com/Asanilo/patina-Linux/releases/tag/v1.9.0-beta.21) 为非草稿预发布。
+- 从公开 Release 实际下载的 `Patina_1.9.0-beta.21_amd64.deb` SHA256 为 `57fa0cc14406ad4b341a29b8f46da63e622cbe4b0136bce857187007ffb282b5`，再次通过 `release:verify-daemon-deb`；包内正式 `patinad` SHA256 为 `578e28d5b06a1f42abf81e07312e687fd9d0c3d7af72761f9754141b1f6081b3`。`latest.json` SHA256 为 `2213d69f035b1946fc7a7363a8d9ee312215a8ea72b431ff36a24ed068adde92`，版本为 `1.9.0-beta.21`，仅含 `linux-x86_64-deb` 目标，指向上述公开 DEB 且带非空签名。Release 另有 GNOME v4、Chromium v0.1.0、Firefox v0.1.1 扩展附件，没有 AppImage。
+- 正式包与本地未签名候选的字节不同，不能沿用本地 SHA 或声称对正式签名包完成了新的宿主安装/真实硬件验收。R1 仍暂停，D2 公开 AppImage 分发仍未启动。
