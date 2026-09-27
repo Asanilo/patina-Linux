@@ -31,6 +31,7 @@ App note en: Recover desktop connections after slow daemon startup and report cr
 
 ### Internal
 
+- Linux Tauri Rust 核心升级至 2.11.5，并对齐前端 API 与相关插件；CLI 保持 2.12.0。新候选已通过隔离 DEB 升级和 Fedora 44、Ubuntu 24.04 GNOME Wayland 回归；公开发行仍以 DEB 为限。
 - 修复本地 AppImage 登录自启动引用临时解包路径的问题；独立使用时指向原始包，与 DEB 共存时优先使用已安装桌面程序。AppImage 仍未恢复公开发布。
 - 补充 11 秒延迟接管、自启动入口、真实 GIO 路径解析与隔离 systemd 生命周期回归；headless 验收显式保持 Xvfb 显示服务器运行。
 - 增加无主窗口的原生悬浮窗循环回归；正式签名候选使用单独的手动 Actions artifact 流程，不改变公开发布门槛。
