@@ -54,9 +54,11 @@
     "extension:chromium:package": "node --experimental-strip-types scripts/chromium-extension.ts package",
     "extension:firefox:check": "node --experimental-strip-types scripts/firefox-extension.ts check",
     "extension:firefox:verify-signed": "node --experimental-strip-types scripts/firefox-extension.ts verify-signed",
-    "extension:gnome:check": "node --experimental-strip-types scripts/gnome-shell-extension.ts check",
+    "extension:gnome:check": "node --experimental-strip-types scripts/gnome-shell-extension.ts check && node --experimental-strip-types scripts/gnome-shell-extension.ts check-esm",
     "extension:gnome:build": "node --experimental-strip-types scripts/gnome-shell-extension.ts build",
+    "extension:gnome:build-esm": "node --experimental-strip-types scripts/gnome-shell-extension.ts build-esm",
     "extension:gnome:install": "node --experimental-strip-types scripts/gnome-shell-extension.ts install",
+    "extension:gnome:install-esm": "node --experimental-strip-types scripts/gnome-shell-extension.ts install-esm",
     "perf:history-read-model": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/perf/history-read-model-benchmark.ts",
     "perf:dashboard-read-model": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/perf/dashboard-read-model-benchmark.ts",
     "perf:startup-bootstrap": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/perf/startup-bootstrap-benchmark.ts",
@@ -84,7 +86,7 @@
     "tailwindcss": "^4.2.2"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
+    "@tauri-apps/cli": "2.12.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",

@@ -5,6 +5,8 @@ import { runInNewContext } from "node:vm";
 const extensionRoot = new URL("../extensions/gnome-shell/patina-window-tracker@patina/", import.meta.url);
 const extensionSource = readFileSync(new URL("extension.js", extensionRoot), "utf8");
 const metadata = JSON.parse(readFileSync(new URL("metadata.json", extensionRoot), "utf8"));
+const esmSource = readFileSync(new URL("esm/extension.js", extensionRoot), "utf8");
+const esmMetadata = JSON.parse(readFileSync(new URL("esm/metadata.json", extensionRoot), "utf8"));
 
 const PRIVATE_TITLE = "Synthetic private document — 中文";
 const PRIVATE_APP_ID = "org.example.SyntheticPrivate.desktop";
@@ -13,7 +15,7 @@ const PID = 1234;
 const WINDOW_ID = 4_294_967_298;
 const EXPECTED = [PRIVATE_TITLE, "org.example.SyntheticPrivate", PRIVATE_CLASS, PID, WINDOW_ID];
 
-function createHarness() {
+function createHarness(variant: "legacy" | "esm" = "legacy") {
   const logs: string[] = [];
   const signals: { name: string; signature: string; values: unknown[] }[] = [];
   const objects = new Map<string, any>();
@@ -40,9 +42,19 @@ function createHarness() {
       get_pid: () => PID, get_id: () => WINDOW_ID,
     } as any,
   });
-  const exports = runInNewContext(`${extensionSource}\n({enable, disable});`, {
+  // Replace only the ESM imports/exports so the same synthetic GNOME API can
+  // exercise both entry points. Real Shell loading remains a separate gate.
+  const runnable = variant === "esm"
+    ? `const { Gio, GLib, Shell } = imports.gi; const Main = esmMain; const Extension = esmExtension;\n${esmSource
+      .replace(/^import .+;\n/gm, "")
+      .replace("export default class PatinaExtension", "class PatinaExtension")}\n` +
+      `const instance = new PatinaExtension({}); ({enable: () => instance.enable(), disable: () => instance.disable()});`
+    : `${extensionSource}\n({enable, disable});`;
+  const exports = runInNewContext(runnable, {
     log: (...values: unknown[]) => logs.push(values.map(String).join(" ")),
     global: { display },
+    esmMain: main,
+    esmExtension: class {},
     imports: { ui: { main }, gi: {
       Gio: {
         BusType: { SESSION: 0 }, BusNameOwnerFlags: { NONE: 0 },
@@ -249,6 +261,34 @@ runTest("sessions without a screen shield still support foreground observation",
   assert.deepEqual(h.query(), EXPECTED);
   assert.equal(h.callbacks.size, 4);
   h.stop();
+});
+
+runTest("ESM entry point preserves both D-Bus contracts and cleans up on disable", () => {
+  assert.deepEqual(esmMetadata["shell-version"], ["46", "50"]);
+  assert.equal(esmMetadata.uuid, metadata.uuid);
+  const h = createHarness("esm");
+  assert.deepEqual(h.query(), EXPECTED);
+  assert.deepEqual(h.snapshot(), [1, 1, PRIVATE_TITLE, PRIVATE_APP_ID, PRIVATE_CLASS, PID, String(WINDOW_ID)]);
+  h.initialSignal();
+  assert.equal(h.signals[0].signature, "(sssut)");
+  h.main.screenShield.locked = true;
+  assert.deepEqual(h.snapshot(), [1, 2, "", "", "", 0, ""]);
+  h.main.screenShield.locked = false;
+  h.main.overview.visible = true;
+  assert.deepEqual(h.snapshot(), [1, 0, "", "", "", 0, ""]);
+  h.stop();
+  assert.ok(h.owners.every(owner => !owner.active));
+  assert.ok([...h.objects.values()].every(object => !object.exported));
+  assert.equal(h.callbacks.size, 0);
+  assert.ok(h.logs.every(line => !line.includes(PRIVATE_TITLE)));
+});
+
+runTest("ESM and GNOME 42 entry points share the same tracker behavior", () => {
+  const marker = "function emptySnapshot(state) {";
+  const legacyStart = extensionSource.indexOf(marker);
+  const esmStart = esmSource.indexOf(marker);
+  assert.ok(legacyStart > 0 && esmStart > 0);
+  assert.equal(esmSource.slice(esmStart), extensionSource.slice(legacyStart));
 });
 
 console.log(`Passed ${passed} synthetic GNOME extension runtime tests`);

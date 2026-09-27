@@ -1,13 +1,27 @@
+import { execFile } from "node:child_process";
 import { cp, mkdir, readFile, rm, stat } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const EXTENSION_UUID = "patina-window-tracker@patina";
 const SOURCE_DIR = join(REPO_ROOT, "extensions", "gnome-shell", EXTENSION_UUID);
 const BUILD_DIR = join(REPO_ROOT, "dist", "extensions", "gnome-shell", EXTENSION_UUID);
+const ESM_SOURCE_DIR = join(SOURCE_DIR, "esm");
+const ESM_BUILD_DIR = join(REPO_ROOT, "dist", "extensions", "gnome-shell-esm", EXTENSION_UUID);
 const REQUIRED_FILES = ["metadata.json", "extension.js"] as const;
+const execFileAsync = promisify(execFile);
+type ExtensionVariant = "legacy" | "esm";
+
+function sourceDir(variant: ExtensionVariant) {
+  return variant === "esm" ? ESM_SOURCE_DIR : SOURCE_DIR;
+}
+
+function buildDir(variant: ExtensionVariant) {
+  return variant === "esm" ? ESM_BUILD_DIR : BUILD_DIR;
+}
 
 type GnomeExtensionMetadata = {
   uuid?: string;
@@ -27,9 +41,18 @@ export function gnomeShellExtensionInstallDir(env = process.env) {
   return join(dataHome, "gnome-shell", "extensions", EXTENSION_UUID);
 }
 
+export function supportsGnomeShellVersion(metadataText: string, versionOutput: string): boolean {
+  const match = versionOutput.match(/^GNOME Shell (\d+)(?:\.|$)/m);
+  if (!match) return false;
+  const metadata = JSON.parse(metadataText) as GnomeExtensionMetadata;
+  return Array.isArray(metadata["shell-version"]) &&
+    metadata["shell-version"].includes(match[1]);
+}
+
 export function validateGnomeShellExtensionSourceText(
   metadataText: string,
   extensionJs: string,
+  variant: ExtensionVariant = "legacy",
 ) {
   const errors: string[] = [];
   let metadata: GnomeExtensionMetadata | null = null;
@@ -54,6 +77,20 @@ export function validateGnomeShellExtensionSourceText(
   }
   if (!Array.isArray(metadata["shell-version"]) || metadata["shell-version"].length === 0) {
     errors.push("GNOME Shell extension check failed. metadata shell-version must not be empty.");
+  } else if (metadata["shell-version"].some((version) => {
+    const major = Number(version);
+    return !Number.isInteger(major) || (variant === "esm" ? major < 45 : major >= 45);
+  })) {
+    errors.push(`GNOME Shell extension check failed. ${variant} shell versions are incompatible with this entry point.`);
+  }
+  if (variant === "esm") {
+    if (!extensionJs.includes("from 'resource:///org/gnome/shell/extensions/extension.js'") ||
+        !extensionJs.includes("export default class") ||
+        !extensionJs.includes("extends Extension")) {
+      errors.push("GNOME Shell extension check failed. ESM extension.js must export an Extension subclass.");
+    }
+  } else if (extensionJs.includes("export default") || extensionJs.includes("from 'gi://")) {
+    errors.push("GNOME Shell extension check failed. Legacy extension.js must not use ESM syntax.");
   }
   if (!extensionJs.includes("org.patina.WindowTracker")) {
     errors.push("GNOME Shell extension check failed. extension.js must define org.patina.WindowTracker.");
@@ -77,8 +114,8 @@ function fail(message: string): never {
   process.exit(1);
 }
 
-async function ensureFile(relativePath: string) {
-  const filePath = join(SOURCE_DIR, relativePath);
+async function ensureFile(relativePath: string, variant: ExtensionVariant) {
+  const filePath = join(sourceDir(variant), relativePath);
   try {
     const fileStat = await stat(filePath);
     if (!fileStat.isFile()) {
@@ -89,41 +126,53 @@ async function ensureFile(relativePath: string) {
   }
 }
 
-async function checkExtension() {
+async function checkExtension(variant: ExtensionVariant) {
   for (const file of REQUIRED_FILES) {
-    await ensureFile(file);
+    await ensureFile(file, variant);
   }
 
   const errors = validateGnomeShellExtensionSourceText(
-    await readFile(join(SOURCE_DIR, "metadata.json"), "utf8"),
-    await readFile(join(SOURCE_DIR, "extension.js"), "utf8"),
+    await readFile(join(sourceDir(variant), "metadata.json"), "utf8"),
+    await readFile(join(sourceDir(variant), "extension.js"), "utf8"),
+    variant,
   );
   if (errors.length > 0) {
     fail(errors.join("\n"));
   }
 
-  console.log("GNOME Shell extension check passed.");
+  console.log(`GNOME Shell ${variant} extension check passed.`);
 }
 
-async function copyExtension(outputDir: string) {
+async function copyExtension(outputDir: string, variant: ExtensionVariant) {
   await rm(outputDir, { force: true, recursive: true });
   await mkdir(outputDir, { recursive: true });
   for (const file of REQUIRED_FILES) {
-    await cp(join(SOURCE_DIR, file), join(outputDir, file));
+    await cp(join(sourceDir(variant), file), join(outputDir, file));
   }
 }
 
-async function buildExtension() {
-  await checkExtension();
-  await copyExtension(BUILD_DIR);
-  console.log(`GNOME Shell extension build written to ${relative(REPO_ROOT, BUILD_DIR)}.`);
+async function buildExtension(variant: ExtensionVariant) {
+  await checkExtension(variant);
+  const outputDir = buildDir(variant);
+  await copyExtension(outputDir, variant);
+  console.log(`GNOME Shell ${variant} extension build written to ${relative(REPO_ROOT, outputDir)}.`);
 }
 
-async function installExtension() {
-  await checkExtension();
+async function installExtension(variant: ExtensionVariant) {
+  await checkExtension(variant);
+  const metadata = await readFile(join(sourceDir(variant), "metadata.json"), "utf8");
+  let shellVersion: string;
+  try {
+    shellVersion = (await execFileAsync("gnome-shell", ["--version"])).stdout.trim();
+  } catch (error) {
+    fail(`GNOME Shell ${variant} extension install requires an available Shell: ${String(error)}`);
+  }
+  if (!supportsGnomeShellVersion(metadata, shellVersion)) {
+    fail(`GNOME Shell ${variant} extension does not declare support for ${shellVersion}.`);
+  }
   const installDir = gnomeShellExtensionInstallDir();
-  await copyExtension(installDir);
-  console.log(`GNOME Shell extension installed to ${installDir}.`);
+  await copyExtension(installDir, variant);
+  console.log(`GNOME Shell ${variant} extension installed to ${installDir}.`);
   console.log("Run `gnome-extensions enable patina-window-tracker@patina` and log out/in if GNOME Shell has cached an older copy.");
 }
 
@@ -131,16 +180,25 @@ async function main() {
   const command = process.argv[2];
   switch (command) {
     case "check":
-      await checkExtension();
+      await checkExtension("legacy");
       break;
     case "build":
-      await buildExtension();
+      await buildExtension("legacy");
       break;
     case "install":
-      await installExtension();
+      await installExtension("legacy");
+      break;
+    case "check-esm":
+      await checkExtension("esm");
+      break;
+    case "build-esm":
+      await buildExtension("esm");
+      break;
+    case "install-esm":
+      await installExtension("esm");
       break;
     default:
-      fail("Usage: node --experimental-strip-types scripts/gnome-shell-extension.ts <check|build|install>");
+      fail("Usage: node --experimental-strip-types scripts/gnome-shell-extension.ts <check|build|install|check-esm|build-esm|install-esm>");
   }
 }
 

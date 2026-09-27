@@ -8,7 +8,13 @@
 
 ## 2. 当前支持承诺
 
-`Asanilo/patina-Linux` 的日常产品主线是 `main`，已合入 daemon 分离；当前发行版支持与验证范围仍限 Debian 系。下表区分桌面/显示协议，不能单凭“GNOME”或生成了 AppImage 就宣称其他发行版可用。版本、CPU 架构和包格式仍须随候选证据记录；上游 Linux PR 的首批支持矩阵另行讨论。
+`Asanilo/patina-Linux` 的日常产品主线是 `main`，已合入 daemon 分离。当前 beta 发布契约仍为 DEB-only，发行版支持承诺仍限 Debian 系；隔离验收另覆盖 Ubuntu 24.04 和 Fedora 44 的 AppImage 候选。下表区分桌面/显示协议，不能单凭“GNOME”或生成了 AppImage 就宣称其他发行版可用。版本、CPU 架构和包格式仍须随候选证据记录；上游 Linux PR 的首批支持矩阵另行讨论。
+
+| 发行版与桌面 | 安装格式、登录会话、客户端显示后端 | 当前状态 |
+| --- | --- | --- |
+| 现有 Debian 系 / GNOME Shell 42，amd64 | beta.21 DEB；GNOME Wayland；Desktop 为 X11/XWayland | 当前声明范围；本地候选已实装，公开发布状态按发布文档区分 |
+| Ubuntu 24.04 / GNOME Shell 46，amd64 | 隔离 AppImage；GDM Wayland；已签名 beta.21 Desktop 为 X11/XWayland | 隔离验收通过；ESM 扩展和 AppImage 尚未公开交付 |
+| Fedora 44 / GNOME Shell 50.5，x86_64 | 隔离 AppImage；GDM Wayland；Tauri CLI 2.12 QA Desktop 为 Wayland | 隔离技术验收通过；本地新候选未正式签名，未作公开支持承诺 |
 
 | 环境 | 支持级别 | 前台窗口来源 | 说明 |
 | --- | --- | --- | --- |
@@ -20,7 +26,7 @@
 
 GNOME Wayland 下，采样端先检查 `org.patina.WindowTracker1`，只有新名称明确没有 D-Bus owner 时才尝试旧 `org.patina.WindowTracker`；两者都不可用时必须报告扩展未安装、未启用或 D-Bus 不可用，不能静默退回 X11。新接口存在但响应失败或不合协议时不回退旧接口。实际可用的 GNOME companion 可以补足不完整的桌面环境标签；仅有名称 owner 的能力诊断不能替代实际采样健康状态。
 
-受管后台的会话类型来自 logind 当前用户的 `User.Display` 及对应 Session，校验 UID、本地/活动状态与 user class；不再把 daemon 启动时的桌面环境变量当作长期事实。没有有效图形会话或查询失败时不猜测 Wayland/X11，也不复用旧会话。普通桌面进程仍可使用有效的显式环境；X11 连接使用解析得到的 Display。后台重新登录后重新绑定锁屏订阅并同步当前锁状态；图形会话缺失期间，全局睡眠/关机监听仍保留。本机已于 2026-09-22 安装本地 beta.20 候选并确认 Wayland/GNOME 诊断可用；新版实际注销/登录验收单独记录。
+受管后台的会话类型来自 logind 当前用户的 `User.Display` 及对应 Session，校验 UID、本地/活动状态与 user class；不再把 daemon 启动时的桌面环境变量当作长期事实。没有有效图形会话或查询失败时不猜测 Wayland/X11，也不复用旧会话。普通桌面进程仍可使用有效的显式环境；X11 连接使用解析得到的 Display。后台重新登录后重新绑定锁屏订阅并同步当前锁状态；图形会话缺失期间，全局睡眠/关机监听仍保留。本机已于 2026-09-23 安装本地 beta.21 DEB 候选，Wayland/GNOME 诊断及退出 Desktop 后的后台采样有验收记录；公开预发布和其他环境的结论分别见当前执行单。
 
 ## 3. Linux 平台能力
 
@@ -48,7 +54,11 @@ main 的消费端另可识别版本 1 的 `org.patina.WindowTracker1.GetSnapshot
 
 main 的 version 4 扩展同时提供旧五元组/信号和新快照；旧客户端继续可用。锁屏、屏幕遮蔽和 overview 在读取焦点前屏蔽窗口事实；读取异常在新协议中报告 unavailable。扩展保留于 user/unlock-dialog session mode，禁用时释放名称、对象、信号和定时器，迟到回调不恢复已禁用实例。
 
-GNOME Shell 42 是当前声明范围。打包候选已在本机独立 GNOME Shell 42.9 Wayland 会话中验证双协议、overview/锁屏恢复和三轮禁用/启用；测试使用私有总线与 GDM 能力夹具，不代表生产密码认证、登录或睡眠验收。version 4 尚未公开发布。本机用户目录已按授权备份并安装候选，重新登录后已确认生产激活；daemon 会话环境诊断已在本地 beta.20 实装后恢复，用户已报告完成锁屏/挂起；新版实际注销/登录后的后台延续与会话恢复已验证，真实系统重启后的后台自动启动也已验证；ESM 入口和更多 Shell 版本仍待独立实施验证。
+GNOME Shell 42 是当前声明范围。打包候选已在本机独立 GNOME Shell 42.9 Wayland 会话中验证双协议、overview/锁屏恢复和三轮禁用/启用；测试使用私有总线与 GDM 能力夹具，不代表生产密码认证或任意硬件睡眠验收。version 4 随本地候选安装并通过重新登录后的生产激活检查；daemon 会话环境诊断已在本地 beta.20 实装后恢复，用户已报告完成锁屏/挂起，实际注销/登录后的后台延续和真实系统重启自动启动也已验证。无 DEB 的独立 GNOME 42.9 VM 已进一步验证真实 AppImage 冷登录与前台记录；这不扩大当前 Shell 支持范围。另有 GNOME 46 ESM 候选在隔离 Ubuntu 24.04 VM 中通过 AppImage 首次接管、冷登录、真实窗口记录、锁屏恢复及正式签名候选的隔离升级；该变体未公开分发，公开 updater 投递仍未验收，不能写入支持承诺。目标与限制见[当前阶段执行单](./working/2026-09-23-sustainable-linux-release.md)。
+
+Fedora 44 / GNOME Shell 50.5 已通过隔离技术验收。客体以校验过的 Fedora Cloud 44 镜像补装 GNOME/GDM，登录会话为 Wayland；AppImage 客户端在 Tauri CLI 2.12 打包后使用 Wayland 连接。仓库 ESM 候选明确声明 Shell 46/50，准确 ZIP 在 Fedora 冷登录后加载，双协议真实窗口、退出 Desktop 后的后台记录、锁屏恢复和再次冷登录均通过。新旧本地未签名 AppImage 的 Settings 版本提示、确认重载、后台实例切换、旧会话保留及数据库完整性通过；此前正式签名 beta.20→beta.21 的验签、篡改拒绝和原子安装有独立证据。Fedora 尚无公开 AppImage 交付与公开 updater 渠道验收，**不列入当前公开支持承诺**。Cloud 客体需另装官方 Noto CJK 字体才可显示中文；本次结果不代替未经测试的 Workstation ISO、手动密码登录或宿主硬件挂起。
+
+故障归属已确认：旧 Tauri 打包器把 `libwayland-client.so.0` 带入 AppImage，在 Fedora 图形栈下造成 WebKit `EGL_BAD_PARAMETER` 和空白页；只移走该库的客体对照可使页面加载。固定的 Tauri CLI 2.12.0 构建不再携带该库，同一 Fedora 客体的独立 WebKit 页面与 Patina Dashboard、History、Settings 均可渲染。候选字节、界面截图和剩余分发边界见[当前阶段执行单](./working/2026-09-23-sustainable-linux-release.md)。
 
 当前扩展不提供悬浮窗移动、置顶或全局指针状态接口。Wayland 原生窗口的边缘吸附尚未实现，不能用 GTK 返回的 `(0, 0)` 推断左侧位置；详见 [GTK 窗口位置限制](https://docs.gtk.org/gtk3/method.Window.get_position.html)。能力判断应使用实际显示后端，而非仅使用 `XDG_SESSION_TYPE`，以兼容 Wayland 会话内的 X11 客户端。
 

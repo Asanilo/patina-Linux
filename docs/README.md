@@ -48,6 +48,7 @@ Read only the references needed for the task:
 
 - [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md): current daemon acceptance checklist, delivery status, and deferred work
 - [`working/2026-09-21-linux-platform-reuse.md`](./working/2026-09-21-linux-platform-reuse.md): T6 assessment, sampling/idle correctness, GNOME protocols, AppImage crash/login acceptance, and remaining signing/extension gates
+- [`working/2026-09-23-sustainable-linux-release.md`](./working/2026-09-23-sustainable-linux-release.md): next-stage execution plan, candidate identity, evidence index, and limited platform/reliability acceptance
 
 The roadmap now places daemon and Desktop product work together on Linux `main`,
 with upstream Linux contributions kept separate. `feat/linux-desktop` was created

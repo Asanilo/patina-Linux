@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the packaged GNOME 42 extension in a private headless Shell, never the host Shell."""
+"""Run a packaged Patina extension in a private headless GNOME Shell."""
 import ast
 import hashlib
 import json
@@ -51,6 +51,46 @@ function disable() {
 }
 """
 
+ESM_DRIVER_JS = r"""
+import Gio from 'gi://Gio';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
+
+export default class PatinaAcceptance extends Extension {
+    enable() {
+        this._owner = Gio.bus_own_name(Gio.BusType.SESSION, 'org.patina.Acceptance', 0, null,
+            connection => {
+                this._object = Gio.DBusExportedObject.wrapJSObject(`<node>
+                  <interface name="org.patina.Acceptance">
+                    <method name="Act"><arg type="s" direction="in"/><arg type="s" direction="out"/></method>
+                  </interface></node>`, {
+                    Act(action) {
+                        switch (action) {
+                        case 'overview': Main.overview.show(); break;
+                        case 'desktop': Main.overview.hide(); break;
+                        case 'lock': Main.screenShield.lock(false); break;
+                        case 'unlock': Main.screenShield.deactivate(false); break;
+                        case 'disable': Main.extensionManager.disableExtension('patina-window-tracker@patina'); break;
+                        case 'enable': Main.extensionManager.enableExtension('patina-window-tracker@patina'); break;
+                        }
+                        return JSON.stringify({locked: Main.screenShield.locked,
+                            active: Main.screenShield.active, mode: Main.sessionMode.currentMode});
+                    }
+                });
+                this._object.export(connection, '/org/patina/Acceptance');
+            }, null);
+    }
+
+    disable() {
+        this._object?.unexport();
+        this._object = null;
+        if (this._owner)
+            Gio.bus_unown_name(this._owner);
+        this._owner = null;
+    }
+}
+"""
+
 
 def rpc(name, method, *args):
     result = subprocess.run(["gdbus", "call", "--session", "--timeout", "3",
@@ -76,7 +116,7 @@ def wait_for(check, description, seconds=15):
     raise RuntimeError(f"Timed out: {description}; {last}")
 
 
-def inner(root):
+def inner(root, variant):
     # The session and 'system' buses are the same private bus without activation.
     os.environ["DBUS_SYSTEM_BUS_ADDRESS"] = os.environ["DBUS_SESSION_BUS_ADDRESS"]
     os.environ["WAYLAND_DISPLAY"] = "patina-acceptance"
@@ -164,19 +204,21 @@ win.set_default_size(500, 300); win.show_all(); win.present(); Gtk.main();
                     process.wait()
 
 
-def main():
+def main(variant="legacy"):
     root = Path(tempfile.mkdtemp(prefix="patina-gnome-acceptance-"))
     print(f"Evidence: {root}", flush=True)
     for directory in ["home", "run", "data", "config", "cache"]:
         (root / directory).mkdir(mode=0o700)
     extensions = root / "data/gnome-shell/extensions"
-    shutil.copytree(REPO / "dist/extensions/gnome-shell" / UUID, extensions / UUID)
+    build_kind = "gnome-shell-esm" if variant == "esm" else "gnome-shell"
+    shutil.copytree(REPO / "dist/extensions" / build_kind / UUID, extensions / UUID)
     driver = extensions / DRIVER
     driver.mkdir()
     (driver / "metadata.json").write_text(json.dumps({"uuid": DRIVER,
         "name": "Private acceptance driver", "description": "Private test only",
-        "shell-version": ["42"], "session-modes": ["user", "unlock-dialog"], "version": 1}))
-    (driver / "extension.js").write_text(DRIVER_JS)
+        "shell-version": ["46"] if variant == "esm" else ["42"],
+        "session-modes": ["user", "unlock-dialog"], "version": 1}))
+    (driver / "extension.js").write_text(ESM_DRIVER_JS if variant == "esm" else DRIVER_JS)
     # Keyfile settings avoid dconf activation and never read host settings.
     settings = root / "config/glib-2.0/settings"
     settings.mkdir(parents=True)
@@ -192,7 +234,7 @@ def main():
         "XDG_SESSION_ID": "patina-private-test",
         "GSETTINGS_BACKEND": "keyfile", "NO_AT_BRIDGE": "1", "LIBGL_ALWAYS_SOFTWARE": "1"}
     child = subprocess.Popen(["dbus-run-session", "--config-file", str(config), "--",
-        sys.executable, str(Path(__file__).resolve()), "--inner", str(root)],
+        sys.executable, str(Path(__file__).resolve()), "--inner", str(root), variant],
         env=env, start_new_session=True)
     try:
         return child.wait(timeout=120)
@@ -210,11 +252,14 @@ def main():
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 3 and sys.argv[1] == "--inner":
+    if len(sys.argv) == 4 and sys.argv[1] == "--inner":
         root = Path(sys.argv[2]).resolve()
+        variant = sys.argv[3]
         assert root.name.startswith("patina-gnome-acceptance-")
+        assert variant in ("legacy", "esm")
         assert os.environ.get("HOME") == str(root / "home")
         assert str(root) in os.environ.get("DBUS_SESSION_BUS_ADDRESS", "")
-        inner(root)
+        inner(root, variant)
     else:
-        sys.exit(main())
+        assert len(sys.argv) == 1 or sys.argv == [sys.argv[0], "--esm"]
+        sys.exit(main("esm" if len(sys.argv) == 2 else "legacy"))

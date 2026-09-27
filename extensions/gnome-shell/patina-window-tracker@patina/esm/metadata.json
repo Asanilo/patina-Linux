@@ -1,0 +1,11 @@
+{
+  "description": "Exposes focused window info via D-Bus for Patina time tracking",
+  "name": "Patina Window Tracker",
+  "shell-version": [
+    "46",
+    "50"
+  ],
+  "uuid": "patina-window-tracker@patina",
+  "session-modes": ["user", "unlock-dialog"],
+  "version": 5
+}

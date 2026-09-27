@@ -26,8 +26,11 @@ home = Path.home()
 data = home / '.local/share/Patina'
 output = home / 'acceptance'
 output.mkdir(exist_ok=True)
-image = home / 'Applications/Patina.AppImage'
-phase, expected_version = sys.argv[1:]
+assert len(sys.argv) in (3, 4)
+phase, expected_version = sys.argv[1:3]
+image = Path(sys.argv[3]) if len(sys.argv) == 4 else home / 'Applications/Patina.AppImage'
+assert image.is_absolute() and image.is_file() and not image.is_symlink()
+assert image.is_relative_to(home)
 assert phase in ['first', 'login']
 os.environ['XDG_RUNTIME_DIR'] = '/run/user/1000'
 os.environ['DBUS_SESSION_BUS_ADDRESS'] = 'unix:path=/run/user/1000/bus'
@@ -152,7 +155,9 @@ if phase == 'login':
     assert initial['InvocationID'] != previous['initial']['InvocationID'], 'expected guest cold start'
 environment = dict(x.split('=', 1) for x in Path(f'/proc/{running["pid"]}/environ').read_bytes().decode().split('\0') if '=' in x)
 assert environment['APPIMAGE'] == str(image)
-assert environment['GDK_BACKEND'] == 'x11', 'record backend changes explicitly'
+backend_override = environment.get('GDK_BACKEND', 'auto')
+assert backend_override in ('auto', 'x11', 'wayland')
+assert environment.get('WAYLAND_DISPLAY') and environment.get('DISPLAY')
 assert (home / '.config/autostart/Patina.desktop').is_file()
 time.sleep(10)
 assert desktop() == [running]
@@ -171,10 +176,12 @@ for key in before:
 assert set(before) == {'__tracker_last_heartbeat_ms', '__tracker_last_successful_sample_ms'}
 assert not desktop() and ready()['InvocationID'] == initial['InvocationID']
 result = {'passed': True, 'phase': phase, 'version': expected_version, 'session': session_facts,
-          'initial': initial, 'final': service(), 'desktop': running, 'backend': environment['GDK_BACKEND'],
+          'initial': initial, 'final': service(), 'desktop': running,
+          'backend_override': backend_override,
+          'display_environment': {'wayland': environment['WAYLAND_DISPLAY'], 'x11': environment['DISPLAY']},
           'fuse': True, 'preferences': preferences, 'sha256': hashlib.sha256(image.read_bytes()).hexdigest(),
           'sampling_advance_ms': int(after['__tracker_last_successful_sample_ms']) - int(before['__tracker_last_successful_sample_ms']),
           'quick_check': 'ok', 'foreign_key_check': 'ok', 'diagnostics': api('diagnostics')}
 with (output / (phase + '.json')).open('x') as stream:
     json.dump(result, stream, indent=2)
-print(json.dumps({key: result[key] for key in ['passed', 'phase', 'session', 'backend', 'sampling_advance_ms']}))
+print(json.dumps({key: result[key] for key in ['passed', 'phase', 'session', 'backend_override', 'sampling_advance_ms']}))

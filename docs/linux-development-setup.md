@@ -344,7 +344,8 @@ For actual graphical login, FUSE and foreground-window recording, use the
 [independent GNOME VM procedure](../scripts/acceptance/appimage-gnome/README.md).
 It verifies first installation and a real GDM login after a guest cold boot in a
 private user profile with no Patina DEB. It records the Wayland login session
-separately from the AppImage's XWayland client backend. The same procedure defines
+separately from the AppImage's display environment; determine the actual Desktop
+backend from its connection rather than `XDG_SESSION_TYPE` alone. The same procedure defines
 production-key upgrade acceptance using the non-publishing Actions candidate;
 preparing that workflow does not constitute signed-upgrade acceptance.
 
@@ -375,6 +376,28 @@ For AppImage installations, install the separately published extension archive:
 gnome-extensions install --force patina-gnome-shell-extension-v<version>.zip
 gnome-extensions enable patina-window-tracker@patina
 ```
+
+### Modern GNOME ESM Candidate (Development)
+
+GNOME Shell 45+ requires an ESM entry point, while the currently packaged GNOME 42
+extension uses the legacy entry point. They keep the same UUID and D-Bus contract
+but are separate build inputs; the DEB payload and current Release extension ZIP
+still contain the GNOME 42 version. The ESM source declares Shell 46 and 50
+for isolated compatibility testing and is not a published support claim.
+
+```bash
+npm run extension:gnome:check
+npm run extension:gnome:build-esm
+# Output: dist/extensions/gnome-shell-esm/patina-window-tracker@patina/
+```
+
+`extension:gnome:install-esm` replaces the same UUID in the current user's
+extension directory and refuses a Shell version absent from the variant metadata.
+Use it only inside a matching isolated GNOME test profile; do not use it on the
+GNOME 42 production session. GNOME 46 and 50 Shell loading and real foreground
+recording have evidence; GNOME 46 also has a production-signed candidate's isolated upgrade. The
+support-matrix and public distribution gates are tracked in the
+[current stage checklist](./working/2026-09-23-sustainable-linux-release.md).
 
 For stable tags, the release workflow publishes a Linux-only `latest.json` with `linux-x86_64-appimage` and `linux-x86_64-deb` package-specific targets. It also keeps an AppImage-based `linux-x86_64` fallback for older clients. AppImage installations download the signed AppImage; Debian installations download the signed `.deb` and may request system authorization before installation.
 

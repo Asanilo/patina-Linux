@@ -1,6 +1,6 @@
 # Linux 平台草稿评估与回流
 
-状态：T6 首片/第二片、扩展生产端第三片及 daemon 会话识别第四片已实现并通过源码验证；第四片及 AppImage 首次启动修复已通过隔离验收；2026-09-22 本机已安装 beta.20 DEB，并完成真实 AppImage/DEB 共存与后台持续记录检查，新版本实际注销/登录后的会话识别和无界面采样已通过；真实系统重启后的后台自动启动也已验证。version 4 双协议、锁屏/overview 与生命周期已通过本机独立 GNOME 42.9 会话验收；AppImage 本地候选与隔离验收通过，完整实装矩阵仍待补齐。生产会话切换、ESM/更多 Shell 和正式 AppImage 发布门槛仍分开管理。首片 beta.20 准备提交 `e42ba3c9` 的远端 Verify 已通过；beta.20 继续保持未发布，不打 tag 或公开资产。产品主线为 `main`，评估基准为 `5eefcf4e`；贡献草稿位于 `feat/linux-desktop`，基于上游 `80204c73`，另含未提交改动。草稿没有完成整体 Rust 集成或实机验收，不视为可直接合入的实现。
+状态（截至 2026-09-23）：T6 采样/协议/会话识别已进入 `main`；本机已安装本地 beta.21 DEB 候选。无 DEB 的 GNOME 42.9 实际 AppImage 登录、前台记录与正式签名成品的隔离升级/冷登录已通过，细节以本文末节为准。最新公开预发布记录为 beta.20，DEB-only beta 契约未解除；公开 updater 投递、现代 GNOME ESM 和非 Debian 环境尚未验收。下文各阶段记录保留其当时结论，不代表当前待办；下一阶段执行状态见[可持续维护的 Linux 产品版本](2026-09-23-sustainable-linux-release.md)。贡献草稿位于暂停的 `feat/linux-desktop`，基于上游 `80204c73`，不视为可整支合入的实现。
 
 本轮按用户确认的顺序推进主线远端同步、平台模块评估和下一版 beta 准备。分支与产品范围遵循 [路线](../roadmap-and-prioritization.md#linux-main-and-daemon-experiment)，主 Todo 与发布证据由 [当前清单](2026-07-10-patinad-runtime-design.md) 管理。保持贡献 worktree 原状，不整支合并。2026-09-22 用户授权继续扩展生产端及实机/AppImage 验收；本轮先在私有 HOME、D-Bus 和独立 Wayland Shell 中验证候选；随后用户单独授权备份安装扩展，记录见第三片。该阶段未变更生产服务与数据库；后续用户要求继续完成实装，安装及备份记录见本文末尾。
 

@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import sqlite3
 import subprocess
+import sys
 import time
 import dbus
 
@@ -16,19 +17,22 @@ os.environ['WAYLAND_DISPLAY'] = 'wayland-0'
 os.environ['GDK_BACKEND'] = 'wayland'
 bus = dbus.SessionBus()
 tracker = bus.get_object('org.patina.WindowTracker1', '/org/patina/WindowTracker1')
-title = 'Patina isolated GNOME sampling witness'
-code = """import gi
+run_id = sys.argv[1] if len(sys.argv) == 2 else ''
+assert len(sys.argv) in (1, 2) and all(c.isalnum() or c in '-_' for c in run_id)
+prefix = f'sample-{run_id}' if run_id else 'sample'
+title = 'Patina isolated GNOME sampling witness' + (f' {run_id}' if run_id else '')
+code = f"""import gi
 gi.require_version('Gtk','3.0')
 from gi.repository import Gtk
 Gtk.init([])
-w=Gtk.Window(title='Patina isolated GNOME sampling witness')
+w=Gtk.Window(title={title!r})
 w.set_default_size(400,200)
 w.add(Gtk.Label(label='Synthetic acceptance window'))
 w.connect('destroy',Gtk.main_quit)
 w.show_all();w.present();Gtk.main()
 """
 output = Path.home() / 'acceptance'
-with (output / 'sample-window.log').open('x') as log:
+with (output / f'{prefix}-window.log').open('x') as log:
     child = subprocess.Popen(['python3', '-c', code], stdout=log, stderr=subprocess.STDOUT)
     try:
         snapshot = None
@@ -47,7 +51,7 @@ with (output / 'sample-window.log').open('x') as log:
                 break
             time.sleep(1)
         assert recorded, 'Daemon did not record the real GNOME extension window'
-        (output / 'sample.json').write_text(json.dumps({'passed': True, 'witness_pid': child.pid,
+        (output / f'{prefix}.json').write_text(json.dumps({'passed': True, 'witness_pid': child.pid,
             'extension_protocol': 1, 'window_pid_matched': True, 'synthetic_sessions': recorded}, indent=2))
         print('Real GNOME foreground window recorded by the standalone AppImage daemon')
     finally:
