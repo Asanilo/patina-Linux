@@ -162,7 +162,7 @@
 
 #### 分支职责（2026-09-21 合流）
 
-本仓库是 `Asanilo/patina-Linux`。主要开发与产品工作在 `main`，当前发行版支持/验证范围限 Debian 系。daemon/UI 分离的第一阶段已验收，并经用户明确授权合入本地主线；`feature/patinad-daemon` 保留为已合入的开发历史。上游贡献是独立的 Linux 兼容提案，不以整套 daemon 架构被上游接受为完成条件。
+本仓库是 `Asanilo/patina-Linux`。主要开发与产品工作在 `main`，当前正式发行版支持承诺限 Debian 系，其他环境的隔离技术验收见支持矩阵。daemon/UI 分离的第一阶段已验收，并经用户明确授权合入本地主线；`feature/patinad-daemon` 保留为已合入的开发历史。上游贡献是独立的 Linux 兼容提案，不以整套 daemon 架构被上游接受为完成条件。
 
 | 工作线 | 目标 | 不做 |
 | --- | --- | --- |
@@ -174,18 +174,20 @@
 
 #### 合流后的开发顺序
 
-daemon 第一阶段差距审计、阻塞修复、候选验收与本地主线合入已完成。具体 Todo、证据及剩余发布门槛由 [当前工作清单](./working/2026-07-10-patinad-runtime-design.md) 维护。
+daemon 第一阶段差距审计、阻塞修复、候选验收与本地主线合入已完成。历史证据见[daemon 合流记录](./archive/2026-07-10-patinad-runtime-design.md)；正式补丁与宿主升级也已完成，见[收口记录](./archive/2026-10-02-stable-closeout.md)。
 
 - 普通缺陷、服务交接、协议和后台 owner 修复均从 main 继续，不再做 main 与 daemon 两条产品线的往返同步。
 - 后续功能在 main 或经用户明确要求创建的短期分支开发，按影响范围验证后合回；保留既有开发及 beta 历史。
 - 源码合并与稳定发布分别留证据。若候选仍是 beta，继续保留对应交付范围和 AppImage 稳定发布门槛。
-- Linux provider、协议和测试的选择性评估已按模块进入 main；后续兼容性和产品维护按[当前阶段执行单](./working/2026-09-23-sustainable-linux-release.md)推进，不整支合并上游草稿。
+- Linux provider、协议和测试的选择性评估已按模块进入 main；既有兼容性与核心流程验收见[已完成阶段记录](./archive/2026-09-23-sustainable-linux-release.md)，不整支合并上游草稿。
 
 #### 当前交付位置
 
 独立 daemon、平台信号、浏览器桥接、HTTP/SSE、主要写侧 owner、systemd 交接和 Desktop 适配已有实现及分批验证。趋势/分类有界聚合和备份流式化已纳入 beta.19，不撤销经过验证的改动，但不继续扩大此类通用优化。
 
-`1.9.1` 已作为公开稳定 Latest 交付已签名的 AppImage 与 DEB。隔离夹具使用当前 updater 模拟 `1.8.4` 版本号，从真实公开 manifest 下载验签并原子替换旧 AppImage 文件，未执行旧客户端本身；Fedora 44 客体另从公开 RC2 AppImage 通过应用内更新升级到稳定版，在 Settings 确认后台重载后完成版本化 daemon 交接、旧数据保留及冷登录后的无 UI 记录。GNOME 42 客体从公开 RC2 DEB 升级到稳定版，旧会话与关闭 UI 后的真实窗口记录保持。两种公开稳定 GNOME ZIP 均从移走旧目录的客体直接安装。`v1.9.0` tag 因浏览器烟测时序失败没有形成 Release 或安装包；完整正式版由 `v1.9.1` 发布。宿主仍安装此前的 beta.21 本地候选，公开发布与宿主实装分别记录。下一阶段回到正常使用中的 issue 分诊和稳定期修复，R1 两周连续运行观察继续按用户要求暂停，不作为发布后门槛。发布证据见[已归档的 AppImage 正式版执行单](./archive/2026-09-27-appimage-stable-release.md)；候选和原有安装证据见[当前工作清单](./working/2026-07-10-patinad-runtime-design.md)及[阶段执行单](./working/2026-09-23-sustainable-linux-release.md)。
+`1.9.2` 已作为公开稳定 Latest 交付已签名的 AppImage 与 DEB，包含 Summary 停用分类／别名修复与发布资产保护。真实 1.8.4 AppImage 已在 GNOME 42 客体执行公开更新；其旧 updater 安装后仍运行旧挂载程序，正常退出并从原文件路径重开后，daemon 接管、旧数据保留、冷登录和无 UI 记录通过，About 不再提示更新。宿主已从 beta.21 升级到正式 1.9.2，历史数据、实际 Desktop／daemon 版本和无 UI 采样通过，Desktop 登录自启仍关闭；证据见[收口记录](./archive/2026-10-02-stable-closeout.md)。
+
+此前 Fedora 44 的 RC2 → 1.9.1 AppImage 应用内更新、后台重载和冷登录，以及 GNOME 42 的 RC2 → 1.9.1 DEB 验收仍为有效历史证据；两种 GNOME ZIP 也有直接安装记录，不能写成它们都重新验证过 1.9.2。`v1.9.0` tag 未形成 Release 或安装包，首个完整正式版为 `v1.9.1`。具体见[AppImage 正式版记录](./archive/2026-09-27-appimage-stable-release.md)、[daemon 历史记录](./archive/2026-07-10-patinad-runtime-design.md)及[阶段记录](./archive/2026-09-23-sustainable-linux-release.md)。后续维护以实际故障的最小复现、owner 和回归证据为入口；R1 两周连续运行观察继续暂停，不作为发布后门槛。
 
 #### 已通过的第一阶段条件与持续约束
 
@@ -198,6 +200,8 @@ daemon 第一阶段差距审计、阻塞修复、候选验收与本地主线合�
 上述条件已按适用矩阵验收，后续修改仍须保持；不要求所有查询达到极致内存、所有安装格式或所有客户端同时完成。AppImage 发布承诺继续受发布规范约束，不因客户端研究而取消。
 
 #### 后续客户端
+
+新功能架构规划应从明确的用户场景和当前稳定基线出发：先定义行为与验收，再决定 owner、数据／迁移与 API 边界。`main` 上已有 daemon、Desktop、浏览器桥接和 GNOME provider；Desktop 仍保留[架构 4.3](./architecture.md#43-前端本地-sqlite-通道)约定的受控读取与私有缓存，不应把新功能默认写成“先清零所有 SQLite 访问”或“先替换 UI 框架”。新功能目标尚未确定；本阶段的正式补丁与宿主收口已完成并[归档](./archive/2026-10-02-stable-closeout.md)，不提前开启新客户端、上游贡献或暂停项。
 
 第一阶段验收后，按实际需求选择本机浏览器 UI、TUI 或 GPUI 中的一个验证客户端独立性，顺序尚未决定。Tauri 保留，替换 UI 框架不改变 daemon owner 或数据库语义。新客户端通过受支持 API 访问后台，不直连数据库、不复制追踪；浏览器 UI 为 loopback 页面，需独立安全 session，不暴露长期 Token。
 

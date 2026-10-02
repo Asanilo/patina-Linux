@@ -64,7 +64,7 @@ Windows runtime、installer、updater、ARM/UWP 等平台专属实现不移植�
 
 截至本地 `1.9.0-beta.7`，已验证首次接管、关闭/重开 Desktop、服务崩溃恢复、连续覆盖安装、登录偏好配置对账、回滚自动重启/再次接管，以及备份导出和产品内解析、remove 卸载保留数据、重装不自动启动、首次打开恢复追踪。Zen 扩展重连与切走封口、音频/MPRIS 身份匹配已有实机证据；真正的 systemd suspend/resume 及数据库无跨挂起计时已在 beta.7 补齐，不再依赖早期仅有屏幕唤醒反馈的结论。
 
-当前 Linger=yes 环境的真实重启登录后台自启已通过：新 boot 下 systemd 自动启动 beta.7 daemon，未打开 Desktop 即产生原生和网页记录；不扩大为 Linger=no 或仅注销再登录均已验证。合成数据的隔离磁盘 Replace/Merge 恢复、receipt 幂等与事务失败回滚已补自动化验证；beta.8 又通过真实临时 systemd 服务的跨进程 Replace/Merge 和失败回滚，生产数据未参与。剩余顺序：健康状态与后台版本对齐收口、活动网页跨挂起、隔离 WebDAV 恢复及剩余故障矩阵；DEB beta 发布复核。稳定版还受 AppImage 兼容或明确退役迁移方案约束。当前只有本地未签名候选，不代表 tag、GitHub Release 或签名更新链已验收。当前状态矩阵和证据时间线统一见 [`working/2026-07-10-patinad-runtime-design.md`](../working/2026-07-10-patinad-runtime-design.md)。
+当前 Linger=yes 环境的真实重启登录后台自启已通过：新 boot 下 systemd 自动启动 beta.7 daemon，未打开 Desktop 即产生原生和网页记录；不扩大为 Linger=no 或仅注销再登录均已验证。合成数据的隔离磁盘 Replace/Merge 恢复、receipt 幂等与事务失败回滚已补自动化验证；beta.8 又通过真实临时 systemd 服务的跨进程 Replace/Merge 和失败回滚，生产数据未参与。剩余顺序：健康状态与后台版本对齐收口、活动网页跨挂起、隔离 WebDAV 恢复及剩余故障矩阵；DEB beta 发布复核。稳定版还受 AppImage 兼容或明确退役迁移方案约束。当前只有本地未签名候选，不代表 tag、GitHub Release 或签名更新链已验收。当前状态矩阵和证据时间线统一见 [`archive/2026-07-10-patinad-runtime-design.md`](../archive/2026-07-10-patinad-runtime-design.md)。
 
 2026-09-09 验收新增阻塞项：Desktop 的“追踪运行时未就绪”间歇跳动。已用隔离测试复现 SSE 静默时客户端快照不刷新的路径，源码加入独立周期刷新，保留后台采样时间及读取失败语义。修复已打入本地 `1.9.0-beta.8` DEB，完整 release gate 与成品静态检查通过。用户安装并打开 beta.8 后，后台仍为 beta.7：现有协议兼容协商不会仅按版本差异自动重启，需补版本差异提示与确认式受控升级收口，不能宣称后台升级或健康状态实机复测已完成。独立临时 systemd 服务的跨进程 Replace/Merge 恢复及失败回滚已通过，WebDAV 恢复及剩余验收矩阵继续保留。
 
@@ -122,5 +122,4 @@ beta.14 本地候选已完成：原生 GTK/WebKit 回归运行 626.64 秒通过�
 23. `patinad` 稳定后，单独分阶段删除冻结的 Windows 平台代码，不与 owner 切换、transport 迁移或数据修复混合。
 
 每一阶段必须保持当前桌面主路径可用，不以一次性切换换取架构完成感。
-
 

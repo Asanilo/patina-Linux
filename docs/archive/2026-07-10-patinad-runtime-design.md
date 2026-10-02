@@ -1,5 +1,7 @@
 # `patinad` 当前实施与验收
 
+> 归档（2026-10-02）：daemon 合流及本阶段平台验收已结束。下文保留当时的状态和证据；1.9.1 公开交付见[正式版记录](2026-09-27-appimage-stable-release.md)，后续补丁、真实旧客户端和宿主升级收口见[已完成的收口记录](2026-10-02-stable-closeout.md)。未完成的历史条目不自动成为当前待办。
+
 > 更新：2026-09-23。daemon 分离已通过第一阶段验收并经用户明确授权合入本地 `main`；本文继续管理平台成果评估、候选证据与剩余发布门槛。历史阶段与实验详见 [归档](../archive/2026-09-19-patinad-runtime-history.md)。
 > 方向以 [路线](../roadmap-and-prioritization.md#linux-main-and-daemon-experiment) 为准，协议与 owner 以 [架构](../architecture.md) 为准。当前执行见下方 Todo 与 [beta.21 候选记录](2026-09-21-linux-platform-reuse.md)；历史验收不自动覆盖后续候选。beta.21 已完成 DEB 隔离升级、本机实装与 AppImage FUSE 共存；随后 `d3418d1d` 修复 Xvfb 悬浮窗崩溃。正式签名候选 `f9fb9b8b` 已通过准确成品容器回归、独立 GNOME 登录和正式密钥升级后的实际生命周期/数据验收，尚未安装宿主。不覆盖公开 updater 分发或所有 GNOME 版本；源码推送与验收不改变公开发布状态。
 

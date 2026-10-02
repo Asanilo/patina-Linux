@@ -21,7 +21,7 @@ English · [简体中文](README.zh-CN.md)
 
 This fork is the Linux-only edition of Patina. It focuses on GNOME/Linux foreground tracking, browser webpage activity, and a localhost API/MCP surface for external AI analysis. Windows platform sources remain temporarily as frozen compatibility code, but upstream Windows features are no longer tracked and Windows is outside the default CI, release pipeline, validation matrix, and support commitment.
 
-The daemon-backed line on `main` is preparing a release candidate. GNOME Wayland is the primary supported environment; KDE and wlroots compositors still need dedicated adapters.
+The daemon-backed Linux product line on `main` has reached stable release. GNOME Wayland is the primary supported environment; KDE and wlroots compositors still need dedicated adapters.
 
 ## Current Fork Focus
 
@@ -75,8 +75,8 @@ Upstream changes are reviewed for Linux correctness and data-safety value. They 
 | GNOME Wayland window tracking | Working prototype | Uses `org.patina.WindowTracker` from the GNOME Shell extension. |
 | X11 tracking | Implemented fallback / limited verification | Used on X11 sessions; GNOME Wayland does not silently fall back to X11. |
 | KDE / wlroots Wayland | Not promised | Needs compositor-specific work later. |
-| `patinad` | Daemon-backed DEB beta | After first-launch owner migration, the installed Production desktop is a client of `patinad.service`; closing the UI does not stop tracking. The package itself does not enable the unit. Settings provides migration diagnostics, explicit rollback and confirmed version reload. The published 1.8.4 stable line still uses the embedded desktop runtime. |
-| Local browser UI | Planned after daemon cutover | The first version will be a read-only loopback client served by `patinad`; not implemented yet. |
+| `patinad` | Packaged Linux daemon | After first-launch owner migration, the installed Production desktop is a client of `patinad.service`; closing the UI does not stop tracking. The package itself does not enable the unit. Settings provides migration diagnostics, explicit rollback and confirmed version reload. Patina 1.8.4 and earlier used the embedded desktop runtime; upgrades use the first-launch migration. |
+| Local browser UI | Candidate future client | A read-only loopback client served by `patinad` is one option; client priority has not been selected and it is not implemented. |
 | Local API | Implemented | Binds to `127.0.0.1:14840`, uses a bearer token, and exposes daemon capabilities plus an authenticated SSE stream. |
 | MCP wrapper and Agent Skill | Implemented | `npm run mcp:patina`; controlled writes cover app/settings, local API configuration, daemon restart verification, and Tools reminders, timers, and pomodoro. |
 | Chromium Web Sync | Implemented | `extensions/chromium`. |
@@ -90,7 +90,7 @@ The daemon separation developed on `feature/patinad-daemon` is part of Linux `ma
 
 Before upgrading, export and verify a backup outside the Patina data directory. Reopen Desktop after package installation; if Settings reports different Desktop/Daemon versions, explicitly confirm **Reload background service**. Installation alone does not replace an already-running daemon. Reload briefly interrupts tracking and does not download a package.
 
-The **1.9.1** Linux release delivers signed x86_64 AppImage and DEB packages; check [Releases](https://github.com/Asanilo/patina-Linux/releases) for the published assets and current Latest version. The standalone daemon keeps tracking after the desktop closes. AppImage and DEB updates select the matching package type, and older AppImage clients retain a compatible update target. GNOME 42 Wayland remains the declared support environment; GNOME 46 and Fedora GNOME 50 have isolated technical acceptance without an expanded support promise. Widget flicker/docking remains deferred; Flatpak and additional browser/TUI clients are not included.
+The **1.9.2** Linux release delivers signed x86_64 AppImage and DEB packages; check [Releases](https://github.com/Asanilo/patina-Linux/releases) for the published assets and current Latest version. The standalone daemon keeps tracking after the desktop closes. AppImage and DEB updates select the matching package type, and older AppImage clients retain a compatible update target. GNOME 42 Wayland remains the declared support environment; GNOME 46 and Fedora GNOME 50 have isolated technical acceptance without an expanded support promise. Widget flicker/docking remains deferred; Flatpak and additional browser/TUI clients are not included.
 
 ## Quick Start On Linux
 
@@ -151,7 +151,7 @@ The current stable release workflow produces:
 - `patina-firefox-extension-v<version>.xpi`
 - `latest.json`
 
-Ubuntu and Debian users should prefer the `.deb`. Daemon-backed DEBs install the GNOME Shell extension files, `patinad`, and a default-disabled systemd user unit into system directories. The first Desktop launch handles owner migration; do not manually enable `patinad.service` while an older embedded Desktop still owns the same Production profile. The published 1.8.4 stable line retains its embedded runtime. The GNOME extension must still be enabled for the current user:
+Ubuntu and Debian users should prefer the `.deb`. Daemon-backed DEBs install the GNOME Shell extension files, `patinad`, and a default-disabled systemd user unit into system directories. The first Desktop launch handles owner migration; do not manually enable `patinad.service` while an older embedded Desktop still owns the same Production profile. Patina 1.8.4 and earlier used the embedded runtime. The GNOME extension must still be enabled for the current user:
 
 ```bash
 gnome-extensions enable patina-window-tracker@patina
@@ -160,6 +160,8 @@ gnome-extensions enable patina-window-tracker@patina
 Log out and back in if GNOME Shell has cached an older extension.
 
 In-app updates preserve the installed package type. AppImage installations download the signed AppImage, while `.deb` installations download the signed Debian package and request system authorization before installation. The updater manifest keeps a generic AppImage fallback for older clients.
+
+When upgrading from the 1.8.4 AppImage, the old updater may replace the file successfully but restart the old mounted program. If About still shows 1.8.4 after installation, use **Quit** and reopen the original AppImage file; the updated package then performs the daemon migration. Do not start a second copy or restore an old binary over a migrated database.
 
 The AppImage does not modify system directories:
 

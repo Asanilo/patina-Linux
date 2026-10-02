@@ -46,10 +46,17 @@ Read only the references needed for the task:
 
 ## Current Work
 
-- [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md): current daemon acceptance checklist, delivery status, and deferred work
-- [`working/2026-09-21-linux-platform-reuse.md`](./working/2026-09-21-linux-platform-reuse.md): T6 assessment, sampling/idle correctness, GNOME protocols, AppImage crash/login acceptance, and remaining signing/extension gates
-- [`working/2026-09-23-sustainable-linux-release.md`](./working/2026-09-23-sustainable-linux-release.md): next-stage execution plan, candidate identity, evidence index, and limited platform/reliability acceptance
-- [`working/2026-09-27-tauri-runtime-refresh.md`](./working/2026-09-27-tauri-runtime-refresh.md): Tauri runtime dependency refresh, package regression, and beta.21 DEB-only publication evidence
+The stable-release closeout is complete. No implementation checklist is active; the next feature architecture scope has not yet been selected. Use the roadmap for priorities and retain paused items as deferred.
+
+Only current execution documents belong under `working/`. Move them to `archive/` when they stop being the active implementation basis.
+
+## Completed Stage Evidence
+
+- [`archive/2026-10-02-stable-closeout.md`](./archive/2026-10-02-stable-closeout.md): 1.9.2 public release, actual 1.8.4 upgrade with a manual reopen, host installation, and final stage evidence
+- [`archive/2026-07-10-patinad-runtime-design.md`](./archive/2026-07-10-patinad-runtime-design.md): daemon ownership, integration and installed acceptance history
+- [`archive/2026-09-21-linux-platform-reuse.md`](./archive/2026-09-21-linux-platform-reuse.md): Linux provider reuse, GNOME protocol and initial AppImage acceptance history
+- [`archive/2026-09-23-sustainable-linux-release.md`](./archive/2026-09-23-sustainable-linux-release.md): GNOME 46/Fedora technical acceptance, core-flow checks and client-read inventory
+- [`archive/2026-09-27-tauri-runtime-refresh.md`](./archive/2026-09-27-tauri-runtime-refresh.md): completed Tauri refresh and beta.21 publication evidence
 - [`archive/2026-09-27-appimage-stable-release.md`](./archive/2026-09-27-appimage-stable-release.md): completed AppImage public-channel acceptance and 1.9.1 stable-release evidence
 
 The roadmap now places daemon and Desktop product work together on Linux `main`,
@@ -58,7 +65,7 @@ from upstream `80204c73`; its unfinished draft remains paused. The daemon checkl
 records completed acceptance, integration and later platform work. The archived release
 execution document records the 1.9.1 stable AppImage and DEB publication and acceptance.
 
-Only current execution documents belong under `working/`. Move them to `archive/` when they stop being the active implementation basis.
+Historical pending items are not the current task queue. Use the roadmap for current scope; the two-week observation and other user-paused features remain deferred.
 
 ## Decisions
 

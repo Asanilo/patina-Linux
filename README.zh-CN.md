@@ -21,7 +21,7 @@ Patina 的 Linux 移植与本地 AI/API 集成 fork。
 
 这个 fork 是 Patina 的 Linux-only 版本，重点放在 GNOME/Linux 前台窗口识别、浏览器网页活动记录、本地 HTTP API，以及面向外部 AI/MCP 的数据接口。Windows 平台源码暂时保留为冻结兼容代码，但不再跟踪上游功能，也不进入默认 CI、Release、验证矩阵或当前支持承诺。
 
-`main` 上的 daemon-backed 版本正在准备发布候选。GNOME Wayland 是主要支持环境，KDE 和 wlroots 合成器仍需专门适配。
+`main` 上的 daemon-backed Linux 产品线已进入稳定发布阶段。GNOME Wayland 是主要支持环境，KDE 和 wlroots 合成器仍需专门适配。
 
 ## 当前 fork 重点
 
@@ -74,8 +74,8 @@ Windows 代码采用冻结后删除策略：
 | GNOME Wayland 窗口追踪 | 原型可用 | 依赖 GNOME Shell 扩展提供的 `org.patina.WindowTracker`。 |
 | X11 追踪 | 已实现 fallback / 验证有限 | X11 session 可走 fallback；GNOME Wayland 不会静默降级到 X11。 |
 | KDE / wlroots Wayland | 暂不承诺 | 后续需要按桌面环境分别适配。 |
-| `patinad` | daemon-backed DEB 测试版 | 已安装的 Production 桌面端在首次启动交接完成后成为 `patinad.service` 客户端，关闭 UI 不会停止追踪；安装包自身不启用服务。设置提供迁移诊断、显式回退和确认式版本重新加载。已公开的 1.8.4 稳定线仍使用桌面内置运行时。 |
-| 本机浏览器 UI | 已规划 | 将由 `patinad` 在 loopback 提供；当前尚未实现。 |
+| `patinad` | Linux 安装包中的独立后台 | 已安装的 Production 桌面端在首次启动交接完成后成为 `patinad.service` 客户端，关闭 UI 不会停止追踪；安装包自身不启用服务。设置提供迁移诊断、显式回退和确认式版本重新加载。1.8.4 及更早版本采用桌面内置运行时，升级由首次启动迁移完成交接。 |
+| 本机浏览器 UI | 后续客户端候选 | 可由 `patinad` 在 loopback 提供只读页面；客户端优先顺序尚未确定，当前尚未实现。 |
 | 本地 API | 已实现 | 监听 `127.0.0.1:14840`，使用 bearer token，并提供 daemon 能力查询和受认证 SSE。 |
 | MCP wrapper | 已实现 | `npm run mcp:patina`；受控写侧覆盖应用/设置，以及提醒、计时器和番茄钟。 |
 | Chromium 网页同步 | 已实现 | `extensions/chromium`。 |
@@ -136,7 +136,7 @@ ${XDG_DATA_HOME:-~/.local/share}/Patina/api_token
 
 安装前先导出并验证一份位于 Patina 数据目录之外的备份。覆盖安装后重新打开桌面端；设置诊断若显示 Desktop/Daemon 版本不同，再显式确认“重新加载后台”。安装软件包不等于运行中的后台已经更新；重新加载会短暂停止记录，不负责下载软件包。
 
-**1.9.1** Linux 正式版提供已签名的 x86_64 AppImage 和 DEB；公开资产与当前 Latest 版本以 [Releases](https://github.com/Asanilo/patina-Linux/releases) 为准。独立后台在关闭桌面界面后继续记录；更新会按当前安装包类型选择目标，旧 AppImage 客户端仍有兼容目标。公开支持环境仍为 GNOME 42 Wayland；GNOME 46 与 Fedora GNOME 50 已完成隔离技术验收，不自动扩大支持承诺。悬浮窗闪烁/吸附继续暂停，Flatpak 和新增浏览器/TUI 客户端不在本次范围内。
+**1.9.2** Linux 正式版提供已签名的 x86_64 AppImage 和 DEB；公开资产与当前 Latest 版本以 [Releases](https://github.com/Asanilo/patina-Linux/releases) 为准。独立后台在关闭桌面界面后继续记录；更新会按当前安装包类型选择目标，旧 AppImage 客户端仍有兼容目标。公开支持环境仍为 GNOME 42 Wayland；GNOME 46 与 Fedora GNOME 50 已完成隔离技术验收，不自动扩大支持承诺。悬浮窗闪烁/吸附继续暂停，Flatpak 和新增浏览器/TUI 客户端不在本次范围内。
 
 ## Linux 安装包
 
@@ -150,7 +150,7 @@ ${XDG_DATA_HOME:-~/.local/share}/Patina/api_token
 - `patina-firefox-extension-v<version>.xpi`
 - `latest.json`
 
-Ubuntu / Debian 用户优先安装 `.deb`。daemon-backed DEB 会把 GNOME Shell 扩展文件、`patinad` 和默认禁用的 systemd user unit 安装到系统目录。首次启动 Desktop 时会执行 owner 迁移；旧版 embedded Desktop 仍持有同一 Production profile 时，不要手动启用 `patinad.service`。已公开的 1.8.4 稳定线仍使用内置运行时。GNOME 扩展仍需为当前用户启用：
+Ubuntu / Debian 用户优先安装 `.deb`。daemon-backed DEB 会把 GNOME Shell 扩展文件、`patinad` 和默认禁用的 systemd user unit 安装到系统目录。首次启动 Desktop 时会执行 owner 迁移；旧版 embedded Desktop 仍持有同一 Production profile 时，不要手动启用 `patinad.service`。1.8.4 及更早版本采用内置运行时。GNOME 扩展仍需为当前用户启用：
 
 ```bash
 gnome-extensions enable patina-window-tracker@patina
@@ -159,6 +159,8 @@ gnome-extensions enable patina-window-tracker@patina
 如果 GNOME Shell 已缓存旧版本，注销后重新登录。
 
 应用内更新会保持当前安装包类型：AppImage 安装会下载已签名的 AppImage，`.deb` 安装会下载已签名的 Debian 软件包，并在安装前请求系统授权。更新清单仍保留通用 AppImage 回退项，以兼容旧客户端。
+
+从 1.8.4 AppImage 升级时，旧 updater 可能已成功替换文件，却重新启动旧挂载中的程序。若安装后 About 仍显示 1.8.4，请选择**退出应用**，再从原 AppImage 文件路径重新打开；新包随后完成 daemon 迁移。不要同时启动第二份程序，也不要用旧二进制直接降级已迁移的数据库。
 
 AppImage 不会修改系统目录。下载后运行：
 

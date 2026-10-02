@@ -1,5 +1,7 @@
 # Linux Tauri 运行时依赖升级执行单
 
+> 归档（2026-10-02）：本次依赖升级和 beta.21 发布已完成；后续双包稳定交付见[1.9.1 正式版记录](2026-09-27-appimage-stable-release.md)。本文不再作为当前任务队列，补丁和宿主升级见[稳定阶段收口](2026-10-02-stable-closeout.md)。
+
 状态：实现与隔离验收通过，`v1.9.0-beta.21` 已作为 DEB-only 预发布公开发行。Tauri 升级源码提交为 `d56669c8`，tag 指向文档收口提交 `a1dc5ee8`；本地未签名候选与正式发布包分别标识。先前 CLI 2.12.0 DEB 的隔离升级证据保留在 `$HOME/.local/state/patina/acceptance/20260927-deb-refreeze-cli212/`。
 
 ## 范围与归属

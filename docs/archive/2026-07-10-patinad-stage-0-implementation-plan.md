@@ -673,7 +673,7 @@ git commit -m "feat: add graceful patinad shutdown"
 - Create: `src-tauri/tests/daemon_stage_zero.rs`
 - Modify: `README.md`
 - Modify: `README.zh-CN.md`
-- Modify: `docs/working/2026-07-10-patinad-runtime-design.md`
+- Modify: `docs/archive/2026-07-10-patinad-runtime-design.md`
 - Modify if behavior changed: `docs/api-index.md`
 
 - [ ] **Step 1: Add an end-to-end Stage 0 test**
@@ -728,7 +728,7 @@ Keep README status as development-only. Record Stage 0 safety guarantees in the 
 - [ ] **Step 6: Commit Stage 0 verification and docs**
 
 ```bash
-git add README.md README.zh-CN.md docs/working/2026-07-10-patinad-runtime-design.md docs/api-index.md src-tauri/tests/daemon_stage_zero.rs
+git add README.md README.zh-CN.md docs/archive/2026-07-10-patinad-runtime-design.md docs/api-index.md src-tauri/tests/daemon_stage_zero.rs
 git diff --cached --stat
 git diff --cached --check
 git commit -m "test: verify patinad stage zero foundation"

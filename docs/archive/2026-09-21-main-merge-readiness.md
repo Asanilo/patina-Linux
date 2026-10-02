@@ -1,6 +1,6 @@
 # daemon 合并前候选验收（2026-09-21）
 
-用户要求继续完成合入 main 前的工作。本批仍在 `feature/patinad-daemon`，基准为 `2193acc6`；当前推进顺序与完成状态只由 [工作清单](../working/2026-07-10-patinad-runtime-design.md) 管理。main `a13a64a6` 是该基准的祖先，`HEAD..main` 无新增提交，无需反向同步。上游贡献草稿保持冻结。
+用户要求继续完成合入 main 前的工作。本批仍在 `feature/patinad-daemon`，基准为 `2193acc6`；当前推进顺序与完成状态只由 [工作清单](../archive/2026-07-10-patinad-runtime-design.md) 管理。main `a13a64a6` 是该基准的祖先，`HEAD..main` 无新增提交，无需反向同步。上游贡献草稿保持冻结。
 
 ## 双目录恢复缺陷
 

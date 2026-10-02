@@ -8,11 +8,11 @@
 
 ## 2. 当前支持承诺
 
-`Asanilo/patina-Linux` 的日常产品主线是 `main`，已合入 daemon 分离。`1.9.1` 稳定发布契约交付 AppImage 与 DEB；发行版支持承诺仍限 Debian 系，隔离验收另覆盖 Ubuntu 24.04 和 Fedora 44。下表区分桌面/显示协议，不能单凭“GNOME”或生成了 AppImage 就宣称其他发行版可用。版本、CPU 架构和包格式仍须随候选证据记录；上游 Linux PR 的首批支持矩阵另行讨论。
+`Asanilo/patina-Linux` 的日常产品主线是 `main`，已合入 daemon 分离。`1.9.2` 稳定发布交付 AppImage 与 DEB；发行版支持承诺仍限 Debian 系，隔离验收另覆盖 Ubuntu 24.04 和 Fedora 44。下表区分桌面/显示协议，不能单凭“GNOME”或生成了 AppImage 就宣称其他发行版可用。版本、CPU 架构和包格式仍须随候选证据记录；上游 Linux PR 的首批支持矩阵另行讨论。
 
 | 发行版与桌面 | 安装格式、登录会话、客户端显示后端 | 当前状态 |
 | --- | --- | --- |
-| 现有 Debian 系 / GNOME Shell 42，amd64 | 1.9.1 AppImage 与 DEB；GNOME Wayland；Desktop 为 X11/XWayland | 当前声明范围；公开稳定 DEB 在隔离 GNOME 42 从 RC2 升级、冷登录和无 UI 记录通过，签名 AppImage 在该环境有独立验收；宿主正式包尚未实装 |
+| 现有 Debian 系 / GNOME Shell 42，amd64 | 1.9.2 AppImage 与 DEB；GNOME Wayland；Desktop 为 X11/XWayland | 当前声明范围；真实 1.8.4 AppImage → 1.9.2 公开更新、迁移、冷登录和无 UI 记录通过，旧版更新后需退出并重开原文件；宿主 beta.21 → 正式 1.9.2 DEB、历史数据保留与无 UI 采样通过，Desktop 登录自启仍关闭 |
 | Ubuntu 24.04 / GNOME Shell 46，amd64 | 隔离 AppImage；GDM Wayland；已签名 beta.21 Desktop 为 X11/XWayland | 隔离验收通过；ESM 扩展附件已公开，不等于扩大支持承诺 |
 | Fedora 44 / GNOME Shell 50.5，x86_64 | 公开稳定 AppImage；GDM Wayland；Desktop 为 Wayland | RC2→1.9.1 应用内更新、后台重载、ESM ZIP 安装与冷登录在隔离客体通过，未作公开支持承诺 |
 
@@ -56,9 +56,11 @@ main 的 version 4 扩展同时提供旧五元组/信号和新快照；旧客户
 
 GNOME Shell 42 是当前声明范围。打包候选已在本机独立 GNOME Shell 42.9 Wayland 会话中验证双协议、overview/锁屏恢复和三轮禁用/启用；测试使用私有总线与 GDM 能力夹具，不代表生产密码认证或任意硬件睡眠验收。version 4 随本地候选安装并通过重新登录后的生产激活检查；daemon 会话环境诊断已在本地 beta.20 实装后恢复，用户已报告完成锁屏/挂起，实际注销/登录后的后台延续和真实系统重启自动启动也已验证。公开稳定 GNOME 42 ZIP 已在移走 RC2 扩展目录的隔离客体中直接安装，冷登录后双 D-Bus 名称由 Shell 持有；公开 DEB 从 RC2 升级后旧数据完整，关闭 Desktop 后真实窗口仍被记录。无 DEB 的独立 GNOME 42.9 VM 也已验证 AppImage 冷登录与前台记录。GNOME 46 ESM 在隔离 Ubuntu 24.04 VM 中通过 AppImage 首次接管、冷登录、真实窗口记录、锁屏恢复及正式签名候选的隔离升级；扩展附件已公开，但尚未据此扩大支持承诺。发布证据见[已归档的正式版执行单](./archive/2026-09-27-appimage-stable-release.md)。
 
+真实 1.8.4 AppImage 客户端已在 GNOME 42.9 从公开 stable Latest 下载、验签并替换为 1.9.2。旧 updater 的重启仍使用旧 FUSE 程序，正常退出后从原 AppImage 文件路径重开才能进入新版；随后单一 daemon 接管、旧记录保留、冷登录和无 UI 记录通过，About 检查确认已是最新版本。该项属于实际旧进程证据，详见[本轮收口记录](./archive/2026-10-02-stable-closeout.md)，不扩大其他发行版或旧版本组合的保证。
+
 Fedora 44 / GNOME Shell 50.5 已通过隔离技术验收。客体以校验过的 Fedora Cloud 44 镜像补装 GNOME/GDM，登录会话为 Wayland；公开稳定 AppImage 客户端以 Tauri CLI 2.12 打包并使用 Wayland 连接。公开 ESM ZIP 在移走 RC2 扩展后直接安装，准确文件与附件一致。RC2 AppImage 在真实 About 页面检测到稳定 Latest，通过应用内更新下载验签并原子替换原包，旧包恢复文件保留；从原路径重开后 Settings 显示 Desktop/Daemon 版本差异，经用户确认重载切换到单一稳定版 daemon。旧会话和数据库完整，冷登录与退出 Desktop 后仍记录真实窗口，双 D-Bus 名称由 Shell 持有。公开稳定 AppImage 与 DEB 均用产品公钥验签，私有夹具使用当前 Tauri updater 模拟 1.8.4 版本号，从真实 GitHub manifest 下载稳定版、验签并原子替换旧 AppImage 文件；该项未执行 1.8.4 客户端本身。Fedora **不列入当前公开支持承诺**。Cloud 客体需另装官方 Noto CJK 字体才可显示中文；本次结果不代替未经测试的 Workstation ISO、手动密码登录或宿主硬件挂起。
 
-故障归属已确认：旧 Tauri 打包器把 `libwayland-client.so.0` 带入 AppImage，在 Fedora 图形栈下造成 WebKit `EGL_BAD_PARAMETER` 和空白页；只移走该库的客体对照可使页面加载。固定的 Tauri CLI 2.12.0 构建不再携带该库，同一 Fedora 客体的独立 WebKit 页面与 Patina Dashboard、History、Settings 均可渲染。候选字节、界面截图和剩余分发边界见[当前阶段执行单](./working/2026-09-23-sustainable-linux-release.md)。
+故障归属已确认：旧 Tauri 打包器把 `libwayland-client.so.0` 带入 AppImage，在 Fedora 图形栈下造成 WebKit `EGL_BAD_PARAMETER` 和空白页；只移走该库的客体对照可使页面加载。固定的 Tauri CLI 2.12.0 构建不再携带该库，同一 Fedora 客体的独立 WebKit 页面与 Patina Dashboard、History、Settings 均可渲染。候选字节、界面截图和剩余分发边界见[已完成阶段记录](./archive/2026-09-23-sustainable-linux-release.md)。
 
 当前扩展不提供悬浮窗移动、置顶或全局指针状态接口。Wayland 原生窗口的边缘吸附尚未实现，不能用 GTK 返回的 `(0, 0)` 推断左侧位置；详见 [GTK 窗口位置限制](https://docs.gtk.org/gtk3/method.Window.get_position.html)。能力判断应使用实际显示后端，而非仅使用 `XDG_SESSION_TYPE`，以兼容 Wayland 会话内的 X11 客户端。
 

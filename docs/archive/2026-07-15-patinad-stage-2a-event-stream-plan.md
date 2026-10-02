@@ -86,7 +86,7 @@
 ### Task 5: Close the Stage 2A Contract
 
 **Files:**
-- Modify: `docs/working/2026-07-10-patinad-runtime-design.md`
+- Modify: `docs/archive/2026-07-10-patinad-runtime-design.md`
 - Modify: `docs/architecture.md`
 - Modify: `docs/roadmap-and-prioritization.md`
 - Modify: `docs/api-index.md`

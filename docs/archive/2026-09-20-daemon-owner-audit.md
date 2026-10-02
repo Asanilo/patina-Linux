@@ -1,6 +1,6 @@
 # Desktop / daemon owner 审计与本批修复
 
-范围：2026-09-20 至 09-21 的 `feature/patinad-daemon` 工作，基于 `2193acc6` 的未提交工作树。`main` 为 `a13a64a6`，是 daemon 的祖先。当前推进状态以 [工作清单](../working/2026-07-10-patinad-runtime-design.md) 为准，本文保留本批访问盘点、修复及验证证据，不管理下一阶段优先级。
+范围：2026-09-20 至 09-21 的 `feature/patinad-daemon` 工作，基于 `2193acc6` 的未提交工作树。`main` 为 `a13a64a6`，是 daemon 的祖先。当前推进状态以 [工作清单](../archive/2026-07-10-patinad-runtime-design.md) 为准，本文保留本批访问盘点、修复及验证证据，不管理下一阶段优先级。
 
 ## 修复与明确限制
 

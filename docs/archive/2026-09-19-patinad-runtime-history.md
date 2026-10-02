@@ -1,6 +1,6 @@
 # `patinad` 历史设计与验收记录（截至 2026-09-19）
 
-> 已归档：保留原始阶段、失败记录与实验依据，不再作为当前执行计划。文中的“当前”“下一步”“未推送”均为当时状态。当前范围与验收见 [工作清单](../working/2026-07-10-patinad-runtime-design.md)，长期优先级见 [路线](../roadmap-and-prioritization.md)。旧自动脱离 fork 和固定浏览器 UI 优先顺序已被当前路线取代。
+> 已归档：保留原始阶段、失败记录与实验依据，不再作为当前执行计划。文中的“当前”“下一步”“未推送”均为当时状态。当前范围与验收见 [工作清单](../archive/2026-07-10-patinad-runtime-design.md)，长期优先级见 [路线](../roadmap-and-prioritization.md)。旧自动脱离 fork 和固定浏览器 UI 优先顺序已被当前路线取代。
 
 > 状态：Stage 0 至 Stage 2H.2、Stage 2H.3a systemd 诊断、Stage 2H.3b typed daemon client、Stage 2H.3c 写侧 owner 收口，以及 Stage 2H.3d.1/2 和 2H.3d.3a-d 默认 owner 交接均已完成自动验证；Stage 2H.3d.4a-e 已补齐交接诊断、显式重试、登录偏好应用、安全回滚后端和 Quiet Pro 设置控件，当前进入 daemon-backed DEB 实机验证。
 > 生命周期：本设计是当前 `patinad` 实施依据；后台接管稳定完成后移入 `docs/archive/`。

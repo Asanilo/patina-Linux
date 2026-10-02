@@ -1,5 +1,7 @@
 # Linux 平台草稿评估与回流
 
+> 归档（2026-10-02）：平台成果回流、现代 GNOME 和 AppImage 阶段工作已有后续验收，公开 1.9.1 交付见[正式版记录](2026-09-27-appimage-stable-release.md)。本文保留分批历史证据，不再管理发布门槛；后续完成证据见[稳定阶段收口](2026-10-02-stable-closeout.md)。
+
 状态（截至 2026-09-23）：T6 采样/协议/会话识别已进入 `main`；本机已安装本地 beta.21 DEB 候选。无 DEB 的 GNOME 42.9 实际 AppImage 登录、前台记录与正式签名成品的隔离升级/冷登录已通过，细节以本文末节为准。最新公开预发布记录为 beta.20，DEB-only beta 契约未解除；公开 updater 投递、现代 GNOME ESM 和非 Debian 环境尚未验收。下文各阶段记录保留其当时结论，不代表当前待办；下一阶段执行状态见[可持续维护的 Linux 产品版本](2026-09-23-sustainable-linux-release.md)。贡献草稿位于暂停的 `feat/linux-desktop`，基于上游 `80204c73`，不视为可整支合入的实现。
 
 本轮按用户确认的顺序推进主线远端同步、平台模块评估和下一版 beta 准备。分支与产品范围遵循 [路线](../roadmap-and-prioritization.md#linux-main-and-daemon-experiment)，主 Todo 与发布证据由 [当前清单](2026-07-10-patinad-runtime-design.md) 管理。保持贡献 worktree 原状，不整支合并。2026-09-22 用户授权继续扩展生产端及实机/AppImage 验收；本轮先在私有 HOME、D-Bus 和独立 Wayland Shell 中验证候选；随后用户单独授权备份安装扩展，记录见第三片。该阶段未变更生产服务与数据库；后续用户要求继续完成实装，安装及备份记录见本文末尾。

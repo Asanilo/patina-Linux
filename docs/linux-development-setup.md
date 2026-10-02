@@ -33,7 +33,7 @@ When full debugger information is needed temporarily, use `CARGO_PROFILE_DEV_DEB
 
 Installing a DEB replaces files on disk, not necessarily the running daemon. Opening a compatible Desktop also does not automatically restart it. Check the running version, not just the package version.
 
-Daemon-backed Desktop exposes Desktop/Daemon versions in Settings -> Diagnostics and an explicitly confirmed reload action for a completed Production managed-client cutover. The action appears only for a known version difference and an available systemd service-lifecycle capability. It briefly interrupts tracking, uses the existing graceful restart API, and does not download packages or change login preferences. Candidate implementation and installed-version evidence live in the [current daemon checklist](./working/2026-07-10-patinad-runtime-design.md).
+Daemon-backed Desktop exposes Desktop/Daemon versions in Settings -> Diagnostics and an explicitly confirmed reload action for a completed Production managed-client cutover. The action appears only for a known version difference and an available systemd service-lifecycle capability. It briefly interrupts tracking, uses the existing graceful restart API, and does not download packages or change login preferences. Candidate implementation and installed-version evidence live in the [daemon acceptance history](./archive/2026-07-10-patinad-runtime-design.md).
 
 Success requires a completed matching restart ticket, a new daemon instance, the Desktop version, and tracking readiness. Rejected, ambiguous or timed-out requests are not automatically resubmitted; inspect service state before trying again. If the disk still contains a different daemon version, reloading cannot install the missing version. Do not substitute a forced process kill for this flow.
 
@@ -138,7 +138,7 @@ Restoring either storage location may rejoin the shared default directory while 
 
 For an activity-data move, the host stops the managed service, takes a temporary maintenance runtime lease, executes the verified migration, releases that lease, and starts the daemon again. A WebView-only move or cache clear does not stop tracking. The appointment itself leaves the daemon on its original paths until maintenance begins, including when the user chooses to restart later. Unmanaged daemon preview has no service-control contract and rejects these requests.
 
-A private journal in the stable control directory records file promotion and anchor changes. Interrupted migration must recover or finish its recorded operation before a daemon can open the database. Do not manually delete the journal or pending request to bypass a recovery error. Ordinary failures retain the original source and report the concrete reason; current automated and installed evidence is recorded in the [daemon checklist](./working/2026-07-10-patinad-runtime-design.md).
+A private journal in the stable control directory records file promotion and anchor changes. Interrupted migration must recover or finish its recorded operation before a daemon can open the database. Do not manually delete the journal or pending request to bypass a recovery error. Ordinary failures retain the original source and report the concrete reason; current automated and installed evidence is recorded in the [daemon acceptance history](./archive/2026-07-10-patinad-runtime-design.md).
 
 Custom activity storage is fail-closed. If its anchor is invalid, its root is unavailable, or `patina.db` is missing, startup reports the storage error and does not create a database in the default directory. This prevents a missing mount from looking like an empty Patina installation.
 
@@ -399,7 +399,7 @@ Use it only inside a matching isolated GNOME test profile; do not use it on the
 GNOME 42 production session. GNOME 46 and 50 Shell loading and real foreground
 recording have evidence; GNOME 46 also has a production-signed candidate's isolated upgrade. The
 support-matrix and public distribution gates are tracked in the
-[current stage checklist](./working/2026-09-23-sustainable-linux-release.md).
+[completed stage evidence](./archive/2026-09-23-sustainable-linux-release.md).
 
 For stable and dual-bundle `rc` tags, the release workflow publishes a Linux-only `latest.json` with `linux-x86_64-appimage` and `linux-x86_64-deb` package-specific targets. It also keeps an AppImage-based `linux-x86_64` fallback for older clients. AppImage installations download the signed AppImage; Debian installations download the signed `.deb` and may request system authorization before installation.
 
@@ -440,7 +440,7 @@ npm run release:inspect-installed-patinad -- --phase managed --expected-version 
 
 Use `--output /absolute/new-file.json` to retain evidence. The collector creates that file as `0600` and refuses to overwrite an existing path. It never prints the API Token, window titles, or visited URLs; API output is reduced to protocol and capability readiness. It also never installs a package, enables or stops a service, changes owner state, or deletes data.
 
-Supported phases are `baseline`, `installed`, `managed`, `rolled-back`, and `uninstalled`. The authoritative action order and safety gates live in [`working/2026-07-10-patinad-runtime-design.md`](./working/2026-07-10-patinad-runtime-design.md); do not use a passing snapshot as a substitute for the before/after checks around UI exit, service crash, lock/suspend, upgrade, rollback, and uninstall.
+Supported phases are `baseline`, `installed`, `managed`, `rolled-back`, and `uninstalled`. Use the [release policy](./versioning-and-release-policy.md) and the scenario procedures in this document for current gates; the [daemon archive](./archive/2026-07-10-patinad-runtime-design.md) contains historical evidence only; do not use a passing snapshot as a substitute for the before/after checks around UI exit, service crash, lock/suspend, upgrade, rollback, and uninstall.
 
 ### Isolated Systemd Restore Acceptance
 
@@ -471,7 +471,8 @@ It creates a private D-Bus and Secret Service with synthetic credentials under t
 `check:full` does not run Rust `#[ignore]` tests. Select a named test only when
 the changed behavior and its environment match; never run all ignored tests in
 the normal user session. Candidate status, versions, and evidence belong in the
-[daemon checklist](./working/2026-07-10-patinad-runtime-design.md), not this procedure.
+active execution document listed in the [documentation map](./README.md#current-work),
+not this procedure or a completed archive.
 
 | Changed behavior | Named test / entry point | Preconditions and limits |
 | --- | --- | --- |
