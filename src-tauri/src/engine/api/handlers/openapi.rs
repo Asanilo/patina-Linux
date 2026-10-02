@@ -170,6 +170,7 @@ fn paths(surface: ApiSurface) -> Value {
             )
         },
         "/api/v1/settings/classification": {
+            "get": get_operation("Read a bounded, credential-free classification configuration snapshot and revision.", "ClassificationSnapshotResponse"),
             "post": post_operation(
                 "Commit a validated batch of classification setting mutations.",
                 vec![],
@@ -268,6 +269,9 @@ fn paths(surface: ApiSurface) -> Value {
         }
     });
     let object = paths.as_object_mut().expect("OpenAPI paths object");
+    object.insert("/api/v1/settings/classification/conditional".into(), json!({
+        "post": post_operation("Commit classification changes only if expected_revision still matches. Returns 409 on conflict; never retry automatically.", vec![], "ConditionalClassificationMutationsRequest", "ClassificationCommitResponse")
+    }));
     object.insert(
         "/api/v1/activity/daily-apps".to_string(),
         json!({"get": get_operation_with_parameters(
@@ -578,6 +582,7 @@ fn schemas() -> Value {
                     "app-settings",
                     "backup-restore",
                     "classification",
+                    "classification-conditional",
                     "data-maintenance",
                     "local-api-configuration",
                     "remote-backup",
@@ -1655,6 +1660,44 @@ fn schemas() -> Value {
             ("key", bounded_string_schema(1, 256)),
             ("value", bounded_string_schema(0, 4096)),
         ]),
+    );
+    let revision_schema =
+        json!({"type":"string", "pattern":"^[0-9a-f]{64}$", "minLength":64, "maxLength":64});
+    schemas.get_mut("ClassificationMutationsRequest").unwrap()["properties"]["expected_revision"] =
+        revision_schema.clone();
+    schemas.insert(
+        "ConditionalClassificationMutationsRequest".into(),
+        object_schema(vec![
+            ("expected_revision", revision_schema.clone()),
+            (
+                "mutations",
+                bounded_array_schema(schema_ref("ClassificationMutationRequest"), 256),
+            ),
+        ]),
+    );
+    schemas.insert(
+        "ClassificationSnapshotResponse".into(),
+        envelope(object_schema(vec![
+            ("revision", revision_schema.clone()),
+            ("sampled_at_ms", integer_schema()),
+            (
+                "entries",
+                bounded_array_schema(
+                    object_schema(vec![
+                        ("key", bounded_string_schema(1, 256)),
+                        ("value", bounded_string_schema(0, 4096)),
+                    ]),
+                    patina_protocol::configuration::MAX_CLASSIFICATION_ENTRIES,
+                ),
+            ),
+        ])),
+    );
+    schemas.insert(
+        "ClassificationCommitResponse".into(),
+        envelope(object_schema(vec![
+            ("ok", json!({"type":"boolean", "const":true})),
+            ("revision", revision_schema),
+        ])),
     );
     schemas.insert(
         "AppSettingsMutationsRequest".to_string(),

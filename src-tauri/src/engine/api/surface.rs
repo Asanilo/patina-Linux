@@ -14,6 +14,14 @@ pub struct ApiEndpoint {
 const DESKTOP_ENDPOINTS: &[ApiEndpoint] = &[
     ApiEndpoint {
         method: "GET",
+        path: "/api/v1/settings/classification",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/settings/classification/conditional",
+    },
+    ApiEndpoint {
+        method: "GET",
         path: "/api/v1/activity/daily-apps",
     },
     ApiEndpoint {
@@ -125,6 +133,10 @@ const DESKTOP_ENDPOINTS: &[ApiEndpoint] = &[
 const DAEMON_READ_ONLY_ENDPOINTS: &[ApiEndpoint] = &[
     ApiEndpoint {
         method: "GET",
+        path: "/api/v1/settings/classification",
+    },
+    ApiEndpoint {
+        method: "GET",
         path: "/api/v1/activity/daily-apps",
     },
     ApiEndpoint {
@@ -214,6 +226,14 @@ const DAEMON_READ_ONLY_ENDPOINTS: &[ApiEndpoint] = &[
 ];
 
 const DAEMON_TRACKING_ENDPOINTS: &[ApiEndpoint] = &[
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/settings/classification",
+    },
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/settings/classification/conditional",
+    },
     ApiEndpoint {
         method: "GET",
         path: "/api/v1/activity/daily-apps",
@@ -472,13 +492,19 @@ const DAEMON_TRACKING_ENDPOINTS: &[ApiEndpoint] = &[
     },
 ];
 
-const DESKTOP_WRITE_OPERATIONS: &[&str] = &["app-mapping", "classification", "tracker-settings"];
+const DESKTOP_WRITE_OPERATIONS: &[&str] = &[
+    "app-mapping",
+    "classification",
+    "classification-conditional",
+    "tracker-settings",
+];
 const DAEMON_TRACKING_WRITE_OPERATIONS: &[&str] = &[
     "activity-import",
     "app-mapping",
     "app-settings",
     "backup-restore",
     "classification",
+    "classification-conditional",
     "data-maintenance",
     "local-api-configuration",
     "remote-backup",
@@ -570,7 +596,9 @@ mod tests {
 
     #[test]
     fn desktop_surface_keeps_shared_client_method_and_path_set() {
-        assert_eq!(ApiSurface::Desktop.endpoints().len(), 27);
+        assert_eq!(ApiSurface::Desktop.endpoints().len(), 29);
+        assert!(ApiSurface::Desktop.allows("GET", "/api/v1/settings/classification"));
+        assert!(ApiSurface::Desktop.allows("POST", "/api/v1/settings/classification/conditional"));
         assert!(ApiSurface::Desktop.allows("GET", "/api/v1/activity/daily-apps"));
         assert!(!ApiSurface::Desktop.allows("POST", "/api/v1/activity/daily-apps"));
         assert!(ApiSurface::Desktop.allows("GET", "/api/v1/classification/observed-apps"));
@@ -607,6 +635,9 @@ mod tests {
             .all(|endpoint| endpoint.method == "GET"));
         assert!(ApiSurface::DaemonReadOnly.allows("GET", "/api/v1/capabilities"));
         assert!(ApiSurface::DaemonReadOnly.allows("GET", "/api/v1/events"));
+        assert!(ApiSurface::DaemonReadOnly.allows("GET", "/api/v1/settings/classification"));
+        assert!(!ApiSurface::DaemonReadOnly
+            .allows_request("POST", "/api/v1/settings/classification/conditional"));
         assert!(!ApiSurface::DaemonReadOnly.allows_request("POST", "/api/v1/apps/ghostty/rename"));
         assert!(ApiSurface::Desktop.allows_request("POST", "/api/v1/apps/ghostty/rename"));
         assert!(!ApiSurface::Desktop.allows_request("POST", "/api/v1/apps/ghostty/not-rename"));
@@ -679,6 +710,7 @@ mod tests {
                 "app-settings",
                 "backup-restore",
                 "classification",
+                "classification-conditional",
                 "data-maintenance",
                 "local-api-configuration",
                 "remote-backup",

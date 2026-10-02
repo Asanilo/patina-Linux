@@ -1,15 +1,11 @@
 use sqlx::{Pool, Sqlite};
 
+mod snapshot;
+pub use snapshot::load_classification_snapshot;
+
 const APP_OVERRIDE_KEY_PREFIX: &str = "__app_override::";
 const WEB_DOMAIN_OVERRIDE_KEY_PREFIX: &str = "__web_domain_override::";
-const CATEGORY_COLOR_OVERRIDE_KEY_PREFIX: &str = "__category_color_override::";
-const CATEGORY_LABEL_OVERRIDE_KEY_PREFIX: &str = "__category_label_override::";
-const CATEGORY_DEFAULT_COLOR_ASSIGNMENT_KEY_PREFIX: &str = "__category_default_color_assignment::";
-const CUSTOM_CATEGORY_KEY_PREFIX: &str = "__custom_category::";
-const DELETED_CATEGORY_KEY_PREFIX: &str = "__deleted_category::";
-const MIGRATION_KEY_PREFIX: &str = "__classification_manual_confirmation_migration::";
-const MAX_SETTING_KEY_LEN: usize = 256;
-const MAX_SETTING_VALUE_LEN: usize = 4096;
+use patina_protocol::configuration::MAX_CLASSIFICATION_VALUE_BYTES as MAX_SETTING_VALUE_LEN;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClassificationSettingMutation {
@@ -31,6 +27,19 @@ pub async fn commit_classification_setting_mutations(
         .await
         .map_err(|error| format!("failed to start classification settings transaction: {error}"))?;
 
+    apply_mutations(&mut tx, mutations).await?;
+
+    tx.commit().await.map_err(|error| {
+        format!("failed to commit classification settings transaction: {error}")
+    })?;
+
+    Ok(())
+}
+
+async fn apply_mutations(
+    connection: &mut sqlx::SqliteConnection,
+    mutations: &[ClassificationSettingMutation],
+) -> Result<(), String> {
     for mutation in mutations {
         if let Some(value) = &mutation.value {
             sqlx::query(
@@ -39,23 +48,70 @@ pub async fn commit_classification_setting_mutations(
             )
             .bind(&mutation.key)
             .bind(value)
-            .execute(&mut *tx)
+            .execute(&mut *connection)
             .await
             .map_err(|error| format!("failed to save classification setting: {error}"))?;
         } else {
             sqlx::query("DELETE FROM settings WHERE key = ?")
                 .bind(&mutation.key)
-                .execute(&mut *tx)
+                .execute(&mut *connection)
                 .await
                 .map_err(|error| format!("failed to delete classification setting: {error}"))?;
         }
     }
 
-    tx.commit().await.map_err(|error| {
-        format!("failed to commit classification settings transaction: {error}")
-    })?;
-
     Ok(())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ConditionalCommitError {
+    Conflict,
+    InvalidInput(String),
+    Storage(String),
+}
+
+/// The write lock is acquired before computing the expected state, so two
+/// conditional writers cannot both accept the same revision and lose an edit.
+pub async fn commit_classification_if_revision(
+    pool: &Pool<Sqlite>,
+    mutations: &[ClassificationSettingMutation],
+    expected_revision: &str,
+    sampled_at_ms: i64,
+) -> Result<patina_protocol::configuration::ClassificationCommitResult, ConditionalCommitError> {
+    use ConditionalCommitError::{Conflict, InvalidInput, Storage};
+    if !patina_protocol::configuration::is_revision(expected_revision)
+        || mutations.len() > patina_protocol::configuration::MAX_CLASSIFICATION_MUTATIONS
+    {
+        return Err(InvalidInput(
+            "invalid classification revision or mutation count".into(),
+        ));
+    }
+    validate_classification_setting_mutations(mutations).map_err(InvalidInput)?;
+    tokio::time::timeout(snapshot::CONFIGURATION_TIMEOUT, async {
+        let mut tx = pool
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(|e| Storage(format!("classification write transaction failed: {e}")))?;
+        let before = snapshot::read_snapshot(&mut tx, sampled_at_ms)
+            .await
+            .map_err(Storage)?;
+        if before.revision != expected_revision {
+            return Err(Conflict);
+        }
+        apply_mutations(&mut tx, mutations).await.map_err(Storage)?;
+        let after = snapshot::read_snapshot(&mut tx, sampled_at_ms)
+            .await
+            .map_err(Storage)?;
+        tx.commit()
+            .await
+            .map_err(|e| Storage(format!("classification commit failed: {e}")))?;
+        Ok(patina_protocol::configuration::ClassificationCommitResult {
+            ok: true,
+            revision: Some(after.revision),
+        })
+    })
+    .await
+    .map_err(|_| Storage("classification commit exceeded its time budget".into()))?
 }
 
 pub fn validate_classification_setting_mutations(
@@ -101,23 +157,11 @@ fn validate_classification_setting_mutation(
 }
 
 fn is_allowed_classification_setting_key(key: &str) -> bool {
-    if key.is_empty() || key.len() > MAX_SETTING_KEY_LEN {
-        return false;
-    }
-
-    [
-        APP_OVERRIDE_KEY_PREFIX,
-        WEB_DOMAIN_OVERRIDE_KEY_PREFIX,
-        CATEGORY_COLOR_OVERRIDE_KEY_PREFIX,
-        CATEGORY_LABEL_OVERRIDE_KEY_PREFIX,
-        CATEGORY_DEFAULT_COLOR_ASSIGNMENT_KEY_PREFIX,
-        CUSTOM_CATEGORY_KEY_PREFIX,
-        DELETED_CATEGORY_KEY_PREFIX,
-        MIGRATION_KEY_PREFIX,
-    ]
-    .iter()
-    .any(|prefix| key.starts_with(prefix) && key.len() > prefix.len())
+    patina_protocol::configuration::is_classification_key(key)
 }
+
+#[cfg(test)]
+mod snapshot_tests;
 
 #[cfg(test)]
 mod tests {

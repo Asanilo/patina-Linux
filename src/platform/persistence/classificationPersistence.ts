@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getDB } from "./sqlite.ts";
+import { CLASSIFICATION_PREFIXES, isClassificationKey, loadClassificationSnapshot } from "./classificationSnapshot.ts";
 
 export interface SettingKeyValueRow {
   key: string;
@@ -26,28 +27,17 @@ export interface ObservedSessionStatRow {
 }
 
 export async function loadSettingValue(key: string): Promise<string | null> {
-  const db = await getDB();
-  const rows = await db.select<{ value: string }[]>(
-    "SELECT value FROM settings WHERE key = ? LIMIT 1",
-    [key],
-  );
-  return rows[0]?.value ?? null;
+  if (!isClassificationKey(key)) throw new Error("Unsupported classification configuration key");
+  return (await loadClassificationSnapshot()).entries.find((entry) => entry.key === key)?.value ?? null;
 }
 
 export async function loadSettingRowsByKeyPrefix(keyPrefix: string): Promise<SettingKeyValueRow[]> {
-  const db = await getDB();
-  return db.select<SettingKeyValueRow[]>(
-    "SELECT key, value FROM settings WHERE key LIKE ?",
-    [`${keyPrefix}%`],
-  );
+  if (!CLASSIFICATION_PREFIXES.some((prefix) => prefix === keyPrefix)) throw new Error("Unsupported classification namespace");
+  return (await loadClassificationSnapshot()).entries.filter((entry) => entry.key.startsWith(keyPrefix));
 }
 
 export async function loadSettingKeysByKeyPrefix(keyPrefix: string): Promise<SettingKeyRow[]> {
-  const db = await getDB();
-  return db.select<SettingKeyRow[]>(
-    "SELECT key FROM settings WHERE key LIKE ?",
-    [`${keyPrefix}%`],
-  );
+  return (await loadSettingRowsByKeyPrefix(keyPrefix)).map(({ key }) => ({ key }));
 }
 
 export async function loadDistinctSessionExeNames(): Promise<SessionExeNameRow[]> {

@@ -1,6 +1,7 @@
 //! Loopback-only client transport shared by native Patina clients.
 //! This crate does not discover credentials, touch storage, or own tracking.
 //! Hosts negotiate capabilities before using runtime data. Writes are never retried.
+mod configuration;
 mod error;
 pub mod events;
 pub mod state;

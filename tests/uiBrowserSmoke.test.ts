@@ -156,6 +156,12 @@ function tauriStubFor(path: string) {
       }
 
       export async function invoke(command, payload = {}) {
+        if (command === "cmd_get_classification_snapshot") {
+          const prefixes = ["__app_override::", "__web_domain_override::", "__category_color_override::", "__category_label_override::", "__category_default_color_assignment::", "__custom_category::", "__deleted_category::", "__classification_manual_confirmation_migration::"];
+          const entries = Object.entries(loadStoredSettings()).filter(([key]) => prefixes.some(prefix => key.startsWith(prefix) && key.length > prefix.length))
+            .map(([key, value]) => ({ key, value: String(value) })).sort((a,b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+          return { revision: "0".repeat(64), sampled_at_ms: Date.now(), entries };
+        }
         if (command === "cmd_pick_backup_file") {
           window.__backupPickCalls = (window.__backupPickCalls || 0) + 1;
           return "/tmp/synthetic-backup.zip";

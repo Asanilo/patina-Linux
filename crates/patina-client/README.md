@@ -8,6 +8,16 @@ runtime event and alert types also share that protocol source. The remaining
 domain-specific typed methods are still in the Desktop facade. This is a client
 foundation, not a complete multi-client SDK or a TUI.
 
+`classification_snapshot()` reads a bounded configuration snapshot with a content
+revision. `commit_classification(revision, mutations)` negotiates the
+`classification-conditional` capability and uses its separate conditional endpoint.
+An old server cannot silently treat this as an unconditional write. Conflicts
+return HTTP 409 to the caller without automatic retry or rebase; a successful
+commit returns the new revision. Configuration reads expose only the documented
+classification namespaces, never arbitrary settings or credentials. These are
+configuration wire types; classification rules and activity read models still
+need further migration to the backend.
+
 The host supplies the port and credential. Requests only target `127.0.0.1`, do
 not use environment proxies or follow redirects, have time and response-size
 limits, and never automatically retry writes. Negotiate capabilities before

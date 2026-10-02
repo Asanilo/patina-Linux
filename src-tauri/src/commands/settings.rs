@@ -283,3 +283,21 @@ pub async fn cmd_commit_classification_settings(
 
     commit_classification_setting_mutations_with_recovery(&app, &mutations).await
 }
+
+#[tauri::command]
+pub async fn cmd_get_classification_snapshot(
+    app: AppHandle,
+) -> Result<patina_protocol::configuration::ClassificationSnapshot, String> {
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        return client
+            .classification_snapshot()
+            .await
+            .map_err(|e| e.to_string());
+    }
+    let pool = crate::data::sqlite_pool::wait_for_sqlite_pool(&app).await?;
+    crate::data::repositories::classification_settings::load_classification_snapshot(
+        &pool,
+        crate::app::runtime::now_ms().min(i64::MAX as u64) as i64,
+    )
+    .await
+}

@@ -131,6 +131,78 @@ async fn independent_and_desktop_clients_observe_the_same_committed_classificati
     assert!(replay.id.parse::<u64>().unwrap() > native_event.id.parse::<u64>().unwrap());
     let refreshed: Value = another.get_json("/api/v1/apps", "apps").await.unwrap();
     assert_eq!(refreshed["apps"][0]["display_name"], "Updated fixture");
+
+    // The complete configuration is a public, versioned read, not a Desktop SQL shortcut.
+    sqlx::query("INSERT INTO settings(key,value) VALUES('local_api_token','sensitive-fixture')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let baseline = native.classification_snapshot().await.unwrap();
+    assert!(!serde_json::to_string(&baseline)
+        .unwrap()
+        .contains("sensitive-fixture"));
+    let desktop_configuration = desktop.classification_snapshot().await.unwrap();
+    assert_eq!(baseline.revision, desktop_configuration.revision);
+    assert_eq!(baseline.entries, desktop_configuration.entries);
+    let mut conditional_events = another.open_runtime_event_stream(None).await.unwrap();
+    let result = native
+        .commit_classification(
+            &baseline.revision,
+            vec![
+                patina_protocol::configuration::ClassificationMutationRequest {
+                    key: "__category_label_override::office".into(),
+                    value: Some("Office".into()),
+                },
+            ],
+        )
+        .await
+        .unwrap();
+    let conflict = another
+        .commit_classification(
+            &baseline.revision,
+            vec![
+                patina_protocol::configuration::ClassificationMutationRequest {
+                    key: "__category_label_override::music".into(),
+                    value: Some("Lost edit".into()),
+                },
+            ],
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        conflict,
+        patina_client::ClientError::Http { status: 409, .. }
+    ));
+    let committed = another.classification_snapshot().await.unwrap();
+    assert_eq!(Some(committed.revision), result.revision);
+    assert!(!committed
+        .entries
+        .iter()
+        .any(|entry| entry.value == "Lost edit"));
+    let notice = tokio::time::timeout(Duration::from_secs(1), conditional_events.next_event())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(matches!(notice, PatinadStreamEvent::Runtime(_)));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), conditional_events.next_event())
+            .await
+            .is_err()
+    );
+    let missing_precondition = native
+        .post_ack(
+            "/api/v1/settings/classification/conditional",
+            &json!({"mutations":[]}),
+            "conditional update",
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        missing_precondition,
+        patina_client::ClientError::Http { status: 400, .. }
+    ));
+    drop(conditional_events);
     drop(reconnected);
     drop(desktop_events);
     shutdown.shutdown();

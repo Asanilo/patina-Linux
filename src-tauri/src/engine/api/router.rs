@@ -101,6 +101,12 @@ pub(crate) async fn route_request(
         ("POST", "/api/v1/settings/classification") => {
             handlers::classification::commit_classification_settings(context, body).await
         }
+        ("GET", "/api/v1/settings/classification") => {
+            handlers::classification::get_classification_snapshot(context).await
+        }
+        ("POST", "/api/v1/settings/classification/conditional") => {
+            handlers::classification::commit_conditional(context, body).await
+        }
         ("POST", "/api/v1/settings/app") => {
             handlers::app_settings::commit_app_settings(context, body).await
         }

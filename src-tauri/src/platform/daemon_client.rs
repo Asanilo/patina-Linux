@@ -162,10 +162,19 @@ impl PatinadClient {
     ) -> Result<(), PatinadClientError> {
         self.post_ack(
             "/api/v1/settings/classification",
-            &ClassificationMutationsRequest { mutations },
+            &ClassificationMutationsRequest {
+                mutations,
+                expected_revision: None,
+            },
             "classification settings update",
         )
         .await
+    }
+
+    pub async fn classification_snapshot(
+        &self,
+    ) -> Result<patina_protocol::configuration::ClassificationSnapshot, PatinadClientError> {
+        self.transport.classification_snapshot().await
     }
 
     pub async fn commit_app_settings(

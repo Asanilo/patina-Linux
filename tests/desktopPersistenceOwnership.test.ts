@@ -33,7 +33,11 @@ function captureInvocations(handler?: (call: Invocation) => unknown): Invocation
   mockIPC((command, args) => {
     const call = { command, args: args as Record<string, unknown> | undefined };
     calls.push(call);
-    return handler?.(call);
+    const result = handler?.(call);
+    if (command === "cmd_get_classification_snapshot" && Array.isArray(result)) {
+      return { revision: "0".repeat(64), sampled_at_ms: 1, entries: result.map((row) => ({ value: "1", ...row })) };
+    }
+    return result;
   });
   return calls;
 }
@@ -116,7 +120,7 @@ try {
 
   await runTest("reading deleted categories cleans invalid legacy entries through the owner", async () => {
     const calls = captureInvocations(({ command }) => {
-      if (command === "plugin:sql|select") return [
+      if (command === "cmd_get_classification_snapshot") return [
         { key: "__deleted_category::music" },
         { key: "__deleted_category::system" },
         { key: "__deleted_category::custom:category_old" },
@@ -125,7 +129,7 @@ try {
     });
     assert.deepEqual(await loadDeletedCategories(), ["music"]);
     assert.deepEqual(calls.map((call) => call.command), [
-      "plugin:sql|select", "cmd_commit_classification_settings",
+      "cmd_get_classification_snapshot", "cmd_commit_classification_settings",
     ]);
     assert.deepEqual(calls[1].args, { mutations: [
       { key: "__deleted_category::system", value: null },
@@ -136,27 +140,27 @@ try {
   await runTest("legacy cleanup propagates unavailable owner instead of writing locally", async () => {
     const failure = new Error("daemon unavailable");
     const calls = captureInvocations(({ command }) => {
-      if (command === "plugin:sql|select") return [{ key: "__deleted_category::system" }];
+      if (command === "cmd_get_classification_snapshot") return [{ key: "__deleted_category::system" }];
       if (command === "cmd_commit_classification_settings") throw failure;
       return undefined;
     });
     await assert.rejects(loadDeletedCategories(), (error: unknown) => error === failure);
     assert.deepEqual(calls.map((call) => call.command), [
-      "plugin:sql|select", "cmd_commit_classification_settings",
+      "cmd_get_classification_snapshot", "cmd_commit_classification_settings",
     ]);
   });
 
-  await runTest("corrupt unaddressable category keys are ignored without bypassing owner validation", async () => {
+  await runTest("corrupt owner snapshot keys are rejected without bypassing owner validation", async () => {
     const calls = captureInvocations(({ command }) => {
-      if (command === "plugin:sql|select") return [
+      if (command === "cmd_get_classification_snapshot") return [
         { key: "__deleted_category::music" },
         { key: "__deleted_category::" },
         { key: `__deleted_category::${"无".repeat(100)}` },
       ];
       return undefined;
     });
-    assert.deepEqual(await loadDeletedCategories(), ["music"]);
-    assert.deepEqual(calls.map((call) => call.command), ["plugin:sql|select"]);
+    await assert.rejects(loadDeletedCategories(), /Invalid classification configuration entry/);
+    assert.deepEqual(calls.map((call) => call.command), ["cmd_get_classification_snapshot"]);
   });
 
   await runTest("website deletion normalizes the domain and calls the owner once", async () => {

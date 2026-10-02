@@ -2,6 +2,7 @@ use std::fmt;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ClientError {
+    UnsupportedCapability(String),
     InvalidConfiguration(String),
     Unreachable(String),
     Unauthorized,
@@ -26,6 +27,7 @@ pub enum ClientError {
 impl ClientError {
     pub fn code(&self) -> &'static str {
         match self {
+            Self::UnsupportedCapability(_) => "unsupported-capability",
             Self::InvalidConfiguration(_) => "invalid-configuration",
             Self::Unreachable(_) => "unreachable",
             Self::Unauthorized => "unauthorized",
@@ -43,6 +45,7 @@ impl ClientError {
 impl fmt::Display for ClientError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::UnsupportedCapability(capability) => write!(formatter, "patinad does not support capability `{capability}`"),
             Self::InvalidConfiguration(message)
             | Self::Unreachable(message)
             | Self::InvalidResponse(message) => formatter.write_str(message),

@@ -1399,6 +1399,51 @@ Body:
 
 The tracking owner observes this persisted state on its next loop, seals active activity when paused, and publishes a refresh event.
 
+### `GET /api/v1/settings/classification`
+
+Returns one consistent classification configuration snapshot on Desktop and both
+daemon surfaces. This capability is implemented on the multi-client development
+branch; the installed 1.9.2 daemon does not provide it.
+
+`data` contains `revision` (64 lowercase hexadecimal characters), `sampled_at_ms`,
+and `entries` (`key` / `value` strings sorted by key). The revision hashes the
+configuration content, excluding the sampling time; it is not an SSE sequence or
+a monotonic edit counter. A no-op or a return to identical content can have the
+same revision.
+
+Only these exact namespaces are included: `__app_override::`,
+`__web_domain_override::`, `__category_color_override::`,
+`__category_label_override::`, `__category_default_color_assignment::`,
+`__custom_category::`, `__deleted_category::`, and
+`__classification_manual_confirmation_migration::`. Other settings and credentials
+are excluded. Values retain their existing stored representation; this is not a
+normalized activity or category read model.
+
+The owner enforces 20,000 scanned classification rows, 256 UTF-8 bytes per key,
+4,096 bytes per value, a 4 MiB encoded-response budget and a five-second operation
+timeout. Historical keys with an empty suffix or excessive key length are ignored,
+matching the legacy reader, but still count toward the scan budget. Other budget
+failures return an error without partial data. Reads never repair or migrate rows.
+Desktop uses the same owner through `cmd_get_classification_snapshot`, with no SQL
+fallback when the daemon is unavailable or too old.
+
+### `POST /api/v1/settings/classification/conditional`
+
+Requires the `classification-conditional` write capability and an object with
+`expected_revision` from a prior snapshot and `mutations` in the format below.
+The owner acquires a SQLite write lock before comparing the content revision.
+A mismatch returns HTTP 409 without writing or publishing a change event. A
+successful transaction returns `{ "data": { "ok": true, "revision": "…" } }`.
+The resulting snapshot must fit the read budgets or the entire transaction rolls
+back. A nonempty committed batch publishes `tracking-data-changed` with the
+classification reason; clients then reload snapshots.
+
+The revision is required on this separate endpoint. Clients must not fall back to
+the legacy unconditional endpoint or automatically reload/retry a conflicting or
+ambiguous write. The SDK verifies the capability before sending the request;
+the distinct route also prevents a legacy daemon from silently ignoring the
+precondition after a server change. Read-only daemon surfaces reject the write.
+
 ### `POST /api/v1/settings/classification`
 
 This endpoint is for the desktop classification editor and other trusted local clients that already hold explicit user intent. It accepts at most 256 mutations and only classification key prefixes validated by the data owner.
@@ -1411,6 +1456,10 @@ curl -s -X POST "$PATINA_API_BASE/api/v1/settings/classification" \
 ```
 
 `value: null` deletes the key. Invalid keys or malformed override JSON reject the whole batch before any write; valid batches commit in one transaction.
+
+This legacy endpoint remains unconditional when `expected_revision` is absent.
+The development implementation also understands the optional precondition, but
+new clients requiring conflict protection must use the separate conditional route.
 
 ### `POST /api/v1/settings/app`
 

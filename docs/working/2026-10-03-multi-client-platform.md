@@ -55,7 +55,7 @@ HTTP API 索引和源码以当前实现为准；索引中历史的 unreleased/st
 | --- | --- | --- | --- |
 | M0 | 工作区、缺口表、owner 决策、阶段计划与长期规则 | 新会话能准确继续；稳定 main 不受开发影响 | 已完成 |
 | M1 | 独立 Rust 传输／协议基础，Desktop 接入；同步契约和 SDK 回归 | 第二个非 Tauri 进程可使用相同连接基础；请求、错误和 SSE 帧只有一份传输实现；通用重连／快照协调从宿主提取 | M1a、M1b 已实现并验证 |
-| M2 | 以“今天 → 应用／网页详情 → 历史”为切片，补最小读 API，迁移 Tauri；统一产品配置读取 | Tauri 作为标准客户端完成核心链路，统计规则由后端负责 | 待实施 |
+| M2 | 以“今天 → 应用／网页详情 → 历史”为切片，补最小读 API，迁移 Tauri；统一产品配置读取 | Tauri 作为标准客户端完成核心链路，统计规则由后端负责 | M2a 已完成；活动读模型与普通设置仍待迁移 |
 | M3 | 浏览器会话和适配层；共享 React 核心界面，复用 Quiet Pro | Tauri＋Web 并行读取／修改分类并同步，真实浏览器验收 | 待实施 |
 | M4 | Rust SDK typed 能力逐步补全，TUI 接入同一核心链路 | 实际交互式 TUI 可查看／筛选／修改分类，并参与同步；CLI 示例不算完成 | 待实施 |
 | M5 | GPUI 客户端，同一能力和同步契约，独立视图 | 可运行 GPUI 核心链路和四端同步验收；评估启动、资源和维护成本 | 待实施 |
@@ -111,3 +111,26 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - Dashboard／History／destination 仍读取 `sessionReadRepository.ts`、`webActivityRepository.ts`；`sessionReadCompiler.ts` 仍承担活动归一化、合并、标题和部分显示语义。服务端 `/sessions` 只返回已封口原生记录，不能直接冒充完整客户端历史接口。
 - 产品配置读取、业务 DTO 与精确历史／聚合读契约需继续补齐。现有 Summary 的导入来源分类与 Desktop 手动分类、live 截止等语义必须逐项对照，不能仅把 SQL 搬到 HTTP 就宣称四端统计一致。
 - 后端独立构建／安装仍未完成；后续基础收口应包含它的依赖核对与适用实现，不以 SDK 独立构建替代。新 UI 实施前再讨论具体客户端功能与交互范围。
+
+### M2a 执行设计：分类配置读取与条件提交
+
+- 配置读取 owner 为 `data/repositories/classification_settings`，提供固定分类命名空间的完整、有界、一致快照。`GET /api/v1/settings/classification` 与 Desktop command 共用此实现，不开放任意 key／SQL 查询，不返回 API／桥接／远端密码等配置。
+- 先保留现有分类配置 key/value 的兼容表示，避免同时更改分类规则；这是明确的配置契约，不代表其解析、历史统计与展示业务已经全部统一。规范化产品读模型继续在 M2 后续处理。
+- 快照 revision 为按确定顺序、长度分隔的配置字节计算的内容摘要，不是事件序号。`POST /api/v1/settings/classification/conditional` 必须携带 `expected_revision`，在取得 SQLite 写锁后的同一事务中比较，不匹配返回 409；旧写入口仍兼容无条件提交。SDK 先检查 `classification-conditional` capability，再使用独立端点，防止旧 daemon 忽略新字段后无条件覆盖。客户端不得自动重试冲突写入。
+- 现有 Desktop 的分类配置读取改走该 command／SDK，失败不回退 SQL；不缓存跨版本快照，不加入新的冲突交互。历史迁移仍通过现有显式写边界，GET 不修复、不迁移数据。
+- API、共享 Rust 协议／SDK、现有 Desktop 适配和 OpenAPI 一起交付；用真实 API 验证双客户端冲突、事务不部分写入、订阅通知，以及敏感配置隔离和超限失败。
+
+### M2a 核验结果
+
+- 分类与网页域名配置读取已从前端 SQL 转为 owner 快照；固定命名空间、UTF-8 字节预算、JSON 转义后的响应预算及五秒超时均由后端执行。异常不返回部分配置。历史无效 key 只忽略，不在 GET 中修复或删除。
+- 共享协议／SDK 已提供快照和条件提交，旧写接口保留。独立端点拒绝缺少前置 revision 的请求；冲突无写入、无变更事件。现有 Desktop 编辑交互仍使用原无条件写流程，不能宣称它已有冲突处理 UI。
+- 真实 API＋SQLite 契约验证独立 SDK 与 Desktop 读到相同配置、成功提交后的事件、陈旧 revision 的 409，以及敏感配置不泄露。文件 WAL 数据库的双连接并发测试证明同一 revision 的不同编辑最多一个提交成功；结果超限则回滚。
+- `check:full` 的前端／SDK 部分通过：57 个 TypeScript 测试文件、38 项浏览器回归、构建／bundle、27 项 SDK 测试及依赖图／Clippy。产品 Rust 初轮仅旧路由数量断言失败；补上新增 GET／条件 POST 断言后，完整 `check:rust` 通过：727 passed / 21 ignored、cargo check、边界检查和 Clippy。未重复已通过且未变化的前端门禁。
+- 证据保存于本 worktree `tmp/acceptance/multi-client-m2a/`。本批未安装、打包、推送、合并 main 或发布。正在使用的 1.9.2 daemon 不具备新快照接口；开发验收使用新源码的隔离服务测试。
+
+### 下一读取切片的约束
+
+- 先统一后端产品分类语义：沿用 Desktop 的手动分类、禁用 override、已删除分类回落、别名与排除；旧 Summary 的导入来源分类不是 Desktop 已确认分类。需要共享夹具对照，不直接更改旧 API 的兼容语义后宣称迁移完成。
+- 活跃会话的可信截止由后端给出。现有 TS 健康状态裁剪与 API sampled time 要对齐，验证断连／挂起／陈旧 heartbeat，不能将客户端墙钟当作持续记录证据。
+- 新读接口应返回有界产品快照，事实、分类与排除从同一事务读取；复用已有 Rust 原生／精确导入／小时汇总优先级和 daily 聚合。History／详情只使用精确事实，标题和隐私单独预算。
+- Desktop 接入每个切片后退出对应 SQL 与重复业务规则；未迁移的路径继续具名列出。独立后端构建／安装、普通设置同步和客户端本地偏好分离仍是基础阶段未完成项。

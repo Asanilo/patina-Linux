@@ -1,6 +1,7 @@
 //! Wire types shared by the server and independent clients. No runtime dependencies.
 use serde::{Deserialize, Serialize};
 
+pub mod configuration;
 pub mod events;
 pub const EVENT_INSTANCE_HEADER: &str = "x-patina-event-instance";
 

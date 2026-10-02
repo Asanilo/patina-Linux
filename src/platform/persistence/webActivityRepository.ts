@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getDB } from "./sqlite.ts";
+import { loadSettingRowsByKeyPrefix } from "./classificationPersistence.ts";
 import type {
   ObservedWebDomainCandidate,
   WebActivitySegment,
@@ -28,11 +29,6 @@ interface RawObservedWebDomainStatRow {
   last_seen_ms: number;
   favicon_url: string | null;
   title: string | null;
-}
-
-interface RawSettingRow {
-  key: string;
-  value: string;
 }
 
 const WEB_DOMAIN_OVERRIDE_KEY_PREFIX = "__web_domain_override::";
@@ -152,11 +148,7 @@ export async function loadObservedWebDomainStats(
 }
 
 export async function loadWebDomainOverrides(): Promise<Record<string, WebDomainOverride>> {
-  const db = await getDB();
-  const rows = await db.select<RawSettingRow[]>(
-    "SELECT key, value FROM settings WHERE key LIKE ?",
-    [`${WEB_DOMAIN_OVERRIDE_KEY_PREFIX}%`],
-  );
+  const rows = await loadSettingRowsByKeyPrefix(WEB_DOMAIN_OVERRIDE_KEY_PREFIX);
   const overrides: Record<string, WebDomainOverride> = {};
 
   for (const row of rows) {

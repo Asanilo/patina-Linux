@@ -149,16 +149,9 @@ pub struct StartPomodoroRequest {
     pub long_break_every: i64,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ClassificationMutationRequest {
-    pub key: String,
-    pub value: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ClassificationMutationsRequest {
-    pub mutations: Vec<ClassificationMutationRequest>,
-}
+pub use patina_protocol::configuration::{
+    ClassificationMutationRequest, ClassificationMutationsRequest,
+};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct AppSettingMutationRequest {
