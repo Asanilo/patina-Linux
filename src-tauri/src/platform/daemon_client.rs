@@ -1,16 +1,13 @@
-use eventsource_stream::{Event, Eventsource};
-use futures_util::{stream::BoxStream, StreamExt};
-use reqwest::{
-    header::{ACCEPT, CONTENT_TYPE},
-    redirect::Policy,
-    StatusCode,
-};
+#[cfg(test)]
+use patina_client::negotiate_tracking_capabilities;
+use patina_client::Event;
+pub use patina_client::{ClientError as PatinadClientError, Negotiation as PatinadNegotiation};
+use patina_client::{MAX_RESPONSE_BYTES, REQUEST_TIMEOUT};
 use serde::{de::DeserializeOwned, Serialize};
-use std::fmt;
 use std::time::Duration;
 
 use crate::engine::api::types::{
-    ActiveSessionResponse, AfkThresholdRequest, ApiError, ApiResponse, AppSettingMutationRequest,
+    ActiveSessionResponse, AfkThresholdRequest, AppSettingMutationRequest,
     AppSettingsMutationsRequest, AudioParticipationRequest, CapabilitiesResponse,
     ClassificationMutationRequest, ClassificationMutationsRequest, CreateReminderRequest,
     CreateSoftwareReminderRuleRequest, CurrentWindowResponse, DiagnosticsResponse,
@@ -19,40 +16,17 @@ use crate::engine::api::types::{
 };
 use crate::engine::runtime_event::RuntimeEventEnvelope;
 
-const CONNECT_TIMEOUT: Duration = Duration::from_millis(750);
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
 const IMPORT_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 const RESTORE_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 const RESTORE_COMPLETION_TIMEOUT: Duration = Duration::from_secs(300);
-const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_EVENT_DATA_BYTES: usize = 64 * 1024;
 
-#[derive(Clone)]
+/// Domain-specific Desktop facade. HTTP/SSE and negotiation live in patina-client.
+#[derive(Clone, Debug)]
 pub struct PatinadClient {
-    client: reqwest::Client,
-    base_url: String,
-    token: String,
+    transport: patina_client::Client,
 }
 
-impl fmt::Debug for PatinadClient {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("PatinadClient")
-            .field("base_url", &self.base_url)
-            .field("token", &"[redacted]")
-            .finish()
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PatinadNegotiation {
-    pub server_version: String,
-    pub protocol_version: u32,
-    pub tracking_ready: bool,
-    pub event_stream_available: bool,
-}
-
-#[allow(dead_code)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PatinadStreamEvent {
     Runtime(RuntimeEventEnvelope),
@@ -78,140 +52,27 @@ impl PatinadStreamEvent {
 
 #[allow(dead_code)]
 pub struct PatinadEventStream {
-    inner: BoxStream<'static, Result<Event, String>>,
+    inner: patina_client::EventStream,
 }
-
 #[allow(dead_code)]
 impl PatinadEventStream {
     pub async fn next_event(&mut self) -> Result<Option<PatinadStreamEvent>, PatinadClientError> {
-        let Some(event) = self.inner.next().await else {
-            return Ok(None);
-        };
-        let event = event.map_err(PatinadClientError::Unreachable)?;
-        parse_stream_event(event).map(Some)
+        self.inner
+            .next_event()
+            .await?
+            .map(parse_stream_event)
+            .transpose()
     }
 }
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum PatinadClientError {
-    InvalidConfiguration(String),
-    Unreachable(String),
-    Unauthorized,
-    Http {
-        status: u16,
-        code: Option<String>,
-        message: String,
-    },
-    ResponseTooLarge,
-    InvalidResponse(String),
-    WrongRuntimeHost(String),
-    IncompatibleProtocol {
-        client: u32,
-        server: u32,
-        min_supported_client: u32,
-        max_supported_client: u32,
-    },
-    TrackingNotOwned,
-    EventStreamUnavailable,
-}
-
-impl PatinadClientError {
-    pub fn code(&self) -> &'static str {
-        match self {
-            Self::InvalidConfiguration(_) => "invalid-configuration",
-            Self::Unreachable(_) => "unreachable",
-            Self::Unauthorized => "unauthorized",
-            Self::Http { .. } => "http-error",
-            Self::ResponseTooLarge => "response-too-large",
-            Self::InvalidResponse(_) => "invalid-response",
-            Self::WrongRuntimeHost(_) => "wrong-runtime-host",
-            Self::IncompatibleProtocol { .. } => "incompatible-protocol",
-            Self::TrackingNotOwned => "tracking-not-owned",
-            Self::EventStreamUnavailable => "event-stream-unavailable",
-        }
-    }
-}
-
-impl fmt::Display for PatinadClientError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidConfiguration(message)
-            | Self::Unreachable(message)
-            | Self::InvalidResponse(message) => formatter.write_str(message),
-            Self::Unauthorized => formatter.write_str("patinad rejected the API credential"),
-            Self::Http {
-                status,
-                code,
-                message,
-            } => write!(
-                formatter,
-                "patinad returned HTTP {status}{}: {message}",
-                code.as_ref()
-                    .map(|code| format!(" ({code})"))
-                    .unwrap_or_default()
-            ),
-            Self::ResponseTooLarge => {
-                formatter.write_str("patinad response exceeded the local client size limit")
-            }
-            Self::WrongRuntimeHost(host) => {
-                write!(formatter, "expected patinad runtime host, received `{host}`")
-            }
-            Self::IncompatibleProtocol {
-                client,
-                server,
-                min_supported_client,
-                max_supported_client,
-            } => write!(
-                formatter,
-                "client protocol {client} is incompatible with server protocol {server} (server accepts clients {min_supported_client}..={max_supported_client})"
-            ),
-            Self::TrackingNotOwned => {
-                formatter.write_str("patinad does not own tracking for this profile")
-            }
-            Self::EventStreamUnavailable => {
-                formatter.write_str("patinad event stream is unavailable")
-            }
-        }
-    }
-}
-
-impl std::error::Error for PatinadClientError {}
-
 impl PatinadClient {
     pub fn new(port: u16, token: impl Into<String>) -> Result<Self, PatinadClientError> {
-        if port == 0 {
-            return Err(PatinadClientError::InvalidConfiguration(
-                "patinad client port must not be zero".to_string(),
-            ));
-        }
-        let token = token.into();
-        if token.trim().is_empty() {
-            return Err(PatinadClientError::InvalidConfiguration(
-                "patinad API credential is missing".to_string(),
-            ));
-        }
-        let client = reqwest::Client::builder()
-            .connect_timeout(CONNECT_TIMEOUT)
-            .redirect(Policy::none())
-            .user_agent(format!("Patina-Desktop/{}", env!("CARGO_PKG_VERSION")))
-            .build()
-            .map_err(|error| {
-                PatinadClientError::InvalidConfiguration(format!(
-                    "failed to build patinad client: {error}"
-                ))
-            })?;
-
         Ok(Self {
-            client,
-            base_url: format!("http://127.0.0.1:{port}"),
-            token,
+            transport: patina_client::Client::new(port, token)?,
         })
     }
-
     pub fn base_url(&self) -> &str {
-        &self.base_url
+        self.transport.base_url()
     }
-
     pub async fn capabilities(&self) -> Result<CapabilitiesResponse, PatinadClientError> {
         self.get_json("/api/v1/capabilities", "capabilities").await
     }
@@ -659,67 +520,17 @@ impl PatinadClient {
             .await
     }
 
-    #[allow(dead_code)]
     pub async fn open_event_stream(
         &self,
         after_sequence: Option<u64>,
     ) -> Result<PatinadEventStream, PatinadClientError> {
-        let mut request = self
-            .client
-            .get(format!("{}/api/v1/events", self.base_url))
-            .bearer_auth(&self.token)
-            .header(ACCEPT, "text/event-stream");
-        if let Some(sequence) = after_sequence {
-            request = request.header("Last-Event-ID", sequence.to_string());
-        }
-        let response = tokio::time::timeout(REQUEST_TIMEOUT, request.send())
-            .await
-            .map_err(|_| {
-                PatinadClientError::Unreachable(
-                    "timed out while opening patinad event stream".to_string(),
-                )
-            })?
-            .map_err(map_transport_error)?;
-        let status = response.status();
-        if status == StatusCode::UNAUTHORIZED {
-            return Err(PatinadClientError::Unauthorized);
-        }
-        if !status.is_success() {
-            let body = tokio::time::timeout(REQUEST_TIMEOUT, read_limited_body(response))
-                .await
-                .map_err(|_| {
-                    PatinadClientError::Unreachable(
-                        "timed out while reading patinad event stream error".to_string(),
-                    )
-                })??;
-            return Err(map_http_error(status, &body));
-        }
-        let content_type = response
-            .headers()
-            .get(CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .unwrap_or_default();
-        if !content_type
-            .to_ascii_lowercase()
-            .starts_with("text/event-stream")
-        {
-            return Err(PatinadClientError::InvalidResponse(
-                "patinad event stream returned an unexpected content type".to_string(),
-            ));
-        }
-        let inner = response
-            .bytes_stream()
-            .eventsource()
-            .map(|event| event.map_err(|error| format!("patinad event stream failed: {error}")))
-            .boxed();
-        Ok(PatinadEventStream { inner })
+        Ok(PatinadEventStream {
+            inner: self.transport.open_event_stream(after_sequence).await?,
+        })
     }
-
     pub async fn negotiate_tracking_owner(&self) -> Result<PatinadNegotiation, PatinadClientError> {
-        let capabilities = self.capabilities().await?;
-        negotiate_tracking_capabilities(capabilities)
+        self.transport.negotiate_tracking_owner().await
     }
-
     pub async fn service_snapshot(
         &self,
     ) -> Result<crate::engine::api::runtime_control::DaemonServiceRuntimeSnapshot, PatinadClientError>
@@ -829,33 +640,10 @@ impl PatinadClient {
         timeout: Duration,
         max_bytes: usize,
     ) -> Result<T, PatinadClientError> {
-        let response = self
-            .client
-            .get(format!("{}{path}", self.base_url))
-            .bearer_auth(&self.token)
-            .timeout(timeout)
-            .send()
+        self.transport
+            .get_json_with_limits(path, response_name, timeout, max_bytes)
             .await
-            .map_err(map_transport_error)?;
-        let status = response.status();
-        let body = read_body_with_limit(response, max_bytes).await?;
-
-        if status == StatusCode::UNAUTHORIZED {
-            return Err(PatinadClientError::Unauthorized);
-        }
-        if !status.is_success() {
-            return Err(map_http_error(status, &body));
-        }
-
-        serde_json::from_slice::<ApiResponse<T>>(&body)
-            .map(|response| response.data)
-            .map_err(|error| {
-                PatinadClientError::InvalidResponse(format!(
-                    "failed to decode patinad {response_name}: {error}"
-                ))
-            })
     }
-
     async fn post_ack<B: Serialize + ?Sized>(
         &self,
         path: &str,
@@ -892,49 +680,16 @@ impl PatinadClient {
             .await
     }
 
-    async fn post_json_with_timeout<T, B>(
+    async fn post_json_with_timeout<T: DeserializeOwned, B: Serialize + ?Sized>(
         &self,
         path: &str,
         body: &B,
         response_name: &str,
         timeout: Duration,
-    ) -> Result<T, PatinadClientError>
-    where
-        T: DeserializeOwned,
-        B: Serialize + ?Sized,
-    {
-        let request_body = serde_json::to_vec(body).map_err(|error| {
-            PatinadClientError::InvalidConfiguration(format!(
-                "failed to encode patinad {response_name} request: {error}"
-            ))
-        })?;
-        let response = self
-            .client
-            .post(format!("{}{path}", self.base_url))
-            .bearer_auth(&self.token)
-            .header(CONTENT_TYPE, "application/json")
-            .body(request_body)
-            .timeout(timeout)
-            .send()
+    ) -> Result<T, PatinadClientError> {
+        self.transport
+            .post_json_with_timeout(path, body, response_name, timeout)
             .await
-            .map_err(map_transport_error)?;
-        let status = response.status();
-        let body = read_limited_body(response).await?;
-
-        if status == StatusCode::UNAUTHORIZED {
-            return Err(PatinadClientError::Unauthorized);
-        }
-        if !status.is_success() {
-            return Err(map_http_error(status, &body));
-        }
-
-        serde_json::from_slice::<ApiResponse<T>>(&body)
-            .map(|response| response.data)
-            .map_err(|error| {
-                PatinadClientError::InvalidResponse(format!(
-                    "failed to decode patinad {response_name}: {error}"
-                ))
-            })
     }
 }
 
@@ -1014,97 +769,12 @@ fn parse_optional_event_sequence(value: &str) -> Result<Option<u64>, PatinadClie
     })
 }
 
-fn negotiate_tracking_capabilities(
-    capabilities: CapabilitiesResponse,
-) -> Result<PatinadNegotiation, PatinadClientError> {
-    if capabilities.runtime_host != "daemon" {
-        return Err(PatinadClientError::WrongRuntimeHost(
-            capabilities.runtime_host,
-        ));
-    }
-
-    let client_protocol = crate::engine::api::protocol::CURRENT_PROTOCOL_VERSION;
-    let protocol_compatible = capabilities.protocol.current == capabilities.protocol_version
-        && (capabilities.protocol.min_supported_client
-            ..=capabilities.protocol.max_supported_client)
-            .contains(&client_protocol);
-    if !protocol_compatible {
-        return Err(PatinadClientError::IncompatibleProtocol {
-            client: client_protocol,
-            server: capabilities.protocol_version,
-            min_supported_client: capabilities.protocol.min_supported_client,
-            max_supported_client: capabilities.protocol.max_supported_client,
-        });
-    }
-    if !capabilities.tracking.owned {
-        return Err(PatinadClientError::TrackingNotOwned);
-    }
-    if !capabilities.event_stream.available {
-        return Err(PatinadClientError::EventStreamUnavailable);
-    }
-
-    Ok(PatinadNegotiation {
-        server_version: capabilities.server_version,
-        protocol_version: capabilities.protocol_version,
-        tracking_ready: capabilities.tracking.ready,
-        event_stream_available: capabilities.event_stream.available,
-    })
-}
-
-async fn read_limited_body(response: reqwest::Response) -> Result<Vec<u8>, PatinadClientError> {
-    read_body_with_limit(response, MAX_RESPONSE_BYTES).await
-}
-
-async fn read_body_with_limit(
-    response: reqwest::Response,
-    max_bytes: usize,
-) -> Result<Vec<u8>, PatinadClientError> {
-    if response
-        .content_length()
-        .is_some_and(|length| length > max_bytes as u64)
-    {
-        return Err(PatinadClientError::ResponseTooLarge);
-    }
-
-    let mut body = Vec::new();
-    let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(map_transport_error)?;
-        if body.len().saturating_add(chunk.len()) > max_bytes {
-            return Err(PatinadClientError::ResponseTooLarge);
-        }
-        body.extend_from_slice(&chunk);
-    }
-    Ok(body)
-}
-
-fn map_transport_error(error: reqwest::Error) -> PatinadClientError {
-    let message = if error.is_timeout() {
-        "timed out while connecting to patinad"
-    } else if error.is_connect() {
-        "could not connect to patinad"
-    } else {
-        "patinad transport failed"
-    };
-    PatinadClientError::Unreachable(format!("{message}: {error}"))
-}
-
-fn map_http_error(status: StatusCode, body: &[u8]) -> PatinadClientError {
-    let parsed = serde_json::from_slice::<ApiError>(body).ok();
-    PatinadClientError::Http {
-        status: status.as_u16(),
-        code: parsed.as_ref().map(|error| error.error.code.clone()),
-        message: parsed
-            .map(|error| error.error.message)
-            .unwrap_or_else(|| "patinad request failed".to_string()),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::engine::api::types::{
-        AvailabilityCapability, OwnedRuntimeCapability, ProtocolCapability, WriteApiCapability,
+        ApiResponse, AvailabilityCapability, OwnedRuntimeCapability, ProtocolCapability,
+        WriteApiCapability,
     };
 
     #[tokio::test]

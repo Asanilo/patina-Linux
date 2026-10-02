@@ -201,9 +201,9 @@ daemon 第一阶段差距审计、阻塞修复、候选验收与本地主线合�
 
 #### 后续客户端
 
-新功能架构规划应从明确的用户场景和当前稳定基线出发：先定义行为与验收，再决定 owner、数据／迁移与 API 边界。`main` 上已有 daemon、Desktop、浏览器桥接和 GNOME provider；Desktop 仍保留[架构 4.3](./architecture.md#43-前端本地-sqlite-通道)约定的受控读取与私有缓存，不应把新功能默认写成“先清零所有 SQLite 访问”或“先替换 UI 框架”。新功能目标尚未确定；本阶段的正式补丁与宿主收口已完成并[归档](./archive/2026-10-02-stable-closeout.md)，不提前开启新客户端、上游贡献或暂停项。
+新功能架构规划从明确的用户场景和当前稳定基线出发：先定义行为与验收，再决定 owner、数据／迁移与 API 边界。`main` 上已有 daemon、Desktop、浏览器桥接和 GNOME provider；Desktop 仍保留[架构 4.3](./architecture.md#43-前端本地-sqlite-通道)约定的受控读取与私有缓存。用户于 2026-10-03 明确选择“一套后端，Tauri／Web／TUI／GPUI 复用并同步”为下一阶段，在 `feature/multi-client-platform` 专用 worktree 推进。具体范围、读接口缺口和逐端验收见[执行计划](./working/2026-10-03-multi-client-platform.md)；已完成的稳定版收口仍保留于[归档](./archive/2026-10-02-stable-closeout.md)。
 
-第一阶段验收后，按实际需求选择本机浏览器 UI、TUI 或 GPUI 中的一个验证客户端独立性，顺序尚未决定。Tauri 保留，替换 UI 框架不改变 daemon owner 或数据库语义。新客户端通过受支持 API 访问后台，不直连数据库、不复制追踪；浏览器 UI 为 loopback 页面，需独立安全 session，不暴露长期 Token。
+本阶段先提取独立客户端基础并迁移 Tauri 核心读链路，随后用共享 React 的 Web 界面证明标准客户端边界，再接入 TUI 与 GPUI，不同时铺开四套完整实现。Tauri 保留；后端统计与产品状态统一，各端表现和本地偏好独立。新客户端通过受支持 API 访问后台，不直连数据库、不复制追踪；浏览器 UI 为 loopback 页面，需独立安全 session，不暴露长期 Token。SDK 或 CLI 探针不代表交互式客户端已完成，四端都需真实运行和同步证据。
 
 daemon 与 Desktop 已统一到 main；稳定发布仍须满足发布规范。KDE/wlroots 按 provider 能力逐个验证；Flatpak、Widget 闪烁/吸附、Windows 删除和 Cargo workspace 重排不作为主线合流的附带任务。暂停项未经用户恢复不重启。
 

@@ -46,7 +46,7 @@ Read only the references needed for the task:
 
 ## Current Work
 
-The stable-release closeout is complete. No implementation checklist is active; the next feature architecture scope has not yet been selected. Use the roadmap for priorities and retain paused items as deferred.
+The stable-release closeout is complete. The authorized next stage is [one backend and multiple synchronized clients](./working/2026-10-03-multi-client-platform.md), developed on `feature/multi-client-platform` in its own worktree. Use its capability gaps and milestone evidence to distinguish planned clients from delivered functionality; retain unrelated paused items as deferred.
 
 Only current execution documents belong under `working/`. Move them to `archive/` when they stop being the active implementation basis.
 

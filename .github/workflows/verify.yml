@@ -7,8 +7,21 @@ on:
     branches:
       - main
       - feature/patinad-daemon
+      - feature/multi-client-platform
 
 jobs:
+  client:
+    name: Independent Rust client (no desktop dependencies)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check independent client
+        run: npm run check:client
+
   verify:
     runs-on: ubuntu-22.04
 

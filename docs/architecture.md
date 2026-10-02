@@ -292,6 +292,8 @@ Tauri 是当前桌面客户端实现，不是长期协议 owner。未来可以�
 
 Patina Desktop、`patinad`、browser UI、extensions、MCP 与未来 TUI 保持一个 monorepo 和一条兼容发布线。产品独立演进与 GitHub fork 身份分开决策：beta 验收不自动触发脱离 fork、重命名或拆仓库，继续保留 Git 历史、MIT 许可与 attribution。后续上游 Linux 贡献按上游现有架构选择平台适配，不要求上游接纳 daemon。首个 daemon 里程碑不拆 Cargo workspace；只有测量证明构建、二进制、常驻资源或独立包需求存在时才进行 crate 拆分。新客户端选型在分离验收后逐个推进，不把 GPUI/TUI/浏览器 UI 全部实现作为第一阶段前提。
 
+多客户端阶段（2026-10-03 授权）将 `patinad` 的产品能力作为 Tauri、Web、TUI 与 GPUI 的共同后端。产品统计、分类、排除、导入优先级及事务由后端拥有；客户端共享协议和连接恢复机制，保留各自表现与本地偏好。现有 Desktop SQLite 读取例外按用例渐进退出，不新增第二套业务后端。为了让非 Tauri 客户端能够独立构建，允许提取不依赖 Tauri／SQLx／tracking 的窄协议与客户端 crate；这不授权全量目录重排。浏览器继续使用独立于长期 Bearer 的同源会话，Tauri JS 不读取长期凭据。分批范围与证据见[多客户端执行单](./working/2026-10-03-multi-client-platform.md)。
+
 ### 4.6 Linux-only 与 Windows 冻结边界
 
 当前产品、CI、Release 和验证矩阵只承诺 Linux。`platform/windows/*` 是迁移期冻结代码，不再承接新功能，也不继续约束共享 runtime 的接口形状。

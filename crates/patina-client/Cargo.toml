@@ -1,0 +1,19 @@
+[package]
+name = "patina-client"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Independent loopback HTTP/SSE client for Patina"
+publish = false
+
+[dependencies]
+patina-protocol = { path = "../patina-protocol" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["stream"] }
+futures-util = "0.3"
+eventsource-stream = "0.2.3"
+tokio = { version = "1.50.0", features = ["time"] }
+
+[dev-dependencies]
+tokio = { version = "1.50.0", features = ["rt-multi-thread", "macros", "net", "io-util"] }

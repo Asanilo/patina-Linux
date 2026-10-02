@@ -13,3 +13,6 @@ pub mod scheduled_backup_owner;
 pub mod server;
 pub mod surface;
 pub mod types;
+
+#[cfg(test)]
+mod client_contract_tests;

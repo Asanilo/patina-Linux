@@ -3396,7 +3396,6 @@ dependencies = [
  "chrono",
  "crc32fast",
  "csv",
- "eventsource-stream",
  "fs2",
  "futures-util",
  "getrandom 0.3.4",
@@ -3404,6 +3403,8 @@ dependencies = [
  "libc",
  "libpulse-binding",
  "notify-rust",
+ "patina-client",
+ "patina-protocol",
  "percent-encoding",
  "raw-window-handle",
  "reqwest 0.12.28",
@@ -3431,6 +3432,26 @@ dependencies = [
  "xcb",
  "zbus 4.4.0",
  "zip",
+]
+
+[[package]]
+name = "patina-client"
+version = "0.1.0"
+dependencies = [
+ "eventsource-stream",
+ "futures-util",
+ "patina-protocol",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "patina-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
