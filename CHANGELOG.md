@@ -16,6 +16,12 @@ Release: 待定。
 App note: 待定。
 App note en: TBD.
 
+## [1.9.2] - 2026-10-02
+
+Release: 修复后台汇总中的停用分类与应用别名排除，并保护已发布安装包和更新清单不被覆盖。
+App note: 修复后台汇总的分类与排除规则，使应用别名与原应用保持一致。
+App note en: Correct summary categories and exclusions for disabled rules and application aliases.
+
 ### Fixed
 
 - 修复 Summary 仍应用已停用分类规则，以及应用排除和分类覆盖未匹配进程别名的问题。
