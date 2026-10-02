@@ -262,6 +262,8 @@ Stage 2F.2 已使用 Axum + Tower 替换通用 API/SSE 与浏览器 bridge 的�
 
 Tauri desktop 的 daemon transport 由 Rust host 持有 Bearer Token，前端 JavaScript 不直接读取 owner-only credential。客户端只连接固定 loopback 地址，不跟随重定向，并限制连接时间、总请求时间与响应大小；使用任何运行状态前必须先确认 `runtime_host=daemon`、协议兼容范围、tracking ownership 和 event stream capability。端口可连接或 HTTP 200 本身不构成成功协商。runtime adapter 必须先建立 SSE 再读取当前快照；新 Desktop 实例订阅实时事件，不从 sequence 0 重放已处理的提醒，之后携带本次会话最后确认的 sequence 重连。收到 replay gap 或 receiver lag 时清除旧 cursor 并通过 JSON API 完整重读，不能靠局部事件猜测丢失状态。tracking、Tools、提醒和定时备份事件均须送到对应客户端 owner；异步快照刷新应保持顺序，配置切换或停止后不得发布旧请求的响应。
 
+多客户端分支的 `patina-client::sync` 统一拥有这些连接规则，宿主注入具体快照 reader 与同步 output；输出回调不得在同一调用栈重设配置或发出 stop，以免与发布屏障锁互相等待。连接对象与配置 revision 在同一 watch 状态中原子替换，所有在途协商／订阅／快照都可取消，最终同步发布再次持有 stop／revision 读屏障。SSE `X-Patina-Event-Instance` 表达事件 hub 的生命周期，不是数据库 revision；重连必须在消费重放前确认实例相同，新实例或无实例标识的旧服务端保守使用全量快照。恢复连接和重放缺口需使所有受影响客户端读模型失效，不能只刷新前台窗口；领域规则和原生通知投递仍归各自 owner。
+
 Desktop command 的 owner 分流统一依赖受管的 typed daemon client state。显式 daemon client 模式下，已经迁移的 tracker、runtime setting、classification、活动导入、定时备份、数据维护与 Tools command 不得回落到本地 engine 或直接 SQLite；client 不可用时返回明确错误。Tools 和定时备份 SSE 只表达失效通知，Desktop 收到后必须从 daemon 重读完整 snapshot，再复用现有前端事件契约，不能把失效通知冒充完整读模型。embedded 模式在迁移窗口内继续走原路径。尚未迁移的写侧必须保留在 2H.3c 清单中，不能因为只读切换完成就默认视为 daemon-owned。
 
 Local API 端口和 Token 属于 typed client 自身的连接配置。daemon 成功切换 listener 或凭据后，Desktop Rust host 必须从 owner-only 文件重载 Token、原子替换共享 client，并通过 revision 通知主动重建 SSE；不能等待旧连接偶然超时。daemon HTTP 响应不得返回新 Token；当前 Desktop 仅通过既有的特权 Tauri command 把轮换结果交给设置页显示和复制。普通 app settings 通过白名单批量 endpoint 由 daemon 事务写入；会重建运行资源的字段在该 endpoint 明确拒绝，继续使用各自专用接口。

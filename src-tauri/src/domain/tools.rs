@@ -139,14 +139,7 @@ impl PomodoroStatus {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ToolAlertKind {
-    Reminder,
-    Countdown,
-    Pomodoro,
-    SoftwareReminder,
-}
+pub use patina_protocol::events::{ToolAlert, ToolAlertKind};
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ToolRuntimeSettings {
@@ -326,15 +319,6 @@ pub struct ToolsRuntimeSnapshot {
     pub today_completed_pomodoros: i64,
     pub next_reminder_at: Option<i64>,
     pub sampled_at_ms: i64,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub struct ToolAlert {
-    pub id: String,
-    pub kind: ToolAlertKind,
-    pub title: String,
-    pub body: String,
-    pub occurred_at: i64,
 }
 
 #[cfg(test)]

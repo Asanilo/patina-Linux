@@ -2,6 +2,9 @@
 //! This crate does not discover credentials, touch storage, or own tracking.
 //! Hosts negotiate capabilities before using runtime data. Writes are never retried.
 mod error;
+pub mod events;
+pub mod state;
+pub mod sync;
 pub use patina_protocol as protocol;
 mod sse_budget;
 pub use error::ClientError;
@@ -48,8 +51,12 @@ pub struct Negotiation {
 
 pub struct EventStream {
     inner: BoxStream<'static, Result<Event, String>>,
+    instance_id: Option<String>,
 }
 impl EventStream {
+    pub fn instance_id(&self) -> Option<&str> {
+        self.instance_id.as_deref()
+    }
     pub async fn next_event(&mut self) -> Result<Option<Event>, ClientError> {
         self.inner
             .next()
@@ -147,6 +154,26 @@ impl Client {
                 "patinad event stream returned an unexpected content type".to_string(),
             ));
         }
+        let instance_id = response
+            .headers()
+            .get(protocol::EVENT_INSTANCE_HEADER)
+            .map(|value| {
+                value
+                    .to_str()
+                    .ok()
+                    .filter(|id| {
+                        !id.is_empty()
+                            && id.len() <= 128
+                            && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+                    })
+                    .map(str::to_owned)
+                    .ok_or_else(|| {
+                        ClientError::InvalidResponse(
+                            "invalid event stream instance identity".into(),
+                        )
+                    })
+            })
+            .transpose()?;
         let mut budget = sse_budget::FrameBudget::default();
         let inner = response
             .bytes_stream()
@@ -158,7 +185,16 @@ impl Client {
             .eventsource()
             .map(|event| event.map_err(|error| format!("patinad event stream failed: {error}")))
             .boxed();
-        Ok(EventStream { inner })
+        Ok(EventStream { inner, instance_id })
+    }
+
+    pub async fn open_runtime_event_stream(
+        &self,
+        after_sequence: Option<u64>,
+    ) -> Result<events::RuntimeEventStream, ClientError> {
+        Ok(events::RuntimeEventStream {
+            inner: self.open_event_stream(after_sequence).await?,
+        })
     }
 
     pub async fn negotiate_tracking_owner(&self) -> Result<Negotiation, ClientError> {

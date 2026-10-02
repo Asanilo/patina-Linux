@@ -1,44 +1,10 @@
-use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::Mutex;
 use tokio::sync::{broadcast, watch};
 
 pub const DEFAULT_EVENT_REPLAY_CAPACITY: usize = 256;
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "type", rename_all = "kebab-case")]
-pub enum RuntimeEvent {
-    TrackingDataChanged {
-        reason: String,
-        changed_at_ms: u64,
-    },
-    ScheduledBackupChanged {
-        changed_at_ms: u64,
-    },
-    ToolsRuntimeChanged {
-        changed_at_ms: u64,
-    },
-    ToolAlert {
-        alert: crate::domain::tools::ToolAlert,
-    },
-}
-
-impl RuntimeEvent {
-    pub fn event_name(&self) -> &'static str {
-        match self {
-            Self::TrackingDataChanged { .. } => "tracking-data-changed",
-            Self::ScheduledBackupChanged { .. } => "scheduled-backup-changed",
-            Self::ToolsRuntimeChanged { .. } => "tools-runtime-changed",
-            Self::ToolAlert { .. } => "tool-alert",
-        }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RuntimeEventEnvelope {
-    pub sequence: u64,
-    pub event: RuntimeEvent,
-}
+pub use patina_protocol::events::{RuntimeEvent, RuntimeEventEnvelope};
 
 #[derive(Debug)]
 pub struct RuntimeEventSubscription {
@@ -50,6 +16,7 @@ pub struct RuntimeEventSubscription {
 
 #[derive(Debug)]
 pub struct RuntimeEventHub {
+    instance_id: String,
     replay_capacity: usize,
     state: Mutex<RuntimeEventHubState>,
     sender: broadcast::Sender<RuntimeEventEnvelope>,
@@ -69,6 +36,7 @@ impl RuntimeEventHub {
         let (sender, _) = broadcast::channel(replay_capacity);
         let (shutdown_tx, _) = watch::channel(false);
         Self {
+            instance_id: new_event_instance_id(),
             replay_capacity,
             state: Mutex::new(RuntimeEventHubState {
                 next_sequence: 1,
@@ -119,6 +87,10 @@ impl RuntimeEventHub {
         }
     }
 
+    pub fn instance_id(&self) -> &str {
+        &self.instance_id
+    }
+
     pub fn shutdown(&self) {
         let mut state = match self.state.lock() {
             Ok(state) => state,
@@ -134,6 +106,25 @@ impl RuntimeEventHub {
 
 pub trait RuntimeEventSink: Send + Sync {
     fn emit(&self, event: RuntimeEvent) -> Result<(), String>;
+}
+
+fn new_event_instance_id() -> String {
+    let mut bytes = [0u8; 16];
+    if getrandom::fill(&mut bytes).is_ok() {
+        return bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+    }
+    // Identity is an epoch marker, not a credential. Remain available if the
+    // system entropy source fails; PID/time/counter still separate local hubs.
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    format!(
+        "{}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos(),
+        COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    )
 }
 
 impl RuntimeEventSink for RuntimeEventHub {
@@ -193,6 +184,24 @@ impl RuntimeEventSink for MemoryRuntimeEventSink {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn event_hub_identity_is_stable_and_not_reused_by_another_hub() {
+        let first = RuntimeEventHub::new(2);
+        let second = RuntimeEventHub::new(2);
+        let identity = first.instance_id().to_owned();
+        first
+            .emit(RuntimeEvent::ToolsRuntimeChanged { changed_at_ms: 1 })
+            .unwrap();
+        assert_eq!(identity, first.instance_id());
+        assert_ne!(identity, second.instance_id());
+        assert!(
+            identity.len() <= 128
+                && identity
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        );
+    }
 
     #[test]
     fn memory_sink_records_typed_events_in_order() {

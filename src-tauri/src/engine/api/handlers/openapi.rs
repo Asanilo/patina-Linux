@@ -1837,6 +1837,12 @@ fn event_stream_operation() -> Value {
         "responses": {
             "200": {
                 "description": "Server-Sent Events stream. Each data field is a RuntimeEventEnvelope.",
+                "headers": {
+                    (patina_protocol::EVENT_INSTANCE_HEADER): {
+                        "description": "Opaque event-hub lifetime identity. Compare before replay; a changed or unavailable identity requires a fresh subscription and snapshot reload. Not an authentication credential or database revision.",
+                        "schema": {"type": "string", "maxLength": 128}
+                    }
+                },
                 "content": {
                     "text/event-stream": {
                         "schema": {

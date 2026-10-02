@@ -486,9 +486,13 @@ async fn events_handler(State(state): State<ApiTransportState>, headers: HeaderM
         credential_revision,
         permit,
     );
-    let response = Sse::new(stream)
+    let mut response = Sse::new(stream)
         .keep_alive(axum::response::sse::KeepAlive::new().interval(Duration::from_secs(15)))
         .into_response();
+    response.headers_mut().insert(
+        patina_protocol::EVENT_INSTANCE_HEADER,
+        HeaderValue::from_str(event_hub.instance_id()).expect("event instance identity is ASCII"),
+    );
     with_cors(response, cors_origin)
 }
 

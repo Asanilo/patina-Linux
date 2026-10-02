@@ -69,6 +69,8 @@ async fn independent_and_desktop_clients_observe_the_same_committed_classificati
     // Subscribe first, then load a snapshot: a commit cannot fall into a blind gap.
     let mut native_events = native.open_event_stream(None).await.unwrap();
     let mut desktop_events = desktop.open_event_stream(None).await.unwrap();
+    assert!(native_events.instance_id().is_some());
+    assert_eq!(native_events.instance_id(), desktop_events.instance_id());
     let before: Value = native.get_json("/api/v1/apps", "apps").await.unwrap();
     assert_eq!(before["apps"][0]["exe_name"], "fixture-app");
     native

@@ -9,22 +9,14 @@ use tokio::sync::watch;
 use crate::engine::api::types::{ActiveSessionResponse, CurrentWindowResponse};
 use crate::engine::runtime_event::{RuntimeEvent, RuntimeEventEnvelope, RuntimeEventSink};
 use crate::engine::tracking::watchdog::RuntimeHealthState;
-use crate::platform::daemon_client::{PatinadClient, PatinadClientError, PatinadStreamEvent};
+use crate::platform::daemon_client::{PatinadClient, PatinadClientError};
+use patina_client::sync::SnapshotReader;
 
-const INITIAL_RETRY_DELAY: Duration = Duration::from_millis(500);
-const MAX_RETRY_DELAY: Duration = Duration::from_secs(10);
 const INCOHERENT_SNAPSHOT_RETRY_DELAY: Duration = Duration::from_millis(25);
-const SNAPSHOT_REFRESH_INTERVAL: Duration = Duration::from_secs(2);
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum PatinadRuntimeConnectionStatus {
-    Connecting,
-    Ready,
-    Reconnecting,
-    Stopped,
-}
-
+pub use patina_client::sync::{
+    ConnectionStatus as PatinadRuntimeConnectionStatus, SnapshotOutput as PatinadRuntimeOutput,
+};
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct PatinadRuntimeReadSnapshot {
     pub current_window: CurrentWindowResponse,
@@ -52,20 +44,6 @@ impl Default for PatinadRuntimeAdapterSnapshot {
     }
 }
 
-pub trait PatinadRuntimeOutput: Send + Sync {
-    fn connection_changed(
-        &self,
-        status: PatinadRuntimeConnectionStatus,
-        error: Option<&PatinadClientError>,
-    );
-
-    fn snapshot_changed(&self, snapshot: PatinadRuntimeReadSnapshot);
-
-    fn tracking_data_changed(&self, event: &RuntimeEventEnvelope);
-
-    fn resync_required(&self, reason: &str, missed: Option<u64>);
-}
-
 #[derive(Debug, Default)]
 pub struct PatinadRuntimeState {
     inner: Mutex<PatinadRuntimeAdapterSnapshot>,
@@ -91,7 +69,7 @@ impl PatinadRuntimeState {
     }
 }
 
-impl PatinadRuntimeOutput for PatinadRuntimeState {
+impl PatinadRuntimeOutput<PatinadRuntimeReadSnapshot> for PatinadRuntimeState {
     fn connection_changed(
         &self,
         status: PatinadRuntimeConnectionStatus,
@@ -101,7 +79,7 @@ impl PatinadRuntimeOutput for PatinadRuntimeState {
             snapshot.connection_status = status;
             snapshot.error_code = error.map(|error| error.code().to_string());
             snapshot.error_message = error.map(ToString::to_string);
-            if error.is_some() || status == PatinadRuntimeConnectionStatus::Stopped {
+            if error.is_some() || status != PatinadRuntimeConnectionStatus::Ready {
                 snapshot.runtime = None;
             }
         });
@@ -122,7 +100,7 @@ impl PatinadRuntimeOutput for PatinadRuntimeState {
 
 pub struct PatinadRuntimeAdapter {
     client_state: crate::app::daemon_client::PatinadClientState,
-    output: Arc<dyn PatinadRuntimeOutput>,
+    output: Arc<dyn PatinadRuntimeOutput<PatinadRuntimeReadSnapshot>>,
 }
 
 pub struct PatinadDesktopRuntimeHandle {
@@ -286,7 +264,7 @@ impl ToolsSnapshotRefresh {
             serial = self.serial.lock() => serial,
         };
         let mut revision = client_state.subscribe();
-        let expected_revision = *revision.borrow();
+        let expected_revision = revision.borrow().revision;
         let client = client_state.require()?;
         let snapshot = tokio::select! {
             biased;
@@ -298,14 +276,41 @@ impl ToolsSnapshotRefresh {
         // configuration revision cannot overtake a completed response.
         let stopped = shutdown.borrow();
         let current_revision = revision.borrow();
-        if !*stopped && *current_revision == expected_revision {
+        if !*stopped && current_revision.revision == expected_revision {
             publish(snapshot);
         }
         Ok(())
     }
 }
 
-impl<R: Runtime> PatinadRuntimeOutput for TauriPatinadRuntimeOutput<R> {
+impl<R: Runtime> TauriPatinadRuntimeOutput<R> {
+    fn request_tools_refresh(&self) {
+        let app = self.app.clone();
+        let client_state = self.client_state.clone();
+        let tools_refresh = self.tools_refresh.clone();
+        let shutdown = self.shutdown.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(error) = tools_refresh
+                .refresh(&client_state, shutdown, |snapshot| {
+                    if let Some(state) = app.try_state::<crate::engine::tools::ToolsRuntimeState>()
+                    {
+                        state.replace(snapshot.clone());
+                    }
+                    if let Err(error) =
+                        app.emit(crate::engine::tools::TOOLS_RUNTIME_CHANGED_EVENT, snapshot)
+                    {
+                        eprintln!("[patinad-client] failed to emit Tools snapshot: {error}");
+                    }
+                })
+                .await
+            {
+                eprintln!("[patinad-client] failed to refresh Tools snapshot: {error}");
+            }
+        });
+    }
+}
+
+impl<R: Runtime> PatinadRuntimeOutput<PatinadRuntimeReadSnapshot> for TauriPatinadRuntimeOutput<R> {
     fn connection_changed(
         &self,
         status: PatinadRuntimeConnectionStatus,
@@ -314,13 +319,13 @@ impl<R: Runtime> PatinadRuntimeOutput for TauriPatinadRuntimeOutput<R> {
         if let Some(state) = self.app.try_state::<PatinadRuntimeState>() {
             state.connection_changed(status, error);
         }
-        if error.is_some() || status == PatinadRuntimeConnectionStatus::Stopped {
+        if error.is_some() || status != PatinadRuntimeConnectionStatus::Ready {
             if let Some(state) = self.app.try_state::<
                 crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState,
             >() {
                 state.clear();
             }
-            if error.is_some() {
+            if error.is_some() || status == PatinadRuntimeConnectionStatus::Reconnecting {
                 let sink =
                     crate::engine::tracking::runtime::TauriRuntimeEventSink::new(self.app.clone());
                 let _ = sink.emit(RuntimeEvent::TrackingDataChanged {
@@ -370,31 +375,7 @@ impl<R: Runtime> PatinadRuntimeOutput for TauriPatinadRuntimeOutput<R> {
     fn tracking_data_changed(&self, event: &RuntimeEventEnvelope) {
         match &event.event {
             RuntimeEvent::ToolsRuntimeChanged { .. } => {
-                let app = self.app.clone();
-                let client_state = self.client_state.clone();
-                let tools_refresh = self.tools_refresh.clone();
-                let shutdown = self.shutdown.clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Err(error) = tools_refresh
-                        .refresh(&client_state, shutdown, |snapshot| {
-                            if let Some(state) =
-                                app.try_state::<crate::engine::tools::ToolsRuntimeState>()
-                            {
-                                state.replace(snapshot.clone());
-                            }
-                            if let Err(error) = app
-                                .emit(crate::engine::tools::TOOLS_RUNTIME_CHANGED_EVENT, snapshot)
-                            {
-                                eprintln!(
-                                    "[patinad-client] failed to emit Tools snapshot: {error}"
-                                );
-                            }
-                        })
-                        .await
-                    {
-                        eprintln!("[patinad-client] failed to refresh Tools snapshot: {error}");
-                    }
-                });
+                self.request_tools_refresh();
                 return;
             }
             RuntimeEvent::ToolAlert { alert } => {
@@ -414,11 +395,26 @@ impl<R: Runtime> PatinadRuntimeOutput for TauriPatinadRuntimeOutput<R> {
         eprintln!(
             "[patinad-client] event stream resync required: reason={reason}, missed={missed:?}"
         );
+        // A gap may contain classification/settings/Tools changes, not just a
+        // foreground transition. Invalidate each existing client owner; never
+        // fabricate or replay a notification to reconstruct missed state.
+        let changed_at_ms = crate::app::runtime::now_ms();
+        let sink = crate::engine::tracking::runtime::TauriRuntimeEventSink::new(self.app.clone());
+        let _ = sink.emit(RuntimeEvent::TrackingDataChanged {
+            reason: "daemon-client-resync".into(),
+            changed_at_ms,
+        });
+        let _ = sink.emit(RuntimeEvent::ScheduledBackupChanged { changed_at_ms });
+        self.request_tools_refresh();
+        let _ = self.app.emit("app-settings-changed", serde_json::json!({}));
     }
 }
 
 impl PatinadRuntimeAdapter {
-    pub fn new(client: PatinadClient, output: Arc<dyn PatinadRuntimeOutput>) -> Self {
+    pub fn new(
+        client: PatinadClient,
+        output: Arc<dyn PatinadRuntimeOutput<PatinadRuntimeReadSnapshot>>,
+    ) -> Self {
         let client_state = crate::app::daemon_client::PatinadClientState::default();
         client_state.install(client);
         Self::new_with_client_state(client_state, output)
@@ -426,7 +422,7 @@ impl PatinadRuntimeAdapter {
 
     pub fn new_with_client_state(
         client_state: crate::app::daemon_client::PatinadClientState,
-        output: Arc<dyn PatinadRuntimeOutput>,
+        output: Arc<dyn PatinadRuntimeOutput<PatinadRuntimeReadSnapshot>>,
     ) -> Self {
         Self {
             client_state,
@@ -440,146 +436,49 @@ impl PatinadRuntimeAdapter {
     ) -> Result<PatinadRuntimeReadSnapshot, PatinadClientError> {
         let client = self.client()?;
         client.negotiate_tracking_owner().await?;
-        self.read_snapshot(&client, last_event_sequence).await
+        DesktopSnapshotReader
+            .read(client.transport(), last_event_sequence)
+            .await
     }
 
-    pub async fn run(&self, mut shutdown: watch::Receiver<bool>) {
-        // A new Desktop instance loads current state via snapshots. Replaying
-        // historical ToolAlert events here would reopen dismissed reminders.
-        // Reconnects retain the live cursor to recover events missed in-session.
-        let mut cursor = None;
-        let mut backoff = RetryBackoff::default();
-        let mut first_attempt = true;
-
-        loop {
-            if *shutdown.borrow() {
-                self.output
-                    .connection_changed(PatinadRuntimeConnectionStatus::Stopped, None);
-                return;
-            }
-            self.output.connection_changed(
-                if first_attempt {
-                    PatinadRuntimeConnectionStatus::Connecting
-                } else {
-                    PatinadRuntimeConnectionStatus::Reconnecting
-                },
-                None,
-            );
-            first_attempt = false;
-
-            match self.run_connection(&mut cursor, &mut shutdown).await {
-                Ok(ConnectionExit::Shutdown) => {
-                    self.output
-                        .connection_changed(PatinadRuntimeConnectionStatus::Stopped, None);
-                    return;
-                }
-                Ok(ConnectionExit::Reconfigure) => {
-                    cursor = None;
-                    backoff.reset();
-                    continue;
-                }
-                Err(error) => {
-                    self.output.connection_changed(
-                        PatinadRuntimeConnectionStatus::Reconnecting,
-                        Some(&error),
-                    );
-                }
-            }
-
-            let delay = backoff.next_delay();
-            tokio::select! {
-                _ = tokio::time::sleep(delay) => {}
-                changed = shutdown.changed() => {
-                    if changed.is_err() || *shutdown.borrow() {
-                        self.output.connection_changed(
-                            PatinadRuntimeConnectionStatus::Stopped,
-                            None,
-                        );
-                        return;
-                    }
-                }
-            }
-        }
+    pub async fn run(&self, shutdown: watch::Receiver<bool>) {
+        patina_client::sync::SnapshotSession::new(
+            self.client_state.shared(),
+            DesktopSnapshotReader,
+            self.output.clone(),
+        )
+        .run(shutdown)
+        .await;
     }
 
-    async fn run_connection(
-        &self,
-        cursor: &mut Option<u64>,
-        shutdown: &mut watch::Receiver<bool>,
-    ) -> Result<ConnectionExit, PatinadClientError> {
-        let mut client_revision = self.client_state.subscribe();
-        let client = self.client()?;
-        client.negotiate_tracking_owner().await?;
-        let mut events = client.open_event_stream(*cursor).await?;
-        let mut snapshot = self.read_snapshot(&client, *cursor).await?;
-        self.output.snapshot_changed(snapshot.clone());
-        self.output
-            .connection_changed(PatinadRuntimeConnectionStatus::Ready, None);
-
-        // Data-change events are not heartbeats: an unchanged window still needs fresh samples.
-        let mut refresh = tokio::time::interval_at(
-            tokio::time::Instant::now() + SNAPSHOT_REFRESH_INTERVAL,
-            SNAPSHOT_REFRESH_INTERVAL,
-        );
-        refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-
-        loop {
-            let event = tokio::select! {
-                event = events.next_event() => event?,
-                _ = refresh.tick() => {
-                    snapshot = self.read_snapshot(&client, *cursor).await?;
-                    self.output.snapshot_changed(snapshot.clone());
-                    continue;
-                }
-                changed = shutdown.changed() => {
-                    if changed.is_err() || *shutdown.borrow() {
-                        return Ok(ConnectionExit::Shutdown);
-                    }
-                    continue;
-                }
-                changed = client_revision.changed() => {
-                    if changed.is_err() {
-                        return Err(PatinadClientError::InvalidConfiguration(
-                            "patinad client configuration channel closed".to_string(),
-                        ));
-                    }
-                    return Ok(ConnectionExit::Reconfigure);
-                }
-            };
-            let Some(event) = event else {
-                return Err(PatinadClientError::Unreachable(
-                    "patinad event stream closed".to_string(),
-                ));
-            };
-
-            if let Some(sequence) = event.sequence() {
-                *cursor = Some(sequence);
-            }
-            match event {
-                PatinadStreamEvent::Runtime(envelope) => {
-                    if let RuntimeEvent::TrackingDataChanged { changed_at_ms, .. } = &envelope.event
-                    {
-                        let changed_at_ms = i64::try_from(*changed_at_ms).unwrap_or(i64::MAX);
-                        if changed_at_ms >= snapshot.current_window.sampled_at_ms {
-                            snapshot = self.read_snapshot(&client, *cursor).await?;
-                            self.output.snapshot_changed(snapshot.clone());
-                        }
-                    }
-                    // Every runtime event reaches its Desktop owner. Only tracking
-                    // changes need a fresh window/session snapshot first.
-                    self.output.tracking_data_changed(&envelope);
-                }
-                PatinadStreamEvent::ResyncRequired { reason, missed } => {
-                    *cursor = None;
-                    snapshot = self.read_snapshot(&client, *cursor).await?;
-                    self.output.snapshot_changed(snapshot.clone());
-                    self.output.resync_required(&reason, missed);
-                }
-                PatinadStreamEvent::Ignored { .. } => {}
-            }
-        }
+    fn client(&self) -> Result<PatinadClient, PatinadClientError> {
+        self.client_state.require().map_err(|_| {
+            PatinadClientError::InvalidConfiguration(
+                "patinad client is not configured for this profile".to_string(),
+            )
+        })
     }
+}
 
+struct DesktopSnapshotReader;
+impl SnapshotReader for DesktopSnapshotReader {
+    type Snapshot = PatinadRuntimeReadSnapshot;
+    fn read<'a>(
+        &'a self,
+        client: &'a patina_client::Client,
+        cursor: Option<u64>,
+    ) -> futures_util::future::BoxFuture<'a, Result<Self::Snapshot, PatinadClientError>> {
+        Box::pin(async move {
+            let client = PatinadClient::from_transport(client.clone());
+            self.read_snapshot(&client, cursor).await
+        })
+    }
+    fn needs_refresh(&self, snapshot: &Self::Snapshot, envelope: &RuntimeEventEnvelope) -> bool {
+        matches!(&envelope.event, RuntimeEvent::TrackingDataChanged { changed_at_ms, .. }
+            if i64::try_from(*changed_at_ms).unwrap_or(i64::MAX) >= snapshot.current_window.sampled_at_ms)
+    }
+}
+impl DesktopSnapshotReader {
     async fn read_snapshot(
         &self,
         client: &PatinadClient,
@@ -612,43 +511,6 @@ impl PatinadRuntimeAdapter {
             last_event_sequence,
             coherent,
         })
-    }
-
-    fn client(&self) -> Result<PatinadClient, PatinadClientError> {
-        self.client_state.require().map_err(|_| {
-            PatinadClientError::InvalidConfiguration(
-                "patinad client is not configured for this profile".to_string(),
-            )
-        })
-    }
-}
-
-enum ConnectionExit {
-    Shutdown,
-    Reconfigure,
-}
-
-struct RetryBackoff {
-    current: Duration,
-}
-
-impl Default for RetryBackoff {
-    fn default() -> Self {
-        Self {
-            current: INITIAL_RETRY_DELAY,
-        }
-    }
-}
-
-impl RetryBackoff {
-    fn next_delay(&mut self) -> Duration {
-        let delay = self.current;
-        self.current = self.current.saturating_mul(2).min(MAX_RETRY_DELAY);
-        delay
-    }
-
-    fn reset(&mut self) {
-        self.current = INITIAL_RETRY_DELAY;
     }
 }
 
@@ -938,21 +800,20 @@ mod tests {
     }
 
     #[test]
+    fn runtime_state_drops_old_configuration_data_before_reconnecting() {
+        let state = PatinadRuntimeState::default();
+        state.snapshot_changed(snapshot("ghostty", Some("ghostty"), 1_000, None));
+        state.connection_changed(PatinadRuntimeConnectionStatus::Ready, None);
+        assert!(state.snapshot().runtime.is_some());
+        state.connection_changed(PatinadRuntimeConnectionStatus::Reconnecting, None);
+        assert!(state.snapshot().runtime.is_none());
+    }
+
+    #[test]
     fn snapshot_marks_cross_request_window_transition_as_incoherent() {
         let snapshot = snapshot("ghostty", Some("obsidian"), 1_000, None);
 
         assert!(!snapshot.coherent);
-    }
-
-    #[test]
-    fn retry_backoff_is_bounded() {
-        let mut backoff = RetryBackoff::default();
-
-        assert_eq!(backoff.next_delay(), INITIAL_RETRY_DELAY);
-        for _ in 0..10 {
-            backoff.next_delay();
-        }
-        assert_eq!(backoff.next_delay(), MAX_RETRY_DELAY);
     }
 
     fn snapshot(

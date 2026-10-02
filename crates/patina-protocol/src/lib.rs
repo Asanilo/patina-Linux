@@ -1,6 +1,9 @@
 //! Wire types shared by the server and independent clients. No runtime dependencies.
 use serde::{Deserialize, Serialize};
 
+pub mod events;
+pub const EVENT_INSTANCE_HEADER: &str = "x-patina-event-instance";
+
 pub const CURRENT_PROTOCOL_VERSION: u32 = 2;
 
 #[derive(Debug, Deserialize, Serialize)]

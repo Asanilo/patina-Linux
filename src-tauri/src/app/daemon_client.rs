@@ -1,5 +1,3 @@
-use std::sync::{Arc, RwLock};
-
 use serde::Serialize;
 use tauri::{AppHandle, Manager, Runtime};
 
@@ -8,52 +6,33 @@ use tauri::{AppHandle, Manager, Runtime};
 #[allow(dead_code)]
 pub mod runtime;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct PatinadClientState {
-    client: Arc<RwLock<Option<crate::platform::daemon_client::PatinadClient>>>,
-    revision_tx: tokio::sync::watch::Sender<u64>,
+    inner: patina_client::state::ClientState,
 }
-
-impl Default for PatinadClientState {
-    fn default() -> Self {
-        let (revision_tx, _) = tokio::sync::watch::channel(0);
-        Self {
-            client: Arc::new(RwLock::new(None)),
-            revision_tx,
-        }
-    }
-}
-
 impl PatinadClientState {
     pub fn install(&self, client: crate::platform::daemon_client::PatinadClient) {
-        {
-            match self.client.write() {
-                Ok(mut current) => *current = Some(client),
-                Err(poisoned) => *poisoned.into_inner() = Some(client),
-            }
-        }
-        self.revision_tx.send_modify(|revision| {
-            *revision = revision.saturating_add(1);
-        });
+        self.inner.install(client.transport().clone());
     }
-
     pub fn require(&self) -> Result<crate::platform::daemon_client::PatinadClient, String> {
-        let client = match self.client.read() {
-            Ok(current) => current.clone(),
-            Err(poisoned) => poisoned.into_inner().clone(),
-        };
-        client.ok_or_else(|| "patinad client is not configured for this profile".to_string())
+        self.inner
+            .require()
+            .map(crate::platform::daemon_client::PatinadClient::from_transport)
+            .map_err(|error| error.to_string())
     }
-
     pub fn replace_configuration(&self, port: u16, token: String) -> Result<(), String> {
         let client = crate::platform::daemon_client::PatinadClient::new(port, token)
             .map_err(|error| error.to_string())?;
         self.install(client);
         Ok(())
     }
-
-    pub(crate) fn subscribe(&self) -> tokio::sync::watch::Receiver<u64> {
-        self.revision_tx.subscribe()
+    pub(crate) fn subscribe(
+        &self,
+    ) -> tokio::sync::watch::Receiver<patina_client::state::Configuration> {
+        self.inner.subscribe()
+    }
+    pub(crate) fn shared(&self) -> patina_client::state::ClientState {
+        self.inner.clone()
     }
 }
 
@@ -901,7 +880,9 @@ mod tests {
         events: std::sync::Mutex<Vec<crate::engine::runtime_event::RuntimeEventEnvelope>>,
     }
 
-    impl super::runtime::PatinadRuntimeOutput for TestRuntimeOutput {
+    impl super::runtime::PatinadRuntimeOutput<super::runtime::PatinadRuntimeReadSnapshot>
+        for TestRuntimeOutput
+    {
         fn connection_changed(
             &self,
             status: super::runtime::PatinadRuntimeConnectionStatus,

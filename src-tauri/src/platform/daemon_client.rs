@@ -1,6 +1,7 @@
 #[cfg(test)]
 use patina_client::negotiate_tracking_capabilities;
-use patina_client::Event;
+#[cfg(test)]
+use patina_client::{events::parse_stream_event, Event};
 pub use patina_client::{ClientError as PatinadClientError, Negotiation as PatinadNegotiation};
 use patina_client::{MAX_RESPONSE_BYTES, REQUEST_TIMEOUT};
 use serde::{de::DeserializeOwned, Serialize};
@@ -14,12 +15,12 @@ use crate::engine::api::types::{
     StartPomodoroRequest, StartTimerRequest, TrackerSettingsResponse, TrackingDataCleanupRequest,
     TrackingPausedRequest,
 };
+#[cfg(test)]
 use crate::engine::runtime_event::RuntimeEventEnvelope;
 
 const IMPORT_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 const RESTORE_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 const RESTORE_COMPLETION_TIMEOUT: Duration = Duration::from_secs(300);
-const MAX_EVENT_DATA_BYTES: usize = 64 * 1024;
 
 /// Domain-specific Desktop facade. HTTP/SSE and negotiation live in patina-client.
 #[derive(Clone, Debug)]
@@ -27,44 +28,18 @@ pub struct PatinadClient {
     transport: patina_client::Client,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum PatinadStreamEvent {
-    Runtime(RuntimeEventEnvelope),
-    ResyncRequired {
-        reason: String,
-        missed: Option<u64>,
-    },
-    Ignored {
-        event: String,
-        sequence: Option<u64>,
-    },
-}
+#[cfg(test)]
+pub use patina_client::events::{
+    RuntimeEventStream as PatinadEventStream, StreamEvent as PatinadStreamEvent,
+};
 
-impl PatinadStreamEvent {
-    pub fn sequence(&self) -> Option<u64> {
-        match self {
-            Self::Runtime(envelope) => Some(envelope.sequence),
-            Self::Ignored { sequence, .. } => *sequence,
-            Self::ResyncRequired { .. } => None,
-        }
-    }
-}
-
-#[allow(dead_code)]
-pub struct PatinadEventStream {
-    inner: patina_client::EventStream,
-}
-#[allow(dead_code)]
-impl PatinadEventStream {
-    pub async fn next_event(&mut self) -> Result<Option<PatinadStreamEvent>, PatinadClientError> {
-        self.inner
-            .next_event()
-            .await?
-            .map(parse_stream_event)
-            .transpose()
-    }
-}
 impl PatinadClient {
+    pub(crate) fn from_transport(transport: patina_client::Client) -> Self {
+        Self { transport }
+    }
+    pub(crate) fn transport(&self) -> &patina_client::Client {
+        &self.transport
+    }
     pub fn new(port: u16, token: impl Into<String>) -> Result<Self, PatinadClientError> {
         Ok(Self {
             transport: patina_client::Client::new(port, token)?,
@@ -520,13 +495,14 @@ impl PatinadClient {
             .await
     }
 
+    #[cfg(test)]
     pub async fn open_event_stream(
         &self,
         after_sequence: Option<u64>,
     ) -> Result<PatinadEventStream, PatinadClientError> {
-        Ok(PatinadEventStream {
-            inner: self.transport.open_event_stream(after_sequence).await?,
-        })
+        self.transport
+            .open_runtime_event_stream(after_sequence)
+            .await
     }
     pub async fn negotiate_tracking_owner(&self) -> Result<PatinadNegotiation, PatinadClientError> {
         self.transport.negotiate_tracking_owner().await
@@ -699,73 +675,6 @@ fn valid_restore_request_id(value: &str) -> bool {
             && suffix
                 .bytes()
                 .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    })
-}
-
-#[allow(dead_code)]
-fn parse_stream_event(event: Event) -> Result<PatinadStreamEvent, PatinadClientError> {
-    if event.data.len() > MAX_EVENT_DATA_BYTES {
-        return Err(PatinadClientError::ResponseTooLarge);
-    }
-    if event.event == "resync-required" {
-        #[derive(serde::Deserialize)]
-        struct ResyncPayload {
-            reason: String,
-            missed: Option<u64>,
-        }
-        let payload = serde_json::from_str::<ResyncPayload>(&event.data).map_err(|error| {
-            PatinadClientError::InvalidResponse(format!(
-                "failed to decode patinad resync event: {error}"
-            ))
-        })?;
-        return Ok(PatinadStreamEvent::ResyncRequired {
-            reason: payload.reason,
-            missed: payload.missed,
-        });
-    }
-
-    let sequence = parse_optional_event_sequence(&event.id)?;
-    let is_known_runtime_event = matches!(
-        event.event.as_str(),
-        "tracking-data-changed"
-            | "scheduled-backup-changed"
-            | "tools-runtime-changed"
-            | "tool-alert"
-    );
-    if !is_known_runtime_event {
-        return Ok(PatinadStreamEvent::Ignored {
-            event: event.event,
-            sequence,
-        });
-    }
-
-    let envelope = serde_json::from_str::<RuntimeEventEnvelope>(&event.data).map_err(|error| {
-        PatinadClientError::InvalidResponse(format!(
-            "failed to decode patinad runtime event: {error}"
-        ))
-    })?;
-    let Some(sequence) = sequence else {
-        return Err(PatinadClientError::InvalidResponse(
-            "patinad runtime event is missing its sequence ID".to_string(),
-        ));
-    };
-    if envelope.sequence != sequence || envelope.event.event_name() != event.event {
-        return Err(PatinadClientError::InvalidResponse(
-            "patinad runtime event ID or type does not match its envelope".to_string(),
-        ));
-    }
-    Ok(PatinadStreamEvent::Runtime(envelope))
-}
-
-#[allow(dead_code)]
-fn parse_optional_event_sequence(value: &str) -> Result<Option<u64>, PatinadClientError> {
-    if value.is_empty() {
-        return Ok(None);
-    }
-    value.parse::<u64>().map(Some).map_err(|_| {
-        PatinadClientError::InvalidResponse(
-            "patinad event stream returned an invalid sequence ID".to_string(),
-        )
     })
 }
 
