@@ -12,8 +12,12 @@ pub async fn get_dashboard(context: &ApiRuntimeContext, query: Option<&str>) -> 
         Ok(value) => value,
         Err(error) => return error_response(400, &error),
     };
+    let analytical = match context.analytical_read() {
+        Ok(read) => read,
+        Err(response) => return response,
+    };
     match crate::data::repositories::daily_activity::load_dashboard_product(
-        context.pool(),
+        analytical.pool(),
         &boundaries,
         context.now_ms(),
         &language,

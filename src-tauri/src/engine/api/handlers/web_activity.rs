@@ -9,7 +9,11 @@ use crate::engine::api::types::{
 };
 
 pub async fn get_web_activity(context: &ApiRuntimeContext, query: Option<&str>) -> RouteResponse {
-    let pool = context.pool();
+    let analytical = match context.analytical_read() {
+        Ok(read) => read,
+        Err(response) => return response,
+    };
+    let pool = analytical.pool();
     let query = parse_web_activity_query(query);
     let rows = match query_segments(pool, &query, context.now_ms()).await {
         Ok(rows) => rows,

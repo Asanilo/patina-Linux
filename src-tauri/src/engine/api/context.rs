@@ -47,6 +47,7 @@ impl ApiRuntimeStateProvider for UnavailableApiRuntimeState {
 #[derive(Clone)]
 pub struct ApiRuntimeContext {
     runtime: RuntimeContext,
+    analytical_reads: Option<crate::data::analytical_reads::AnalyticalReads>,
     version: String,
     platform: String,
     state: Arc<dyn ApiRuntimeStateProvider>,
@@ -93,6 +94,7 @@ impl ApiRuntimeContext {
     ) -> Self {
         Self {
             runtime,
+            analytical_reads: None,
             version: version.into(),
             platform: platform.into(),
             state,
@@ -156,6 +158,38 @@ impl ApiRuntimeContext {
 
     pub(crate) fn runtime(&self) -> &RuntimeContext {
         &self.runtime
+    }
+
+    pub fn with_analytical_reads(
+        mut self,
+        reads: crate::data::analytical_reads::AnalyticalReads,
+    ) -> Self {
+        self.analytical_reads = Some(reads);
+        self
+    }
+
+    pub fn analytical_read(
+        &self,
+    ) -> Result<
+        crate::data::analytical_reads::AnalyticalRead,
+        crate::engine::api::types::RouteResponse,
+    > {
+        match &self.analytical_reads {
+            Some(reads) => {
+                reads
+                    .try_read()
+                    .map_err(|message| crate::engine::api::types::RouteResponse {
+                        status: 503,
+                        body: serde_json::to_value(
+                            crate::engine::api::types::ApiError::unavailable(message),
+                        )
+                        .unwrap_or_default(),
+                    })
+            }
+            None => Ok(crate::data::analytical_reads::AnalyticalRead::shared_pool(
+                self.pool().clone(),
+            )),
+        }
     }
 
     pub fn pool(&self) -> &sqlx::Pool<sqlx::Sqlite> {

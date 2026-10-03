@@ -8,8 +8,12 @@ pub async fn get_history(context: &ApiRuntimeContext, query: Option<&str>) -> Ro
         Ok(value) => value,
         Err(message) => return error_response(400, &message),
     };
+    let analytical = match context.analytical_read() {
+        Ok(read) => read,
+        Err(response) => return response,
+    };
     match crate::data::repositories::exact_history::load_exact_history(
-        context.pool(),
+        analytical.pool(),
         from,
         to,
         context.now_ms(),

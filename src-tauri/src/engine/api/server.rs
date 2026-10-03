@@ -705,6 +705,100 @@ mod tests {
     use crate::engine::runtime_event::{RuntimeEvent, RuntimeEventSink};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+    #[tokio::test]
+    async fn analytical_capacity_preserves_configuration_reads_and_writes() {
+        let root = std::env::temp_dir().join(format!(
+            "patina-api-read-isolation-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let database =
+            crate::app::daemon::prepare_sqlite_runtime_at_path(root.join("patina.db"), true)
+                .await
+                .unwrap();
+        let first = database.analytical_reads.try_read().unwrap();
+        let second = database.analytical_reads.try_read().unwrap();
+        let mut first_snapshot = first.pool().begin().await.unwrap();
+        let mut second_snapshot = second.pool().begin().await.unwrap();
+        sqlx::query("SELECT key FROM settings")
+            .fetch_all(&mut *first_snapshot)
+            .await
+            .unwrap();
+        sqlx::query("SELECT key FROM settings")
+            .fetch_all(&mut *second_snapshot)
+            .await
+            .unwrap();
+        let context = ApiRuntimeContext::new(
+            crate::engine::runtime_context::RuntimeContext::system(database.pool.clone()),
+        )
+        .with_analytical_reads(database.analytical_reads.clone());
+        let server = prepare_standalone_server_with_events(
+            0,
+            test_credentials(),
+            context,
+            ApiSurface::DaemonTracking,
+            Arc::new(RuntimeEventHub::new(8)),
+        )
+        .await
+        .unwrap();
+        let client = patina_client::Client::new(server.port(), "test-token").unwrap();
+        let shutdown = server.shutdown_handle();
+        let task = tokio::spawn(server.run());
+        for path in [
+            "/api/v1/activity/history?from_ms=0&to_ms=1000",
+            "/api/v1/activity/web-history?from_ms=0&to_ms=1000",
+            "/api/v1/heatmap?from=2026-01-01&to=2026-01-02",
+            "/api/v1/apps",
+            "/api/v1/sessions",
+        ] {
+            let error = client
+                .get_json::<serde_json::Value>(path, "busy analytical read")
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(error, patina_client::ClientError::Http { status: 503, .. }),
+                "{path}: {error}"
+            );
+        }
+        let before = tokio::time::timeout(Duration::from_secs(1), client.product_settings())
+            .await
+            .unwrap()
+            .unwrap();
+        let confirmed = tokio::time::timeout(
+            Duration::from_secs(1),
+            client.commit_product_settings(
+                &patina_protocol::product_settings::ProductSettingsCommitRequest {
+                    expected_revision: before.revision,
+                    patch: patina_protocol::product_settings::ProductSettingsPatch {
+                        min_session_secs: Some(360),
+                        ..Default::default()
+                    },
+                },
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(confirmed.settings.min_session_secs, 360);
+        first_snapshot.commit().await.unwrap();
+        second_snapshot.commit().await.unwrap();
+        drop(first);
+        drop(second);
+        let apps: serde_json::Value = client
+            .get_json("/api/v1/apps", "available analytical read")
+            .await
+            .unwrap();
+        assert_eq!(apps["apps"], serde_json::json!([]));
+        shutdown.shutdown();
+        task.await.unwrap();
+        database.analytical_reads.close().await;
+        database.pool.close().await;
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn analytical_read_deadlines_fit_between_repository_and_client() {
         for (path, query, expected) in [

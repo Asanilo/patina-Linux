@@ -13,16 +13,20 @@ pub async fn get_observed_apps(context: &ApiRuntimeContext, query: Option<&str>)
             }
         }
     };
+    let analytical = match context.analytical_read() {
+        Ok(read) => read,
+        Err(response) => return response,
+    };
     let result = if migration {
         crate::data::repositories::observed_apps::load_migration_observed_apps(
-            context.pool(),
+            analytical.pool(),
             to,
             context.now_ms(),
         )
         .await
     } else {
         crate::data::repositories::observed_apps::load_observed_apps(
-            context.pool(),
+            analytical.pool(),
             from,
             to,
             context.now_ms(),

@@ -10,7 +10,11 @@ use sqlx::Row;
 use std::collections::HashMap;
 
 pub async fn get_sessions(context: &ApiRuntimeContext, query: Option<&str>) -> RouteResponse {
-    let pool = context.pool();
+    let analytical = match context.analytical_read() {
+        Ok(read) => read,
+        Err(response) => return response,
+    };
+    let pool = analytical.pool();
     let params = parse_session_query(query);
 
     let mut sql = String::from(
@@ -74,7 +78,11 @@ pub async fn get_sessions(context: &ApiRuntimeContext, query: Option<&str>) -> R
 }
 
 pub async fn get_active_session(context: &ApiRuntimeContext) -> RouteResponse {
-    let pool = context.pool();
+    let analytical = match context.analytical_read() {
+        Ok(read) => read,
+        Err(response) => return response,
+    };
+    let pool = analytical.pool();
     let row = match sqlx::query(
         "SELECT id,
                 app_name,
@@ -202,7 +210,11 @@ async fn build_summary_response(
     to_ms: i64,
     label: &str,
 ) -> RouteResponse {
-    let pool = context.pool();
+    let analytical = match context.analytical_read() {
+        Ok(read) => read,
+        Err(response) => return response,
+    };
+    let pool = analytical.pool();
     let sampled_at_ms = context.now_ms();
     // A calendar period has no elapsed time at its exact opening boundary.
     let contributions = if from_ms == to_ms {

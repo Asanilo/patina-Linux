@@ -363,3 +363,19 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - `npm run check:full` 完整通过：64 个 TypeScript 文件、45 项浏览器检查、36 项 SDK 测试及 Clippy；Desktop 763 passed / 22 ignored，独立后端 605 passed / 11 ignored，均包含对应依赖／边界和 Clippy。新增加的 ignored 项是明确需要 16 秒的传输验收，不是略过失败测试。
 - 随后单独执行该慢测并通过：在内存 SQLite 中持有唯一连接 16 秒，通用独立 SDK 经真实 HTTP 读取 exact history，在释放连接后成功取得结果，再由 typed SDK 正常读取。它会发现原来的 3 秒通用 SDK 或 15 秒 HTTP 早退，实际用时 16.01 秒。证据：`tmp/acceptance/m2l-full.log`、`tmp/acceptance/m2l-delayed-http.log`。没有读取用户 profile 或启动生产追踪。
 - API 文档已移除“HTTP 在 15 秒先超时”等过时说明，开发文档记录慢测入口。本批没有安装、打包、推送、合并或发布。客户端偏好的备份选择尚待答复；后续可独立推进 SQLite 分析读取与写侧的隔离及 admission 验证，整体目标保持未完成。
+
+### M2m 执行设计：daemon 分析读与写侧隔离
+
+- 核实 SQLx 0.8.6 不默认启用 WAL，当前 daemon API 分析与追踪共享一个连接；持有该连接会阻止后续写入取得连接。由 `data/analytical_reads` 管理独立只读池，daemon 在拥有 runtime lease 的启动准备阶段确认 WAL，使用同一已存在的数据库路径；只读连接不能创建数据库或运行 migration。
+- 每个 daemon read owner 有两条只读连接和共享的两项 admission；不同分析接口／listener clone 共用容量，不建立无界等待队列，容量不足返回 503。已有 repository 各自更严格的单查询限制暂保留。普通设置、追踪写入和短控制接口继续使用写侧连接，不被分析连接 checkout 占用。
+- 为只读 SQLite VM 安装 progress callback：每次 checkout 重置 30 秒执行上限，关闭时中断活跃原生查询；调用方取消后仍最多占用既有两条连接，不靠 Rust future Drop 假定 SQL 已经停止。该机制不宣称能抢占任意 Rust CPU 工作或阻塞文件系统 IO。
+- primary daemon 必须接入该 owner，并在停止 API 后、释放写池与 runtime lease 前关闭读池。embedded 迁移宿主和内存测试 context 仍保留具名的共享池兼容路径，不扩展第二套 backend。备份偏好选择未答复，相关恢复语义不变。
+
+### M2m 核验结果
+
+- daemon 启动、API context、listener clone 和关闭已接入独立分析读 owner。WAL 由 writer 确认；readonly／query-only 池不创建数据库、不执行迁移。新旧事实读取（包括 sessions／summary／apps／web-activity）均经分析池，AI 聚合的子读取继承限额。配置／控制接口保持 writer pool，原来的 repository 单查询限制仍保留。
+- 隔离 SQLite 测试先复现共享唯一连接时写入无法取得连接，再证明持有只读事务时 writer 能在一秒门槛内提交，旧快照保持旧值、后续读取看到新值。验证只读写入／临时表拒绝、clone 共用两项容量、关闭 reader 不关闭 writer，以及原生 VM 截止、调用方取消后的连接重用和关闭中断。
+- 实际 HTTP 验证两个分析 slot 满载时不同事实接口返回 503，同时配置读取与条件写入仍在一秒门槛内完成；释放后恢复读取。容量恢复使用无额外全局 family semaphore 的 apps 端点，避免测试彼此争抢 History 的单查询限制。
+- `check:full` 通过：64 个 TypeScript 文件、45 项浏览器检查、36 项 SDK 测试及 Clippy；Desktop 768 passed / 22 ignored、独立后端 610 passed / 11 ignored，以及边界／依赖图和 Clippy。随后只调整上述测试的恢复端点，相关 analytical 测试再次通过（6 passed / 1 ignored），没有重复未变化的前端门禁。初轮修正了 SQLx hook 名称为 before_acquire。证据为 `tmp/acceptance/m2m-full.log` 和 `m2m-analytical-final.log`。
+- 新 headless binary 经临时 Local profile 的双 SDK 同步、认证拒绝、正常关闭／重启、lease 重获、分类及 migration checksum 保留验收通过；实际数据库 journal mode 为 WAL。证据在 `tmp/acceptance/multi-client-m2m-read-isolation/`、`tmp/acceptance/m2m-independent-client.log` 和 `/tmp/patina-independent-client-889sov_t/`；二进制 SHA256 为 `af7806183ec1bfa7cb9b6a96ecb14505715dfd750e7a6a5bc72cb909856f7567`。
+- 没有操作生产 profile、安装、推送、合并或发布。本切片不宣称 embedded 或所有后台备份任务都已经使用独立读池，也不代表实际硬件追踪／整机性能验收。客户端偏好备份选择及网页两项产品问题仍待答复；运行资源并发保护、契约生成和其余已列出的基础阶段工作继续保留。

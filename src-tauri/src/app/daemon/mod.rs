@@ -26,6 +26,7 @@ pub struct DaemonSqliteRuntime {
     #[cfg_attr(not(test), allow(dead_code))]
     pub db_path: PathBuf,
     pub pool: Pool<Sqlite>,
+    pub analytical_reads: crate::data::analytical_reads::AnalyticalReads,
 }
 
 pub fn build_startup_status(
@@ -231,7 +232,8 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
             event_hub.clone(),
             api_runtime_control,
             tools_owner.clone().map(Arc::new),
-        );
+        )
+        .with_analytical_reads(sqlite_runtime.analytical_reads.clone());
         if let Some(activity_import_owner) = activity_import_owner {
             context = context.with_activity_import_owner(activity_import_owner);
         }
@@ -352,7 +354,12 @@ pub async fn prepare_sqlite_runtime_at_path(
         database_creation_allowed,
     )
     .await?;
-    Ok(DaemonSqliteRuntime { db_path, pool })
+    let analytical_reads = crate::data::analytical_reads::AnalyticalReads::open(&pool).await?;
+    Ok(DaemonSqliteRuntime {
+        db_path,
+        pool,
+        analytical_reads,
+    })
 }
 
 #[cfg(test)]

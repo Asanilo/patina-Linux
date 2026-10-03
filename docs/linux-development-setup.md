@@ -42,6 +42,23 @@ classification/schema metadata. It does not install a service or validate real
 GNOME tracking. If sharing `CARGO_TARGET_DIR` across configurations, preserve the
 selected binary before another build replaces `debug/patinad`.
 
+## Daemon Analytical Read Isolation
+
+The multi-client daemon prepares a separate two-connection analytical pool after
+the writer has prepared the database. It confirms WAL on the owner connection;
+the analytical connections use the existing file, SQLite read-only mode and
+`query_only`. WAL setup failure is a startup error, not a silent return to the
+shared writer connection. The embedded migration host still uses its explicitly
+documented compatibility pool.
+
+Facts and analytical API reads share two admission slots; overload returns 503.
+Per-repository single-query limits may be stricter. Configuration and tracking
+writes retain the writer pool. Native SQLite progress callbacks bound analytical
+VM execution and interrupt it during shutdown; this does not cap arbitrary Rust
+CPU work or blocking filesystem IO. Closing both pools precedes runtime lease
+release. The regular Rust gates cover stable read snapshots alongside writes,
+read-only rejection, shared capacity, cancellation recovery and shutdown.
+
 ## Analytical Read Deadline Acceptance
 
 Bounded analytical reads share query, HTTP and SDK deadlines in

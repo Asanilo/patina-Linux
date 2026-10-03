@@ -6,8 +6,14 @@ use crate::engine::api::types::{
 };
 
 pub async fn get_apps(context: &ApiRuntimeContext) -> RouteResponse {
-    match crate::data::repositories::app_mappings::load_observed_app_configurations(context.pool())
-        .await
+    let analytical = match context.analytical_read() {
+        Ok(read) => read,
+        Err(response) => return response,
+    };
+    match crate::data::repositories::app_mappings::load_observed_app_configurations(
+        analytical.pool(),
+    )
+    .await
     {
         Ok(apps) => RouteResponse {
             status: 200,

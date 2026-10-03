@@ -8,7 +8,11 @@ pub async fn get_heatmap(context: &ApiRuntimeContext, query: Option<&str>) -> Ro
         Ok(boundaries) => boundaries,
         Err(message) => return error_response(400, ApiError::bad_request(&message)),
     };
-    match load_daily_activity(context.pool(), &boundaries, context.now_ms()).await {
+    let analytical = match context.analytical_read() {
+        Ok(read) => read,
+        Err(response) => return response,
+    };
+    match load_daily_activity(analytical.pool(), &boundaries, context.now_ms()).await {
         Ok(data) => RouteResponse {
             status: 200,
             body: serde_json::to_value(ApiResponse { data }).unwrap_or_default(),
@@ -47,8 +51,12 @@ pub async fn get_daily_product(context: &ApiRuntimeContext, query: Option<&str>)
         Ok(value) => value,
         Err(error) => return error_response(400, ApiError::bad_request(&error)),
     };
+    let analytical = match context.analytical_read() {
+        Ok(read) => read,
+        Err(response) => return response,
+    };
     match crate::data::repositories::daily_activity::load_daily_product(
-        context.pool(),
+        analytical.pool(),
         &boundaries,
         context.now_ms(),
         language.as_deref().unwrap_or("en-US"),
@@ -86,15 +94,19 @@ pub async fn get_daily_apps(context: &ApiRuntimeContext, query: Option<&str>) ->
         Ok(boundaries) => boundaries,
         Err(message) => return error_response(400, ApiError::bad_request(&message)),
     };
+    let analytical = match context.analytical_read() {
+        Ok(read) => read,
+        Err(response) => return response,
+    };
     let result = if named.unwrap_or(false) {
         crate::data::repositories::daily_activity::load_daily_apps_named(
-            context.pool(),
+            analytical.pool(),
             &boundaries,
             context.now_ms(),
         )
         .await
     } else {
-        load_daily_apps(context.pool(), &boundaries, context.now_ms()).await
+        load_daily_apps(analytical.pool(), &boundaries, context.now_ms()).await
     };
     match result {
         Ok(data) => RouteResponse {

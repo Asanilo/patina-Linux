@@ -1,3 +1,4 @@
+pub mod analytical_reads;
 #[cfg(feature = "desktop")]
 pub mod app_settings_service;
 pub mod backup;

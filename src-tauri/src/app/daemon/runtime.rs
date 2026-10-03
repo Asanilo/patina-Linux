@@ -159,6 +159,7 @@ impl DaemonRuntime {
         }
         drop(self.event_hub.take());
         if let Some(sqlite) = self.sqlite.take() {
+            sqlite.analytical_reads.close().await;
             sqlite.pool.close().await;
         }
         drop(self.lease.take());

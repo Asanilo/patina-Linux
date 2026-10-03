@@ -1545,6 +1545,15 @@ curl -s -X POST "$PATINA_API_BASE/api/v1/backups/restore/cancel" \
 
 Validation or transaction failures leave the original database usable and retain the owner-only staged archive until this explicit cancellation. Successful restore records a durable receipt before the exact staged file is deleted, so a crash between database commit and status-file update cannot apply the same reservation twice.
 
+On the multi-client daemon, fact/analytical reads use a separate read-only WAL
+pool with two shared admission slots. This includes sessions, summaries, apps,
+web activity and the bounded product reads. Exhausted global capacity returns
+`503 unavailable` immediately; existing per-repository busy rules can be stricter.
+The AI aggregate preserves its existing component-error representation.
+Configuration reads and write commands use the owner writer pool, so an analytical
+snapshot does not hold their connection. Embedded compatibility hosts do not yet
+have this isolation. These are concurrency limits, not a total memory guarantee.
+
 ### `GET /api/v1/settings/product`
 
 The multi-client branch exposes a single read transaction for shared product

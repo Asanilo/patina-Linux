@@ -8,8 +8,12 @@ pub async fn get_web_history(context: &ApiRuntimeContext, query: Option<&str>) -
         Ok(value) => value,
         Err(message) => return error_response(400, &message),
     };
+    let analytical = match context.analytical_read() {
+        Ok(read) => read,
+        Err(response) => return response,
+    };
     match crate::data::repositories::web_product::load_web_history(
-        context.pool(),
+        analytical.pool(),
         from,
         to,
         context.now_ms(),

@@ -26,7 +26,11 @@ pub async fn get_trend(context: &ApiRuntimeContext, query: Option<&str>) -> Rout
         }
     };
 
-    let pool = context.pool();
+    let analytical = match context.analytical_read() {
+        Ok(read) => read,
+        Err(response) => return response,
+    };
+    let pool = analytical.pool();
 
     let mut boundaries = range
         .day_starts
