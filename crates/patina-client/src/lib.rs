@@ -8,6 +8,7 @@ mod error;
 pub mod events;
 mod history;
 mod icons;
+mod maintenance;
 mod web_history;
 pub mod state;
 pub mod sync;

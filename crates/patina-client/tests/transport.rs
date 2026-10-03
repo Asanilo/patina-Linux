@@ -238,3 +238,26 @@ async fn incomplete_sse_event_is_rejected_before_unbounded_buffering() {
     assert!(events.next_event().await.is_err());
     server.await.unwrap();
 }
+
+#[tokio::test]
+async fn canonical_cleanup_requires_its_capability_and_never_uses_legacy_delete() {
+    let (client, server) = fixture(response(
+        "200 OK",
+        &json!({"data":capabilities()}).to_string(),
+        "Content-Type: application/json\r\n",
+    ))
+    .await;
+    let request = patina_client::protocol::maintenance::CanonicalAppCleanupRequest {
+        app_key: "editor".into(),
+        scope: patina_client::protocol::maintenance::AppCleanupScope::All,
+        confirmed: true,
+    };
+    assert!(matches!(
+        client.delete_canonical_app_history(&request).await,
+        Err(ClientError::UnsupportedCapability(_))
+    ));
+    assert!(server
+        .await
+        .unwrap()
+        .starts_with("GET /api/v1/capabilities "));
+}

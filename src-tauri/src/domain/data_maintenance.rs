@@ -17,13 +17,7 @@ pub struct WindowTitleCleanupResult {
     pub imported_exact_sessions_redacted: u64,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-pub struct AppTrackingDataCleanupResult {
-    pub sessions_deleted: u64,
-    pub imported_exact_sessions_deleted: u64,
-    pub imported_time_buckets_deleted: u64,
-    pub import_batches_deleted: u64,
-}
+pub use patina_protocol::maintenance::AppTrackingDataCleanupResult;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct WebDomainCleanupResult {
@@ -58,4 +52,15 @@ pub fn validate_app_tracking_data_cleanup(
         (Some(start), Some(end)) if start >= 0 && end > start => Ok(()),
         _ => Err("application cleanup requires a valid complete time range".to_string()),
     }
+}
+
+pub fn canonical_cleanup_key(
+    request: &patina_protocol::maintenance::CanonicalAppCleanupRequest,
+) -> Result<String, String> {
+    request.validate()?;
+    let key = crate::domain::activity_read_policy::canonical_executable(&request.app_key);
+    if key.is_empty() || key.len() > patina_protocol::maintenance::MAX_CLEANUP_APP_KEY_BYTES {
+        return Err("invalid canonical application key".into());
+    }
+    Ok(key)
 }

@@ -101,6 +101,7 @@ Current caveats:
 | `/api/v1/settings/local-api/token/rotate` | `POST` | Tracking daemon | Rotate the owner-only API Token and revoke old clients |
 | `/api/v1/data/cleanup` | `POST` | Tracking daemon | Delete tracking rows starting before an explicitly confirmed cutoff |
 | `/api/v1/data/window-titles/clear` | `POST` | Tracking daemon | Explicitly confirm deletion and redaction of stored window titles |
+| `/api/v1/data/apps/delete-canonical` | `POST` | Development branch, tracking daemon | Confirmed application-group cleanup; aliases resolved atomically by the owner |
 | `/api/v1/data/apps/delete` | `POST` | Tracking daemon | Explicitly confirm deletion of native and imported activity for selected executables |
 | `/api/v1/data/web-domains/delete` | `POST` | Tracking daemon | Explicitly confirm deletion of browser activity for one exact normalized domain |
 | `/api/v1/system/service` | `GET` | Managed tracking daemon | Read systemd service identity and latest restart ticket |
@@ -1709,7 +1710,7 @@ Desktop preference introduced in the beta.18 candidate: `background_optimization
 
 ### `POST /api/v1/data/cleanup`
 
-Deletes session title samples, native sessions, browser activity segments, imported exact sessions, and imported hour buckets whose owning row starts before `cutoff_time_ms`. Imported batch counts and empty batches are updated in the same SQLite transaction. A record crossing the cutoff is deleted according to its start time, matching the Settings cleanup policy.
+Deletes session title samples, native sessions, browser activity segments, imported exact sessions, and imported hour buckets whose owning row starts before `cutoff_time_ms`. Only affected import batch counts and empty batches are updated in the same SQLite transaction; unrelated empty batches are preserved. A record crossing the cutoff is deleted according to its start time, matching the Settings cleanup policy.
 
 ```bash
 curl -s -X POST "$PATINA_API_BASE/api/v1/data/cleanup" \
@@ -1742,9 +1743,42 @@ curl -s -X POST "$PATINA_API_BASE/api/v1/data/window-titles/clear" \
 
 The response reports `title_samples_deleted`, `sessions_redacted`, and `imported_exact_sessions_redacted`. This clears existing data; it does not disable future title capture. Use per-app title recording controls for that policy. The endpoint is intentionally absent from the MCP wrapper.
 
+### `POST /api/v1/data/apps/delete-canonical`
+
+Requires the `canonical-app-cleanup` write capability on the tracking daemon.
+The body is `{ "app_key": "Steam.exe", "scope": "all", "confirmed": true }`.
+`scope` must be `all` or `today`; missing/false confirmation, invalid keys,
+unknown fields or unsupported scope reject before writing. App keys are bounded
+to 1,024 UTF-8 bytes and cannot contain control characters.
+
+The owner acquires the SQLite writer before enumerating names from native,
+imported exact and imported hour facts. It uses the shared canonical executable
+policy to match the selected application, then deletes inside the same
+transaction. `today` uses the owner's local calendar, including DST, and keeps
+the existing start-time selection rule; sessions beginning before the day are
+not partially removed just because they overlap it.
+
+Name enumeration is limited to 4,096 distinct names, 1,024 bytes per name and
+1 MiB of name payload. Affected import batches are bounded to 10,000 IDs and
+1 MiB of ID payload. A 12-second operation deadline applies. Overflow or an
+intermediate SQL error rolls the operation back. These payload limits do not
+claim to bound SQLite temporary storage during DISTINCT/sorting.
+
+The response contains the canonical `app_key`, `matched_executables`, and
+`deleted` counters matching `AppTrackingDataCleanupResponse`. Only affected
+import batches are recounted/pruned. Classification settings, unrelated empty
+batches and separate web records remain; title samples and native/web link rows
+follow their existing foreign keys. Successful matched operations publish the
+existing `application-tracking-data-deleted` event after commit.
+
+Desktop keeps its existing confirmation dialog and calls the owner once. The
+SDK `delete_canonical_app_history(request)` checks the explicit confirmation and
+capability; it never falls back to the legacy raw-name endpoint or retries a
+write after an uncertain response. This endpoint is not exposed as an MCP tool.
+
 ### `POST /api/v1/data/apps/delete`
 
-Deletes native sessions and imported exact/hour facts for one bounded executable set. The optional time range must provide both bounds and uses `[start_time_ms, end_time_ms)` against each row's start time. Imported batch counts and empty batches are updated in the same SQLite transaction.
+Deletes native sessions and imported exact/hour facts for one bounded executable set. The optional time range must provide both bounds and uses `[start_time_ms, end_time_ms)` against each row's start time. Only affected import batch counts and empty batches are updated in the same SQLite transaction; unrelated empty batches are preserved.
 
 ```bash
 curl -s -X POST "$PATINA_API_BASE/api/v1/data/apps/delete" \

@@ -1,3 +1,4 @@
+pub mod canonical;
 use crate::domain::data_maintenance::{
     validate_app_tracking_data_cleanup, AppTrackingDataCleanupResult, TrackingDataCleanupResult,
     WindowTitleCleanupResult,
@@ -152,68 +153,130 @@ pub async fn delete_app_tracking_data(
         .collect::<Vec<_>>();
 
     let mut tx = pool
-        .begin()
+        .begin_with("BEGIN IMMEDIATE")
         .await
         .map_err(|error| format!("failed to start application data cleanup: {error}"))?;
-    let sessions_deleted = delete_app_rows(
-        &mut tx,
-        "sessions",
-        "start_time",
-        &exe_names,
-        start_time_ms,
-        end_time_ms,
-    )
-    .await?;
-    let imported_exact_sessions_deleted = delete_app_rows(
-        &mut tx,
-        "import_exact_sessions",
-        "start_time",
-        &exe_names,
-        start_time_ms,
-        end_time_ms,
-    )
-    .await?;
-    let imported_time_buckets_deleted = delete_app_rows(
-        &mut tx,
-        "import_time_buckets",
-        "bucket_start_time",
-        &exe_names,
-        start_time_ms,
-        end_time_ms,
-    )
-    .await?;
-    sqlx::query(
-        "UPDATE import_batches
-         SET exact_session_count = (
-               SELECT COUNT(*) FROM import_exact_sessions
-               WHERE batch_id = import_batches.id
-             ),
-             hour_bucket_count = (
-               SELECT COUNT(*) FROM import_time_buckets
-               WHERE batch_id = import_batches.id
-             )",
-    )
-    .execute(&mut *tx)
-    .await
-    .map_err(|error| format!("failed to update imported activity batch counts: {error}"))?;
-    let import_batches_deleted = sqlx::query(
-        "DELETE FROM import_batches
-         WHERE exact_session_count = 0 AND hour_bucket_count = 0",
-    )
-    .execute(&mut *tx)
-    .await
-    .map_err(|error| format!("failed to delete empty imported activity batches: {error}"))?
-    .rows_affected();
+    let result =
+        delete_app_tracking_data_tx(&mut tx, &exe_names, start_time_ms, end_time_ms).await?;
     tx.commit()
         .await
-        .map_err(|error| format!("failed to commit application data cleanup: {error}"))?;
+        .map_err(|e| format!("failed to commit application cleanup: {e}"))?;
+    Ok(result)
+}
 
-    Ok(AppTrackingDataCleanupResult {
-        sessions_deleted,
-        imported_exact_sessions_deleted,
-        imported_time_buckets_deleted,
-        import_batches_deleted,
-    })
+pub(super) async fn delete_app_tracking_data_tx(
+    tx: &mut sqlx::Transaction<'_, Sqlite>,
+    exe_names: &[&str],
+    start_time_ms: Option<i64>,
+    end_time_ms: Option<i64>,
+) -> Result<AppTrackingDataCleanupResult, String> {
+    use futures_util::TryStreamExt;
+    let mut batches = std::collections::BTreeSet::new();
+    let mut batch_bytes = 0;
+    for (table, column) in [
+        ("import_exact_sessions", "start_time"),
+        ("import_time_buckets", "bucket_start_time"),
+    ] {
+        for names in exe_names.chunks(128) {
+            let mut query = sqlx::QueryBuilder::<Sqlite>::new(format!(
+                "SELECT DISTINCT substr(CAST(batch_id AS BLOB),1,1025) FROM {table} WHERE "
+            ));
+            app_row_filter(&mut query, column, names, start_time_ms, end_time_ms);
+            query.push(" LIMIT 10001");
+            let mut rows = query.build_query_scalar::<Vec<u8>>().fetch(&mut **tx);
+            while let Some(raw) = rows.try_next().await.map_err(|e| e.to_string())? {
+                if raw.len() > 1024 {
+                    return Err("cleanup import batch key budget exceeded".into());
+                }
+                let id = String::from_utf8(raw).map_err(|_| "invalid cleanup batch identity")?;
+                if batches.insert(id.clone()) {
+                    batch_bytes += id.len();
+                }
+                if batches.len() > 10000 || batch_bytes > 1024 * 1024 {
+                    return Err("cleanup import batch budget exceeded".into());
+                }
+            }
+        }
+    }
+    let mut result = AppTrackingDataCleanupResult::default();
+    for names in exe_names.chunks(128) {
+        result.sessions_deleted += delete_app_rows(
+            tx,
+            "sessions",
+            "start_time",
+            names,
+            start_time_ms,
+            end_time_ms,
+        )
+        .await?;
+        result.imported_exact_sessions_deleted += delete_app_rows(
+            tx,
+            "import_exact_sessions",
+            "start_time",
+            names,
+            start_time_ms,
+            end_time_ms,
+        )
+        .await?;
+        result.imported_time_buckets_deleted += delete_app_rows(
+            tx,
+            "import_time_buckets",
+            "bucket_start_time",
+            names,
+            start_time_ms,
+            end_time_ms,
+        )
+        .await?;
+    }
+    let batches = batches.into_iter().collect::<Vec<_>>();
+    for ids in batches.chunks(128) {
+        let mut update=sqlx::QueryBuilder::<Sqlite>::new("UPDATE import_batches SET exact_session_count=(SELECT COUNT(*) FROM import_exact_sessions WHERE batch_id=import_batches.id),hour_bucket_count=(SELECT COUNT(*) FROM import_time_buckets WHERE batch_id=import_batches.id) WHERE id IN (");
+        let mut bind = update.separated(",");
+        for id in ids {
+            bind.push_bind(id);
+        }
+        bind.push_unseparated(")");
+        update
+            .build()
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        let mut delete=sqlx::QueryBuilder::<Sqlite>::new("DELETE FROM import_batches WHERE exact_session_count=0 AND hour_bucket_count=0 AND id IN (");
+        let mut bind = delete.separated(",");
+        for id in ids {
+            bind.push_bind(id);
+        }
+        bind.push_unseparated(")");
+        result.import_batches_deleted += delete
+            .build()
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| e.to_string())?
+            .rows_affected();
+    }
+    Ok(result)
+}
+
+fn app_row_filter<'a>(
+    query: &mut sqlx::QueryBuilder<'a, Sqlite>,
+    time_column: &'static str,
+    exe_names: &[&'a str],
+    start_time_ms: Option<i64>,
+    end_time_ms: Option<i64>,
+) {
+    query.push("exe_name IN (");
+    let mut names = query.separated(",");
+    for name in exe_names {
+        names.push_bind(*name);
+    }
+    names.push_unseparated(")");
+    if let (Some(start), Some(end)) = (start_time_ms, end_time_ms) {
+        query
+            .push(format!(" AND {time_column} >= "))
+            .push_bind(start)
+            .push(format!(" AND {time_column} < "))
+            .push_bind(end);
+    }
 }
 
 async fn delete_app_rows(
@@ -224,22 +287,14 @@ async fn delete_app_rows(
     start_time_ms: Option<i64>,
     end_time_ms: Option<i64>,
 ) -> Result<u64, String> {
-    let mut query =
-        sqlx::QueryBuilder::<Sqlite>::new(format!("DELETE FROM {table} WHERE exe_name IN ("));
-    {
-        let mut separated = query.separated(", ");
-        for exe_name in exe_names {
-            separated.push_bind(*exe_name);
-        }
-        separated.push_unseparated(")");
-    }
-    if let (Some(start), Some(end)) = (start_time_ms, end_time_ms) {
-        query
-            .push(format!(" AND {time_column} >= "))
-            .push_bind(start)
-            .push(format!(" AND {time_column} < "))
-            .push_bind(end);
-    }
+    let mut query = sqlx::QueryBuilder::<Sqlite>::new(format!("DELETE FROM {table} WHERE "));
+    app_row_filter(
+        &mut query,
+        time_column,
+        exe_names,
+        start_time_ms,
+        end_time_ms,
+    );
     let rows_deleted = query
         .build()
         .execute(&mut **tx)

@@ -189,6 +189,7 @@ fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Build
         commands::persistence::cmd_delete_tracking_data_before,
         commands::persistence::cmd_clear_all_window_titles,
         commands::persistence::cmd_delete_app_tracking_data,
+        commands::persistence::cmd_delete_canonical_app_history,
         commands::diagnostics::cmd_get_local_api_diagnostics,
         commands::diagnostics::cmd_get_local_api_settings,
         commands::diagnostics::cmd_get_desktop_integration_diagnostics,

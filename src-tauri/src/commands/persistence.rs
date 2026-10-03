@@ -202,6 +202,36 @@ pub async fn cmd_clear_all_window_titles<R: Runtime>(
 }
 
 #[tauri::command]
+pub async fn cmd_delete_canonical_app_history<R: Runtime>(
+    request: patina_protocol::maintenance::CanonicalAppCleanupRequest,
+    app: AppHandle<R>,
+) -> Result<patina_protocol::maintenance::CanonicalAppCleanupResult, String> {
+    crate::domain::data_maintenance::canonical_cleanup_key(&request)?;
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        return client
+            .delete_canonical_app_history(&request)
+            .await
+            .map_err(|e| e.to_string());
+    }
+    let pool = sqlite_pool::wait_for_sqlite_pool(&app).await?;
+    let result = maintenance::canonical::delete_canonical_app(
+        &pool,
+        &request,
+        crate::app::runtime::now_ms() as i64,
+    )
+    .await?;
+    if result.matched_executables > 0 {
+        emit_tracking_data_changed(
+            &app,
+            "application-tracking-data-deleted",
+            crate::app::runtime::now_ms(),
+        )
+        .map_err(|e| format!("application cleanup committed but event delivery failed: {e}"))?;
+    }
+    Ok(result)
+}
+
+#[tauri::command]
 pub async fn cmd_delete_app_tracking_data<R: Runtime>(
     exe_names: Vec<String>,
     start_time_ms: Option<i64>,

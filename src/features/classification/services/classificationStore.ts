@@ -1,7 +1,5 @@
 import {
-  deleteSessionsByExeNames,
-  deleteSessionsByExeNamesBetween,
-  loadDistinctSessionExeNames,
+  deleteCanonicalAppHistory,
   loadSettingValue,
   loadSettingKeysByKeyPrefix,
   loadSettingRowsByKeyPrefix,
@@ -624,36 +622,6 @@ export async function deleteObservedAppSessions(
   exeName: string,
   scope: DeleteAppSessionScope = "all",
 ): Promise<number> {
-  const canonicalExe = resolveCanonicalExecutable(exeName);
-  if (!canonicalExe) {
-    return 0;
-  }
-
-  const rows = await loadDistinctSessionExeNames();
-  const matchedExeNames = rows
-    .map((row) => row.exeName)
-    .filter((rawExeName) => resolveCanonicalExecutable(rawExeName) === canonicalExe);
-
-  if (matchedExeNames.length === 0) {
-    return 0;
-  }
-
-  const now = new Date();
-  const dayStart = new Date(now);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(dayStart);
-  dayEnd.setDate(dayEnd.getDate() + 1);
-
-  if (scope === "all") {
-    await deleteSessionsByExeNames(matchedExeNames);
-    return matchedExeNames.length;
-  }
-
-  await deleteSessionsByExeNamesBetween(
-    matchedExeNames,
-    dayStart.getTime(),
-    dayEnd.getTime(),
-  );
-
-  return matchedExeNames.length;
+  if (!exeName.trim()) return 0;
+  return deleteCanonicalAppHistory(exeName, scope);
 }

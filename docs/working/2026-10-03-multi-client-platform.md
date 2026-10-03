@@ -55,7 +55,7 @@ HTTP API 索引和源码以当前实现为准；索引中历史的 unreleased/st
 | --- | --- | --- | --- |
 | M0 | 工作区、缺口表、owner 决策、阶段计划与长期规则 | 新会话能准确继续；稳定 main 不受开发影响 | 已完成 |
 | M1 | 独立 Rust 传输／协议基础，Desktop 接入；同步契约和 SDK 回归 | 第二个非 Tauri 进程可使用相同连接基础；请求、错误和 SSE 帧只有一份传输实现；通用重连／快照协调从宿主提取 | M1a、M1b 已实现并验证 |
-| M2 | 以“今天 → 应用／网页详情 → 历史”为切片，补最小读 API，迁移 Tauri；统一产品配置读取 | Tauri 作为标准客户端完成核心链路，统计规则由后端负责 | M2a–M2e、M2g 已完成；网页、分类清理枚举与普通设置仍待迁移 |
+| M2 | 以“今天 → 应用／网页详情 → 历史”为切片，补最小读 API，迁移 Tauri；统一产品配置读取 | Tauri 作为标准客户端完成核心链路，统计规则由后端负责 | M2a–M2e、M2g–M2h 已完成；网页与普通设置仍待迁移 |
 | M3 | 浏览器会话和适配层；共享 React 核心界面，复用 Quiet Pro | Tauri＋Web 并行读取／修改分类并同步，真实浏览器验收 | 待实施 |
 | M4 | Rust SDK typed 能力逐步补全，TUI 接入同一核心链路 | 实际交互式 TUI 可查看／筛选／修改分类，并参与同步；CLI 示例不算完成 | 待实施 |
 | M5 | GPUI 客户端，同一能力和同步契约，独立视图 | 可运行 GPUI 核心链路和四端同步验收；评估启动、资源和维护成本 | 待实施 |
@@ -259,3 +259,21 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - `check:full` 通过：61 个 TypeScript 文件、41 项浏览器检查、32 项 SDK 测试／Clippy、748 Rust passed / 21 ignored 及 Clippy。初期类型检查发现 `.at` 超出当前 TS target，改成索引访问；只在测试使用的 Row import 已加 cfg。图标与活动解耦后最终 `npm run check` 再通过全部 61 个文件、42 项浏览器检查及构建／bundle 原预算（365.71 KiB 总 JS gzip）。Rust／SDK 未再改变，未重复门禁。
 - 浏览器主动阻塞图标读取，证明已确认活动仍能显示；适配器测试验证无 SQL fallback、游标卡住／重复／乱序拒绝、后续页失败不返回部分结果、取消后不继续读取、128 页上限及 `__proto__` key 不污染对象。真实 HTTP 合约对照 SDK／Desktop 图标与 URL 编码。
 - 证据位于 `tmp/acceptance/multi-client-m2g-icons/`。本批只做本地提交，不安装、推送、合并或发布。网页两项产品问题仍待答复；可独立推进分类清理枚举、普通设置与本地偏好、查询 admission、契约生成和独立后端构建，不把此切片等同于整体基础完成。
+
+
+### M2h 执行设计：应用清理归属后端
+
+- 审计显示 `loadDistinctSessionExeNames` 仅服务于分类页删除：前端先读原始名称，再做 canonical 分组并提交 raw-name 删除。此处迁移目标改为 owner 完整操作，而非新增与 `/apps` 重叠的全量读取端点。
+- 新增明确 capability 的 canonical 清理契约，要求 app key、显式 all／today scope 和 confirmed=true；保留现有 UI 确认、错误反馈及旧 raw-name API。SDK 不自动重试写操作，旧后端不得回退为本地枚举／SQL 删除。
+- 在 BEGIN IMMEDIATE 后有界读取三类事实的原始 executable 名称，用既有后端 canonical 政策匹配，并在同一事务内复用删除实现。today 使用后端本地日界，沿用“记录开始于当日”的现有语义，不改成跨日片段裁剪。名称与关联导入批次预算不足则整体回滚。
+- 抽取共用事务内删除 helper，仅重算受此次删除影响的导入批次，避免顺便删除无关空批次；原生标题／网页关系沿既有外键策略清理。测试必须证明确认拒绝、别名集合、时间范围、三类事实、无关记录保留和中途错误回滚。
+
+
+### M2h 核验结果
+
+- 分类页删除改为显式确认的 canonical 后端命令，前端已删除原始名称 SQL、别名枚举和本地 today 日界计算。后端在 BEGIN IMMEDIATE 后识别并删除同一应用的三类事实；薄 command、认证 tracking API、协议及 SDK 共用这份 owner。旧 raw-name API 保留兼容，新客户端必须先识别 `canonical-app-cleanup` capability，失败不回退或重试。
+- 共用事务删除 helper 只重算被触及的导入批次，修复删除某应用时顺带清理无关空批次的问题。测试验证大小写／helper／含空白别名、原生／精确导入／小时桶、关联 title／web link 的外键行为、独立网页事实与设置保留；中途 SQL trigger 失败会恢复此前所有删除。超过名称、字段或批次数量预算也不产生部分写入。
+- 真实 API 验证 confirmed=false、未知字段、无效 scope 拒绝；Desktop facade 提交后，独立客户端通过 SSE 获知变更并读到清理后的事实，分类设置保持相同。SDK 对缺失 capability 只发协商请求，不尝试旧删除入口；前端验证一次性调用、today scope 转交和无 SQL fallback。
+- `check:full` 的前端／SDK 部分通过：62 个 TypeScript 文件、42 项浏览器检查、34 项 SDK 测试及 Clippy、构建与 bundle 原预算通过。Rust 初轮唯一失败是新增测试错误假定 SSE envelope 的 payload 层级；改为反序列化共享 RuntimeEventEnvelope 后，最终完整 `check:rust` 通过（752 passed / 21 ignored）及 Clippy，未重复未变化的前端／SDK。
+- 在独立进程分别设置 TZ=America/New_York 与 Australia/Lord_Howe，验证实际 25 小时／24.5 小时日的 today 清理边界；未改宿主时区。证据位于 `tmp/acceptance/multi-client-m2h-cleanup/`。所有删除测试仅用隔离 SQLite，没有操作生产历史、安装应用或远端仓库。
+- 整体基础阶段仍未完成：网页两项产品决定、域名汇总／Desktop 网页迁移、普通设置与客户端偏好分离、查询 admission、契约生成、旧 replay 退出和独立后端构建仍在目标范围内。后续优先推进不依赖网页答复的设置／运行基础。

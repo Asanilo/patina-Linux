@@ -6,6 +6,7 @@ pub mod activity;
 pub mod dashboard;
 pub mod history;
 pub mod icons;
+pub mod maintenance;
 pub mod web_history;
 pub mod events;
 pub const EVENT_INSTANCE_HEADER: &str = "x-patina-event-instance";

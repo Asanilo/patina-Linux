@@ -145,6 +145,9 @@ pub(crate) async fn route_request(
         ("POST", "/api/v1/data/window-titles/clear") => {
             handlers::data_maintenance::clear_window_titles(context, body).await
         }
+        ("POST", "/api/v1/data/apps/delete-canonical") => {
+            handlers::data_maintenance::delete_canonical_app_history(context, body).await
+        }
         ("POST", "/api/v1/data/apps/delete") => {
             handlers::data_maintenance::delete_app_tracking_data(context, body).await
         }

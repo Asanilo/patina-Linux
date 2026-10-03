@@ -216,6 +216,13 @@ impl PatinadClient {
         .await
     }
 
+    pub async fn delete_canonical_app_history(
+        &self,
+        request: &patina_protocol::maintenance::CanonicalAppCleanupRequest,
+    ) -> Result<patina_protocol::maintenance::CanonicalAppCleanupResult, PatinadClientError> {
+        self.transport.delete_canonical_app_history(request).await
+    }
+
     pub async fn delete_app_tracking_data(
         &self,
         exe_names: Vec<String>,

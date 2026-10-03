@@ -488,6 +488,10 @@ const DAEMON_TRACKING_ENDPOINTS: &[ApiEndpoint] = &[
     },
     ApiEndpoint {
         method: "POST",
+        path: "/api/v1/data/apps/delete-canonical",
+    },
+    ApiEndpoint {
+        method: "POST",
         path: "/api/v1/data/apps/delete",
     },
     ApiEndpoint {
@@ -575,6 +579,7 @@ const DAEMON_TRACKING_WRITE_OPERATIONS: &[&str] = &[
     "app-mapping",
     "app-settings",
     "backup-restore",
+    "canonical-app-cleanup",
     "classification",
     "classification-conditional",
     "data-maintenance",
@@ -764,6 +769,9 @@ mod tests {
         assert!(surface.allows("POST", "/api/v1/data/cleanup"));
         assert!(surface.allows("POST", "/api/v1/data/window-titles/clear"));
         assert!(surface.allows("POST", "/api/v1/data/apps/delete"));
+        assert!(surface.allows("POST", "/api/v1/data/apps/delete-canonical"));
+        assert!(!ApiSurface::DaemonReadOnly.allows("POST", "/api/v1/data/apps/delete-canonical"));
+        assert!(!ApiSurface::Desktop.allows("POST", "/api/v1/data/apps/delete-canonical"));
         assert!(surface.allows("POST", "/api/v1/imports/canonical/commit"));
         assert!(surface.allows_request("POST", "/api/v1/imports/import-123/delete"));
         assert!(surface.allows("GET", "/api/v1/backups/schedule"));
@@ -781,6 +789,7 @@ mod tests {
                 "app-mapping",
                 "app-settings",
                 "backup-restore",
+                "canonical-app-cleanup",
                 "classification",
                 "classification-conditional",
                 "data-maintenance",

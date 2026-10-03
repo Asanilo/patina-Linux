@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import { getDB } from "./sqlite.ts";
 import { CLASSIFICATION_PREFIXES, isClassificationKey, loadClassificationSnapshot } from "./classificationSnapshot.ts";
 
 export interface SettingKeyValueRow {
@@ -9,14 +8,6 @@ export interface SettingKeyValueRow {
 
 export interface SettingKeyRow {
   key: string;
-}
-
-interface RawSessionExeNameRow {
-  exe_name: string;
-}
-
-export interface SessionExeNameRow {
-  exeName: string;
 }
 
 export interface ObservedSessionStatRow {
@@ -40,42 +31,20 @@ export async function loadSettingKeysByKeyPrefix(keyPrefix: string): Promise<Set
   return (await loadSettingRowsByKeyPrefix(keyPrefix)).map(({ key }) => ({ key }));
 }
 
-export async function loadDistinctSessionExeNames(): Promise<SessionExeNameRow[]> {
-  const db = await getDB();
-  const rows = await db.select<RawSessionExeNameRow[]>(
-    `SELECT DISTINCT exe_name FROM (
-       SELECT exe_name FROM sessions
-       UNION ALL SELECT exe_name FROM import_exact_sessions
-       UNION ALL SELECT exe_name FROM import_time_buckets
-     )`,
-  );
-  return rows.map((row) => ({
-    exeName: row.exe_name,
-  }));
-}
-
-export async function deleteSessionsByExeNames(exeNames: string[]): Promise<void> {
-  if (exeNames.length === 0) {
-    return;
-  }
-  await invoke("cmd_delete_app_tracking_data", {
-    exeNames,
-    startTimeMs: null,
-    endTimeMs: null,
+/** Called only after the existing classification-page delete confirmation. */
+export async function deleteCanonicalAppHistory(appKey: string, scope: "all" | "today"): Promise<number> {
+  const raw = await invoke<unknown>("cmd_delete_canonical_app_history", {
+    request: {app_key: appKey, scope, confirmed: true},
   });
-}
-
-export async function deleteSessionsByExeNamesBetween(
-  exeNames: string[],
-  startTime: number,
-  endTime: number,
-): Promise<void> {
-  if (exeNames.length === 0) {
-    return;
+  if (!raw || typeof raw !== "object") throw new Error("Invalid application cleanup result");
+  const value = raw as Record<string,unknown>;
+  if (typeof value.app_key !== "string" || !value.app_key || typeof value.matched_executables !== "number"
+    || !Number.isSafeInteger(value.matched_executables) || value.matched_executables < 0 || value.matched_executables > 4096
+    || !value.deleted || typeof value.deleted !== "object") throw new Error("Invalid application cleanup result");
+  const deleted = value.deleted as Record<string,unknown>;
+  for (const name of ["sessions_deleted","imported_exact_sessions_deleted","imported_time_buckets_deleted","import_batches_deleted"]) {
+    const count = deleted[name];
+    if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) throw new Error("Invalid application cleanup count");
   }
-  await invoke("cmd_delete_app_tracking_data", {
-    exeNames,
-    startTimeMs: startTime,
-    endTimeMs: endTime,
-  });
+  return value.matched_executables;
 }

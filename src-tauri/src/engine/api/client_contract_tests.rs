@@ -385,6 +385,67 @@ async fn independent_and_desktop_clients_observe_the_same_committed_classificati
         product.applications[0].display_name_override.as_deref(),
         Some("Updated fixture")
     );
+    use patina_protocol::maintenance::{AppCleanupScope, CanonicalAppCleanupRequest};
+    for invalid in [
+        json!({"app_key":"fixture-app","scope":"all","confirmed":false}),
+        json!({"app_key":"fixture-app","scope":"all","confirmed":true,"exe_names":["*"]}),
+        json!({"app_key":"fixture-app","scope":"everything","confirmed":true}),
+    ] {
+        let rejected = native
+            .post_ack(
+                "/api/v1/data/apps/delete-canonical",
+                &invalid,
+                "invalid cleanup",
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            rejected,
+            patina_client::ClientError::Http { status: 400, .. }
+        ));
+        assert_eq!(
+            native
+                .exact_history(1000, 2000, "en-US")
+                .await
+                .unwrap()
+                .records
+                .len(),
+            1
+        );
+    }
+    let settings_before = native.classification_snapshot().await.unwrap();
+    let mut cleanup_events = native.open_event_stream(None).await.unwrap();
+    let cleaned = desktop
+        .delete_canonical_app_history(&CanonicalAppCleanupRequest {
+            app_key: "fixture-app".into(),
+            scope: AppCleanupScope::All,
+            confirmed: true,
+        })
+        .await
+        .unwrap();
+    assert_eq!(cleaned.matched_executables, 1);
+    assert_eq!(cleaned.deleted.sessions_deleted, 1);
+    let event = tokio::time::timeout(Duration::from_secs(3), cleanup_events.next_event())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let envelope: patina_protocol::events::RuntimeEventEnvelope =
+        serde_json::from_str(&event.data).unwrap();
+    assert!(
+        matches!(envelope.event,patina_protocol::events::RuntimeEvent::TrackingDataChanged{reason,..} if reason=="application-tracking-data-deleted")
+    );
+    assert!(another
+        .exact_history(1000, 2000, "en-US")
+        .await
+        .unwrap()
+        .records
+        .is_empty());
+    assert_eq!(
+        settings_before.entries,
+        native.classification_snapshot().await.unwrap().entries
+    );
+    drop(cleanup_events);
     drop(reconnected);
     drop(desktop_events);
     shutdown.shutdown();

@@ -121,7 +121,6 @@ IPC 契约应保持稳定、可解析、可测试。
 
 - 尚未迁移的普通 settings 读取；classification 配置已迁往 owner 快照
 - 网页明细、域名候选和网页趋势等尚未迁移的客户端读查询
-- 分类数据清理前的原始 executable 名称枚举（`loadDistinctSessionExeNames`）
 - Desktop 私有、可重建的 `data.bootstrap_snapshot` 渲染缓存读写
 
 这条通道不是默认自由边界，而是显式受控边界。规则如下：
@@ -269,7 +268,7 @@ Desktop command 的 owner 分流统一依赖受管的 typed daemon client state�
 
 Local API 端口和 Token 属于 typed client 自身的连接配置。daemon 成功切换 listener 或凭据后，Desktop Rust host 必须从 owner-only 文件重载 Token、原子替换共享 client，并通过 revision 通知主动重建 SSE；不能等待旧连接偶然超时。daemon HTTP 响应不得返回新 Token；当前 Desktop 仅通过既有的特权 Tauri command 把轮换结果交给设置页显示和复制。普通 app settings 通过白名单批量 endpoint 由 daemon 事务写入；会重建运行资源的字段在该 endpoint 明确拒绝，继续使用各自专用接口。
 
-数据清理属于数据库 owner，而不是 WebView persistence。Desktop 负责展示确认对话和计算用户选择的时间边界，Rust data owner 负责参数校验、关联表事务与 refresh event；daemon-client 模式必须通过 authenticated typed client 执行。批量删除和窗口标题清除即使已经通过 Bearer Token 认证，也必须显式提交 `confirmed: true`，且默认不暴露为 MCP tool。
+数据清理属于数据库 owner，而不是 WebView persistence。Desktop 负责展示确认对话并提交明确 scope 或已有显式时间范围，Rust data owner 负责参数校验、规范应用匹配、本地日界、关联表事务与 refresh event；daemon-client 模式必须通过 authenticated typed client 执行。批量删除和窗口标题清除即使已经通过 Bearer Token 认证，也必须显式提交 `confirmed: true`，且默认不暴露为 MCP tool。 分类页应用删除通过 `canonical-app-cleanup` capability 的独立契约，由 data owner 在 `BEGIN IMMEDIATE` 后读取有界 executable 集合，使用已有 canonical 规则匹配并在同一事务删除原生／精确导入／小时桶记录。`today` 采用后端本地日界并维持按记录开始时间选择的语义；不裁剪跨日片段。共享删除 helper 只重算受影响的导入批次，保留无关空批次、分类设置和独立网页事实。客户端不枚举原始表、不重做别名分组，也不自动重试已发送的删除请求。
 
 备份文件的选择、预览与本地目标写入属于 Desktop 文件能力，数据库恢复属于 runtime/database owner。导出必须在一个 SQLite 只读 snapshot transaction 中读取所有表，并以同目录临时文件、owner-only 权限、`fsync` 和原子 rename 发布；读取必须拒绝符号链接、超限 archive、超限解压总量与重复 ZIP entry。备份格式必须保留网页活动与原生浏览器 session 的关系；Replace 和 Merge 恢复都要在同一事务内重建关系，不能把失去 session 边界约束的网页段视为完整恢复。
 
@@ -342,7 +341,7 @@ Dashboard、History 与应用详情复用 `shared/lib/snapshotReadController` �
 
 精确历史的产品读 owner 为 `data/repositories/exact_history`：配置、heartbeat、原生／精确导入事实和标题样本共享事务。复用领域优先级编译，小时汇总不能变成精确时间线；先读取紧凑候选，再批量加载贡献记录的有限元数据。返回源 ID／origin、规范应用分类和已裁剪区间，record caption 与真实标题样本分别表达。读取不修复数据库，超限不返回部分成功。Desktop History／应用详情通过薄 `cmd_get_exact_history`、SDK 与严格前端 adapter 使用同一契约；失败不退回 SQL。生产会话带 `confirmed` 元数据，展示不得重新分类、排除、改名或按本地时钟延长。窗口 caption 仅为未定时标签；缺少真实样本时标题明细为空，同标题采样之间的空档不得填满。原生重叠事实保留各自时长，不能用时间线去重改变应用详情总量。History 只读所选日，不再读取已退出页面的周趋势。
 
-`sessionReadRepository` 仅保留精确历史的日期／范围适配，不再执行 SQL。最早记录时间随既有 heatmap 快照返回，未使用的旧 SQL getter 已删除；网页与分类清理前的名称枚举仍待迁移。前端旧导入优先级实现已移到 `tests/helpers/legacyNativeSessionPrecedence`，只作历史契约 oracle，生产代码不得依赖 tests。会话表现编译器中的无 `confirmed` 分支暂留供历史 replay 对照；所有生产精确会话 adapter 均必须提供后端确认元数据，不能把可选类型当作生产 fallback。
+`sessionReadRepository` 仅保留精确历史的日期／范围适配，不再执行 SQL。最早记录时间随既有 heatmap 快照返回，未使用的旧 SQL getter 已删除；网页读取仍待迁移；分类清理的名称枚举和别名匹配已经随写操作归入后端事务。前端旧导入优先级实现已移到 `tests/helpers/legacyNativeSessionPrecedence`，只作历史契约 oracle，生产代码不得依赖 tests。会话表现编译器中的无 `confirmed` 分支暂留供历史 replay 对照；所有生产精确会话 adapter 均必须提供后端确认元数据，不能把可选类型当作生产 fallback。
 
 应用图标的读取 owner 为 `data/repositories/icon_cache/read`。认证 API 提供有界 keyset 分页和单项查找，后端统一原始／小写／canonical key，SDK 验证顺序、游标、字段和内联图片预算；接口只读缓存，不执行平台图标提取或任意路径读取。主窗口由 `app/services/appIconService` 和 `useAppIcons` 独立分发图标至各页面：前景每 30 秒更新，restore／resync 失效时补读，停止后不发布或继续翻页。分页允许并发缓存更新在下次刷新体现，不冒充跨页事务；错误不发布半份 map，活动数据也不等待图片。Widget 的原有单图标 command 通过同一个后端边界读取，不扩展暂停中的 Widget 产品功能。
 

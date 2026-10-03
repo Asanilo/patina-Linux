@@ -47,6 +47,35 @@ pub async fn clear_window_titles(context: &ApiRuntimeContext, body: &[u8]) -> Ro
     }
 }
 
+pub async fn delete_canonical_app_history(
+    context: &ApiRuntimeContext,
+    body: &[u8],
+) -> RouteResponse {
+    let request: patina_protocol::maintenance::CanonicalAppCleanupRequest =
+        match serde_json::from_slice(body) {
+            Ok(r) => r,
+            Err(_) => return bad_request("invalid canonical cleanup request"),
+        };
+    if let Err(error) = crate::domain::data_maintenance::canonical_cleanup_key(&request) {
+        return bad_request(&error);
+    }
+    match crate::data::maintenance::canonical::delete_canonical_app(
+        context.pool(),
+        &request,
+        context.now_ms(),
+    )
+    .await
+    {
+        Ok(result) => {
+            if result.matched_executables > 0 {
+                context.emit_tracking_data_changed("application-tracking-data-deleted");
+            }
+            ok(result)
+        }
+        Err(error) => internal_error(&error),
+    }
+}
+
 pub async fn delete_app_tracking_data(context: &ApiRuntimeContext, body: &[u8]) -> RouteResponse {
     let request: AppTrackingDataCleanupRequest = match serde_json::from_slice(body) {
         Ok(request) => request,

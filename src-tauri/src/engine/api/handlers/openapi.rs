@@ -500,6 +500,8 @@ fn paths(surface: ApiSurface) -> Value {
             )
         }),
     );
+    object.insert("/api/v1/data/apps/delete-canonical".into(),json!({"post":post_operation(
+        "Explicitly confirmed canonical application cleanup. The tracking owner resolves aliases after acquiring the SQLite writer and deletes native/exact/bucket rows in one transaction. Scope is all or owner-local today (start-time membership, not overlap clipping). Unknown fields reject. 4096 names/1 MiB name bytes and 10000 affected batch IDs/1 MiB are bounded; errors roll back, writes are never retried automatically. Requires canonical-app-cleanup capability. Unrelated settings, web facts and empty import batches remain intact.",vec![],"CanonicalAppCleanupRequest","CanonicalAppCleanupResponse") }));
     object.insert(
         "/api/v1/data/apps/delete".to_string(),
         json!({
@@ -2056,6 +2058,27 @@ fn schemas() -> Value {
             (
                 "import_batches_deleted",
                 bounded_integer_schema(0, i64::MAX),
+            ),
+        ])),
+    );
+
+    schemas.insert(
+        "CanonicalAppCleanupRequest".into(),
+        object_schema(vec![
+            ("app_key", bounded_string_schema(1, 1024)),
+            ("scope", enum_schema(vec!["all", "today"])),
+            ("confirmed", json!({"type":"boolean","const":true})),
+        ]),
+    );
+    schemas["CanonicalAppCleanupRequest"]["additionalProperties"] = json!(false);
+    schemas.insert(
+        "CanonicalAppCleanupResponse".into(),
+        envelope(object_schema(vec![
+            ("app_key", bounded_string_schema(1, 1024)),
+            ("matched_executables", bounded_integer_schema(0, 4096)),
+            (
+                "deleted",
+                schemas["AppTrackingDataCleanupResponse"]["properties"]["data"].clone(),
             ),
         ])),
     );
