@@ -6,13 +6,11 @@ import type {
   TrackingWindowSnapshot,
 } from "../../shared/types/tracking.ts";
 import { DEFAULT_TRACKING_STATUS, resolveTrackerHealth } from "../../shared/types/tracking.ts";
-import type { AppSettings } from "./appSettingsRuntimeService.ts";
 import {
   getCurrentTrackingSnapshot,
   getTrackerHealthRuntimeSnapshot,
 } from "../../platform/runtime/trackingRuntimeGateway.ts";
 import {
-  loadCurrentAppSettings,
   loadTrackerHealthTimestampMs,
 } from "./appSettingsRuntimeService.ts";
 import { initializeProcessMapperRuntime } from "./processMapperRuntimeService.ts";
@@ -20,7 +18,6 @@ import { initializeProcessMapperRuntime } from "./processMapperRuntimeService.ts
 export const TRACKER_HEARTBEAT_STALE_AFTER_MS = 8_000;
 
 export interface AppRuntimeBootstrapSnapshot {
-  settings: AppSettings;
   activeWindow: TrackingWindowSnapshot | null;
   trackingStatus: TrackingStatusSnapshot;
   trackingRuntimeProbeStatus: TrackingRuntimeProbeStatus | null;
@@ -28,7 +25,6 @@ export interface AppRuntimeBootstrapSnapshot {
 }
 
 interface AppRuntimeBootstrapDeps {
-  loadCurrentAppSettings: () => Promise<AppSettings>;
   initializeProcessMapperRuntime: () => Promise<void>;
   getCurrentTrackingSnapshot: typeof getCurrentTrackingSnapshot;
   loadTrackerHealthSnapshot: (nowMs?: number) => Promise<TrackerHealthSnapshot>;
@@ -42,7 +38,6 @@ interface TrackerHealthSnapshotDeps {
 }
 
 const appRuntimeBootstrapDeps: AppRuntimeBootstrapDeps = {
-  loadCurrentAppSettings,
   initializeProcessMapperRuntime,
   getCurrentTrackingSnapshot,
   loadTrackerHealthSnapshot,
@@ -93,7 +88,6 @@ export async function loadAppRuntimeBootstrapSnapshot(): Promise<AppRuntimeBoots
 export async function loadAppRuntimeBootstrapSnapshotWithDeps(
   deps: AppRuntimeBootstrapDeps,
 ): Promise<AppRuntimeBootstrapSnapshot> {
-  const settings = await deps.loadCurrentAppSettings();
   const reportWarning = deps.reportWarning ?? console.warn;
   await deps.initializeProcessMapperRuntime().catch((error) => {
     reportWarning("Failed to initialize process mapper during app bootstrap", error);
@@ -105,7 +99,6 @@ export async function loadAppRuntimeBootstrapSnapshotWithDeps(
   ]);
 
   return {
-    settings,
     activeWindow: trackingSnapshot?.window ?? null,
     trackingStatus: trackingSnapshot?.status ?? DEFAULT_TRACKING_STATUS,
     trackingRuntimeProbeStatus: trackingSnapshot?.probeStatus ?? null,

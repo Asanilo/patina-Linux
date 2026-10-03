@@ -1,4 +1,4 @@
-import { SnapshotReadController } from "../../shared/lib/snapshotReadController.ts";
+import { SnapshotReadController, SNAPSHOT_READ_RETRY_DELAYS_MS } from "../../shared/lib/snapshotReadController.ts";
 import { useEffect, useState } from "react";
 import { DEFAULT_SETTINGS, type AppSettings } from "../../shared/settings/appSettings";
 import type {
@@ -54,7 +54,13 @@ export function useWindowTracking(options: UseWindowTrackingOptions = {}) {
     const unlisteners: Array<() => void> = [];
 
     const settingsOwner = new SnapshotReadController(loadCurrentAppSettings, setAppSettings,
-      error => console.warn("Failed to reload app settings", error), () => 0);
+      error => console.warn("Failed to reload app settings", error), () => 0,
+      {retryDelaysMs: SNAPSHOT_READ_RETRY_DELAYS_MS});
+    const refreshSettingsOnForeground = () => {
+      if (document.visibilityState !== "hidden") settingsOwner.refresh(true);
+    };
+    window.addEventListener("focus", refreshSettingsOnForeground);
+    document.addEventListener("visibilitychange", refreshSettingsOnForeground);
     const init = async () => {
       try {
         const settingsOff = await subscribeAppSettingsChanged(() => settingsOwner.refresh(true));
@@ -164,6 +170,8 @@ export function useWindowTracking(options: UseWindowTrackingOptions = {}) {
     return () => {
       cancelled = true;
       settingsOwner.dispose();
+      window.removeEventListener("focus", refreshSettingsOnForeground);
+      document.removeEventListener("visibilitychange", refreshSettingsOnForeground);
       for (const off of unlisteners) {
         off();
       }

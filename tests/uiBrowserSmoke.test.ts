@@ -294,7 +294,13 @@ function tauriStubFor(path: string) {
             previous:{start_ms:previous.getTime(),end_ms:start,active_ms:0,apps:[]},
             hours:Array.from({length:24},(_,hour)=>({hour,active_ms:hour===0?total:0,categories:hour===0?[...categories].map(([category,active_ms])=>({category,active_ms})):[]}))};
         }
-        if (command === "cmd_get_product_settings") return productSettingsSnapshot();
+        if (command === "cmd_get_product_settings") {
+          if (globalThis.__PATINA_SMOKE_FAIL_SETTINGS_READ) {
+            globalThis.__PATINA_SMOKE_SETTINGS_READ_FAILURES = (globalThis.__PATINA_SMOKE_SETTINGS_READ_FAILURES || 0) + 1;
+            throw new Error("synthetic settings read failure");
+          }
+          return productSettingsSnapshot();
+        }
         if (command === "cmd_get_classification_snapshot") {
           const prefixes = ["__app_override::", "__web_domain_override::", "__category_color_override::", "__category_label_override::", "__category_default_color_assignment::", "__custom_category::", "__deleted_category::", "__classification_manual_confirmation_migration::"];
           const entries = Object.entries(loadStoredSettings()).filter(([key]) => prefixes.some(prefix => key.startsWith(prefix) && key.length > prefix.length))
@@ -1906,6 +1912,33 @@ try {
     await waitForExpression(client!, sessionId, `${minimum}.value === '5' && ${idle}.getAttribute('aria-valuetext') === '20 分钟'`);
     await remote(900);
     await waitForExpression(client!, sessionId, `${idle}.getAttribute('aria-valuetext') === '15 分钟'`);
+  });
+
+  await runTest("settings recover failed reads without another event and refresh on foreground return", async () => {
+    const firstError = consoleErrors.length;
+    const expectedPrefix = "load settings bootstrap failed Error: synthetic settings read failure";
+    const idle = `document.querySelector('input[aria-label=' + ${jsonString(JSON.stringify(COPY["zh-CN"].settings.idleTimeoutLabel))} + ']')`;
+    await evaluate(client!, sessionId, `(() => {
+      globalThis.__PATINA_SMOKE_FAIL_SETTINGS_READ = true;
+      globalThis.__PATINA_SMOKE_SETTINGS_READ_FAILURES = 0;
+      const stored = JSON.parse(localStorage.getItem('__time_tracker_smoke_settings') || '{}');
+      stored.idle_timeout_secs = '1200'; localStorage.setItem('__time_tracker_smoke_settings', JSON.stringify(stored));
+      globalThis.__PATINA_SMOKE_EMIT('app-settings-changed', {});
+    })()`);
+    await waitForExpression(client!, sessionId, `globalThis.__PATINA_SMOKE_SETTINGS_READ_FAILURES >= 2`);
+    assert.equal(await evaluate(client!, sessionId, `${idle}.getAttribute('aria-valuetext')`), "15 分钟");
+    await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_FAIL_SETTINGS_READ = false`);
+    await waitForExpression(client!, sessionId, `${idle}.getAttribute('aria-valuetext') === '20 分钟'`);
+    await evaluate(client!, sessionId, `(() => {
+      const stored = JSON.parse(localStorage.getItem('__time_tracker_smoke_settings'));
+      stored.idle_timeout_secs = '900'; localStorage.setItem('__time_tracker_smoke_settings', JSON.stringify(stored));
+      window.dispatchEvent(new Event('focus'));
+    })()`);
+    await waitForExpression(client!, sessionId, `${idle}.getAttribute('aria-valuetext') === '15 分钟'`);
+    assert.ok(consoleErrors.slice(firstError).some(error => error.startsWith(expectedPrefix)));
+    for (let index = consoleErrors.length - 1; index >= firstError; index--) {
+      if (consoleErrors[index].startsWith(expectedPrefix)) consoleErrors.splice(index, 1);
+    }
   });
 
   await runTest("failed and conflicting settings saves retain drafts and never report success", async () => {

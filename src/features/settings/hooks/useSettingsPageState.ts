@@ -1,4 +1,4 @@
-import { SnapshotReadController } from "../../../shared/lib/snapshotReadController.ts";
+import { SnapshotReadController, SNAPSHOT_READ_RETRY_DELAYS_MS } from "../../../shared/lib/snapshotReadController.ts";
 import { rebaseSettingsDraft, hasSettingsDraftPolicyConflict, hasSettingsDraftPolicyEdits } from "../services/settingsDraftRebase.ts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getUiTextLanguage, setUiTextLanguage, UI_TEXT } from "../../../shared/copy/uiText.ts";
@@ -121,7 +121,12 @@ export function useSettingsPageState({
     }, error => {
       console.error("load settings bootstrap failed", error);
       setLoading(false);
-    }, () => 0);
+    }, () => 0, {retryDelaysMs: SNAPSHOT_READ_RETRY_DELAYS_MS});
+    const refreshOnForeground = () => {
+      if (document.visibilityState !== "hidden") owner.refresh(true);
+    };
+    window.addEventListener("focus", refreshOnForeground);
+    document.addEventListener("visibilitychange", refreshOnForeground);
     settingsReaderRef.current = owner;
     void subscribeSettingsChanges(() => owner.refresh(true)).then(off => {
       if (cancelled) { off(); return; }
@@ -130,7 +135,11 @@ export function useSettingsPageState({
     }).catch(error => {
       if (!cancelled) { console.error("settings subscription failed", error); owner.refresh(); }
     });
-    return () => { cancelled = true; owner.dispose(); unsubscribe?.(); settingsReaderRef.current = null; };
+    return () => {
+      cancelled = true; owner.dispose(); unsubscribe?.(); settingsReaderRef.current = null;
+      window.removeEventListener("focus", refreshOnForeground);
+      document.removeEventListener("visibilitychange", refreshOnForeground);
+    };
   }, []);
 
   const hasUnsavedChanges = (() => {

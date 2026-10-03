@@ -24,20 +24,13 @@ import {
   makeStaleTrackerHealth,
 } from "../helpers/trackingReadModelFixtures.ts";
 import { loadAppRuntimeBootstrapSnapshotWithDeps } from "../../src/app/services/appRuntimeBootstrapService.ts";
-import { DEFAULT_SETTINGS } from "../../src/shared/settings/appSettings.ts";
 
 export function runRuntimeEffectsTests() {
-  runTest("app bootstrap preserves loaded settings when process mapper initialization fails", async () => {
+  runTest("app bootstrap preserves tracking observations when process mapper initialization fails", async () => {
     const mapperError = new Error("mapper init failed");
     const trackerHealth = resolveTrackerHealth(10_000, 10_000, 8_000);
     const warnings: Array<{ message: string; error: unknown }> = [];
-    const settings = {
-      ...DEFAULT_SETTINGS,
-      themeMode: "system" as const,
-    };
-
     const snapshot = await loadAppRuntimeBootstrapSnapshotWithDeps({
-      loadCurrentAppSettings: async () => settings,
       initializeProcessMapperRuntime: async () => {
         throw mapperError;
       },
@@ -46,8 +39,6 @@ export function runRuntimeEffectsTests() {
       reportWarning: (message, error) => warnings.push({ message, error }),
     });
 
-    assert.equal(snapshot.settings.themeMode, "system");
-    assert.equal(snapshot.settings, settings);
     assert.equal(snapshot.trackingRuntimeProbeStatus, null);
     assert.equal(snapshot.trackerHealth, trackerHealth);
     assert.equal(warnings.length, 1);
