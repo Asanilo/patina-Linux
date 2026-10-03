@@ -5,7 +5,9 @@ import {
   saveAppSetting,
   type AppSettings,
   type AppSettingsPatch,
+  type AppSettingsConfirmation,
 } from "../../../platform/persistence/appSettingsStore.ts";
+import { RESOURCE_SETTING_KEYS } from "../../../shared/settings/appSettings.ts";
 import {
   exportBackup,
   pickBackupFile,
@@ -64,13 +66,14 @@ type SettingsPatch = Partial<AppSettings>;
 export interface SettingsCommitResult {
   persisted: boolean;
   productRevision?: string;
+  resourceRevision?: string | null;
   confirmedProductSettings?: ProductSettingsSnapshot["settings"];
   runtimeSync: "synced" | "failed" | "not-needed";
   runtimeSyncErrors: string[];
 }
 
 interface SettingsCommitDeps {
-  persistPatch: (patch: SettingsPatch, expectedProductRevision?: string) => Promise<ProductSettingsSnapshot | void>;
+  persistPatch: (patch: SettingsPatch, expectedProductRevision?: string, expectedResourceRevision?: string | null) => Promise<AppSettingsConfirmation | void>;
   syncIdleTimeout: (seconds: number) => Promise<void>;
   syncAudioParticipation: (enabled: boolean) => Promise<void>;
   notifySettingsChanged: (patch: SettingsPatch) => Promise<void>;
@@ -246,10 +249,12 @@ export class SettingsRuntimeAdapterService {
     return patch;
   }
 
-  static async commitSettingsPatch(patch: SettingsPatch, expectedProductRevision?: string): Promise<SettingsCommitResult> {
+  static async commitSettingsPatch(patch: SettingsPatch, expectedProductRevision?: string, expectedResourceRevision?: string | null): Promise<SettingsCommitResult> {
     if (["idleTimeoutSecs", "timelineMergeGapSecs", "minSessionSecs", "trackingPaused"].some(key => key in patch)
       && !expectedProductRevision) throw new Error("Product settings baseline is unavailable; reload before saving");
-    return commitSettingsPatchWithDeps(patch, defaultSettingsCommitDeps, expectedProductRevision);
+    if (RESOURCE_SETTING_KEYS.some(key => key in patch) && expectedResourceRevision === undefined)
+      throw new Error("Resource settings baseline is unavailable; reload before saving");
+    return commitSettingsPatchWithDeps(patch, defaultSettingsCommitDeps, expectedProductRevision, expectedResourceRevision);
   }
 
   static async applyLocalApiPort(port: number) {
@@ -265,6 +270,7 @@ export async function commitSettingsPatchWithDeps(
   patch: SettingsPatch,
   deps: SettingsCommitDeps,
   expectedProductRevision?: string,
+  expectedResourceRevision?: string | null,
 ): Promise<SettingsCommitResult> {
   const entries = Object.entries(patch) as Array<[keyof AppSettings, AppSettings[keyof AppSettings]]>;
   if (entries.length === 0) {
@@ -275,7 +281,7 @@ export async function commitSettingsPatchWithDeps(
     };
   }
 
-  const confirmation = await deps.persistPatch(patch as AppSettingsPatch, expectedProductRevision);
+  const confirmation = await deps.persistPatch(patch as AppSettingsPatch, expectedProductRevision, expectedResourceRevision);
 
   const runtimeSyncErrors: string[] = [];
   try {
@@ -306,7 +312,7 @@ export async function commitSettingsPatchWithDeps(
 
   return {
     persisted: true,
-    ...(confirmation ? {productRevision: confirmation.revision, confirmedProductSettings: confirmation.settings} : {}),
+    ...(confirmation ? {productRevision: confirmation.revision, ...(confirmation.resourceRevision !== undefined ? {resourceRevision: confirmation.resourceRevision} : {}), confirmedProductSettings: confirmation.settings} : {}),
     runtimeSync: runtimeSyncErrors.length > 0
         ? "failed"
         : needsRuntimeSync || needsAudioRuntimeSync

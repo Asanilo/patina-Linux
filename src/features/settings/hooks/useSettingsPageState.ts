@@ -1,5 +1,5 @@
 import { SnapshotReadController, SNAPSHOT_READ_RETRY_DELAYS_MS } from "../../../shared/lib/snapshotReadController.ts";
-import { rebaseSettingsDraft, hasSettingsDraftPolicyConflict, hasSettingsDraftPolicyEdits } from "../services/settingsDraftRebase.ts";
+import { rebaseSettingsDraft, hasSettingsDraftPolicyConflict, hasSettingsDraftPolicyEdits, hasSettingsDraftResourceConflict, hasSettingsDraftResourceEdits } from "../services/settingsDraftRebase.ts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getUiTextLanguage, setUiTextLanguage, UI_TEXT } from "../../../shared/copy/uiText.ts";
 import type { QuietToastTone } from "../../../shared/components/QuietToast";
@@ -72,6 +72,9 @@ export function useSettingsPageState({
   const productRevisionRef = useRef(initialBootstrap?.productRevision);
   const latestProductRevisionRef = useRef(initialBootstrap?.productRevision);
   const policyConflictRef = useRef(false);
+  const resourceRevisionRef = useRef(initialBootstrap?.resourceRevision);
+  const latestResourceRevisionRef = useRef(initialBootstrap?.resourceRevision);
+  const resourceConflictRef = useRef(false);
   const settingsReaderRef = useRef<SnapshotReadController<SettingsPageBootstrapData> | null>(null);
   savedSettingsRef.current = savedSettings;
   draftSettingsRef.current = draftSettings;
@@ -109,6 +112,9 @@ export function useSettingsPageState({
     const owner = new SnapshotReadController(loadSettingsPageBootstrap, bootstrap => {
       setSettingsBootstrapCache({...bootstrap, settings: {...bootstrap.settings}});
       latestProductRevisionRef.current = bootstrap.productRevision;
+      latestResourceRevisionRef.current = bootstrap.resourceRevision;
+      resourceConflictRef.current ||= hasSettingsDraftResourceConflict(savedSettingsRef.current, draftSettingsRef.current, bootstrap.settings);
+      if (!resourceConflictRef.current) resourceRevisionRef.current = bootstrap.resourceRevision;
       policyConflictRef.current ||= hasSettingsDraftPolicyConflict(savedSettingsRef.current, draftSettingsRef.current, bootstrap.settings);
       if (!policyConflictRef.current) productRevisionRef.current = bootstrap.productRevision;
       const nextDraft = rebaseSettingsDraft(savedSettingsRef.current, draftSettingsRef.current, bootstrap.settings);
@@ -153,6 +159,14 @@ export function useSettingsPageState({
   useEffect(() => {
     onDirtyChange?.(hasUnsavedChanges);
   }, [hasUnsavedChanges, onDirtyChange]);
+
+  const hasResourceEdits = hasSettingsDraftResourceEdits(savedSettings, draftSettings);
+  useEffect(() => {
+    if (!hasResourceEdits) {
+      resourceConflictRef.current = false;
+      resourceRevisionRef.current = latestResourceRevisionRef.current;
+    }
+  }, [hasResourceEdits]);
 
   const hasPolicyEdits = hasSettingsDraftPolicyEdits(savedSettings, draftSettings);
   useEffect(() => {
@@ -267,6 +281,7 @@ export function useSettingsPageState({
         hasUnsavedChanges,
         saveStatus,
         productRevision: productRevisionRef.current,
+        resourceRevision: resourceRevisionRef.current,
       }, {
         buildPatch: SettingsRuntimeAdapterService.buildSettingsPatch,
         commitPatch: SettingsRuntimeAdapterService.commitSettingsPatch,
@@ -284,6 +299,9 @@ export function useSettingsPageState({
         productRevisionRef.current = result.nextBootstrap.productRevision;
         latestProductRevisionRef.current = result.nextBootstrap.productRevision;
         policyConflictRef.current = false;
+        resourceRevisionRef.current = result.nextBootstrap.resourceRevision;
+        latestResourceRevisionRef.current = result.nextBootstrap.resourceRevision;
+        resourceConflictRef.current = false;
         setSettingsBootstrapCache(result.nextBootstrap);
         setUiTextLanguage(result.nextBootstrap.settings.language);
         onSettingsChanged(result.nextBootstrap.settings);

@@ -11,6 +11,126 @@ fn port() -> u16 {
         .port()
 }
 
+#[cfg(feature = "desktop-tests")]
+#[tokio::test]
+async fn desktop_resource_save_is_sparse_and_conflict_keeps_other_settings_unchanged() {
+    use crate::data::repositories::app_settings::AppSettingMutation;
+    let (pool, control, web_control, _, audio, listener, credentials, _, token_path) =
+        super::super::tests::test_control().await;
+    let context = crate::engine::api::context::ApiRuntimeContext::new(
+        crate::engine::runtime_context::RuntimeContext::system(pool.clone()),
+    )
+    .with_runtime_control(control.clone());
+    let api_port = listener.start(0, context).await.unwrap();
+    control
+        .configure_browser_activity(BrowserActivityRuntimeConfiguration {
+            enabled: true,
+            port: port(),
+            token: "desktop-fixture-secret".into(),
+            url_privacy: crate::domain::settings::WebActivityUrlPrivacyMode::Full,
+        })
+        .await
+        .unwrap();
+    let native =
+        crate::platform::daemon_client::PatinadClient::new(api_port, credentials.token().unwrap())
+            .unwrap();
+    let product = native.product_settings().await.unwrap();
+    let resource = native.transport().resource_settings().await.unwrap();
+    let state = crate::app::daemon_client::PatinadClientState::default();
+    state.install(native);
+    // No Desktop SQLite pool is installed: assembling this resource patch must
+    // not read browser credentials or aggregate a replacement from client SQL.
+    let app = tauri::test::mock_builder()
+        .manage(crate::app::runtime::DesktopRuntimeMode::DaemonClientPreview)
+        .manage(state)
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    let mutation = |key: &str, value: &str| AppSettingMutation {
+        key: key.into(),
+        value: value.into(),
+    };
+    let failure = crate::app::settings_commit::resources::commit(
+        app.handle(),
+        vec![
+            mutation("web_activity_port", "12346"),
+            mutation("theme_mode", "dark"),
+        ],
+        None,
+        "f".repeat(64),
+    )
+    .await;
+    assert!(matches!(failure,Err(message) if message.contains("resource-settings-conflict")));
+    assert!(
+        crate::data::repositories::tracker_settings::load_setting_value(&pool, "theme_mode")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let new_port = port();
+    let confirmed = crate::app::settings_commit::resources::commit(
+        app.handle(),
+        vec![
+            mutation("web_activity_port", &new_port.to_string()),
+            mutation("audio_participation_enabled", "0"),
+            mutation("min_session_secs", "360"),
+            mutation("theme_mode", "dark"),
+        ],
+        Some(product.revision),
+        resource.revision.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(confirmed.resources.browser_activity.port, new_port);
+    assert_eq!(confirmed.product.settings.min_session_secs, 360);
+    assert!(!audio.is_enabled());
+    assert_eq!(
+        crate::data::repositories::app_settings::load_web_activity_bridge_settings(&pool)
+            .await
+            .unwrap()
+            .token,
+        "desktop-fixture-secret"
+    );
+    assert_eq!(
+        crate::data::repositories::tracker_settings::load_setting_value(&pool, "theme_mode")
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("dark")
+    );
+    let rejected = crate::app::settings_commit::resources::commit(
+        app.handle(),
+        vec![
+            mutation("web_activity_port", &port().to_string()),
+            mutation("min_session_secs", "420"),
+            mutation("theme_mode", "light"),
+        ],
+        Some(confirmed.product.revision),
+        resource.revision,
+    )
+    .await;
+    assert!(matches!(rejected,Err(message) if message.contains("resource-settings-conflict")));
+    assert_eq!(
+        crate::data::repositories::product_settings::load_snapshot(&pool, 1)
+            .await
+            .unwrap()
+            .settings
+            .min_session_secs,
+        360
+    );
+    assert_eq!(
+        crate::data::repositories::tracker_settings::load_setting_value(&pool, "theme_mode")
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("dark")
+    );
+    control.close_and_drain_resources().await;
+    web_control.shutdown().await;
+    listener.shutdown().await;
+    pool.close().await;
+    let _ = std::fs::remove_file(token_path);
+}
+
 #[tokio::test]
 async fn independent_sdk_resource_patch_preserves_omitted_fields_and_rejects_old_versions() {
     let (pool, control, web_control, sink, audio, listener, credentials, _, token_path) =

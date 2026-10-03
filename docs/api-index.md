@@ -1934,9 +1934,14 @@ browser credential; an older archive cannot reset that generation.
 The new SDK never falls back to an unconditional endpoint.
 
 This is separate from ordinary product-policy CAS. It does not make a sequence of
-different endpoint calls globally atomic. Existing Desktop settings still need
-resource-baseline and draft-conflict integration; this backend capability alone
-does not migrate that UI flow. Legacy replacement endpoints remain unconditional.
+different endpoint calls globally atomic. The existing Desktop settings page on
+this branch carries the original resource baseline and sends sparse patches through
+its Rust host. Same-field conflicts retain drafts and the old baseline; cancellation
+adopts the current settings. Missing baselines and daemon read failures do not use
+legacy writes. Only an explicitly identified embedded migration host retains the
+old compatibility path. Browser credential display/copy still uses the existing
+local privileged read; assembling a resource patch no longer reads that credential
+from Desktop SQL. Legacy replacement endpoints remain unconditional.
 
 ### `GET /api/v1/settings/runtime`
 

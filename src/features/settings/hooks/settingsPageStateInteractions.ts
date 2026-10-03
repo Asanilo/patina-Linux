@@ -11,17 +11,19 @@ export interface SettingsSaveFlowInput {
   hasUnsavedChanges: boolean;
   saveStatus: SaveStatus;
   productRevision?: string;
+  resourceRevision?: string | null;
 }
 
 export interface SettingsSaveFlowDeps {
   buildPatch: (saved: AppSettings, draft: AppSettings) => SettingsPatch;
-  commitPatch: (patch: SettingsPatch, expectedProductRevision?: string) => Promise<SettingsCommitResult>;
+  commitPatch: (patch: SettingsPatch, expectedProductRevision?: string, expectedResourceRevision?: string | null) => Promise<SettingsCommitResult>;
 }
 
 export interface SettingsBootstrapSnapshot {
   settings: AppSettings;
   appVersion: string;
   productRevision?: string;
+  resourceRevision?: string | null;
 }
 
 export interface SettingsSaveFlowResult {
@@ -111,7 +113,7 @@ export async function saveSettingsPageStateWithDeps(
   try {
     const normalizedDraftSettings = normalizeSettingsForSave(input.draftSettings);
     const patch = deps.buildPatch(input.savedSettings, normalizedDraftSettings);
-    const commitResult = await deps.commitPatch(patch, input.productRevision);
+    const commitResult = await deps.commitPatch(patch, input.productRevision, input.resourceRevision);
     const nextSettings = { ...normalizedDraftSettings, ...commitResult.confirmedProductSettings };
     return {
       accepted: true,
@@ -121,6 +123,8 @@ export async function saveSettingsPageStateWithDeps(
       nextBootstrap: {
         settings: nextSettings,
         appVersion: input.appVersion,
+        ...((commitResult.resourceRevision ?? input.resourceRevision) !== undefined
+          ? {resourceRevision: commitResult.resourceRevision ?? input.resourceRevision} : {}),
         ...((commitResult.productRevision ?? input.productRevision) !== undefined
           ? {productRevision: commitResult.productRevision ?? input.productRevision} : {}),
       },

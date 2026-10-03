@@ -3,6 +3,7 @@ use crate::data::app_settings_service::commit_app_setting_mutations_with_recover
 use crate::data::repositories::app_settings::AppSettingMutation;
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
+pub mod resources;
 
 pub async fn commit_if_revision<R: Runtime>(
     app: &AppHandle<R>,

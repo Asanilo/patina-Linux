@@ -216,6 +216,28 @@ pub async fn cmd_commit_settings_if_revision(
 }
 
 #[tauri::command]
+pub async fn cmd_commit_settings_with_resources(
+    mutations: Vec<AppSettingMutationDto>,
+    expected_product_revision: Option<String>,
+    expected_resource_revision: String,
+    app: AppHandle,
+) -> Result<crate::app::settings_commit::resources::SettingsConfirmation, String> {
+    crate::app::settings_commit::resources::commit(&app,
+        mutations.into_iter().map(AppSettingMutation::from).collect(),
+        expected_product_revision, expected_resource_revision).await
+}
+
+#[tauri::command]
+pub async fn cmd_get_resource_settings(app: AppHandle)
+    -> Result<Option<patina_protocol::resource_settings::ResourceSettingsSnapshot>, String> {
+    let Some(client) = crate::app::daemon_client::command_client(&app)? else {
+        // Explicit embedded migration host, not a fallback for a failed daemon read.
+        return Ok(None);
+    };
+    client.transport().resource_settings().await.map(Some).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn cmd_commit_classification_settings(
     mutations: Vec<ClassificationSettingMutationDto>,
     app: AppHandle,

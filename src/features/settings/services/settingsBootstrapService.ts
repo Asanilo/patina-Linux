@@ -12,6 +12,7 @@ export interface SettingsPageBootstrapData {
   settings: AppSettings;
   appVersion: string;
   productRevision?: string;
+  resourceRevision?: string | null;
 }
 
 type SettingsPageBootstrapDeps = {
@@ -45,6 +46,7 @@ export async function loadSettingsPageBootstrapWithDeps(
     settings: mergedSettings,
     appVersion,
     productRevision: snapshot.productRevision,
+    resourceRevision: snapshot.resourceRevision,
   };
   return bootstrap;
 }

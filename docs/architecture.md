@@ -259,7 +259,7 @@ daemon 写侧按 capability 和真实 runtime owner 开放。默认 daemon surfa
 
 daemon 的音频、浏览器配置、Local API 端口和 Token 变更由 `app/daemon/runtime/resource_operations` 持有已接受操作的生命周期；HTTP future 被取消不撤销该操作，客户端不得因超时自动重试写入。每个 daemon 同时只接受一项此类资源变更，重叠请求明确返回 conflict，不积累无界任务。关闭时先停止接收并等待已接受变更完成，再停止后台、listener 和存储。此约束不替代旧草稿的 revision 检查，也不宣称所有写接口或 embedded 兼容路径具有同样的取消语义。
 
-音频与浏览器配置的新客户端契约使用 `/settings/resources` snapshot 和 `runtime-settings-conditional` patch。局部字段由 daemon 合并，省略 token 表示保留而不是清空；客户端不必为写入聚合完整凭据配置。`data/repositories/resource_settings` 在 writer transaction 内复查原始 revision，并与配置、必要封口一同提交。资源 revision 只覆盖该组资源及其持久化 generation，不绑定普通策略、心跳或客户端偏好；经 app settings owner 的资源写入统一在同一事务推进 generation，包括旧接口与仅凭据轮换，不对外返回凭据或凭据哈希。空 patch 只验证版本。listener 预留早于事务，运行资源发布晚于事务；新 SDK 缺少 capability 或遇到冲突不回退旧写接口。现有 Desktop 资源草稿基线仍待接入，旧完整替换接口不获得条件写语义，普通策略与资源的连续请求也不是跨请求原子事务。
+音频与浏览器配置的新客户端契约使用 `/settings/resources` snapshot 和 `runtime-settings-conditional` patch。局部字段由 daemon 合并，省略 token 表示保留而不是清空；客户端不必为写入聚合完整凭据配置。`data/repositories/resource_settings` 在 writer transaction 内复查原始 revision，并与配置、必要封口一同提交。资源 revision 只覆盖该组资源及其持久化 generation，不绑定普通策略、心跳或客户端偏好；经 app settings owner 的资源写入统一在同一事务推进 generation，包括旧接口与仅凭据轮换，不对外返回凭据或凭据哈希。空 patch 只验证版本。listener 预留早于事务，运行资源发布晚于事务；新 SDK 缺少 capability 或遇到冲突不回退旧写接口。现有 Desktop 设置页已携带资源 baseline，经 `app/settings_commit/resources` 提交稀疏 patch；同字段冲突保留原版本与草稿，取消或资源草稿恢复当前值后采用最新版本。preflight 拒绝过期资源版本时不写普通策略和偏好；随后普通策略、资源、偏好分步执行，后段失败仍须如实报告并重读，不能宣称跨请求原子事务。daemon 读取错误或缺失 baseline 不回退；仅由 host 明确返回 null 的 embedded 迁移模式保留旧路径。凭据显示／复制的本机读取例外保留，新资源保存不再从 Desktop SQL 聚合完整浏览器配置。旧完整替换接口不获得条件写语义。
 
 浏览器 disabled 设置和当前网页段封口在 data owner 的同一事务提交。daemon ingress 的策略读取与事实写入和配置提交共享 transition，防止旧 enabled 请求越过关闭边界；该锁不跨 listener 的优雅关闭等待，以免关闭等待在途请求、请求又等待配置锁。封口失败时保留旧设置与 listener，事件只在提交与资源切换成功后发布。
 

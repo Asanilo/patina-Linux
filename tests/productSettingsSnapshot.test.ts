@@ -41,6 +41,7 @@ try {
 
   const queries: string[] = [];
   mockIPC((command, args) => {
+    if (command === "cmd_get_resource_settings") return null; // Explicit embedded fixture.
     if (command === "cmd_get_product_settings") return fixture();
     if (command === "plugin:sql|select") {
       const query = String((args as {query: string}).query);

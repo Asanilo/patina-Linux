@@ -5,8 +5,10 @@ import {
   loadDesktopSettingRows,
 } from "./settingsPersistence.ts";
 import { loadProductSettingsSnapshot, parseProductSettingsSnapshot, type ProductSettingsSnapshot } from "./productSettingsSnapshot.ts";
+import { loadResourceSettingsSnapshot, parseResourceSettingsSnapshot } from "./resourceSettingsSnapshot.ts";
 import {
   DEFAULT_SETTINGS,
+  RESOURCE_SETTING_KEYS,
   BACKGROUND_OPTIMIZATION_DELAY_RANGE,
   type AppLanguage,
   type AppSettings,
@@ -22,6 +24,7 @@ const COMMIT_APP_SETTINGS_COMMAND = "cmd_commit_app_settings";
 
 export type { AppSettings };
 export type AppSettingsPatch = Partial<AppSettings>;
+export type AppSettingsConfirmation = ProductSettingsSnapshot & {resourceRevision?: string | null};
 type PersistedSettingValue = string | number | boolean;
 interface AppSettingMutation {
   key: string;
@@ -361,13 +364,13 @@ export function buildRawAppSettingsPatch(patch: AppSettingsPatch): Record<string
   return rawPatch;
 }
 
-export async function loadAppSettingsSnapshot(): Promise<{settings: AppSettings; productRevision: string}> {
-  const [rows, product] = await Promise.all([loadDesktopSettingRows(), loadProductSettingsSnapshot()]);
+export async function loadAppSettingsSnapshot(): Promise<{settings: AppSettings; productRevision: string; resourceRevision: string | null}> {
+  const [rows, product, resources] = await Promise.all([loadDesktopSettingRows(), loadProductSettingsSnapshot(), loadResourceSettingsSnapshot()]);
   const record: Record<string, string> = {};
   for (const row of rows) {
     record[row.key] = row.value;
   }
-  return { settings: {...normalizeSettingsRecord(record), ...product.settings}, productRevision: product.revision };
+  return { settings: {...normalizeSettingsRecord(record), ...product.settings, ...resources?.settings}, productRevision: product.revision, resourceRevision: resources?.revision ?? null };
 }
 
 export async function loadAppSettings(): Promise<AppSettings> {
@@ -383,8 +386,19 @@ export async function saveAppSetting<K extends keyof AppSettings>(
   } as AppSettingsPatch);
 }
 
-export async function saveAppSettingsPatch(patch: AppSettingsPatch, expectedProductRevision?: string): Promise<ProductSettingsSnapshot | void> {
+export async function saveAppSettingsPatch(patch: AppSettingsPatch, expectedProductRevision?: string, expectedResourceRevision?: string | null): Promise<AppSettingsConfirmation | void> {
   const mutations = buildAppSettingMutations(buildRawAppSettingsPatch(patch));
+  if (RESOURCE_SETTING_KEYS.some(key => key in patch) && expectedResourceRevision === undefined)
+    throw new Error("Resource settings baseline is unavailable; reload before saving");
+  if (typeof expectedResourceRevision === "string" && RESOURCE_SETTING_KEYS.some(key => key in patch)) {
+    const raw = await invoke<unknown>("cmd_commit_settings_with_resources", {mutations,
+      expectedProductRevision: expectedProductRevision ?? null, expectedResourceRevision});
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Invalid settings confirmation");
+    const value = raw as Record<string, unknown>;
+    const product = parseProductSettingsSnapshot(value.product);
+    const resources = parseResourceSettingsSnapshot(value.resources);
+    return {...product, resourceRevision: resources.revision, settings: {...product.settings, ...resources.settings}};
+  }
   if (expectedProductRevision !== undefined && mutations.some(mutation =>
     ["idle_timeout_secs", "timeline_merge_gap_secs", "min_session_secs", "tracking_paused"].includes(mutation.key))) {
     return parseProductSettingsSnapshot(await invoke<unknown>("cmd_commit_settings_if_revision", {mutations, expectedRevision: expectedProductRevision}));

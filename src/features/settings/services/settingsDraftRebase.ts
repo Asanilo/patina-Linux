@@ -1,6 +1,16 @@
 import type { AppSettings } from "../../../shared/settings/appSettings.ts";
+import { RESOURCE_SETTING_KEYS } from "../../../shared/settings/appSettings.ts";
 
 const POLICY_KEYS = ["idleTimeoutSecs", "timelineMergeGapSecs", "minSessionSecs", "trackingPaused"] as const;
+
+export function hasSettingsDraftResourceEdits(saved: AppSettings | null, draft: AppSettings | null): boolean {
+  return !!saved && !!draft && RESOURCE_SETTING_KEYS.some(key => draft[key] !== saved[key]);
+}
+
+export function hasSettingsDraftResourceConflict(saved: AppSettings | null, draft: AppSettings | null, incoming: AppSettings): boolean {
+  return !!saved && !!draft && RESOURCE_SETTING_KEYS.some(key =>
+    draft[key] !== saved[key] && incoming[key] !== saved[key] && incoming[key] !== draft[key]);
+}
 
 export function hasSettingsDraftPolicyEdits(saved: AppSettings | null, draft: AppSettings | null): boolean {
   return !!saved && !!draft && POLICY_KEYS.some(key => draft[key] !== saved[key]);

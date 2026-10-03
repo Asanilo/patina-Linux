@@ -424,3 +424,17 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 首轮 `check:full` 全部通过，包含 64 个 TypeScript 文件、45 项浏览器检查、38 项 SDK 测试、生成器与全部边界／Clippy／bundle 门禁。随后仅补充恢复归属及其测试，相关 Rust 门禁再次通过：Desktop 777 passed / 22 ignored，独立后端 619 passed / 11 ignored。证据为 `tmp/acceptance/m2p-full.log`、`m2p-rust-final.log`、`m2p-daemon-final.log`；未重复未变化的前端与 SDK 检查。
 - 隔离进程脚本已补资源 patch、仅凭据轮换后的旧版本拒绝及 generation 重启保留；浏览器／音频采集保持关闭。最终 headless 成品通过双 SDK 同步、认证拒绝、资源条件写入、正常关闭与重启／分类和 checksum 保留。SHA256 为 `a6a0c8a4cc7d9d1c62bed8a6a085f3b1cc6fd7ea411c0e460b5a5f1d537fc4b0`，证据为 `tmp/acceptance/multi-client-m2p-resources-final/`、`tmp/acceptance/m2p-independent-client-final.log` 及 `/tmp/patina-independent-client-kmr2o05t/`。中间构建证据保留，不能代替最终成品。
 - 本批只在开发分支本地实现与提交，没有安装、推送、合并或发布。下一项是现有 Desktop 资源保存的实际迁移：读取／保存携带资源 baseline、保留同字段冲突、取消恢复最新值，以及退出浏览器完整配置／SQL 聚合。普通策略与资源之间仍不构成跨请求全局事务；基础阶段及新客户端讨论边界不变。
+
+### M2q 执行设计：Desktop 设置页资源基线
+
+- 设置页与全局读取取得资源 snapshot，由严格 adapter 验证后映射；资源 revision 随 bootstrap／草稿保存传递。同字段冲突保留原 baseline，不被刷新自动覆盖；取消或改回当前值后使用最新版本。缺少 baseline 或 daemon 读取错误不回退无条件写入。
+- Desktop 的新保存编排按资源、普通策略、客户端偏好分流。纯读取 preflight 验证资源能力和原版本，普通策略继续按原始 product revision 提交，再用原始 resource revision 提交稀疏 patch，最后提交客户端偏好。preflight 或普通策略冲突不执行后续写入；后段失败如实报告并重读，不能宣称跨 endpoint 全局原子性。资源请求不经 Desktop SQL 聚合完整浏览器配置，确认后不再前端补写音频。
+- 明确的 embedded 迁移宿主由 host 返回 null 标记，保留旧兼容保存路径；这个标记不能由命令缺失或读取失败推断。浏览器凭据的既有本机显示／复制读取例外仍保留，不把此切片称为全部 Desktop 退出 SQLite；不创建新客户端或改变 Quiet Pro 视觉。
+
+### M2q 核验结果
+
+- 全局设置与设置页已读取、验证 resource snapshot；bootstrap、保存 adapter 与 hook 显式传递资源版本。稀疏资源保存走新增薄 Tauri command 和 `app/settings_commit/resources`，省略浏览器 token 时不从 Desktop SQL 读取整份配置。preflight 检查资源 capability／原版本／参数和偏好限制，随后普通策略、资源、偏好按既定顺序执行；后端资源 CAS 仍使用最初版本。确认后的音频不由前端补写。
+- 资源草稿与普通策略分别跟踪冲突。刷新未编辑字段并保留编辑内容，同字段冲突不接受新 baseline；取消后采用最新值与资源版本。缺少资源 baseline 时保存拒绝，daemon 读失败不会回退；host 明确的 null 才表示 embedded 兼容路径。凭据显示仍是具名的本机读取例外，旧兼容接口未删除。
+- 新增严格解析／预算／安全整数／非法 enabled-token 组合／冲突草稿／不 fallback 检查。原生测试在不安装 Desktop SQLite pool 的 MockRuntime 中，通过真实 daemon HTTP 完成普通策略＋资源＋主题混合保存，确认只改端口时凭据保留；旧资源版本的 preflight 不改普通策略和主题。证据为 `tmp/acceptance/m2q-native.log`。
+- `check:full` 通过：65 个 TypeScript 文件、原 45 项浏览器检查、38 项 SDK 测试、Desktop 778 passed / 22 ignored、独立后端 619 passed / 11 ignored，以及生成器／边界／Clippy／bundle 门禁。新增的浏览器资源场景随后单独执行，最终 46 项通过，验证冲突保留端口草稿、取消采用远端值、再次保存只包含端口 mutation。证据为 `tmp/acceptance/m2q-full.log`、`m2q-browser-final.log` 和 `m2q-settings-test.log`。首轮修正新单测的 window mock，以及浏览器场景插入定位；这不是实装或新客户端验收。
+- 没有安装、打包、推送、合并或发布。普通策略与资源之间仍没有跨 endpoint 原子事务，mixed save 后段失败可能已有前段提交，页面会失败提示并重读。下一独立工作仍包括剩余客户端契约／读取与便捷写入口审计、网页产品决定和迁移、客户端偏好归属；新 TUI／GPUI／Web UI 继续在讨论边界之外。
