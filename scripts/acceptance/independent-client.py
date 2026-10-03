@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 
 
@@ -62,6 +63,13 @@ def main():
             assert port and port != 14840, "isolated ephemeral API was not ready"
             token_file = root / "data/Patina Local/api_token"
             assert token_file.is_file()
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            try:
+                opener.open(f"http://127.0.0.1:{port}/api/v1/settings/classification", timeout=5)
+            except urllib.error.HTTPError as error:
+                assert error.code == 401, "unauthenticated read was not rejected"
+            else:
+                raise AssertionError("unauthenticated read succeeded")
             with selectors.DefaultSelector() as selector:
                 for index in range(2):
                     child = subprocess.Popen([str(probe), str(port), str(token_file), "--watch"],
@@ -85,7 +93,7 @@ def main():
                 request = urllib.request.Request(f"http://127.0.0.1:{port}/api/v1/apps/fixture-app/classify",
                     data=json.dumps({"category": "research"}).encode(),
                     headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"}, method="POST")
-                with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=5) as response:
+                with opener.open(request, timeout=5) as response:
                     assert response.status == 200
                 receive(b"event=tracking-data-changed cursor=")
                 for index, value in enumerate(buffers):
@@ -98,9 +106,31 @@ def main():
                           "sdk_probe_sha256": hashlib.sha256(probe.read_bytes()).hexdigest(),
                           "profile": "local", "production_state_used": False,
                           "two_independent_sdk_processes": True, "shared_classification_event": True,
+                          "unauthenticated_read_rejected": True,
                           "tracking_hardware_verified": False, "gui_or_tui_verified": False}
-                (root / "result.json").write_text(json.dumps(result, indent=2) + "\n")
-                print(json.dumps({"passed": True, "evidence": str(root), "clients": 2}))
+            owner.send_signal(signal.SIGINT)
+            assert owner.wait(timeout=10) == 0, "daemon did not shut down cleanly"
+            with sqlite3.connect(db) as connection:
+                assert connection.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+                classification_query = "SELECT value FROM settings WHERE key='__app_override::fixture-app'"
+                before = connection.execute(classification_query).fetchone()
+                assert before and json.loads(before[0])["category"] == "research", "classification write did not persist"
+                migrations = connection.execute(
+                    "SELECT version, description, checksum FROM _sqlx_migrations ORDER BY version"
+                ).fetchall()
+            # Reacquire the released lease and reopen the same schema without a UI.
+            subprocess.run([str(daemon), "--profile", "local"], env=env, stdout=log,
+                           stderr=subprocess.STDOUT, timeout=20, check=True)
+            with sqlite3.connect(db) as connection:
+                assert connection.execute(classification_query).fetchone() == before
+                assert connection.execute(
+                    "SELECT version, description, checksum FROM _sqlx_migrations ORDER BY version"
+                ).fetchall() == migrations
+                assert connection.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+            result.update(graceful_shutdown=True, lease_reacquired=True,
+                          classification_survives_restart=True, migration_checksums_preserved=True)
+            (root / "result.json").write_text(json.dumps(result, indent=2) + "\n")
+            print(json.dumps({"passed": True, "evidence": str(root), "clients": 2}))
         finally:
             for child in reversed(children[1:]):
                 if child.poll() is None: child.terminate()

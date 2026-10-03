@@ -1,10 +1,12 @@
 use crate::data::repositories;
+#[cfg(feature = "desktop")]
 use crate::data::sqlite_pool::wait_for_sqlite_pool;
 use crate::domain::backup::{
     BackupImportBatch, BackupImportExactSession, BackupImportTimeBucket, BackupMeta, BackupPayload,
     BackupPreview, RestoreStrategy, CURRENT_BACKUP_SCHEMA_VERSION, CURRENT_BACKUP_VERSION,
     MAX_BACKUP_ARCHIVE_BYTES,
 };
+#[cfg(feature = "desktop")]
 use crate::platform::storage_paths;
 use crc32fast::Hasher;
 use serde::{Deserialize, Serialize};
@@ -16,6 +18,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::Cursor;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, Runtime};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
@@ -127,6 +130,7 @@ struct BackupArchiveChecksums {
     files: BTreeMap<String, String>,
 }
 
+#[cfg(feature = "desktop")]
 fn default_backup_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     let backup_dir = storage_paths::resolve_storage_paths(app)?.backup_dir;
     fs::create_dir_all(&backup_dir)
@@ -144,6 +148,7 @@ fn backup_file_name_for_timestamp(timestamp: &str) -> String {
     format!("Patina-backup-{timestamp}.{BACKUP_FILE_EXT}")
 }
 
+#[cfg(feature = "desktop")]
 fn resolve_backup_path<R: Runtime>(
     app: &AppHandle<R>,
     raw_path: Option<String>,
@@ -247,6 +252,7 @@ fn resolve_dialog_directory(initial_path: Option<String>) -> Option<PathBuf> {
     })
 }
 
+#[cfg(feature = "desktop")]
 pub async fn pick_backup_save_file(initial_path: Option<String>) -> Option<String> {
     let mut dialog = rfd::AsyncFileDialog::new().add_filter("Patina backup", &["zip"]);
     if let Some(dir) = resolve_dialog_directory(initial_path) {
@@ -260,6 +266,7 @@ pub async fn pick_backup_save_file(initial_path: Option<String>) -> Option<Strin
         .map(|file| file.path().to_string_lossy().to_string())
 }
 
+#[cfg(feature = "desktop")]
 pub async fn pick_backup_file(initial_path: Option<String>) -> Option<String> {
     let mut dialog = rfd::AsyncFileDialog::new().add_filter("Patina backup", &["zip"]);
     if let Some(dir) = resolve_dialog_directory(initial_path) {
@@ -874,6 +881,7 @@ fn write_backup_archive_atomic(target_path: &Path, archive: &[u8]) -> Result<(),
     result
 }
 
+#[cfg(feature = "desktop")]
 pub async fn export_backup(backup_path: Option<String>, app: AppHandle) -> Result<String, String> {
     let target_path = resolve_backup_path(&app, backup_path)?;
     let pool = wait_for_sqlite_pool(&app).await?;
@@ -922,6 +930,7 @@ pub(crate) async fn inspect_restore_archive_async(
         .await
 }
 
+#[cfg(feature = "desktop")]
 pub async fn restore_backup(
     backup_path: String,
     app: AppHandle,
@@ -1256,7 +1265,7 @@ mod tests {
 
     #[test]
     fn streaming_export_matches_legacy_snapshot_and_preserves_existing_targets() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let root = temp_backup_path("streaming").with_extension("dir");
             fs::create_dir(&root).unwrap();
             let target = root.join("backup.zip");
@@ -1361,7 +1370,7 @@ mod tests {
         std::env::temp_dir().join(format!(
             "patina-backup-{label}-{}-{}.zip",
             std::process::id(),
-            crate::app::runtime::now_ms()
+            crate::engine::runtime_context::now_ms()
         ))
     }
 
@@ -1398,7 +1407,7 @@ mod tests {
 
     #[test]
     fn late_entry_failure_never_changes_restore_target() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             pool.execute("INSERT INTO settings(key,value) VALUES('keep','original')")
                 .await
@@ -1491,7 +1500,7 @@ mod tests {
 
     #[test]
     fn concurrent_writes_do_not_mix_export_snapshot_tables() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let root = temp_backup_path("snapshot").with_extension("dir");
             fs::create_dir(&root).unwrap();
             let pool = crate::data::sqlite_pool::open_prepared_sqlite_pool_at_path(
@@ -1587,11 +1596,11 @@ mod tests {
     fn scheduled_backup_archive_is_published_owner_only() {
         use std::os::unix::fs::PermissionsExt;
 
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let root = std::env::temp_dir().join(format!(
                 "patina-scheduled-backup-permissions-{}-{}",
                 std::process::id(),
-                crate::app::runtime::now_ms()
+                crate::engine::runtime_context::now_ms()
             ));
             fs::create_dir_all(&root).unwrap();
             let target = root.join("scheduled.zip");
@@ -2192,7 +2201,7 @@ mod tests {
 
     #[test]
     fn replace_restore_preserves_current_host_integration_settings() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let mut tx = pool.begin().await.unwrap();
             repositories::settings::insert_for_restore(
@@ -2297,7 +2306,7 @@ mod tests {
 
     #[test]
     fn merge_restore_does_not_import_missing_host_integration_settings() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let mut payload = payload_with_bound_web_activity();
             payload.settings = vec![
@@ -2333,7 +2342,7 @@ mod tests {
 
     #[test]
     fn replace_restore_rebuilds_web_activity_native_session_relation() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             restore_backup_payload(
@@ -2359,7 +2368,7 @@ mod tests {
 
     #[test]
     fn merge_restore_remaps_web_activity_relation_around_id_collisions() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             sqlx::query(
                 "INSERT INTO sessions (
@@ -2420,7 +2429,7 @@ mod tests {
 
     #[test]
     fn restore_backup_payload_rolls_back_when_insert_fails() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             sqlx::query(
@@ -2529,7 +2538,7 @@ mod tests {
 
     #[test]
     fn replace_restore_restores_imported_activity() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let payload = BackupPayload {
                 version: CURRENT_BACKUP_VERSION,
@@ -2608,7 +2617,7 @@ mod tests {
 
     #[test]
     fn replace_restore_restores_title_samples() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let payload = BackupPayload {
                 version: CURRENT_BACKUP_VERSION,
@@ -2681,7 +2690,7 @@ mod tests {
 
     #[test]
     fn replace_restore_skips_orphan_title_samples() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let payload = BackupPayload {
                 version: CURRENT_BACKUP_VERSION,
@@ -2748,7 +2757,7 @@ mod tests {
 
     #[test]
     fn merge_restore_payload_preserves_existing_data_and_imports_missing_data() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             sqlx::query(
@@ -2897,7 +2906,7 @@ mod tests {
 
     #[test]
     fn merge_restore_maps_title_samples_to_inserted_session_ids() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             sqlx::query(

@@ -1,4 +1,5 @@
 use crate::data::schema;
+#[cfg(feature = "desktop")]
 use crate::platform::storage_paths;
 use futures_util::future::BoxFuture;
 use sqlx::error::BoxDynError;
@@ -6,30 +7,33 @@ use sqlx::migrate::{Migration as SqlxMigration, MigrationSource, MigrationType, 
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Pool, Row, Sqlite};
 use std::fs::create_dir_all;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(any(feature = "desktop", test))]
+use std::path::PathBuf;
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, Manager, Runtime};
-use tauri_plugin_sql::{DbInstances, DbPool, MigrationKind};
+#[cfg(feature = "desktop")]
+use tauri_plugin_sql::{DbInstances, DbPool};
+#[cfg(feature = "desktop")]
 use tokio::time::{sleep, Duration};
 
 pub const SQLITE_DB_NAME: &str = "sqlite:patina.db";
 
 #[derive(Debug)]
-struct InlineMigrationList(Vec<tauri_plugin_sql::Migration>);
+struct InlineMigrationList(Vec<schema::Migration>);
 
 impl MigrationSource<'static> for InlineMigrationList {
     fn resolve(self) -> BoxFuture<'static, Result<Vec<SqlxMigration>, BoxDynError>> {
         Box::pin(async move {
             let mut migrations = Vec::new();
             for migration in self.0 {
-                if matches!(migration.kind, MigrationKind::Up) {
-                    migrations.push(SqlxMigration::new(
-                        migration.version,
-                        migration.description.into(),
-                        MigrationType::ReversibleUp,
-                        migration.sql.into(),
-                        false,
-                    ));
-                }
+                migrations.push(SqlxMigration::new(
+                    migration.version,
+                    migration.description.into(),
+                    MigrationType::ReversibleUp,
+                    migration.sql.into(),
+                    false,
+                ));
             }
             Ok(migrations)
         })
@@ -56,6 +60,7 @@ fn expected_migration_metadata() -> Vec<(i64, &'static str, Vec<u8>)> {
         .collect()
 }
 
+#[cfg(feature = "desktop")]
 fn resolve_product_db_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     let paths = storage_paths::resolve_storage_paths(app)?;
     if paths.database_creation_allowed {
@@ -125,6 +130,7 @@ pub fn is_recoverable_sqlite_error(error: &str) -> bool {
         || normalized.contains("pooltimedout")
 }
 
+#[cfg(feature = "desktop")]
 pub async fn reopen_sqlite_pool<R: Runtime>(app: &AppHandle<R>) -> Result<Pool<Sqlite>, String> {
     let db_path = resolve_product_db_path(app)?;
     let next_pool = open_prepared_sqlite_pool_at_path(&db_path, true).await?;
@@ -152,6 +158,7 @@ async fn open_existing_sqlite_pool_at_path(db_path: &Path) -> Result<Pool<Sqlite
     }
 }
 
+#[cfg(feature = "desktop")]
 pub async fn reopen_existing_sqlite_pool<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Result<Pool<Sqlite>, String> {
@@ -162,6 +169,7 @@ pub async fn reopen_existing_sqlite_pool<R: Runtime>(
     Ok(next_pool)
 }
 
+#[cfg(feature = "desktop")]
 async fn register_sqlite_pool<R: Runtime>(
     app: &AppHandle<R>,
     next_pool: Pool<Sqlite>,
@@ -188,6 +196,7 @@ async fn register_sqlite_pool<R: Runtime>(
     Ok(())
 }
 
+#[cfg(feature = "desktop")]
 pub async fn initialize_app_sqlite<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let db_path = resolve_product_db_path(app)?;
     let pool = open_prepared_sqlite_pool_at_path(&db_path, true).await?;
@@ -197,6 +206,7 @@ pub async fn initialize_app_sqlite<R: Runtime>(app: &AppHandle<R>) -> Result<(),
     Ok(())
 }
 
+#[cfg(feature = "desktop")]
 pub async fn initialize_existing_app_sqlite<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     reopen_existing_sqlite_pool(app).await.map(|_| ())
 }
@@ -1073,6 +1083,7 @@ async fn normalize_current_baseline_migration_history_for_pool(
     Ok(true)
 }
 
+#[cfg(feature = "desktop")]
 pub async fn wait_for_sqlite_pool<R: Runtime>(app: &AppHandle<R>) -> Result<Pool<Sqlite>, String> {
     let mut wait_cycles: u64 = 0;
 
@@ -1093,6 +1104,7 @@ pub async fn wait_for_sqlite_pool<R: Runtime>(app: &AppHandle<R>) -> Result<Pool
     }
 }
 
+#[cfg(feature = "desktop")]
 pub async fn checkpoint_current_database<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let pool = wait_for_sqlite_pool(app).await?;
     checkpoint_sqlite_pool(&pool).await
@@ -1195,7 +1207,7 @@ mod tests {
 
     #[test]
     fn existing_only_pool_does_not_create_a_missing_database() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let root = existing_pool_test_root("missing");
             let db_path = root.join("Patina").join("patina.db");
 
@@ -1211,7 +1223,7 @@ mod tests {
 
     #[test]
     fn existing_only_pool_rejects_incompatible_schema_without_repair() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let root = existing_pool_test_root("incompatible");
             std::fs::create_dir_all(&root).unwrap();
             let db_path = root.join("patina.db");
@@ -1253,7 +1265,7 @@ mod tests {
 
     #[test]
     fn existing_only_pool_does_not_run_migrations_or_backfill_settings() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let root = existing_pool_test_root("no-maintenance");
             let db_path = root.join("patina.db");
             let pool = open_prepared_sqlite_pool_at_path(&db_path, true)
@@ -1297,7 +1309,7 @@ mod tests {
 
     #[test]
     fn explicit_path_pool_prepares_sessions_schema() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let root = std::env::temp_dir().join(format!(
                 "patina-explicit-pool-{}-{}",
                 std::process::id(),
@@ -1327,7 +1339,7 @@ mod tests {
 
     #[test]
     fn current_baseline_migration_creates_complete_schema() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             pool.execute(schema::CURRENT_BASELINE_SCHEMA_SQL)
                 .await
@@ -1339,7 +1351,7 @@ mod tests {
 
     #[test]
     fn tools_schema_creates_complete_tool_tables() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             pool.execute(schema::TOOLS_TABLES_SCHEMA_SQL).await.unwrap();
 
@@ -1350,7 +1362,7 @@ mod tests {
 
     #[test]
     fn software_reminder_schema_creates_rule_table() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             pool.execute(schema::CURRENT_BASELINE_SCHEMA_SQL)
                 .await
@@ -1365,7 +1377,7 @@ mod tests {
 
     #[test]
     fn web_activity_schema_creates_complete_table() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             pool.execute(schema::WEB_ACTIVITY_SCHEMA_SQL).await.unwrap();
 
@@ -1375,7 +1387,7 @@ mod tests {
 
     #[test]
     fn web_activity_session_schema_creates_relation_and_boundary_trigger() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             pool.execute(schema::CURRENT_BASELINE_SCHEMA_SQL)
                 .await
@@ -1391,7 +1403,7 @@ mod tests {
 
     #[test]
     fn backup_restore_receipt_schema_creates_completion_table() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             pool.execute(schema::BACKUP_RESTORE_RECEIPT_SCHEMA_SQL)
                 .await
@@ -1403,7 +1415,7 @@ mod tests {
 
     #[test]
     fn scheduled_backup_schema_creates_complete_tables() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             pool.execute(schema::SCHEDULED_BACKUP_SCHEMA_SQL)
                 .await
@@ -1415,7 +1427,7 @@ mod tests {
 
     #[test]
     fn activity_import_schema_creates_complete_tables() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             pool.execute(schema::ACTIVITY_IMPORT_SCHEMA_SQL)
                 .await
@@ -1427,7 +1439,7 @@ mod tests {
 
     #[test]
     fn current_schema_history_does_not_mark_missing_activity_import_schema_as_applied() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             pool.execute(schema::CURRENT_BASELINE_SCHEMA_SQL)
                 .await
@@ -1473,7 +1485,7 @@ mod tests {
 
     #[test]
     fn current_schema_history_does_not_mark_missing_web_session_binding_as_applied() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             pool.execute(schema::CURRENT_BASELINE_SCHEMA_SQL)
                 .await
@@ -1523,7 +1535,7 @@ mod tests {
 
     #[test]
     fn published_linux_main_a13a64a_upgrades_to_daemon_without_losing_existing_data() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             // Fixture provenance: Linux main a13a64a669849234df5575994673cb7a90cc3003
             // (1.8.4), src-tauri/src/data/schema.rs. Its six SQL migrations are
             // byte-identical to the first six here. Pin their actual SQLx SHA384
@@ -1744,7 +1756,7 @@ mod tests {
 
     #[test]
     fn current_schema_history_is_normalized_to_single_baseline_row() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             pool.execute(schema::CURRENT_BASELINE_SCHEMA_SQL)
                 .await
@@ -1779,7 +1791,7 @@ mod tests {
 
     #[test]
     fn current_schema_history_preserves_tools_schema_row() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             pool.execute(schema::CURRENT_BASELINE_SCHEMA_SQL)
                 .await
@@ -1819,7 +1831,7 @@ mod tests {
 
     #[test]
     fn current_schema_history_preserves_software_reminder_schema_row() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             pool.execute(schema::CURRENT_BASELINE_SCHEMA_SQL)
                 .await
@@ -1863,7 +1875,7 @@ mod tests {
 
     #[test]
     fn current_schema_history_does_not_mark_missing_web_activity_schema_as_applied() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             pool.execute(schema::CURRENT_BASELINE_SCHEMA_SQL)
                 .await
@@ -1937,7 +1949,7 @@ mod tests {
 
     #[test]
     fn legacy_schema_without_continuity_column_is_repaired() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             create_legacy_schema_without_continuity_column(&pool).await;
 
@@ -1955,7 +1967,7 @@ mod tests {
 
     #[test]
     fn legacy_schema_repair_preserves_existing_sessions() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             create_legacy_schema_without_continuity_column(&pool).await;
             pool.execute(
@@ -1980,7 +1992,7 @@ mod tests {
 
     #[test]
     fn legacy_schema_repair_backfills_continuity_group_start_time() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             create_legacy_schema_without_continuity_column(&pool).await;
             pool.execute(
@@ -2005,7 +2017,7 @@ mod tests {
 
     #[test]
     fn legacy_schema_repair_then_normalizes_migration_history() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             create_legacy_schema_without_continuity_column(&pool).await;
             create_sqlx_migrations_table(&pool).await;
@@ -2035,7 +2047,7 @@ mod tests {
 
     #[test]
     fn legacy_schema_repair_dedupes_active_sessions() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             pool.execute(
                 "CREATE TABLE sessions (
@@ -2085,7 +2097,7 @@ mod tests {
 
     #[test]
     fn current_baseline_includes_title_samples_table_and_indexes() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             pool.execute(schema::CURRENT_BASELINE_SCHEMA_SQL)
                 .await
@@ -2112,7 +2124,7 @@ mod tests {
 
     #[test]
     fn legacy_schema_repair_creates_title_samples_and_backfills_once() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             create_legacy_schema_without_continuity_column(&pool).await;
             pool.execute(
@@ -2146,7 +2158,7 @@ mod tests {
 
     #[test]
     fn current_schema_repair_is_idempotent() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             pool.execute(schema::CURRENT_BASELINE_SCHEMA_SQL)
                 .await
@@ -2161,7 +2173,7 @@ mod tests {
 
     #[test]
     fn incomplete_schema_is_not_marked_as_current_baseline() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             pool.execute(
                 "CREATE TABLE sessions (
@@ -2203,7 +2215,7 @@ mod tests {
 
     #[test]
     fn checkpoint_helper_flushes_the_current_pool() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
 
             checkpoint_sqlite_pool(&pool).await.unwrap();

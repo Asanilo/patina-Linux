@@ -140,7 +140,7 @@ pub(crate) fn install_verified_image(target: &Path, bytes: &[u8]) -> Result<Path
     Ok(previous)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "desktop-tests"))]
 mod tests {
     use super::*;
 
@@ -403,7 +403,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "patina-image-test-{}-{}",
             std::process::id(),
-            crate::app::runtime::now_ms()
+            crate::engine::runtime_context::now_ms()
         ));
         fs::create_dir(&root).unwrap();
         fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();

@@ -1,8 +1,8 @@
 use serde::Serialize;
 
-pub mod upgrade;
 #[cfg(target_os = "linux")]
 pub(crate) mod appimage;
+pub mod upgrade;
 
 #[derive(Debug, Default)]
 pub struct DaemonServiceMutationState {
@@ -141,7 +141,7 @@ pub async fn prepare_runtime_owner_cutover(
         profile,
         settings.background_tracking_at_login,
         settings.launch_at_login,
-        crate::app::runtime::now_ms(),
+        crate::engine::runtime_context::now_ms(),
     )?;
     if reservation.status != crate::app::runtime_owner_cutover::RuntimeOwnerCutoverStatus::Prepared
     {
@@ -227,7 +227,7 @@ pub async fn activate_runtime_owner_cutover(
         control_root,
         profile,
         &reservation.request_id,
-        crate::app::runtime::now_ms(),
+        crate::engine::runtime_context::now_ms(),
     )?;
     let activation_result = async {
         crate::app::autostart::apply_linux_autostart(activating.desktop_launch_at_login)?;
@@ -293,7 +293,7 @@ pub async fn prepare_explicit_runtime_owner_retry(
         profile,
         settings.background_tracking_at_login,
         settings.launch_at_login,
-        crate::app::runtime::now_ms(),
+        crate::engine::runtime_context::now_ms(),
     )
 }
 
@@ -335,7 +335,7 @@ pub async fn prepare_explicit_runtime_owner_reenable(
         profile,
         settings.background_tracking_at_login,
         settings.launch_at_login,
-        crate::app::runtime::now_ms(),
+        crate::engine::runtime_context::now_ms(),
     )?;
     let prepare_result = async {
         crate::app::autostart::apply_linux_autostart(settings.launch_at_login)?;
@@ -395,7 +395,7 @@ pub async fn prepare_explicit_runtime_owner_rollback(
         control_root,
         profile,
         settings.launch_at_login,
-        crate::app::runtime::now_ms(),
+        crate::engine::runtime_context::now_ms(),
     )?;
     control_patinad_service(PatinadServiceControlAction::Stop).await?;
     crate::app::runtime_lease::wait_for_runtime_lease_release(
@@ -411,7 +411,7 @@ pub async fn prepare_explicit_runtime_owner_rollback(
         control_root,
         profile,
         &rolling_back.request_id,
-        crate::app::runtime::now_ms(),
+        crate::engine::runtime_context::now_ms(),
     )
 }
 
@@ -430,7 +430,7 @@ pub async fn set_background_tracking_login_preference(
         control_root,
         profile,
         enabled,
-        crate::app::runtime::now_ms(),
+        crate::engine::runtime_context::now_ms(),
     )?;
     apply_background_tracking_login_preference(enabled).await?;
     Ok(reservation)
@@ -528,7 +528,7 @@ pub async fn confirm_runtime_owner_cutover(
                     &control_root,
                     profile,
                     &reservation.request_id,
-                    crate::app::runtime::now_ms(),
+                    crate::engine::runtime_context::now_ms(),
                 ) {
                     Ok(_) => println!(
                         "[patinad] runtime owner cutover {} completed",
@@ -624,7 +624,7 @@ fn record_cutover_failure(
         request_id,
         code,
         message,
-        crate::app::runtime::now_ms(),
+        crate::engine::runtime_context::now_ms(),
     ) {
         Ok(_) => message.to_string(),
         Err(marker_error) => {

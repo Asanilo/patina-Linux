@@ -966,7 +966,7 @@ mod tests {
 
     #[test]
     fn successful_custom_migration_keeps_source_and_activates_target() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let root = temp_dir("success");
             let source = root.join("source/Patina");
             let target = root.join("target/Patina");
@@ -998,7 +998,7 @@ mod tests {
 
     #[test]
     fn corrupt_staged_database_is_rejected() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let root = temp_dir("corrupt");
             let source = root.join("source.db");
             let staged = root.join("staged.db");
@@ -1016,7 +1016,7 @@ mod tests {
 
     #[test]
     fn critical_row_count_mismatch_is_rejected() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let root = temp_dir("counts");
             let source = root.join("source.db");
             let staged = root.join("staged.db");
@@ -1034,7 +1034,7 @@ mod tests {
 
     #[test]
     fn missing_source_is_rejected_without_creating_target() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let root = temp_dir("missing-source");
             let source = root.join("missing/Patina");
             let target = root.join("target/Patina");
@@ -1056,7 +1056,7 @@ mod tests {
 
     #[test]
     fn anchor_failure_restores_existing_default_database() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let root = temp_dir("anchor-rollback");
             let source = root.join("custom/Patina");
             let default_target = root.join("default/Patina");
@@ -1093,7 +1093,7 @@ mod tests {
 
     #[test]
     fn webview_anchor_failure_restores_both_previous_anchors() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let root = temp_dir("webview-anchor-rollback");
             let source = root.join("source/Patina");
             let data_target = root.join("data-target/Patina");
@@ -1143,7 +1143,7 @@ mod tests {
 
     #[test]
     fn existing_custom_target_database_is_never_overwritten() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let root = temp_dir("existing-custom");
             let source = root.join("source/Patina");
             let target = root.join("target/Patina");
@@ -1204,7 +1204,7 @@ mod tests {
 
     #[test]
     fn webview_migration_copies_persistent_state_without_cache() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let root = temp_dir("webview-copy");
             let source = root.join("source/Patina");
             let target = root.join("target/Patina/webview");
@@ -1227,7 +1227,7 @@ mod tests {
 
     #[test]
     fn interrupted_migration_recovers_each_durable_transition_without_losing_originals() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             for fault in [
                 "quarantined-entry",
                 "promoted-entry",
@@ -1321,7 +1321,7 @@ mod tests {
 
     #[test]
     fn interrupted_rollback_keeps_quarantine_for_another_recovery_attempt() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             for fault in ["rollback-entry-removed", "rollback-restored-entry"] {
                 let root = temp_dir(fault);
                 let source = root.join("source/Patina");
@@ -1385,7 +1385,7 @@ mod tests {
 
     #[test]
     fn unproven_anchor_rollback_preserves_recovery_receipt_and_original_target() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let root = temp_dir("unproven-rollback");
             let source = root.join("source/Patina");
             let target = root.join("default/Patina");
@@ -1417,7 +1417,7 @@ mod tests {
 
     #[test]
     fn restore_default_quarantines_stale_sidecars_absent_from_the_new_database() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let root = temp_dir("stale-sidecars");
             let source = root.join("source/Patina");
             let target = root.join("default/Patina");
@@ -1447,7 +1447,7 @@ mod tests {
 
     #[test]
     fn restoring_one_kind_to_the_shared_default_preserves_the_other_active_kind() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             for kind in [TargetKind::Data, TargetKind::Webview] {
                 let root = temp_dir("shared-default-restore");
                 let custom = root.join("custom/Patina");
@@ -1716,7 +1716,7 @@ mod tests {
 
     #[test]
     fn both_storage_kinds_restore_to_one_default_root_without_crossing_ownership() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let fixture = SharedDefaultRestore::new().await;
             execute_pending_with_deps(
                 &fixture.request,
@@ -1739,7 +1739,7 @@ mod tests {
 
     #[test]
     fn failed_combined_default_restore_recovers_both_original_kinds() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let fixture = SharedDefaultRestore::new().await;
             let mut data_anchor = Some(fixture.current.data_root.clone());
             let mut webview_anchor = Some(fixture.current.webview_root.clone());
@@ -1792,7 +1792,7 @@ mod tests {
 
     #[test]
     fn interrupted_combined_default_restore_and_rollback_keep_both_originals() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             for fault in [
                 "webview-quarantined",
                 "webview-promoted",
@@ -1867,7 +1867,7 @@ mod tests {
 
     #[test]
     fn invalid_journal_entry_cannot_remove_unmanaged_target_files() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let root = temp_dir("invalid-journal-entry");
             let source = root.join("source/Patina");
             let target = root.join("target/Patina");

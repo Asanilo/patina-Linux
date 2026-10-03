@@ -1,4 +1,9 @@
-use tauri_plugin_sql::{Migration, MigrationKind};
+#[derive(Debug)]
+pub struct Migration {
+    pub version: i64,
+    pub description: &'static str,
+    pub sql: &'static str,
+}
 
 pub const CURRENT_BASELINE_MIGRATION_VERSION: i64 = 1;
 pub const CURRENT_BASELINE_MIGRATION_DESCRIPTION: &str = "create_current_baseline_schema";
@@ -359,49 +364,41 @@ pub fn tracker_migrations() -> Vec<Migration> {
             version: CURRENT_BASELINE_MIGRATION_VERSION,
             description: CURRENT_BASELINE_MIGRATION_DESCRIPTION,
             sql: CURRENT_BASELINE_SCHEMA_SQL,
-            kind: MigrationKind::Up,
         },
         Migration {
             version: TOOLS_TABLES_MIGRATION_VERSION,
             description: TOOLS_TABLES_MIGRATION_DESCRIPTION,
             sql: TOOLS_TABLES_SCHEMA_SQL,
-            kind: MigrationKind::Up,
         },
         Migration {
             version: SOFTWARE_REMINDER_RULES_MIGRATION_VERSION,
             description: SOFTWARE_REMINDER_RULES_MIGRATION_DESCRIPTION,
             sql: SOFTWARE_REMINDER_RULES_SCHEMA_SQL,
-            kind: MigrationKind::Up,
         },
         Migration {
             version: WEB_ACTIVITY_MIGRATION_VERSION,
             description: WEB_ACTIVITY_MIGRATION_DESCRIPTION,
             sql: WEB_ACTIVITY_SCHEMA_SQL,
-            kind: MigrationKind::Up,
         },
         Migration {
             version: SCHEDULED_BACKUP_MIGRATION_VERSION,
             description: SCHEDULED_BACKUP_MIGRATION_DESCRIPTION,
             sql: SCHEDULED_BACKUP_SCHEMA_SQL,
-            kind: MigrationKind::Up,
         },
         Migration {
             version: ACTIVITY_IMPORT_MIGRATION_VERSION,
             description: ACTIVITY_IMPORT_MIGRATION_DESCRIPTION,
             sql: ACTIVITY_IMPORT_SCHEMA_SQL,
-            kind: MigrationKind::Up,
         },
         Migration {
             version: WEB_ACTIVITY_SESSION_MIGRATION_VERSION,
             description: WEB_ACTIVITY_SESSION_MIGRATION_DESCRIPTION,
             sql: WEB_ACTIVITY_SESSION_SCHEMA_SQL,
-            kind: MigrationKind::Up,
         },
         Migration {
             version: BACKUP_RESTORE_RECEIPT_MIGRATION_VERSION,
             description: BACKUP_RESTORE_RECEIPT_MIGRATION_DESCRIPTION,
             sql: BACKUP_RESTORE_RECEIPT_SCHEMA_SQL,
-            kind: MigrationKind::Up,
         },
     ]
 }

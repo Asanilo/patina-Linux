@@ -260,7 +260,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "patina-api-context-{label}-{}-{}",
             std::process::id(),
-            crate::app::runtime::now_ms()
+            crate::engine::runtime_context::now_ms()
         ));
         let pool = crate::data::sqlite_pool::open_prepared_sqlite_pool_at_path(
             &root.join("patina.db"),

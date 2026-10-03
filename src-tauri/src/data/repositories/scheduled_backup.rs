@@ -473,7 +473,7 @@ mod tests {
 
     #[test]
     fn configuration_round_trips_through_repository() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = pool().await;
             save_config(&pool, &config()).await.unwrap();
             assert_eq!(load_config(&pool).await.unwrap(), Some(config()));
@@ -482,7 +482,7 @@ mod tests {
 
     #[test]
     fn run_claim_is_idempotent_and_failure_has_bounded_retry() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = pool().await;
             let run = run();
             assert!(claim_run(&pool, &run).await.unwrap());
@@ -512,7 +512,7 @@ mod tests {
 
     #[test]
     fn replace_restore_reset_disables_schedule_and_cancels_active_run() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = pool().await;
             save_config(&pool, &config()).await.unwrap();
             let run = run();

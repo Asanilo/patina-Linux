@@ -1,10 +1,12 @@
 use crate::data::backup;
 use crate::domain::backup::BackupPreview;
+#[cfg(feature = "desktop")]
+pub use crate::domain::remote_backup::RemoteBackupDownloadResult;
 pub use crate::domain::remote_backup::{
-    RemoteBackupDownloadResult, RemoteBackupEntry, RemoteBackupUploadResult, WebDavBackupConfig,
-    WebDavTestResult,
+    RemoteBackupEntry, RemoteBackupUploadResult, WebDavBackupConfig, WebDavTestResult,
 };
 use crate::platform::credentials;
+#[cfg(feature = "desktop")]
 use crate::platform::storage_paths;
 use crate::platform::webdav::{normalize_remote_dir, WebDavClient, WebDavConfig};
 use chrono::Local;
@@ -13,6 +15,7 @@ use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+#[cfg(feature = "desktop")]
 use tauri::AppHandle;
 
 const INDEX_FILE_NAME: &str = "backup-index.json";
@@ -178,12 +181,14 @@ async fn save_index(
     client.write_text(&index_path(remote_dir), &raw).await
 }
 
+#[cfg(feature = "desktop")]
 fn temp_backup_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = storage_paths::resolve_storage_paths(app)?.remote_backup_temp_dir;
     ensure_temp_backup_dir(&dir)?;
     Ok(dir)
 }
 
+#[cfg(feature = "desktop")]
 fn temp_backup_path(app: &AppHandle, file_name: &str) -> Result<PathBuf, String> {
     Ok(temp_backup_dir(app)?.join(file_name))
 }
@@ -340,6 +345,7 @@ pub async fn test_webdav_backup_target(
     Ok(WebDavTestResult { ok: true })
 }
 
+#[cfg(feature = "desktop")]
 pub async fn upload_webdav_backup(
     app: AppHandle,
     config: WebDavBackupConfig,
@@ -440,6 +446,7 @@ pub async fn list_webdav_backups(
     Ok(index.backups)
 }
 
+#[cfg(feature = "desktop")]
 pub async fn download_webdav_backup(
     app: AppHandle,
     config: WebDavBackupConfig,
@@ -476,6 +483,7 @@ pub async fn download_webdav_backup(
     })
 }
 
+#[cfg(feature = "desktop")]
 pub fn discard_downloaded_webdav_backup(app: &AppHandle, path: &str) -> Result<(), String> {
     let root = temp_backup_dir(app)?;
     let candidate = PathBuf::from(path);

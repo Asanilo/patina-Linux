@@ -115,6 +115,7 @@
 它在前端验证链之外继续执行：
 
 - `npm run check:rust`
+- `npm run check:client` 与 `npm run check:daemon`：独立客户端和无桌面 daemon 的依赖图、测试及 Clippy。后者验证同源后端在关闭默认 desktop feature 后仍可构建，不以桌面配置的测试结果替代。
 
 Rust 默认门槛包含 `npm run check:rust-boundaries`、`cargo check`、Rust 测试与 `cargo clippy -- -D warnings`，其中 clippy 通过 `npm run check:rust:clippy` 单独暴露，便于局部复查。
 

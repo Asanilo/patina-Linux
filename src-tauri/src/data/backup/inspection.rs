@@ -28,7 +28,7 @@ impl Gate {
             .await
             .map_err(|_| BUSY.to_string())?;
         // A cancelled caller must not release capacity while its blocking worker still runs.
-        tauri::async_runtime::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || {
             let _active = active;
             work()
         })
@@ -50,7 +50,7 @@ mod tests {
 
     #[test]
     fn serializes_work_and_keeps_permits_until_cancelled_worker_finishes() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let gate = Arc::new(Gate::new());
             let (started_tx, started_rx) = tokio::sync::oneshot::channel();
             let (release_tx, release_rx) = std::sync::mpsc::channel();

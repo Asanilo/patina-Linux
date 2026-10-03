@@ -37,7 +37,7 @@ pub(super) fn current() -> Result<Context, &'static str> {
         }
     }
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
-    tauri::async_runtime::spawn(async move {
+    let probe = async move {
         let result = tokio::time::timeout(DEADLINE, async {
             let connection = zbus::Connection::system()
                 .await
@@ -47,7 +47,13 @@ pub(super) fn current() -> Result<Context, &'static str> {
         .await
         .unwrap_or(Err("session-query-timeout"));
         let _ = tx.send(result);
-    });
+    };
+    #[cfg(feature = "desktop")]
+    tauri::async_runtime::spawn(probe);
+    #[cfg(not(feature = "desktop"))]
+    tokio::runtime::Handle::try_current()
+        .map_err(|_| "session-runtime-unavailable")?
+        .spawn(probe);
     rx.recv_timeout(DEADLINE + Duration::from_millis(100))
         .unwrap_or(Err("session-query-timeout"))
 }

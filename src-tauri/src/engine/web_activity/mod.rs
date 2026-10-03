@@ -605,7 +605,7 @@ mod tests {
 
     #[test]
     fn inactive_settings_seal_existing_web_segment() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             start_browser_session(&pool, "chrome.exe", 0).await;
             let input = WebActivitySegmentInput {
@@ -686,7 +686,7 @@ mod tests {
 
     #[test]
     fn stale_watchdog_seals_at_the_last_browser_observation() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             start_browser_session(&pool, "chrome.exe", 0).await;
             let input = WebActivitySegmentInput {

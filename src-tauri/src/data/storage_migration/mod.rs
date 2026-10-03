@@ -445,7 +445,7 @@ mod tests {
 
     #[test]
     fn schedule_preparation_orders_backup_checkpoint_then_pending_write() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let events = Arc::new(Mutex::new(Vec::new()));
             let backup_events = events.clone();
             let checkpoint_events = events.clone();
@@ -478,7 +478,7 @@ mod tests {
 
     #[test]
     fn managed_schedule_exports_then_persists_without_desktop_checkpoint() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let events = Arc::new(Mutex::new(Vec::new()));
             let backup_events = events.clone();
             let persist_events = events.clone();
@@ -502,7 +502,7 @@ mod tests {
 
     #[test]
     fn failed_backup_never_persists_a_storage_request() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             for checkpoint in [false, true] {
                 let error = schedule_preparation_with(
                     checkpoint,
@@ -519,7 +519,7 @@ mod tests {
 
     #[test]
     fn migration_backup_export_works_with_a_query_only_database() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let root = std::env::temp_dir().join(format!(
                 "patina-migration-readonly-backup-{}-{}",
                 std::process::id(),

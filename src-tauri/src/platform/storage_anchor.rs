@@ -1,8 +1,10 @@
+#[cfg(feature = "desktop")]
 use crate::platform::app_paths;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, Runtime};
 
 pub const DATA_ANCHOR_FORMAT: &str = "patina.data-anchor.v1";
@@ -105,6 +107,7 @@ pub fn maintenance_state_path(control_dir: &Path) -> PathBuf {
     control_dir.join(MAINTENANCE_STATE_FILE_NAME)
 }
 
+#[cfg(feature = "desktop")]
 pub fn read_data_anchor<R: Runtime>(app: &AppHandle<R>) -> Result<Option<DataAnchor>, String> {
     read_data_anchor_from_dir(&control_dir(app)?, app_paths::app_profile(app).key())
 }
@@ -125,6 +128,7 @@ pub fn read_data_anchor_from_dir(
     Ok((anchor.profile == expected_profile).then_some(anchor))
 }
 
+#[cfg(feature = "desktop")]
 pub fn read_webview_anchor<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Result<Option<WebviewAnchor>, String> {
@@ -148,6 +152,7 @@ pub fn read_webview_anchor_from_dir(
     Ok((anchor.profile == expected_profile).then_some(anchor))
 }
 
+#[cfg(feature = "desktop")]
 pub fn write_data_anchor<R: Runtime>(app: &AppHandle<R>, data_root: PathBuf) -> Result<(), String> {
     write_data_anchor_to_dir(
         &control_dir(app)?,
@@ -172,6 +177,7 @@ pub fn write_data_anchor_to_dir(
     )
 }
 
+#[cfg(feature = "desktop")]
 pub fn write_webview_anchor<R: Runtime>(
     app: &AppHandle<R>,
     webview_root: PathBuf,
@@ -199,14 +205,17 @@ pub fn write_webview_anchor_to_dir(
     )
 }
 
+#[cfg(feature = "desktop")]
 pub fn remove_data_anchor<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     remove_file_if_exists(&data_anchor_path(&control_dir(app)?))
 }
 
+#[cfg(feature = "desktop")]
 pub fn remove_webview_anchor<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     remove_file_if_exists(&webview_anchor_path(&control_dir(app)?))
 }
 
+#[cfg(feature = "desktop")]
 pub fn read_pending_migration<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Result<Option<PendingStorageMigration>, String> {
@@ -231,6 +240,7 @@ pub fn read_pending_migration_from_dir(
     Ok((pending.profile == expected_profile).then_some(pending))
 }
 
+#[cfg(feature = "desktop")]
 pub fn write_pending_migration<R: Runtime>(
     app: &AppHandle<R>,
     pending: &PendingStorageMigration,
@@ -251,6 +261,7 @@ pub fn write_pending_migration_to_dir(
     write_json_atomic(&pending_migration_path(control_dir), pending)
 }
 
+#[cfg(feature = "desktop")]
 pub fn remove_pending_migration<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     remove_pending_migration_from_dir(&control_dir(app)?)
 }
@@ -259,6 +270,7 @@ pub fn remove_pending_migration_from_dir(control_dir: &Path) -> Result<(), Strin
     remove_file_if_exists(&pending_migration_path(control_dir))
 }
 
+#[cfg(feature = "desktop")]
 pub fn read_maintenance_state<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Result<StorageMaintenanceState, String> {
@@ -286,6 +298,7 @@ pub fn read_maintenance_state_from_dir(
     Ok(state)
 }
 
+#[cfg(feature = "desktop")]
 pub fn write_maintenance_state<R: Runtime>(
     app: &AppHandle<R>,
     state: &StorageMaintenanceState,
@@ -317,6 +330,7 @@ pub fn now_ms() -> u64 {
         .unwrap_or_default()
 }
 
+#[cfg(feature = "desktop")]
 fn control_dir<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     app_paths::product_config_dir(app)
 }

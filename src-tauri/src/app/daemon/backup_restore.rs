@@ -511,7 +511,7 @@ fn random_id(prefix: &str) -> Result<String, String> {
 }
 
 fn now_ms() -> i64 {
-    crate::app::runtime::now_ms().min(i64::MAX as u64) as i64
+    crate::engine::runtime_context::now_ms().min(i64::MAX as u64) as i64
 }
 
 fn runtime_control_error_message(error: &RuntimeControlError) -> String {
@@ -551,7 +551,7 @@ mod tests {
         std::env::temp_dir().join(format!(
             "patina-daemon-backup-restore-{label}-{}-{}",
             std::process::id(),
-            crate::app::runtime::now_ms()
+            crate::engine::runtime_context::now_ms()
         ))
     }
 

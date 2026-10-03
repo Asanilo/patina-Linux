@@ -68,7 +68,7 @@ fn query_worker() {
     let trend = std::env::var("PATINA_DAILY_BENCH_TREND").as_deref() == Ok("1");
     let day_count = if trend { 30 } else { 365 };
     let row_duration = if trend { 10_000 } else { 60_000 };
-    tauri::async_runtime::block_on(async {
+    crate::engine::runtime_context::test_block_on(async {
         let database = root.join("fixture.db");
         if mode == "seed" {
             assert!(!database.exists());

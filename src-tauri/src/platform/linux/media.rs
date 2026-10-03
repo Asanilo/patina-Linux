@@ -44,6 +44,7 @@ struct MediaSignalSourceState {
     snapshot: Mutex<MediaSnapshot>,
 }
 
+#[cfg(feature = "desktop")]
 pub fn start_signal_source() {
     let source = global_signal_source();
 

@@ -241,7 +241,7 @@ mod tests {
 
     #[test]
     fn continuity_timeout_seals_active_session_at_continuity_boundary() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let window = make_window(&[("idle_time_ms", "300000")]);
 
@@ -270,7 +270,7 @@ mod tests {
 
     #[test]
     fn continuity_timeout_allows_same_app_to_start_new_session_after_input_returns() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let previous = make_window(&[]);
             let timed_out = make_window(&[("idle_time_ms", "240000")]);
@@ -336,7 +336,7 @@ mod tests {
 
     #[test]
     fn sustained_participation_timeout_seals_session_at_sustained_boundary() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let previous = make_window(&[("exe_name", "Zoom.exe"), ("idle_time_ms", "0")]);
             let timed_out = make_window(&[

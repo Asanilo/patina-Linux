@@ -198,6 +198,8 @@ Raw DTO 只能停留在明确边界：
 
 迁移期共享运行时结构为：
 
+多客户端分支通过 product crate 的 `desktop` feature 隔离 Tauri 宿主包装；默认启用以维持现有 Desktop 构建，`--no-default-features --bin patinad` 使用同一份 engine/data/domain/platform 能力。数据库 migration 的版本、描述和 SQL 由 `data/schema` 定义，不能依赖 Tauri plugin 类型；共享时钟归 `engine/runtime_context`。daemon 进入自己拥有的 Tokio runtime 后再执行同步启动探测，共享异步任务使用 owner runtime。无桌面编译不是第二份后端实现，也不等于独立安装包已经交付；构建和隔离验收入口见开发文档。
+
 ```text
 platform/linux ─┐
 data/sqlite ────┼─> engine runtime ─> RuntimeEventSink

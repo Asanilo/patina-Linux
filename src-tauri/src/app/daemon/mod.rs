@@ -57,6 +57,7 @@ pub fn is_controlled_restart_error(error: &str) -> bool {
 pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     let runtime = tokio::runtime::Runtime::new()
         .map_err(|error| format!("failed to create daemon async runtime: {error}"))?;
+    let _runtime_enter = runtime.enter();
     let roots = crate::platform::app_paths::environment_roots();
     let default_paths =
         crate::platform::storage_paths::default_storage_paths_for_profile(&roots, options.profile);
@@ -80,7 +81,7 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
             &storage_paths.control_root,
             &storage_paths.backup_restore_staging_dir,
             &sqlite_runtime.pool,
-            crate::app::runtime::now_ms().min(i64::MAX as u64) as i64,
+            crate::engine::runtime_context::now_ms().min(i64::MAX as u64) as i64,
         )) {
             Ok(Some(snapshot)) => println!(
                 "[patinad] backup restore {} is {}",
@@ -93,7 +94,7 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
     let service_lifecycle = Arc::new(
         service_lifecycle::DaemonServiceLifecycleOwner::from_environment(
             &storage_paths.control_root,
-            crate::app::runtime::now_ms().min(i64::MAX as u64) as i64,
+            crate::engine::runtime_context::now_ms().min(i64::MAX as u64) as i64,
         )?,
     );
     let stored_local_api = runtime
@@ -366,7 +367,7 @@ mod tests {
         let path = std::env::temp_dir().join(format!(
             "patina-daemon-api-token-{}-{}",
             std::process::id(),
-            crate::app::runtime::now_ms()
+            crate::engine::runtime_context::now_ms()
         ));
         let credentials = crate::engine::api::auth::ApiCredentialStore::new();
         credentials

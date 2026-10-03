@@ -96,7 +96,7 @@ mod tests {
 
     #[test]
     fn receipt_is_committed_with_the_restore_transaction() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
             pool.execute(crate::data::schema::BACKUP_RESTORE_RECEIPT_SCHEMA_SQL)
                 .await

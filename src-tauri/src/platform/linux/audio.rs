@@ -38,6 +38,7 @@ struct AudioProbeInFlightGuard {
     probe_in_flight: Arc<AtomicBool>,
 }
 
+#[cfg(feature = "desktop")]
 pub fn start_signal_source(enabled: bool) {
     let source = global_signal_source();
     source.set_enabled(enabled);

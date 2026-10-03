@@ -1,6 +1,7 @@
 use crate::platform::{app_paths, storage_anchor};
 use std::fs;
 use std::path::{Path, PathBuf};
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, Runtime};
 
 pub const SQLITE_DB_FILE_NAME: &str = "patina.db";
@@ -109,6 +110,7 @@ pub fn resolve_storage_paths_for_profile(
     Ok(current)
 }
 
+#[cfg(feature = "desktop")]
 pub fn default_storage_paths<R: Runtime>(app: &AppHandle<R>) -> Result<StoragePaths, String> {
     let defaults = app_paths::default_profile_paths(app)?;
     Ok(StoragePaths::from_roots(
@@ -121,6 +123,7 @@ pub fn default_storage_paths<R: Runtime>(app: &AppHandle<R>) -> Result<StoragePa
     ))
 }
 
+#[cfg(feature = "desktop")]
 pub fn resolve_storage_paths<R: Runtime>(app: &AppHandle<R>) -> Result<StoragePaths, String> {
     let defaults = default_storage_paths(app)?;
     let data_root = storage_anchor::read_data_anchor(app)?.map(|anchor| anchor.data_root);

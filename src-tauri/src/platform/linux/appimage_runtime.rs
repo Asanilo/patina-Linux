@@ -394,6 +394,7 @@ mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
 
+    #[cfg(feature = "desktop")]
     #[tokio::test]
     #[ignore = "requires an explicitly supplied built AppDir and AppImage; private runtime only"]
     async fn built_appdir_runs_from_durable_store() {

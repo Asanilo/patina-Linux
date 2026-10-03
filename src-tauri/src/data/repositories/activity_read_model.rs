@@ -257,7 +257,7 @@ mod tests {
 
     #[test]
     fn snapshot_applies_native_exact_bucket_precedence() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_pool().await;
             create_import_batch(&pool).await;
             sqlx::query(
@@ -317,7 +317,7 @@ mod tests {
 
     #[test]
     fn recorded_apps_merge_case_and_prefer_native_identity() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_pool().await;
             create_import_batch(&pool).await;
             sqlx::query(
@@ -347,7 +347,7 @@ mod tests {
 
     #[test]
     fn active_native_fact_stops_at_sample_time() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_pool().await;
             sqlx::query(
                 "INSERT INTO sessions (app_name, exe_name, start_time, end_time, duration)
@@ -366,7 +366,7 @@ mod tests {
 
     #[test]
     fn app_semantics_merge_case_for_category_and_exclusion() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_pool().await;
             sqlx::query(
                 "INSERT INTO settings (key, value) VALUES
@@ -385,7 +385,7 @@ mod tests {
 
     #[test]
     fn current_app_override_updates_summary_semantics() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_pool().await;
             sqlx::query(
                 "INSERT INTO settings (key, value) VALUES

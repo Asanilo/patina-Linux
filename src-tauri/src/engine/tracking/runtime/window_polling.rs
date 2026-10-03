@@ -390,7 +390,7 @@ mod tests {
 
     #[test]
     fn poll_returns_cached_window_when_probe_times_out() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let state = Arc::new(ForegroundProbeState::default());
             remember_successful_window(&state, 0, &make_window("Code.exe"), 500);
 
@@ -417,7 +417,7 @@ mod tests {
 
     #[test]
     fn poll_returns_inactive_window_when_probe_times_out_without_cache() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let state = Arc::new(ForegroundProbeState::default());
 
             let outcome =
@@ -438,14 +438,14 @@ mod tests {
 
     #[test]
     fn concurrent_polls_reuse_single_in_flight_probe() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let state = Arc::new(ForegroundProbeState::default());
             remember_successful_window(&state, 0, &make_window("Code.exe"), 500);
             let calls = Arc::new(AtomicUsize::new(0));
             let first_calls = calls.clone();
             let first_state = state.clone();
 
-            let first = tauri::async_runtime::spawn(async move {
+            let first = tokio::spawn(async move {
                 poll_active_window_with_state(
                     first_state,
                     Duration::from_millis(30),
@@ -485,7 +485,7 @@ mod tests {
 
     #[test]
     fn successful_probe_updates_cache() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let state = Arc::new(ForegroundProbeState::default());
 
             let outcome = poll_active_window_with_state(
@@ -515,7 +515,7 @@ mod tests {
 
     #[test]
     fn provider_failure_without_cache_remains_inactive_and_retries() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let state = Arc::new(ForegroundProbeState::default());
 
             for (at_ms, count) in [(1_000, 1), (2_000, 2)] {
@@ -552,7 +552,7 @@ mod tests {
 
     #[test]
     fn provider_failure_preserves_the_last_successful_window_and_timestamp() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let state = Arc::new(ForegroundProbeState::default());
             let accepted =
                 poll_active_window_with_state(state.clone(), Duration::from_secs(1), 1_000, || {
@@ -593,7 +593,7 @@ mod tests {
 
     #[test]
     fn successful_probe_after_provider_failure_replaces_cache_and_clears_degradation() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let state = Arc::new(ForegroundProbeState::default());
             remember_successful_window(&state, 0, &make_window("Old.exe"), 500);
             let failed =
@@ -631,13 +631,13 @@ mod tests {
 
     #[test]
     fn long_running_probe_gets_bounded_recovery_attempt() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let state = Arc::new(ForegroundProbeState::default());
             let calls = Arc::new(AtomicUsize::new(0));
             let first_calls = calls.clone();
             let first_state = state.clone();
 
-            let first = tauri::async_runtime::spawn(async move {
+            let first = tokio::spawn(async move {
                 poll_active_window_with_state(
                     first_state,
                     Duration::from_millis(10),
@@ -683,7 +683,7 @@ mod tests {
 
     #[test]
     fn repeated_stuck_probes_enter_hard_degraded_without_unbounded_tasks() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let state = Arc::new(ForegroundProbeState::default());
             remember_successful_window(&state, 0, &make_window("Code.exe"), 1_000);
             {

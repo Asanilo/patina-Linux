@@ -56,7 +56,7 @@ fn worker() {
         "rollback-merge"
     ]
     .contains(&mode.as_str()));
-    tauri::async_runtime::block_on(async {
+    crate::engine::runtime_context::test_block_on(async {
         let database = root.join("fixture.db");
         if mode == "seed" {
             assert!(!database.exists());

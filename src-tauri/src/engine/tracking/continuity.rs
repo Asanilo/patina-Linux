@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn sustained_participation_short_app_switch_reuses_original_continuity_group() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let data = data_store(&pool);
             let video = make_window(&[
@@ -271,7 +271,7 @@ mod tests {
 
     #[test]
     fn sustained_participation_return_after_continuity_window_starts_new_group() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let data = data_store(&pool);
             let video = make_window(&[
@@ -362,7 +362,7 @@ mod tests {
 
     #[test]
     fn ordinary_short_app_switch_reuses_original_continuity_group() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let data = data_store(&pool);
             let coding = make_window(&[
@@ -457,7 +457,7 @@ mod tests {
 
     #[test]
     fn ordinary_return_after_continuity_window_starts_new_group() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let data = data_store(&pool);
             let coding = make_window(&[
@@ -552,7 +552,7 @@ mod tests {
 
     #[test]
     fn mixed_trackable_and_non_trackable_short_switch_reuses_original_continuity_group() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let data = data_store(&pool);
             let coding = make_window(&[
@@ -672,7 +672,7 @@ mod tests {
 
     #[test]
     fn mixed_trackable_and_non_trackable_return_after_total_window_starts_new_group() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let data = data_store(&pool);
             let coding = make_window(&[

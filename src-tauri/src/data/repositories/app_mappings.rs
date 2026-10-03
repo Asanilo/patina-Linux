@@ -302,7 +302,7 @@ mod tests {
 
     #[test]
     fn app_override_updates_preserve_fields_and_use_current_storage_shape() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             sqlx::query(
                 "INSERT INTO sessions
@@ -365,7 +365,7 @@ mod tests {
 
     #[test]
     fn app_override_update_migrates_legacy_api_keys_atomically() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             sqlx::query("INSERT INTO settings (key, value) VALUES (?, ?), (?, ?)")
                 .bind("__app_category::zen")
@@ -397,7 +397,7 @@ mod tests {
 
     #[test]
     fn invalid_stored_override_is_not_overwritten() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let key = "__app_override::ghostty";
             sqlx::query("INSERT INTO settings (key, value) VALUES (?, ?)")

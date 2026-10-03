@@ -41,6 +41,28 @@ impl RuntimeContext {
     }
 }
 
+pub(crate) fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+pub(crate) fn test_block_on<F: std::future::Future>(future: F) -> F::Output {
+    #[cfg(feature = "desktop")]
+    {
+        tauri::async_runtime::block_on(future)
+    }
+    #[cfg(not(feature = "desktop"))]
+    {
+        static RUNTIME: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
+        RUNTIME
+            .get_or_init(|| tokio::runtime::Runtime::new().expect("test runtime"))
+            .block_on(future)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

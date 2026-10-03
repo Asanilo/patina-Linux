@@ -63,7 +63,7 @@ pub fn spawn_foreground_sync<R: Runtime + 'static>(app: AppHandle<R>) {
 
 pub fn spawn_startup_repair<R: Runtime + 'static>(app: AppHandle<R>) {
     tauri::async_runtime::spawn(async move {
-        let now_ms = crate::app::runtime::now_ms() as i64;
+        let now_ms = crate::engine::runtime_context::now_ms() as i64;
         let pool = match wait_for_sqlite_pool(&app).await {
             Ok(pool) => pool,
             Err(error) => {
@@ -98,7 +98,7 @@ async fn sync_stale_state<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> 
     let Some(state) = app.try_state::<WebActivityRuntimeState>() else {
         return Err("web activity runtime is unavailable".to_string());
     };
-    let now_ms = crate::app::runtime::now_ms() as i64;
+    let now_ms = crate::engine::runtime_context::now_ms() as i64;
     if let Some(sealed_at_ms) = seal_stale_active_segment(&pool, &state, now_ms).await? {
         emit_web_activity_changed(app, sealed_at_ms);
     }
@@ -107,7 +107,7 @@ async fn sync_stale_state<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> 
 
 pub async fn sync_foreground_state<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     let pool = wait_for_sqlite_pool(&app).await?;
-    let now_ms = crate::app::runtime::now_ms() as i64;
+    let now_ms = crate::engine::runtime_context::now_ms() as i64;
     let tracking_snapshot = app
         .try_state::<TrackingRuntimeSnapshotState>()
         .and_then(|state| state.snapshot());
@@ -125,7 +125,7 @@ pub async fn get_bridge_snapshot<R: Runtime>(
     let settings = app_settings::load_web_activity_settings(&pool)
         .await
         .map_err(|error| format!("failed to load web activity settings: {error}"))?;
-    Ok(state.snapshot(&settings, crate::app::runtime::now_ms() as i64))
+    Ok(state.snapshot(&settings, crate::engine::runtime_context::now_ms() as i64))
 }
 
 fn emit_web_activity_changed<R: Runtime>(app: &AppHandle<R>, changed_at_ms: i64) {

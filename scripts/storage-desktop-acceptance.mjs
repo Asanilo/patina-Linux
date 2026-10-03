@@ -430,7 +430,7 @@ async function main() {
   const frontend = launch('npm', ['run', 'build'], { cwd: repo, stdio: 'inherit' });
   try { await completed(frontend, 'frontend build', 300000); }
   finally { await stopChild(frontend); }
-  const binary = await cargoArtifact(['test', '--manifest-path', 'src-tauri/Cargo.toml', '--lib', '--no-run'],
+  const binary = await cargoArtifact(['test', '--manifest-path', 'src-tauri/Cargo.toml', '--features', 'desktop-tests', '--lib', '--no-run'],
     event => event.target.name === 'patina_lib' && event.profile.test, 'Rust acceptance build');
   const daemon = selectedDaemon ?? await cargoArtifact(['build', '--manifest-path', 'src-tauri/Cargo.toml', '--bin', 'patinad'],
     event => event.target.name === 'patinad' && !event.profile.test, 'independent daemon build');

@@ -24,7 +24,7 @@ pub async fn cmd_get_exact_history<R: Runtime>(
         &pool,
         from_ms,
         to_ms,
-        crate::app::runtime::now_ms() as i64,
+        crate::engine::runtime_context::now_ms() as i64,
         &language,
     )
     .await
@@ -47,7 +47,7 @@ pub async fn cmd_get_dashboard_product<R: Runtime>(
     crate::data::repositories::daily_activity::load_dashboard_product(
         &pool,
         &boundaries,
-        crate::app::runtime::now_ms() as i64,
+        crate::engine::runtime_context::now_ms() as i64,
         &language,
     )
     .await
@@ -68,7 +68,7 @@ pub async fn cmd_get_migration_observed_apps<R: Runtime>(
     crate::data::repositories::observed_apps::load_migration_observed_apps(
         &pool,
         to_ms,
-        crate::app::runtime::now_ms() as i64,
+        crate::engine::runtime_context::now_ms() as i64,
     )
     .await
 }
@@ -91,7 +91,7 @@ pub async fn cmd_get_observed_apps<R: Runtime>(
         &pool,
         from_ms,
         to_ms,
-        crate::app::runtime::now_ms() as i64,
+        crate::engine::runtime_context::now_ms() as i64,
     )
     .await
 }
@@ -119,7 +119,7 @@ pub async fn cmd_get_daily_apps<R: Runtime>(
     crate::data::repositories::daily_activity::load_daily_product(
         &pool,
         &boundaries,
-        crate::app::runtime::now_ms() as i64,
+        crate::engine::runtime_context::now_ms() as i64,
         &language,
     )
     .await
@@ -147,7 +147,7 @@ pub async fn cmd_get_daily_activity<R: Runtime>(
     crate::data::repositories::daily_activity::load_daily_activity(
         &pool,
         &boundaries,
-        crate::app::runtime::now_ms() as i64,
+        crate::engine::runtime_context::now_ms() as i64,
     )
     .await
 }
@@ -179,8 +179,12 @@ pub async fn cmd_delete_tracking_data_before<R: Runtime>(
     }
     let pool = sqlite_pool::wait_for_sqlite_pool(&app).await?;
     let result = maintenance::delete_tracking_data_before(&pool, cutoff_time_ms).await?;
-    emit_tracking_data_changed(&app, "tracking-data-cleaned", crate::app::runtime::now_ms())
-        .map_err(|error| format!("failed to emit data cleanup event: {error}"))?;
+    emit_tracking_data_changed(
+        &app,
+        "tracking-data-cleaned",
+        crate::engine::runtime_context::now_ms(),
+    )
+    .map_err(|error| format!("failed to emit data cleanup event: {error}"))?;
     Ok(result)
 }
 
@@ -196,8 +200,12 @@ pub async fn cmd_clear_all_window_titles<R: Runtime>(
     }
     let pool = sqlite_pool::wait_for_sqlite_pool(&app).await?;
     let result = maintenance::clear_all_window_titles(&pool).await?;
-    emit_tracking_data_changed(&app, "window-titles-cleared", crate::app::runtime::now_ms())
-        .map_err(|error| format!("failed to emit window title cleanup event: {error}"))?;
+    emit_tracking_data_changed(
+        &app,
+        "window-titles-cleared",
+        crate::engine::runtime_context::now_ms(),
+    )
+    .map_err(|error| format!("failed to emit window title cleanup event: {error}"))?;
     Ok(result)
 }
 
@@ -217,14 +225,14 @@ pub async fn cmd_delete_canonical_app_history<R: Runtime>(
     let result = maintenance::canonical::delete_canonical_app(
         &pool,
         &request,
-        crate::app::runtime::now_ms() as i64,
+        crate::engine::runtime_context::now_ms() as i64,
     )
     .await?;
     if result.matched_executables > 0 {
         emit_tracking_data_changed(
             &app,
             "application-tracking-data-deleted",
-            crate::app::runtime::now_ms(),
+            crate::engine::runtime_context::now_ms(),
         )
         .map_err(|e| format!("application cleanup committed but event delivery failed: {e}"))?;
     }
@@ -250,7 +258,7 @@ pub async fn cmd_delete_app_tracking_data<R: Runtime>(
     emit_tracking_data_changed(
         &app,
         "application-tracking-data-deleted",
-        crate::app::runtime::now_ms(),
+        crate::engine::runtime_context::now_ms(),
     )
     .map_err(|error| format!("failed to emit app data cleanup event: {error}"))
 }

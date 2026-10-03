@@ -1,4 +1,5 @@
 pub(crate) mod appimage_runtime;
+#[cfg(feature = "desktop")]
 pub(crate) mod appimage_update;
 pub mod audio;
 pub mod foreground;
@@ -9,7 +10,9 @@ pub mod notifications;
 pub mod power;
 pub mod resource;
 pub mod systemd_user_service;
+#[cfg(feature = "desktop")]
 pub mod widget_window;
+#[cfg(feature = "desktop")]
 pub mod window_activation;
 
 pub(super) mod session;

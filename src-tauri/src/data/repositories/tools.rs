@@ -1124,7 +1124,7 @@ mod tests {
 
     #[test]
     fn created_reminder_can_be_read_in_snapshot() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             create_reminder(&pool, "'; DROP TABLE tool_reminders; --", 2_000, 1_000)
@@ -1145,7 +1145,7 @@ mod tests {
 
     #[test]
     fn due_reminder_fires_only_once() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             create_reminder(&pool, "Stand up", 1_000, 900)
                 .await
@@ -1162,7 +1162,7 @@ mod tests {
 
     #[test]
     fn software_reminder_counts_today_usage_and_active_session_once() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             sqlx::query(
                 "INSERT INTO sessions (
@@ -1212,7 +1212,7 @@ mod tests {
 
     #[test]
     fn timer_laps_are_committed_in_order() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             start_timer(&pool, TimerMode::Stopwatch, None, None, 1_000)
                 .await
@@ -1235,7 +1235,7 @@ mod tests {
 
     #[test]
     fn countdown_completion_updates_current_timer_once() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             start_timer(&pool, TimerMode::Countdown, Some(1_000), None, 1_000)
                 .await
@@ -1258,7 +1258,7 @@ mod tests {
 
     #[test]
     fn pausing_running_timer_sets_paused_status() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             start_timer(&pool, TimerMode::Stopwatch, None, None, 1_000)
                 .await
@@ -1277,7 +1277,7 @@ mod tests {
 
     #[test]
     fn reset_timer_clears_current_timer_from_snapshot() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             start_timer(&pool, TimerMode::Stopwatch, None, None, 1_000)
                 .await
@@ -1296,7 +1296,7 @@ mod tests {
 
     #[test]
     fn pomodoro_focus_completion_updates_daily_stats() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             start_pomodoro(&pool, 1_000, 500, 700, 4, 1_000)
                 .await
@@ -1321,7 +1321,7 @@ mod tests {
 
     #[test]
     fn pause_then_resume_pomodoro_restarts_current_phase() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             start_pomodoro(&pool, 1_000, 500, 700, 4, 1_000)
                 .await
@@ -1344,7 +1344,7 @@ mod tests {
 
     #[test]
     fn skip_pomodoro_phase_pauses_next_phase() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             start_pomodoro(&pool, 1_000, 500, 700, 4, 1_000)
                 .await
@@ -1368,7 +1368,7 @@ mod tests {
 
     #[test]
     fn backup_restore_round_trips_tool_tables() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             create_reminder(&pool, "Check", 2_000, 1_000).await.unwrap();
             start_timer(&pool, TimerMode::Stopwatch, None, None, 1_000)

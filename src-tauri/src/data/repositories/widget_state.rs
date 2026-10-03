@@ -42,7 +42,7 @@ mod tests {
 
     #[test]
     fn widget_placement_repo_round_trips_and_defaults() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             let defaults = load_widget_placement(&pool).await.unwrap();

@@ -1,10 +1,16 @@
+#[cfg(feature = "desktop")]
 use crate::data::sqlite_pool::wait_for_sqlite_pool;
 use crate::domain::tools::{ToolAlert, ToolsRuntimeSnapshot};
+#[cfg(feature = "desktop")]
 use crate::engine::runtime_context::RuntimeContext;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+#[cfg(feature = "desktop")]
+use std::sync::Arc;
+use std::sync::Mutex;
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
+#[cfg(feature = "desktop")]
 mod notification;
 pub mod runtime;
 
@@ -64,10 +70,12 @@ fn push_unique_alert(alerts: &mut Vec<ToolAlert>, alert: ToolAlert) {
     }
 }
 
+#[cfg(feature = "desktop")]
 struct TauriToolsRuntimeSink<R: Runtime> {
     app: AppHandle<R>,
 }
 
+#[cfg(feature = "desktop")]
 impl<R: Runtime + 'static> ToolsRuntimeSink for TauriToolsRuntimeSink<R> {
     fn snapshot_changed(&self, snapshot: &ToolsRuntimeSnapshot) {
         if let Some(state) = self.app.try_state::<ToolsRuntimeState>() {
@@ -83,6 +91,7 @@ impl<R: Runtime + 'static> ToolsRuntimeSink for TauriToolsRuntimeSink<R> {
     }
 }
 
+#[cfg(feature = "desktop")]
 pub(crate) fn deliver_alert_to_desktop<R: Runtime>(app: &AppHandle<R>, alert: &ToolAlert) {
     if let Some(state) = app.try_state::<ToolsRuntimeState>() {
         state.push_alert(alert.clone());
@@ -98,6 +107,7 @@ pub(crate) fn deliver_alert_to_desktop<R: Runtime>(app: &AppHandle<R>, alert: &T
     }
 }
 
+#[cfg(feature = "desktop")]
 async fn runtime_owner<R: Runtime + 'static>(
     app: &AppHandle<R>,
 ) -> Result<ToolsRuntimeOwner, String> {
@@ -106,12 +116,14 @@ async fn runtime_owner<R: Runtime + 'static>(
     Ok(ToolsRuntimeOwner::new(RuntimeContext::system(pool), sink))
 }
 
+#[cfg(feature = "desktop")]
 pub async fn run<R: Runtime + 'static>(app: AppHandle<R>) -> Result<(), String> {
     let owner = runtime_owner(&app).await?;
     let (_shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     owner.run_with_shutdown(shutdown_rx).await
 }
 
+#[cfg(feature = "desktop")]
 pub async fn get_snapshot<R: Runtime + 'static>(
     app: &AppHandle<R>,
 ) -> Result<ToolsRuntimeSnapshot, String> {
@@ -130,18 +142,21 @@ pub async fn get_snapshot_from_pool(
     .await
 }
 
+#[cfg(feature = "desktop")]
 pub fn get_alerts<R: Runtime>(app: &AppHandle<R>) -> Vec<ToolAlert> {
     app.try_state::<ToolsRuntimeState>()
         .map(|state| state.alerts())
         .unwrap_or_default()
 }
 
+#[cfg(feature = "desktop")]
 pub fn dismiss_alert<R: Runtime>(app: &AppHandle<R>, alert_id: &str) {
     if let Some(state) = app.try_state::<ToolsRuntimeState>() {
         state.dismiss_alert(alert_id);
     }
 }
 
+#[cfg(feature = "desktop")]
 pub async fn create_reminder<R: Runtime + 'static>(
     app: &AppHandle<R>,
     label: String,
@@ -153,6 +168,7 @@ pub async fn create_reminder<R: Runtime + 'static>(
         .await
 }
 
+#[cfg(feature = "desktop")]
 pub async fn cancel_reminder<R: Runtime + 'static>(
     app: &AppHandle<R>,
     reminder_id: i64,
@@ -160,6 +176,7 @@ pub async fn cancel_reminder<R: Runtime + 'static>(
     runtime_owner(app).await?.cancel_reminder(reminder_id).await
 }
 
+#[cfg(feature = "desktop")]
 pub async fn create_software_reminder_rule<R: Runtime + 'static>(
     app: &AppHandle<R>,
     request: CreateSoftwareReminderRuleRequest,
@@ -170,6 +187,7 @@ pub async fn create_software_reminder_rule<R: Runtime + 'static>(
         .await
 }
 
+#[cfg(feature = "desktop")]
 pub async fn disable_software_reminder_rule<R: Runtime + 'static>(
     app: &AppHandle<R>,
     rule_id: i64,
@@ -180,6 +198,7 @@ pub async fn disable_software_reminder_rule<R: Runtime + 'static>(
         .await
 }
 
+#[cfg(feature = "desktop")]
 pub async fn start_timer<R: Runtime + 'static>(
     app: &AppHandle<R>,
     request: StartTimerRequest,
@@ -187,30 +206,35 @@ pub async fn start_timer<R: Runtime + 'static>(
     runtime_owner(app).await?.start_timer(request).await
 }
 
+#[cfg(feature = "desktop")]
 pub async fn pause_timer<R: Runtime + 'static>(
     app: &AppHandle<R>,
 ) -> Result<ToolsRuntimeSnapshot, String> {
     runtime_owner(app).await?.pause_timer().await
 }
 
+#[cfg(feature = "desktop")]
 pub async fn resume_timer<R: Runtime + 'static>(
     app: &AppHandle<R>,
 ) -> Result<ToolsRuntimeSnapshot, String> {
     runtime_owner(app).await?.resume_timer().await
 }
 
+#[cfg(feature = "desktop")]
 pub async fn reset_timer<R: Runtime + 'static>(
     app: &AppHandle<R>,
 ) -> Result<ToolsRuntimeSnapshot, String> {
     runtime_owner(app).await?.reset_timer().await
 }
 
+#[cfg(feature = "desktop")]
 pub async fn add_timer_lap<R: Runtime + 'static>(
     app: &AppHandle<R>,
 ) -> Result<ToolsRuntimeSnapshot, String> {
     runtime_owner(app).await?.add_timer_lap().await
 }
 
+#[cfg(feature = "desktop")]
 pub async fn start_pomodoro<R: Runtime + 'static>(
     app: &AppHandle<R>,
     request: StartPomodoroRequest,
@@ -218,30 +242,35 @@ pub async fn start_pomodoro<R: Runtime + 'static>(
     runtime_owner(app).await?.start_pomodoro(request).await
 }
 
+#[cfg(feature = "desktop")]
 pub async fn pause_pomodoro<R: Runtime + 'static>(
     app: &AppHandle<R>,
 ) -> Result<ToolsRuntimeSnapshot, String> {
     runtime_owner(app).await?.pause_pomodoro().await
 }
 
+#[cfg(feature = "desktop")]
 pub async fn resume_pomodoro<R: Runtime + 'static>(
     app: &AppHandle<R>,
 ) -> Result<ToolsRuntimeSnapshot, String> {
     runtime_owner(app).await?.resume_pomodoro().await
 }
 
+#[cfg(feature = "desktop")]
 pub async fn skip_pomodoro_phase<R: Runtime + 'static>(
     app: &AppHandle<R>,
 ) -> Result<ToolsRuntimeSnapshot, String> {
     runtime_owner(app).await?.skip_pomodoro_phase().await
 }
 
+#[cfg(feature = "desktop")]
 pub async fn reset_pomodoro<R: Runtime + 'static>(
     app: &AppHandle<R>,
 ) -> Result<ToolsRuntimeSnapshot, String> {
     runtime_owner(app).await?.reset_pomodoro().await
 }
 
+#[cfg(feature = "desktop")]
 async fn load_snapshot<R: Runtime + 'static>(
     app: &AppHandle<R>,
 ) -> Result<ToolsRuntimeSnapshot, String> {
@@ -253,6 +282,7 @@ async fn load_snapshot<R: Runtime + 'static>(
 }
 
 #[allow(dead_code)]
+#[cfg(feature = "desktop")]
 async fn refresh_snapshot<R: Runtime + 'static>(
     app: &AppHandle<R>,
 ) -> Result<ToolsRuntimeSnapshot, String> {

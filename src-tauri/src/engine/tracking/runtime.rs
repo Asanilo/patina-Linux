@@ -9,6 +9,7 @@ use super::sustained_participation::SustainedParticipationRuntimeState;
 use super::{active_session, continuity, startup, transition, watchdog};
 #[cfg(test)]
 use crate::data::repositories::{sessions, tracker_settings};
+#[cfg(feature = "desktop")]
 use crate::data::sqlite_pool::wait_for_sqlite_pool;
 use crate::data::tracking_runtime::TrackingRuntimeDataStore;
 #[cfg(test)]
@@ -23,6 +24,7 @@ use crate::platform::linux::foreground as tracker;
 #[cfg(target_os = "windows")]
 use crate::platform::windows::foreground as tracker;
 use std::sync::Arc;
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tokio::sync::watch;
 use tokio::time::{sleep, Duration};
@@ -46,12 +48,14 @@ use loop_state::{
 #[cfg(test)]
 use power_lifecycle::apply_power_lifecycle_event;
 use support::log_tracker_error;
+#[cfg(feature = "desktop")]
 pub use support::{emit_tracking_data_changed, TauriRuntimeEventSink};
 use window_polling::{poll_active_window_with_timeout, WindowPollOutcome};
 
 // Owner ledger: run() owns runtime loop orchestration only. Polling,
 // loop-state loading, power lifecycle handling, and event support stay in the
 // sibling runtime/* modules so commands.rs and lib.rs remain thin IPC entrypoints.
+#[cfg(feature = "desktop")]
 pub async fn run<R: Runtime>(
     app: AppHandle<R>,
     health_state: Arc<watchdog::RuntimeHealthState>,
@@ -85,14 +89,17 @@ pub trait TrackingRuntimeOutput: Send + Sync {
     fn active_window_changed(&self, window: &tracker::WindowInfo) -> Result<(), String>;
 }
 
+#[cfg(feature = "desktop")]
 pub struct TauriTrackingRuntimeOutput<R: Runtime>(AppHandle<R>);
 
+#[cfg(feature = "desktop")]
 impl<R: Runtime> TauriTrackingRuntimeOutput<R> {
     pub fn new(app: AppHandle<R>) -> Self {
         Self(app)
     }
 }
 
+#[cfg(feature = "desktop")]
 impl<R: Runtime> TrackingRuntimeOutput for TauriTrackingRuntimeOutput<R> {
     fn runtime_state(&self) -> TrackingRuntimeSnapshotState {
         self.0
@@ -526,6 +533,7 @@ fn should_emit_tracking_status_changed(
         || previous.sustained_participation_reason != next.sustained_participation_reason
 }
 
+#[cfg(feature = "desktop")]
 pub async fn handle_power_lifecycle_event<R: Runtime>(
     app: AppHandle<R>,
     state: &str,
@@ -838,7 +846,7 @@ mod tests {
 
     #[test]
     fn app_title_capture_override_defaults_to_enabled() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             let enabled =
@@ -852,7 +860,7 @@ mod tests {
 
     #[test]
     fn app_title_capture_override_can_disable_title_recording() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let key = format!("{}qq.exe", tracker_settings::APP_OVERRIDE_KEY_PREFIX);
             let value = serde_json::to_string(&json!({
@@ -911,7 +919,7 @@ mod tests {
 
     #[test]
     fn migration_dedupes_multiple_active_sessions() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             pool.execute(
                 "CREATE TABLE sessions (
@@ -957,7 +965,7 @@ mod tests {
 
     #[test]
     fn start_session_preserves_single_active_session() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let window = make_window(&[]);
 
@@ -980,7 +988,7 @@ mod tests {
 
     #[test]
     fn start_session_seals_stale_active_session_before_inserting_next() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let previous = make_window(&[("exe_name", "Code.exe"), ("title", "Editor")]);
             let next = make_window(&[("exe_name", "QQ.exe"), ("title", "Chat")]);
@@ -1030,7 +1038,7 @@ mod tests {
 
     #[test]
     fn missing_active_session_is_recovered_without_window_change() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let data = data_store(&pool);
             let window = make_window(&[]);
@@ -1059,7 +1067,7 @@ mod tests {
 
     #[test]
     fn metadata_refresh_updates_active_session_title() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let data = data_store(&pool);
             let original = make_window(&[("title", "Window A")]);
@@ -1114,7 +1122,7 @@ mod tests {
 
     #[test]
     fn title_capture_disabled_closes_active_title_sample_without_starting_new_one() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let data = data_store(&pool);
             let original = make_window(&[("title", "Window A")]);
@@ -1158,7 +1166,7 @@ mod tests {
 
     #[test]
     fn lock_event_seals_active_session_immediately() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let data = data_store(&pool);
             let window = make_window(&[]);
@@ -1192,7 +1200,7 @@ mod tests {
 
     #[test]
     fn unlock_event_does_not_mutate_sessions() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let data = data_store(&pool);
             let reason = apply_power_lifecycle_event(&data, "unlock", 5_000)
@@ -1212,7 +1220,7 @@ mod tests {
 
     #[test]
     fn suspend_event_seals_active_session_immediately() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let data = data_store(&pool);
             let window = make_window(&[]);
@@ -1239,7 +1247,7 @@ mod tests {
 
     #[test]
     fn resume_event_does_not_mutate_sessions() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let data = data_store(&pool);
             let reason = apply_power_lifecycle_event(&data, "resume", 5_000)
@@ -1259,7 +1267,7 @@ mod tests {
 
     #[test]
     fn shutdown_event_seals_active_session_immediately() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             sessions::start_session(&pool, "QQ", "QQ.exe", "Window", 1_000, 1_000)
                 .await
@@ -1278,7 +1286,7 @@ mod tests {
 
     #[test]
     fn shutdown_after_suspend_does_not_double_seal_session() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             sessions::start_session(&pool, "QQ", "QQ.exe", "Window", 1_000, 1_000)
                 .await
@@ -1299,7 +1307,7 @@ mod tests {
 
     #[test]
     fn tracking_pause_seals_active_session_and_returns_pause_reason() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let data = data_store(&pool);
             let window = make_window(&[]);
@@ -1326,7 +1334,7 @@ mod tests {
 
     #[test]
     fn tracking_pause_without_active_session_is_a_noop() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let data = data_store(&pool);
 
@@ -1347,7 +1355,7 @@ mod tests {
 
     #[test]
     fn lock_after_tracking_pause_does_not_double_seal_closed_session() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let data = data_store(&pool);
             let window = make_window(&[]);
@@ -1377,7 +1385,7 @@ mod tests {
 
     #[test]
     fn tracking_pause_after_lock_is_a_noop_for_already_closed_session() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let data = data_store(&pool);
             let window = make_window(&[]);
@@ -1407,7 +1415,7 @@ mod tests {
 
     #[test]
     fn lock_after_startup_seal_is_a_noop_for_already_closed_session() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let data = data_store(&pool);
             let window = make_window(&[]);
@@ -1445,7 +1453,7 @@ mod tests {
 
     #[test]
     fn suspend_after_startup_seal_is_a_noop_for_already_closed_session() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let data = data_store(&pool);
             let window = make_window(&[]);
@@ -1483,7 +1491,7 @@ mod tests {
 
     #[test]
     fn tracking_pause_after_startup_seal_is_a_noop_for_already_closed_session() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let data = data_store(&pool);
             let window = make_window(&[]);
@@ -1521,7 +1529,7 @@ mod tests {
 
     #[test]
     fn startup_self_heal_normalizes_closed_session_duration() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             pool.execute(

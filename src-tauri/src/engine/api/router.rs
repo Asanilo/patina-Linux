@@ -722,11 +722,10 @@ mod tests {
             .status,
             200
         );
-        assert_eq!(
+        assert!(
             crate::data::repositories::tracker_settings::load_tracking_paused_setting(&pool)
                 .await
-                .unwrap(),
-            true
+                .unwrap()
         );
 
         let invalid_batch = route(
@@ -740,11 +739,10 @@ mod tests {
         )
         .await;
         assert_eq!(invalid_batch.status, 400);
-        assert_eq!(
+        assert!(
             crate::data::repositories::tracker_settings::load_tracking_paused_setting(&pool)
                 .await
-                .unwrap(),
-            true
+                .unwrap()
         );
 
         let valid_batch = route(

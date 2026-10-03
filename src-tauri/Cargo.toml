@@ -7,6 +7,16 @@ license = "MIT"
 edition = "2021"
 default-run = "patina"
 
+[features]
+default = ["desktop"]
+desktop-tests = ["desktop", "tauri/test"]
+desktop = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-opener", "dep:tauri-plugin-notification", "dep:tauri-plugin-autostart", "dep:tauri-plugin-updater", "dep:tauri-plugin-sql", "dep:tauri-plugin-single-instance", "dep:rfd", "dep:raw-window-handle", "dep:tauri-winrt-notification"]
+
+[[bin]]
+name = "patina"
+path = "src/main.rs"
+required-features = ["desktop"]
+
 [profile.dev]
 # Keep useful backtraces without full type/variable debug data or large incremental caches.
 debug = 1
@@ -22,19 +32,16 @@ name = "patina_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "=2.6.3", features = [] }
-
-[dev-dependencies]
-tauri = { version = "=2.11.5", features = ["test"] }
+tauri-build = { version = "=2.6.3", features = [], optional = true }
 
 [dependencies]
 patina-client = { path = "../crates/patina-client" }
 patina-protocol = { path = "../crates/patina-protocol" }
-tauri = { version = "=2.11.5", features = ["tray-icon"] }
-tauri-plugin-opener = "2"
-tauri-plugin-notification = "2"
-tauri-plugin-autostart = "2"
-tauri-plugin-updater = "2"
+tauri = { version = "=2.11.5", features = ["tray-icon"], optional = true }
+tauri-plugin-opener = { version = "2", optional = true }
+tauri-plugin-notification = { version = "2", optional = true }
+tauri-plugin-autostart = { version = "2", optional = true }
+tauri-plugin-updater = { version = "2", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 futures-util = "0.3"
@@ -51,11 +58,11 @@ semver = "1"
 csv = "1"
 tokio-tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
-tauri-plugin-sql = { version = "=2.4.1", features = ["sqlite"] }
+tauri-plugin-sql = { version = "=2.4.1", features = ["sqlite"], optional = true }
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"] }
 url = "2"
 percent-encoding = "2"
-rfd = "0.15.4"
+rfd = { version = "0.15.4", optional = true }
 crc32fast = "1.4"
 zip = { version = "4.6.1", default-features = false }
 
@@ -64,10 +71,10 @@ libc = "0.2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_Input_KeyboardAndMouse", "Win32_Graphics_Gdi", "Win32_UI_Shell", "Win32_UI_Shell_PropertiesSystem", "Win32_System_ProcessStatus", "Win32_System_SystemInformation", "Win32_System_Diagnostics_ToolHelp", "Win32_System_RemoteDesktop", "Win32_System_LibraryLoader", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_Storage_FileSystem", "Win32_Security_Credentials", "Win32_Media_Audio", "Media", "Media_Control"] }
-tauri-winrt-notification = "0.7.2"
+tauri-winrt-notification = { version = "0.7.2", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-raw-window-handle = "0.6"
+raw-window-handle = { version = "0.6", optional = true }
 xcb = { version = "1.4", features = ["xlib_xcb", "screensaver", "randr"] }
 zbus = { version = "4", default-features = false, features = ["tokio"] }
 libpulse-binding = "2"
@@ -75,4 +82,4 @@ notify-rust = "4"
 secret-service = { version = "5.2.0", features = ["rt-tokio-crypto-rust"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
-tauri-plugin-single-instance = "2"
+tauri-plugin-single-instance = { version = "2", optional = true }

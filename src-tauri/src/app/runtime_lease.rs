@@ -93,7 +93,7 @@ pub fn acquire_runtime_lease(
         role,
         pid: std::process::id(),
         profile: profile.key().to_string(),
-        acquired_at_ms: crate::app::runtime::now_ms(),
+        acquired_at_ms: crate::engine::runtime_context::now_ms(),
     };
     write_owner(&mut file, &owner).map_err(|message| {
         let _ = FileExt::unlock(&file);

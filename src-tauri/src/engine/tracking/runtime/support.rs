@@ -1,15 +1,21 @@
+#[cfg(feature = "desktop")]
 use crate::domain::tracking::TrackingDataChangedPayload;
+#[cfg(feature = "desktop")]
 use crate::engine::runtime_event::{RuntimeEvent, RuntimeEventSink};
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, Emitter, Runtime};
 
+#[cfg(feature = "desktop")]
 pub struct TauriRuntimeEventSink<R: Runtime>(AppHandle<R>);
 
+#[cfg(feature = "desktop")]
 impl<R: Runtime> TauriRuntimeEventSink<R> {
     pub fn new(app: AppHandle<R>) -> Self {
         Self(app)
     }
 }
 
+#[cfg(feature = "desktop")]
 impl<R: Runtime> RuntimeEventSink for TauriRuntimeEventSink<R> {
     fn emit(&self, event: RuntimeEvent) -> Result<(), String> {
         match event {
@@ -45,6 +51,7 @@ impl<R: Runtime> RuntimeEventSink for TauriRuntimeEventSink<R> {
     }
 }
 
+#[cfg(feature = "desktop")]
 pub fn emit_tracking_data_changed<R: Runtime>(
     app: &AppHandle<R>,
     reason: &str,

@@ -50,7 +50,7 @@ mod tests {
 
     #[test]
     fn resumed_tracking_drains_the_old_stop_once_before_accepting_new_samples() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
             pool.execute(schema::CURRENT_BASELINE_SCHEMA_SQL)
                 .await

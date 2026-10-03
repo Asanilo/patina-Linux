@@ -264,7 +264,7 @@ mod tests {
 
     #[test]
     fn tracking_settings_default_sustained_participation_matches_release_profile() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let data = TrackingRuntimeDataStore::new(pool);
             let mut cache = TrackingSettingsCache::default();
@@ -278,7 +278,7 @@ mod tests {
 
     #[test]
     fn tracking_pause_setting_is_loaded_fresh() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let data = TrackingRuntimeDataStore::new(pool.clone());
 

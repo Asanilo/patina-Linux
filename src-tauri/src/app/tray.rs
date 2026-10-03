@@ -1,10 +1,10 @@
 use crate::app::main_window;
-use crate::app::runtime::now_ms;
 use crate::app::state::{AppExitState, DesktopBehaviorState};
 use crate::app::widget;
 use crate::data::repositories::tracker_settings;
 use crate::data::sqlite_pool::wait_for_sqlite_pool;
 use crate::domain::settings::{CloseBehavior, DesktopBehaviorSettings};
+use crate::engine::runtime_context::now_ms;
 use crate::engine::tracking::runtime as tracking_runtime;
 use sqlx::{Pool, Sqlite};
 use tauri::{
@@ -210,7 +210,7 @@ mod tests {
 
     #[test]
     fn toggle_tracking_paused_in_pool_flips_setting_and_reason() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             let first_reason = toggle_tracking_paused_in_pool(&pool).await.unwrap();

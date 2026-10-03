@@ -1,11 +1,15 @@
+#[cfg(feature = "desktop")]
 pub mod app_settings_service;
 pub mod backup;
+#[cfg(feature = "desktop")]
 pub mod classification_service;
+#[cfg(feature = "desktop")]
 pub mod icon_cache_service;
 pub mod maintenance;
 pub mod remote_backup;
 pub mod repositories;
 pub mod schema;
 pub mod sqlite_pool;
+#[cfg(feature = "desktop")]
 pub mod storage_migration;
 pub mod tracking_runtime;

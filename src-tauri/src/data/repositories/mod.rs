@@ -1,6 +1,6 @@
 pub mod activity_import;
-pub mod activity_read_model;
 pub mod activity_read_health;
+pub mod activity_read_model;
 pub mod app_mappings;
 pub mod app_settings;
 pub mod backup_restore;

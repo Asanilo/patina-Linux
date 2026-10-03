@@ -200,7 +200,7 @@ fn spawn_runtime_task<R: Runtime + 'static>(
                 return;
             };
             attempt = (attempt + 1).min(RECONNECT_BACKOFF_SECS.len().saturating_sub(1));
-            let jitter_ms = crate::app::runtime::now_ms() % 500;
+            let jitter_ms = crate::engine::runtime_context::now_ms() % 500;
 
             let delay = sleep(Duration::from_secs(backoff_secs) + Duration::from_millis(jitter_ms));
             tokio::pin!(delay);
@@ -495,7 +495,7 @@ fn generate_machine_id() -> String {
         .unwrap_or_default()
         .hash(&mut hasher);
     std::process::id().hash(&mut hasher);
-    crate::app::runtime::now_ms().hash(&mut hasher);
+    crate::engine::runtime_context::now_ms().hash(&mut hasher);
     format!("machine-{:016x}", hasher.finish())
 }
 

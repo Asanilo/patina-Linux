@@ -1,10 +1,16 @@
+// The daemon projection intentionally retains shared domain/data definitions
+// also consumed by Desktop. The default Desktop lint checks the complete graph.
+#![cfg_attr(not(feature = "desktop"), allow(dead_code))]
+
 mod app;
+#[cfg(feature = "desktop")]
 mod commands;
 mod data;
 mod domain;
 mod engine;
 mod platform;
 
+#[cfg(feature = "desktop")]
 use std::sync::Arc;
 
 pub fn run_daemon(args: impl IntoIterator<Item = impl AsRef<str>>) -> Result<(), String> {
@@ -17,6 +23,7 @@ pub fn is_controlled_daemon_restart(error: &str) -> bool {
 
 pub const CONTROLLED_DAEMON_RESTART_EXIT_CODE: i32 = app::daemon::CONTROLLED_RESTART_EXIT_CODE;
 
+#[cfg(feature = "desktop")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(debug_assertions)]

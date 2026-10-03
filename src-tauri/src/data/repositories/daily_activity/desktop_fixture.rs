@@ -90,7 +90,7 @@ fn synthetic_fixture_roundtrip_preserves_counts_and_disabled_sources() {
     ));
     std::fs::create_dir(&root).unwrap();
     let db = root.join("fixture.db");
-    tauri::async_runtime::block_on(async {
+    crate::engine::runtime_context::test_block_on(async {
         let seeded = seed(&db, "34567").await;
         assert_eq!(verify(&db).await["total_ms"], seeded["expected_ms"]);
         let pool = sqlx::sqlite::SqlitePoolOptions::new()

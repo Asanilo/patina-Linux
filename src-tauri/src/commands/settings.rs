@@ -297,7 +297,7 @@ pub async fn cmd_get_classification_snapshot(
     let pool = crate::data::sqlite_pool::wait_for_sqlite_pool(&app).await?;
     crate::data::repositories::classification_settings::load_classification_snapshot(
         &pool,
-        crate::app::runtime::now_ms().min(i64::MAX as u64) as i64,
+        crate::engine::runtime_context::now_ms().min(i64::MAX as u64) as i64,
     )
     .await
 }

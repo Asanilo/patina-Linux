@@ -160,21 +160,21 @@ fn storage_desktop_worker() {
                 AppProfile::Production,
                 false,
                 false,
-                runtime::now_ms(),
+                crate::engine::runtime_context::now_ms(),
             )
             .unwrap();
             runtime_owner_cutover::mark_activating(
                 &control,
                 AppProfile::Production,
                 &reservation.request_id,
-                runtime::now_ms(),
+                crate::engine::runtime_context::now_ms(),
             )
             .unwrap();
             runtime_owner_cutover::mark_completed(
                 &control,
                 AppProfile::Production,
                 &reservation.request_id,
-                runtime::now_ms(),
+                crate::engine::runtime_context::now_ms(),
             )
             .unwrap();
         });

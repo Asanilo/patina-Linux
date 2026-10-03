@@ -330,7 +330,7 @@ mod tests {
             web_activity_state
                 .snapshot(
                     &crate::domain::settings::WebActivitySettings::default(),
-                    crate::app::runtime::now_ms() as i64,
+                    crate::engine::runtime_context::now_ms() as i64,
                 )
                 .listening
         );
@@ -350,7 +350,7 @@ mod tests {
             !web_activity_state
                 .snapshot(
                     &crate::domain::settings::WebActivitySettings::default(),
-                    crate::app::runtime::now_ms() as i64,
+                    crate::engine::runtime_context::now_ms() as i64,
                 )
                 .listening
         );

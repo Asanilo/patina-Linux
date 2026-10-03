@@ -434,7 +434,7 @@ mod tests {
 
     #[test]
     fn audio_participation_defaults_to_enabled_and_accepts_boolean_storage() {
-        assert!(DEFAULT_AUDIO_PARTICIPATION_ENABLED);
+        const { assert!(DEFAULT_AUDIO_PARTICIPATION_ENABLED) };
         assert!(super::parse_audio_participation_enabled(None));
         assert!(super::parse_audio_participation_enabled(Some("yes")));
         assert!(!super::parse_audio_participation_enabled(Some("0")));

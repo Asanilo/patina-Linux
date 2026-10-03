@@ -10,5 +10,6 @@ fn main() {
         println!("cargo:rustc-cfg=patina_local_build");
     }
 
+    #[cfg(feature = "desktop")]
     tauri_build::build()
 }

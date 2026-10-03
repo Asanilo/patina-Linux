@@ -6,6 +6,42 @@ primary Linux product branch and includes the daemon separation developed on
 Daemon-specific procedures apply to this baseline and its selected candidates.
 The source merge does not change beta or AppImage release gates.
 
+## Independent Daemon Build
+
+On `feature/multi-client-platform`, the same product crate can build `patinad`
+without Tauri, GTK or WebKit. The default `desktop` feature preserves Desktop
+builds; disabling it selects the shared backend and its daemon host:
+
+```bash
+cargo build --locked --manifest-path src-tauri/Cargo.toml --no-default-features --bin patinad
+npm run check:daemon
+```
+
+This is a Linux build boundary, not a separately released installation package.
+The daemon still uses Linux tracking/audio libraries such as XCB and PulseAudio.
+Use `readelf -d` and `ldd` on the actual binary when validating native dependencies;
+the Cargo dependency check alone does not prove its ELF dependencies.
+
+`check:full` includes both Desktop and independent daemon tests. Desktop tests
+use the explicit `desktop-tests` feature for Tauri mock support; production
+Desktop builds do not enable that test feature. The no-desktop projection permits
+unused shared definitions with `dead_code`, while the default Desktop graph keeps
+the existing lint. Both projections still reject other Clippy warnings.
+
+For isolated runtime acceptance, build the SDK probe and supply both binaries:
+
+```bash
+cargo build --locked --manifest-path crates/patina-client/Cargo.toml --example inspect
+python3 scripts/acceptance/independent-client.py /absolute/path/patinad /absolute/path/inspect
+```
+
+The script creates a fresh Local profile under `/tmp`, disables host display,
+D-Bus and audio connections, uses an ephemeral API port, and checks authentication,
+two SDK event subscriptions, graceful shutdown, lease reacquisition and persisted
+classification/schema metadata. It does not install a service or validate real
+GNOME tracking. If sharing `CARGO_TARGET_DIR` across configurations, preserve the
+selected binary before another build replaces `debug/patinad`.
+
 ## Build Storage
 
 Rust artifacts are under `src-tauri/target`, not the installed application's data directory. Repeated builds, tests, compiler versions and feature combinations can leave multiple artifact variants. Incremental compilation stores additional compiler state; full debug information also increases dependency and binary size. See the [Cargo profile reference](https://doc.rust-lang.org/cargo/reference/profiles.html).

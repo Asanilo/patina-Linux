@@ -24,7 +24,7 @@ pub async fn cmd_get_web_history<R: Runtime>(
         &pool,
         from_ms,
         to_ms,
-        crate::app::runtime::now_ms() as i64,
+        crate::engine::runtime_context::now_ms() as i64,
         &language,
     )
     .await
@@ -47,7 +47,7 @@ pub async fn cmd_delete_web_activity_segments_by_domain<R: Runtime>(
     crate::engine::tracking::runtime::emit_tracking_data_changed(
         &app,
         crate::domain::web_activity::WEB_ACTIVITY_CHANGED_REASON,
-        crate::app::runtime::now_ms(),
+        crate::engine::runtime_context::now_ms(),
     )
     .map_err(|error| format!("failed to emit web history cleanup event: {error}"))
 }

@@ -10,6 +10,7 @@ pub mod storage_usage;
 pub mod tracking_diagnostics;
 pub mod web_activity_bridge;
 pub mod webdav;
+#[cfg(feature = "desktop")]
 pub mod webview_cache;
 
 #[cfg(target_os = "windows")]

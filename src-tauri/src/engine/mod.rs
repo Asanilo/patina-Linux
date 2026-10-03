@@ -1,11 +1,14 @@
 pub mod activity_import;
 pub mod api;
+#[cfg(feature = "desktop")]
 pub mod remote_status_bridge;
 pub mod runtime_context;
 pub mod runtime_event;
 pub mod scheduled_backup;
 pub mod tools;
 pub mod tracking;
+#[cfg(feature = "desktop")]
 pub mod updater;
 pub mod web_activity;
+#[cfg(feature = "desktop")]
 pub mod widget;

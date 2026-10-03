@@ -189,7 +189,7 @@ mod tests {
 
     #[test]
     fn commit_classification_setting_mutations_upserts_and_deletes_in_one_transaction() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let key = "__app_override::chrome.exe";
 
@@ -224,7 +224,7 @@ mod tests {
 
     #[test]
     fn commit_classification_setting_mutations_accepts_manual_confirmation_migration_marker() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let key = "__classification_manual_confirmation_migration::v1";
 
@@ -247,7 +247,7 @@ mod tests {
 
     #[test]
     fn commit_classification_setting_mutations_accepts_custom_category_labels() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let key = "__category_label_override::custom:category_focus";
 
@@ -270,7 +270,7 @@ mod tests {
 
     #[test]
     fn commit_classification_setting_mutations_rolls_back_invalid_batches() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let good_key = "__category_color_override::video";
 

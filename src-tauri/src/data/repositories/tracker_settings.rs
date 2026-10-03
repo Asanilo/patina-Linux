@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn idle_timeout_setting_does_not_fallback_to_legacy_afk_key() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             save_setting_value(&pool, "afk_timeout_secs", "999")
@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn timeline_merge_gap_setting_uses_current_setting_key_only() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             let fallback = load_timeline_merge_gap_secs(&pool, 180).await.unwrap();
@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn title_privacy_prefers_recorded_linux_executable_key() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             save_setting_value(
                 &pool,

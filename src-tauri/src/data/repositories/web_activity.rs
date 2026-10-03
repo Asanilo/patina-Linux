@@ -666,7 +666,7 @@ mod tests {
 
     #[test]
     fn active_segment_upsert_extends_same_identity_and_splits_changes() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             assert!(
@@ -705,7 +705,7 @@ mod tests {
 
     #[test]
     fn active_segment_requires_a_matching_native_browser_session() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             super::super::sessions::end_active_sessions(&pool, 500)
                 .await
@@ -729,7 +729,7 @@ mod tests {
 
     #[test]
     fn missing_native_browser_session_seals_an_unbound_active_segment() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             super::super::sessions::end_active_sessions(&pool, 500)
                 .await
@@ -765,7 +765,7 @@ mod tests {
 
     #[test]
     fn ending_native_session_clips_bound_web_segment_in_same_transaction() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             assert!(
                 upsert_active_segment(&pool, &input("github.com", "Issue"), 1_000)
@@ -792,7 +792,7 @@ mod tests {
 
     #[test]
     fn same_page_in_a_new_native_session_creates_a_new_web_segment() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             assert!(
                 upsert_active_segment(&pool, &input("github.com", "Issue"), 1_000)
@@ -836,7 +836,7 @@ mod tests {
 
     #[test]
     fn restart_repair_seals_at_last_observation_instead_of_restart_time() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             assert!(
@@ -871,7 +871,7 @@ mod tests {
 
     #[test]
     fn stale_seal_rechecks_the_database_observation_boundary() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             upsert_active_segment(&pool, &input("github.com", "Issue"), 1_000)
@@ -905,7 +905,7 @@ mod tests {
 
     #[test]
     fn query_segments_filters_by_range_and_domain_with_realtime_active_duration() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             sqlx::query(
                 "INSERT INTO web_activity_segments (
@@ -952,7 +952,7 @@ mod tests {
 
     #[test]
     fn domain_override_enabled_defaults_to_true() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             assert!(load_domain_recording_enabled(&pool, "github.com")
                 .await

@@ -15,8 +15,14 @@ mod dialog_tests {
         let commands = [
             (include_str!("backup.rs"), "cmd_pick_backup_save_file"),
             (include_str!("backup.rs"), "cmd_pick_backup_file"),
-            (include_str!("backup.rs"), "cmd_pick_scheduled_backup_directory"),
-            (include_str!("activity_import.rs"), "cmd_pick_activity_import_file"),
+            (
+                include_str!("backup.rs"),
+                "cmd_pick_scheduled_backup_directory",
+            ),
+            (
+                include_str!("activity_import.rs"),
+                "cmd_pick_activity_import_file",
+            ),
             (include_str!("storage.rs"), "cmd_pick_storage_parent"),
         ];
         for (source, name) in commands {

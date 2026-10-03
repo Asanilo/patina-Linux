@@ -546,7 +546,7 @@ mod tests {
 
     #[test]
     fn commit_app_setting_mutations_upserts_in_one_transaction() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             commit_app_setting_mutations(
@@ -607,7 +607,7 @@ mod tests {
 
     #[test]
     fn desktop_behavior_settings_loads_background_optimization() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             commit_app_setting_mutations(
@@ -628,7 +628,7 @@ mod tests {
 
     #[test]
     fn background_delay_persists_and_invalid_batch_does_not_partially_commit() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let delay = |value: &str| AppSettingMutation {
                 key: "background_optimization_delay_minutes".to_string(),
@@ -666,7 +666,7 @@ mod tests {
 
     #[test]
     fn background_tracking_login_preference_migrates_once_from_desktop_login() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             seed_legacy_setting(&pool, LAUNCH_AT_LOGIN_KEY, "0").await;
 
@@ -699,7 +699,7 @@ mod tests {
 
     #[test]
     fn background_tracking_login_preference_uses_release_default_without_legacy_value() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             ensure_background_tracking_login_preference(&pool)
@@ -717,7 +717,7 @@ mod tests {
 
     #[test]
     fn dedicated_background_tracking_login_preference_save_is_boolean() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             save_background_tracking_login_preference(&pool, false)
@@ -744,7 +744,7 @@ mod tests {
 
     #[test]
     fn audio_participation_setting_loads_and_allows_commits() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             assert!(load_audio_participation_enabled(&pool).await.unwrap());
@@ -765,7 +765,7 @@ mod tests {
 
     #[test]
     fn browser_runtime_settings_commit_as_one_validated_batch() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let settings = WebActivityBridgeSettings {
                 enabled: true,
@@ -801,7 +801,7 @@ mod tests {
 
     #[test]
     fn commit_app_setting_mutations_rolls_back_invalid_batches() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             let result = commit_app_setting_mutations(
@@ -830,7 +830,7 @@ mod tests {
 
     #[test]
     fn remote_status_bridge_settings_loads_new_keys() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             commit_app_setting_mutations(
@@ -867,7 +867,7 @@ mod tests {
 
     #[test]
     fn web_activity_settings_loads_url_privacy_mode() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             commit_app_setting_mutations(
@@ -901,7 +901,7 @@ mod tests {
 
     #[test]
     fn local_api_port_persists_without_rewriting_legacy_token() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             seed_legacy_setting(&pool, LOCAL_API_TOKEN_KEY, "legacy-token").await;
 
@@ -920,7 +920,7 @@ mod tests {
 
     #[test]
     fn legacy_local_api_token_can_be_read_and_deleted_without_changing_port() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             commit_app_setting_mutations(
                 &pool,
@@ -949,7 +949,7 @@ mod tests {
 
     #[test]
     fn generic_setting_mutations_reject_local_api_tokens() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let result = commit_app_setting_mutations(
                 &pool,
@@ -967,7 +967,7 @@ mod tests {
 
     #[test]
     fn pausing_tracking_seals_the_active_session_in_the_same_transaction() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             super::super::sessions::start_session(&pool, "Editor", "code", "A", 1_000, 1_000)
                 .await
@@ -985,7 +985,7 @@ mod tests {
             .await
             .unwrap();
             assert!(
-                commit_app_setting_mutations_at(&pool, &[pause.clone()], 5_000)
+                commit_app_setting_mutations_at(&pool, std::slice::from_ref(&pause), 5_000)
                     .await
                     .is_err()
             );

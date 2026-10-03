@@ -62,7 +62,7 @@ mod tests {
 
     #[test]
     fn auto_check_day_roundtrip() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             assert_eq!(load_last_auto_check_day(&pool).await.unwrap(), None);
 
@@ -76,7 +76,7 @@ mod tests {
 
     #[test]
     fn post_install_reopen_main_window_roundtrip() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             assert!(!take_post_install_reopen_main_window(&pool).await.unwrap());

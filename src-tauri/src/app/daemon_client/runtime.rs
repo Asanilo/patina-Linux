@@ -330,7 +330,7 @@ impl<R: Runtime> PatinadRuntimeOutput<PatinadRuntimeReadSnapshot> for TauriPatin
                     crate::engine::tracking::runtime::TauriRuntimeEventSink::new(self.app.clone());
                 let _ = sink.emit(RuntimeEvent::TrackingDataChanged {
                     reason: "daemon-client-disconnected".to_string(),
-                    changed_at_ms: crate::app::runtime::now_ms(),
+                    changed_at_ms: crate::engine::runtime_context::now_ms(),
                 });
             }
         }
@@ -398,7 +398,7 @@ impl<R: Runtime> PatinadRuntimeOutput<PatinadRuntimeReadSnapshot> for TauriPatin
         // A gap may contain classification/settings/Tools changes, not just a
         // foreground transition. Invalidate each existing client owner; never
         // fabricate or replay a notification to reconstruct missed state.
-        let changed_at_ms = crate::app::runtime::now_ms();
+        let changed_at_ms = crate::engine::runtime_context::now_ms();
         let sink = crate::engine::tracking::runtime::TauriRuntimeEventSink::new(self.app.clone());
         let _ = sink.emit(RuntimeEvent::TrackingDataChanged {
             reason: "daemon-client-resync".into(),

@@ -440,17 +440,19 @@ mod tests {
         owner.tick_and_refresh_if_changed().await.unwrap();
         owner.tick_and_refresh_if_changed().await.unwrap();
 
-        let alerts = sink.alerts.lock().unwrap();
-        assert_eq!(alerts.len(), 1);
-        assert_eq!(alerts[0].id, "reminder:1");
-        drop(alerts);
-        let snapshots = sink.snapshots.lock().unwrap();
-        assert_eq!(snapshots.len(), 1);
-        assert_eq!(
-            snapshots[0].reminders[0].status,
-            crate::domain::tools::ReminderStatus::Fired
-        );
-        drop(snapshots);
+        {
+            let alerts = sink.alerts.lock().unwrap();
+            assert_eq!(alerts.len(), 1);
+            assert_eq!(alerts[0].id, "reminder:1");
+        }
+        {
+            let snapshots = sink.snapshots.lock().unwrap();
+            assert_eq!(snapshots.len(), 1);
+            assert_eq!(
+                snapshots[0].reminders[0].status,
+                crate::domain::tools::ReminderStatus::Fired
+            );
+        }
         pool.close().await;
     }
 }

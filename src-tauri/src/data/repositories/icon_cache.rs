@@ -1,7 +1,7 @@
 use crate::domain::backup::BackupIconCache;
-use sqlx::{Pool, Sqlite, Transaction};
 #[cfg(test)]
 use sqlx::Row;
+use sqlx::{Pool, Sqlite, Transaction};
 
 pub mod read;
 

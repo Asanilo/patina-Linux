@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, Manager, Runtime};
 
 pub const PRODUCT_FOLDER: &str = "Patina";
@@ -57,14 +58,17 @@ pub struct ProfilePaths {
     pub webview_root: PathBuf,
 }
 
+#[cfg(feature = "desktop")]
 pub fn app_profile<R: Runtime>(app: &AppHandle<R>) -> AppProfile {
     AppProfile::from_identifier(&app.config().identifier)
 }
 
+#[cfg(feature = "desktop")]
 pub fn product_config_dir<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     Ok(default_profile_paths(app)?.control_root)
 }
 
+#[cfg(feature = "desktop")]
 pub fn default_profile_paths<R: Runtime>(app: &AppHandle<R>) -> Result<ProfilePaths, String> {
     Ok(profile_paths(&app_path_roots(app)?, app_profile(app)))
 }
@@ -106,6 +110,7 @@ pub fn derive_product_root(selected_root: &Path, profile: AppProfile) -> PathBuf
     selected_root.join(product_folder)
 }
 
+#[cfg(feature = "desktop")]
 fn app_path_roots<R: Runtime>(app: &AppHandle<R>) -> Result<AppPathRoots, String> {
     Ok(AppPathRoots {
         config: config_root(app)?,
@@ -114,6 +119,7 @@ fn app_path_roots<R: Runtime>(app: &AppHandle<R>) -> Result<AppPathRoots, String
     })
 }
 
+#[cfg(feature = "desktop")]
 fn config_root<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     parent_of_identifier_dir(
         app.path()
@@ -122,6 +128,7 @@ fn config_root<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     )
 }
 
+#[cfg(feature = "desktop")]
 fn roaming_root<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     parent_of_identifier_dir(
         app.path()
@@ -130,6 +137,7 @@ fn roaming_root<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     )
 }
 
+#[cfg(feature = "desktop")]
 fn local_root<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     parent_of_identifier_dir(
         app.path()

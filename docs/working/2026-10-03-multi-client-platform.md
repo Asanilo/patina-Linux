@@ -59,7 +59,7 @@ HTTP API 索引和源码以当前实现为准；索引中历史的 unreleased/st
 | M3 | 浏览器会话和适配层；共享 React 核心界面，复用 Quiet Pro | Tauri＋Web 并行读取／修改分类并同步，真实浏览器验收 | 待实施 |
 | M4 | Rust SDK typed 能力逐步补全，TUI 接入同一核心链路 | 实际交互式 TUI 可查看／筛选／修改分类，并参与同步；CLI 示例不算完成 | 待实施 |
 | M5 | GPUI 客户端，同一能力和同步契约，独立视图 | 可运行 GPUI 核心链路和四端同步验收；评估启动、资源和维护成本 | 待实施 |
-| M6 | 后端独立安装、兼容矩阵、异常恢复、发布集成 | 无 Desktop 后端运行、四端适用覆盖矩阵、可重复回归；范围冻结后再准备候选 | 待实施 |
+| M6 | 后端独立安装、兼容矩阵、异常恢复、发布集成 | 无 Desktop 后端运行、四端适用覆盖矩阵、可重复回归；范围冻结后再准备候选 | M6a 同源独立构建与隔离运行已验证；安装／发布集成待实施 |
 
 M1 的第二客户端示例用于证明独立依赖和真实连接，不能提前宣称 TUI 或 GPUI 已交付。M3 优先于完整 TUI／GPUI 开发，以先取得共享 UI 的直接收益。只有出现真实并行需要才增加工作分支。
 
@@ -277,3 +277,29 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - `check:full` 的前端／SDK 部分通过：62 个 TypeScript 文件、42 项浏览器检查、34 项 SDK 测试及 Clippy、构建与 bundle 原预算通过。Rust 初轮唯一失败是新增测试错误假定 SSE envelope 的 payload 层级；改为反序列化共享 RuntimeEventEnvelope 后，最终完整 `check:rust` 通过（752 passed / 21 ignored）及 Clippy，未重复未变化的前端／SDK。
 - 在独立进程分别设置 TZ=America/New_York 与 Australia/Lord_Howe，验证实际 25 小时／24.5 小时日的 today 清理边界；未改宿主时区。证据位于 `tmp/acceptance/multi-client-m2h-cleanup/`。所有删除测试仅用隔离 SQLite，没有操作生产历史、安装应用或远端仓库。
 - 整体基础阶段仍未完成：网页两项产品决定、域名汇总／Desktop 网页迁移、普通设置与客户端偏好分离、查询 admission、契约生成、旧 replay 退出和独立后端构建仍在目标范围内。后续优先推进不依赖网页答复的设置／运行基础。
+
+
+### M6a 执行设计：同源独立 daemon 构建
+
+- daemon 已拥有 RuntimeContext、独立 tracker／Tools／备份和 API owner，但当前 Cargo 默认库仍强制编译 Tauri／GTK。优先保留同一个产品 crate 和六层源码，通过明确 desktop feature 隔离宿主包装，避免路径复用 shell 或第二份后端实现；不做全量 workspace 重排。
+- SQL migration 定义应是框架无关的版本／描述／SQL 事实，Desktop plugin 与 SQLx 使用同一份原文，版本、checksum 和数据库兼容性不得因拆分变化。时钟归 runtime context；异步 core 任务使用 owner 的 Tokio runtime，桌面事件／窗口包装只在 desktop 编译。
+- 默认 Desktop 构建和完整门禁保持可用；无桌面产物必须通过 normal/build 依赖图与 ELF 动态依赖核验，不能以没有创建窗口冒充无 GTK 依赖。验收只启动隔离 profile，验证存储、认证 API、运行／关闭与核心任务能力。独立安装与打包仍需后续实际证据，不把一次 cargo check 宣称为 M6 完成。
+- 网页产品问题仍待讨论；本构建工作不切换网页行为，不安装或重启本机正式后台，不发布新客户端 UI。
+
+### 暂停检查点（2026-10-04，用户准备关机）
+
+- 按用户要求停止推进，保留可恢复现场。开发 worktree 为 `.worktrees/multi-client`，分支为 `feature/multi-client-platform`；最近已提交并完成相应门禁的检查点为 `526210b9`（M2h）。M6a 改动保留在工作区，尚未提交，不代表完整验收通过。
+- M6a 已加入默认 desktop feature 与宿主适配隔离、框架无关 migration 定义、runtime context 时钟和 Tokio 调度调整；测试辅助 runtime 与 desktop-tests feature 也已调整，但其测试路径尚未验证。无桌面投影暂时允许共享定义的 dead_code，默认 Desktop 仍保留原有 lint；此例外尚需完整审查。
+- 已通过 `CARGO_NET_OFFLINE=true CARGO_TARGET_DIR=/home/arinp22/code/patina/src-tauri/target cargo check --manifest-path src-tauri/Cargo.toml --no-default-features --bin patinad`，最终日志为 `tmp/acceptance/headless-check-7.log`，无编译警告；`git diff --check` 通过。此前 normal/build 依赖图检查未发现 Tauri／GTK 相关依赖，但还没有独立成品及 ELF 证据。
+- 尚未完成：默认 Desktop 编译与完整门禁、无桌面测试编译／执行及 Clippy、旧数据库 migration 兼容回归、独立 binary／ELF 依赖核验和隔离 profile 启停验收。恢复时先审查 feature guards、时钟重导出与测试辅助路径，再完成上述验证；不要重复已完成的 M2h 工作或将本次 cargo check 当成可发布证明。
+- 暂停前已检查宿主进程，无遗留 cargo check／test／build／clippy、rustc 或 npm run check 任务。未安装、重启生产服务、推送、合并或发布。网页两项产品决定仍待答复，恢复后也不据此默认改变行为。
+
+### M6a 恢复与核验结果（2026-10-04）
+
+- 用户返回并明确恢复开发。本检查点取代上面的暂停状态；M6a 已通过实现和自动验收。`desktop` 为默认 feature，纯后端关闭该 feature；Tauri mock 支持放入显式 `desktop-tests`。同一 crate／同一份后端源码，无新 UI、无另一套运行时业务实现。
+- 迁移定义脱离 Tauri plugin 类型，SQL 原文、版本及描述与 `526210b9` 逐字节对照一致；SQLx 仍使用原有 migration 类型和 checksum 算法。时钟移动到 runtime context，清除了生产和专项验收中的旧路径；后台 icon／备份 worker 使用 Tokio，daemon 启动时进入自身 runtime 以支持同步 session probe。
+- `check:full` 的前端与 SDK 部分通过：62 个 TypeScript 文件、42 项浏览器检查、34 项 SDK 测试／Clippy、构建与 bundle 门禁。初轮 Desktop 测试编译暴露专项验收中残留的时钟引用；修正后最终完整 `check:rust` 通过，752 passed / 21 ignored，默认构建、边界和 Clippy 通过。未重复未变化的前端／SDK 门禁。
+- 新 `check:daemon` 已纳入 `check:full`，验证 normal/build 依赖图、无桌面测试及 all-targets Clippy；最终 595 passed / 10 ignored，Clippy 无警告。首轮找出了一个需要 Desktop 的 AppImage 专项测试依赖及七条测试 Clippy 告警，均已修正；仅为真实 Desktop 专项测试加 feature 条件，没有隐藏核心后端测试。
+- 实际构建的独立 `patinad` 已保存并核对 ELF 和动态依赖，未链接 GTK／WebKit／GLib；仍需要 XCB、X11、PulseAudio 等 Linux 系统库，不能称为静态单文件。二进制 SHA256 为 `20c604654e2596ee1de404aa47ecf0e2833607c7b2d9992395e81c095f39135a`。在无宿主显示／D-Bus／音频连接的新 Local profile 下，两个独立 SDK 进程观察同一提交事件；未认证读取拒绝，SIGINT 正常退出，再次启动取得 lease，分类设置和 migration checksum 保留，SQLite integrity 为 ok。
+- 证据：`tmp/acceptance/multi-client-m6a-headless/` 保存二进制与依赖／迁移对照；各项门禁见 `tmp/acceptance/m6a-*.log`；隔离运行证据在 `/tmp/patina-independent-client-2td9q_7y/`。没有触碰生产 profile、安装、推送、合并或发布。图形硬件追踪、独立安装包及跨客户端 UI 不属于此次自动验收结论。
+- 整体阶段继续：普通共享设置／客户端偏好分离、网页产品决定及迁移、查询 admission／超时、契约生成和旧 replay 退出仍待完成。M6 的独立安装、兼容和发布集成也未完成；不得把本切片标成整个多客户端基础已交付。

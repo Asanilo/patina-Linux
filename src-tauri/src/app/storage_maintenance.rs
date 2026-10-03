@@ -204,7 +204,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!(
             "patina-offline-maintenance-{}-{}",
             std::process::id(),
-            crate::app::runtime::now_ms()
+            crate::engine::runtime_context::now_ms()
         ));
         let events = Mutex::new(Vec::new());
         let daemon = Mutex::new(Some(

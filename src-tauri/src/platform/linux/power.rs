@@ -1,7 +1,9 @@
+#[cfg(feature = "desktop")]
 use crate::engine::tracking::runtime as tracking_runtime;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, watch};
 use zbus::proxy;
@@ -54,6 +56,7 @@ impl PowerLifecycleEvent {
     }
 }
 
+#[cfg(feature = "desktop")]
 pub fn start(app_handle: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let (_shutdown_tx, shutdown_rx) = watch::channel(false);

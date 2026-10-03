@@ -133,10 +133,18 @@ fn heatmap_desktop_worker() {
                 .unwrap()
                 .close()
                 .unwrap();
-            evidence(&root, "closed.json", json!({"at_ms":runtime::now_ms()}));
+            evidence(
+                &root,
+                "closed.json",
+                json!({"at_ms":crate::engine::runtime_context::now_ms()}),
+            );
             tokio::time::sleep(Duration::from_secs(310)).await;
             assert!(worker_app.webview_windows().is_empty());
-            evidence(&root, "destroyed.json", json!({"at_ms":runtime::now_ms()}));
+            evidence(
+                &root,
+                "destroyed.json",
+                json!({"at_ms":crate::engine::runtime_context::now_ms()}),
+            );
             tokio::time::sleep(Duration::from_secs(5)).await;
             main_window::show_main_window(&worker_app);
             wait_report(&root, 2).await;

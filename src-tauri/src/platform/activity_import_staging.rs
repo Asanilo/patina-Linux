@@ -213,7 +213,7 @@ mod tests {
         std::env::temp_dir().join(format!(
             "patina-import-staging-{label}-{}-{}",
             std::process::id(),
-            crate::app::runtime::now_ms()
+            crate::engine::runtime_context::now_ms()
         ))
     }
 

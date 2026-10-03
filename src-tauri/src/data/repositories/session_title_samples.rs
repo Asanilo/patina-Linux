@@ -259,7 +259,7 @@ mod tests {
 
     #[test]
     fn new_title_sample_is_inserted_for_non_empty_title() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             assert!(start_title_sample(&pool, 1, " Doc A ", 900).await.unwrap());
@@ -276,7 +276,7 @@ mod tests {
 
     #[test]
     fn unchanged_title_does_not_insert_duplicate_sample() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             start_title_sample(&pool, 1, "Doc A", 1000).await.unwrap();
 
@@ -294,7 +294,7 @@ mod tests {
 
     #[test]
     fn changed_title_closes_previous_sample_and_starts_next() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             start_title_sample(&pool, 1, "Doc A", 1000).await.unwrap();
 
@@ -323,7 +323,7 @@ mod tests {
 
     #[test]
     fn session_end_closes_last_active_sample() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             start_title_sample(&pool, 1, "Doc A", 1000).await.unwrap();
 
@@ -340,7 +340,7 @@ mod tests {
 
     #[test]
     fn malicious_title_is_stored_as_data() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             let title = "'; DROP TABLE session_title_samples; --";
 

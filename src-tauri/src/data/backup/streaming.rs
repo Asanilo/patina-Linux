@@ -341,7 +341,7 @@ mod tests {
 
     #[test]
     fn cancelled_snapshot_keeps_target_and_cleans_stage() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let root = std::env::temp_dir().join(format!(
                 "patina-cancel-export-{}-{}",
                 std::process::id(),

@@ -146,7 +146,7 @@ mod tests {
 
     #[test]
     fn startup_seal_closes_active_session_from_last_successful_sample() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             sessions::start_session(&pool, "QQ", "QQ.exe", "Chat", 1_000, 1_000)
@@ -176,7 +176,7 @@ mod tests {
 
     #[test]
     fn heartbeat_without_successful_sample_does_not_count_downtime() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             sessions::start_session(&pool, "A", "a", "A", 1_000, 1_000)
                 .await
@@ -205,7 +205,7 @@ mod tests {
 
     #[test]
     fn startup_afk_threshold_uses_idle_timeout_not_timeline_merge_gap() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
             tracker_settings::save_setting_value(&pool, "idle_timeout_secs", "900")
                 .await
@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn startup_seal_is_a_noop_after_session_was_already_closed() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup_test_db().await;
 
             sessions::start_session(&pool, "QQ", "QQ.exe", "Chat", 1_000, 1_000)

@@ -233,9 +233,11 @@ fn resolve_dialog_directory(initial_path: Option<String>) -> Option<PathBuf> {
 }
 
 fn emit_refresh<R: Runtime>(app: &AppHandle<R>, reason: &str) {
-    if let Err(error) =
-        tracking_runtime::emit_tracking_data_changed(app, reason, crate::app::runtime::now_ms())
-    {
+    if let Err(error) = tracking_runtime::emit_tracking_data_changed(
+        app,
+        reason,
+        crate::engine::runtime_context::now_ms(),
+    ) {
         eprintln!("[import] data committed but refresh event failed: {error}");
     }
 }

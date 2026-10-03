@@ -644,7 +644,7 @@ mod tests {
 
     #[test]
     fn named_applications_use_only_contributing_metadata_and_bound_names() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup().await;
             native(&pool, "Custom", -200, Some(-100)).await;
             native(&pool, "Custom", 0, Some(100)).await;
@@ -685,7 +685,7 @@ mod tests {
 
     #[test]
     fn application_totals_merge_aliases_keep_all_apps_and_match_heatmap() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup().await;
             native(&pool, " STEAMWEBHELPER.EXE ", 0, Some(1000)).await;
             native(&pool, "steam.exe", 1000, Some(2000)).await;
@@ -742,7 +742,7 @@ mod tests {
 
     #[test]
     fn application_aggregate_budgets_fail_without_partial_results() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup().await;
             pool.execute("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<4097) INSERT INTO sessions(app_name,exe_name,start_time,end_time,duration) SELECT 'App','app-'||i,0,1000,1000 FROM n").await.unwrap();
             assert!(
@@ -800,7 +800,7 @@ mod tests {
 
     #[test]
     fn trend_reuses_daily_policy_without_retaining_titles_and_has_stable_ties() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup().await;
             native(&pool, "zeta", 0, Some(1000)).await;
             native(&pool, "alpha", 1000, Some(2000)).await;
@@ -834,7 +834,7 @@ mod tests {
 
     #[test]
     fn daily_query_uses_covering_facts_and_a_bounded_bucket_seek() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup().await;
             let explain = format!("EXPLAIN QUERY PLAN {DAY_FACTS_SQL}");
             let mut query = sqlx::query(&explain);
@@ -867,7 +867,7 @@ mod tests {
 
     #[test]
     fn daily_totals_match_existing_precedence_and_exclusion_semantics() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup().await;
             native(&pool, " ZEN ", 1000, Some(2000)).await;
             native(&pool, "terminal", HOUR_MS - 1000, Some(HOUR_MS + 1000)).await;
@@ -938,7 +938,7 @@ mod tests {
 
     #[test]
     fn daily_totals_support_short_and_long_local_days_and_active_cutoff() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup().await;
             let boundaries = [0, 23 * HOUR_MS, 48 * HOUR_MS, 72 * HOUR_MS];
             native(&pool, "live", 0, None).await;
@@ -958,7 +958,7 @@ mod tests {
 
     #[test]
     fn empty_snapshot_is_complete_and_read_only() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup().await;
             let result = load_snapshot(&pool, &[0, HOUR_MS, 2 * HOUR_MS], HOUR_MS)
                 .await
@@ -987,7 +987,7 @@ mod tests {
         ] {
             assert!(validate_boundaries(&boundaries).is_err());
         }
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup().await;
             let _permit = DAILY_ACTIVITY_QUERY.acquire().await.unwrap();
             assert!(load_daily_activity(&pool, &[0, HOUR_MS], HOUR_MS)
@@ -1093,7 +1093,7 @@ mod tests {
 
     #[test]
     fn current_overrides_and_aliases_take_priority_without_writing_settings() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup().await;
             native(&pool, " STEAMWEBHELPER.EXE ", 0, Some(1000)).await;
             super::super::app_mappings::update_app_override(
@@ -1173,7 +1173,7 @@ mod tests {
 
     #[test]
     fn excluded_native_masks_imports_and_cross_boundary_buckets_remain_proportional() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup().await;
             native(&pool, "steamwebhelper.exe", 0, Some(1000)).await;
             pool.execute("INSERT INTO settings (key,value) VALUES ('__app_override::steam.exe','{\"track\":false}')").await.unwrap();
@@ -1209,7 +1209,7 @@ mod tests {
 
     #[test]
     fn historical_filter_reads_only_sensitive_metadata_with_a_budget() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup().await;
             native(&pool, "zen", 0, Some(1000)).await;
             native(&pool, "app-1.0-x64.exe", 1000, Some(2000)).await;
@@ -1249,7 +1249,7 @@ mod tests {
 
     #[test]
     fn per_day_budget_rejects_instead_of_returning_truncated_totals() {
-        tauri::async_runtime::block_on(async {
+        crate::engine::runtime_context::test_block_on(async {
             let pool = setup().await;
             native(&pool, "app", 0, Some(1000)).await;
             native(&pool, "app", 1000, Some(2000)).await;
