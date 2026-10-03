@@ -269,6 +269,7 @@ fn paths(surface: ApiSurface) -> Value {
         }
     });
     let object = paths.as_object_mut().expect("OpenAPI paths object");
+    object.insert("/api/v1/settings/product".into(), json!({"get": get_operation("Bounded shared product policy and owner health at one read point. Revision excludes timestamps. No secrets or client preferences; no read-side writes. Five-second read deadline and 8 KiB response budget.", "ProductSettingsResponse")}));
     object.insert("/api/v1/assets/icons".into(),json!({"get":get_operation_with_parameters(
         "Read cached inline PNG/SVG icons in binary source-key order. Optional after is the preceding next_after cursor; limit is 1..64 (default 64). Page bytes may stop before limit. Clients must continue until next_after is null, enforce total budgets and never publish partial maps on failure. Presentation cache pages are not a cross-page transaction; concurrent updates appear on a later refresh. No filesystem access or icon extraction.",
         "IconPageResponse",vec![query_param("after","string","Exclusive source key from the preceding page, up to 1024 UTF-8 bytes."),query_param("limit","integer","Maximum entries, 1..64.")]
@@ -557,6 +558,50 @@ fn schemas() -> Value {
     let mut schemas = serde_json::Map::new();
 
     schemas.insert("OpenApiDocument".to_string(), open_object_schema(vec![]));
+    schemas.insert(
+        "ProductSettingsResponse".into(),
+        envelope(object_schema(vec![
+            (
+                "revision",
+                json!({"type":"string","pattern":"^[a-f0-9]{64}$"}),
+            ),
+            ("sampled_at_ms", json!({"type":"integer"})),
+            (
+                "last_heartbeat_ms",
+                json!({"type":["integer","null"],"minimum":0}),
+            ),
+            (
+                "last_successful_sample_ms",
+                json!({"type":["integer","null"],"minimum":0}),
+            ),
+            (
+                "settings",
+                object_schema(vec![
+                    ("idle_timeout_secs", json!({"type":"integer","minimum":0})),
+                    (
+                        "timeline_merge_gap_secs",
+                        json!({"type":"integer","minimum":0}),
+                    ),
+                    (
+                        "min_session_secs",
+                        json!({"type":"integer","minimum":60,"maximum":600,"multipleOf":60}),
+                    ),
+                    ("tracking_paused", json!({"type":"boolean"})),
+                    ("audio_participation_enabled", json!({"type":"boolean"})),
+                    ("web_activity_enabled", json!({"type":"boolean"})),
+                    (
+                        "web_activity_port",
+                        json!({"type":"integer","minimum":1024,"maximum":65535}),
+                    ),
+                    ("web_activity_token_present", json!({"type":"boolean"})),
+                    (
+                        "web_activity_url_privacy",
+                        json!({"type":"string","enum":["full","strip_query","domain_only"]}),
+                    ),
+                ]),
+            ),
+        ])),
+    );
     schemas.insert(
         "ApiError".to_string(),
         object_schema(vec![("error", schema_ref("ApiErrorDetail"))]),

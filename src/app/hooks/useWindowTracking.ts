@@ -1,3 +1,4 @@
+import { SnapshotReadController } from "../../shared/lib/snapshotReadController.ts";
 import { useEffect, useState } from "react";
 import { DEFAULT_SETTINGS, type AppSettings } from "../../shared/settings/appSettings";
 import type {
@@ -52,12 +53,22 @@ export function useWindowTracking(options: UseWindowTrackingOptions = {}) {
     let cancelled = false;
     const unlisteners: Array<() => void> = [];
 
+    const settingsOwner = new SnapshotReadController(loadCurrentAppSettings, setAppSettings,
+      error => console.warn("Failed to reload app settings", error), () => 0);
     const init = async () => {
+      try {
+        const settingsOff = await subscribeAppSettingsChanged(() => settingsOwner.refresh(true));
+        if (cancelled) { settingsOff(); return; }
+        unlisteners.push(settingsOff);
+      } catch (error) {
+        if (cancelled) return;
+        console.warn("Settings subscription failed", error);
+      }
+      settingsOwner.refresh();
       try {
         const bootstrap = await loadAppRuntimeBootstrapSnapshot();
         if (cancelled) return;
 
-        setAppSettings(bootstrap.settings);
         setActiveWindow(bootstrap.activeWindow);
         setTrackingStatus(bootstrap.trackingStatus);
         setTrackingRuntimeProbeStatus(bootstrap.trackingRuntimeProbeStatus);
@@ -145,28 +156,14 @@ export function useWindowTracking(options: UseWindowTrackingOptions = {}) {
       }
       unlisteners.push(trackingDataUnlisten);
 
-      const appSettingsChangedUnlisten = await subscribeAppSettingsChanged(async () => {
-        const nextSettings = await loadCurrentAppSettings().catch((error) => {
-          if (!cancelled) {
-            console.warn("Failed to reload app settings after settings change", error);
-          }
-          return null;
-        });
-        if (!cancelled && nextSettings) {
-          setAppSettings(nextSettings);
-        }
-      });
-      if (cancelled) {
-        appSettingsChangedUnlisten();
-        return;
-      }
-      unlisteners.push(appSettingsChangedUnlisten);
+
     };
 
     void init();
 
     return () => {
       cancelled = true;
+      settingsOwner.dispose();
       for (const off of unlisteners) {
         off();
       }

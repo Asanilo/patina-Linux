@@ -112,6 +112,7 @@ fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Build
         commands::settings::cmd_commit_app_settings,
         commands::settings::cmd_commit_classification_settings,
         commands::settings::cmd_get_classification_snapshot,
+        commands::settings::cmd_get_product_settings,
         commands::storage::cmd_get_storage_snapshot,
         commands::storage::cmd_pick_storage_parent,
         commands::storage::cmd_preview_storage_migration,

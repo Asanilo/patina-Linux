@@ -373,6 +373,18 @@ impl<R: Runtime> PatinadRuntimeOutput<PatinadRuntimeReadSnapshot> for TauriPatin
     }
 
     fn tracking_data_changed(&self, event: &RuntimeEventEnvelope) {
+        if let RuntimeEvent::TrackingDataChanged { reason, .. } = &event.event {
+            if matches!(
+                reason.as_str(),
+                "app-settings-changed"
+                    | "tracker-settings-changed"
+                    | "runtime-settings-changed"
+                    | "tracking-paused"
+                    | "tracking-resumed"
+            ) {
+                let _ = self.app.emit("app-settings-changed", serde_json::json!({}));
+            }
+        }
         match &event.event {
             RuntimeEvent::ToolsRuntimeChanged { .. } => {
                 self.request_tools_refresh();

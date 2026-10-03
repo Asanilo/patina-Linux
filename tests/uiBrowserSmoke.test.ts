@@ -279,6 +279,20 @@ function tauriStubFor(path: string) {
             previous:{start_ms:previous.getTime(),end_ms:start,active_ms:0,apps:[]},
             hours:Array.from({length:24},(_,hour)=>({hour,active_ms:hour===0?total:0,categories:hour===0?[...categories].map(([category,active_ms])=>({category,active_ms})):[]}))};
         }
+        if (command === "cmd_get_product_settings") {
+          const stored = loadStoredSettings();
+          const enabled = key => ["1","true","yes","on"].includes(stored[key]);
+          return { revision: "0".repeat(64), sampled_at_ms: Date.now(), last_heartbeat_ms: null,
+            last_successful_sample_ms: null, settings: {
+              idle_timeout_secs: Number(stored.idle_timeout_secs ?? 900),
+              timeline_merge_gap_secs: Number(stored.timeline_merge_gap_secs ?? 180),
+              min_session_secs: Number(stored.min_session_secs ?? 300),
+              tracking_paused: enabled("tracking_paused"), audio_participation_enabled: stored.audio_participation_enabled !== "0",
+              web_activity_enabled: enabled("web_activity_enabled") && !!stored.web_activity_token,
+              web_activity_port: Number(stored.web_activity_port ?? 12345), web_activity_token_present: !!stored.web_activity_token,
+              web_activity_url_privacy: stored.web_activity_url_privacy ?? "full",
+            }};
+        }
         if (command === "cmd_get_classification_snapshot") {
           const prefixes = ["__app_override::", "__web_domain_override::", "__category_color_override::", "__category_label_override::", "__category_default_color_assignment::", "__custom_category::", "__deleted_category::", "__classification_manual_confirmation_migration::"];
           const entries = Object.entries(loadStoredSettings()).filter(([key]) => prefixes.some(prefix => key.startsWith(prefix) && key.length > prefix.length))
@@ -1859,6 +1873,31 @@ try {
       true,
     );
     await waitForExpression(client!, sessionId, "!document.querySelector('.settings-color-scheme-list')");
+  });
+
+  await runTest("settings follow remote policy without rewriting thresholds or discarding local edits", async () => {
+    const idleLabel = COPY["zh-CN"].settings.idleTimeoutLabel;
+    const minLabel = COPY["zh-CN"].settings.minSessionLabel;
+    const idle = `document.querySelector('input[aria-label=' + ${jsonString(JSON.stringify(idleLabel))} + ']')`;
+    const minimum = `document.querySelector('input[aria-label=' + ${jsonString(JSON.stringify(minLabel))} + ']')`;
+    const remote = async (idleSeconds: number) => {
+      await evaluate(client!, sessionId, `(() => {
+        const value = JSON.parse(localStorage.getItem('__time_tracker_smoke_settings') || '{}');
+        value.idle_timeout_secs = '${idleSeconds}';
+        localStorage.setItem('__time_tracker_smoke_settings', JSON.stringify(value));
+        globalThis.__PATINA_SMOKE_EMIT('app-settings-changed', {});
+      })()`);
+    };
+    await remote(60);
+    await waitForExpression(client!, sessionId, `${idle}?.getAttribute('aria-valuetext') === '1 分钟'`);
+    await evaluate(client!, sessionId, `document.querySelector('[aria-label=' + ${jsonString(JSON.stringify(COPY["zh-CN"].settings.increaseMinute(minLabel)))} + ']').click()`);
+    await waitForExpression(client!, sessionId, `${minimum}.value === '6'`);
+    await remote(1200);
+    await waitForExpression(client!, sessionId, `${idle}.getAttribute('aria-valuetext') === '20 分钟' && ${minimum}.value === '6'`);
+    await evaluate(client!, sessionId, `Array.from(document.querySelectorAll('button')).find(node => node.textContent.trim() === ${jsonString(COPY["zh-CN"].settings.cancel)} && !node.disabled).click()`);
+    await waitForExpression(client!, sessionId, `${minimum}.value === '5' && ${idle}.getAttribute('aria-valuetext') === '20 分钟'`);
+    await remote(900);
+    await waitForExpression(client!, sessionId, `${idle}.getAttribute('aria-valuetext') === '15 分钟'`);
   });
 
   await runTest("background delay persists, cancels drafts and stays disabled when optimization is off", async () => {

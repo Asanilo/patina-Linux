@@ -40,6 +40,29 @@ async fn serve(router: Router) -> (Client, tokio::task::JoinHandle<()>) {
 }
 
 #[tokio::test]
+async fn product_settings_decode_effective_policy_and_reject_invalid_snapshots() {
+    let valid = json!({"revision":"a".repeat(64),"sampled_at_ms":100,"last_heartbeat_ms":99,"last_successful_sample_ms":98,
+        "settings":{"idle_timeout_secs":60,"timeline_merge_gap_secs":30,"min_session_secs":300,
+        "tracking_paused":true,"audio_participation_enabled":false,"web_activity_enabled":true,
+        "web_activity_port":12345,"web_activity_token_present":true,"web_activity_url_privacy":"strip_query"}});
+    for (index, body) in [valid.clone(), {let mut v=valid.clone();v["settings"]["web_activity_token_present"]=json!(false);v},
+        {let mut v=valid.clone();v["settings"]["min_session_secs"]=json!(301);v},
+        {let mut v=valid.clone();v["last_heartbeat_ms"]=json!(-1);v},
+        {let mut v=valid.clone();v["revision"]=json!("bad");v},
+        {let mut v=valid.clone();v["padding"]=json!("x".repeat(8192));v},
+    ].into_iter().enumerate() {
+        let router = Router::new().route("/api/v1/settings/product", get(move || {
+            let value = body.clone(); async move { Json(json!({"data":value})) }
+        }));
+        let (client, server) = serve(router).await;
+        let result = client.product_settings().await;
+        if index == 0 { assert_eq!(result.unwrap().settings.idle_timeout_secs, 60); }
+        else { assert!(result.is_err()); }
+        server.abort();
+    }
+}
+
+#[tokio::test]
 async fn conditional_updates_never_fall_back_to_a_legacy_unconditional_endpoint() {
     for advertised in [false, true] {
         let legacy_writes = Arc::new(AtomicUsize::new(0));

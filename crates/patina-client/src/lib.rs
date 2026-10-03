@@ -3,6 +3,7 @@
 //! Hosts negotiate capabilities before using runtime data. Writes are never retried.
 mod activity;
 mod configuration;
+mod product_settings;
 mod dashboard;
 mod error;
 pub mod events;

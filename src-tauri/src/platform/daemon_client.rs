@@ -34,6 +34,12 @@ pub use patina_client::events::{
 };
 
 impl PatinadClient {
+    pub async fn product_settings(
+        &self,
+    ) -> Result<patina_protocol::product_settings::ProductSettingsSnapshot, PatinadClientError>
+    {
+        self.transport.product_settings().await
+    }
     pub(crate) fn from_transport(transport: patina_client::Client) -> Self {
         Self { transport }
     }

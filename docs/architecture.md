@@ -119,7 +119,7 @@ IPC 契约应保持稳定、可解析、可测试。
 
 前端当前保留受控的本地 SQLite 访问，用于：
 
-- 尚未迁移的普通 settings 读取；classification 配置已迁往 owner 快照
+- 白名单列出的 Desktop 表现偏好、本机宿主／凭据配置和四个 WebDAV 配置键；共享产品设置、classification 与 tracker health 已迁往 owner 快照。客户端偏好的物理存储迁移仍待完成，禁止恢复整表 settings 读取
 - 网页明细、域名候选和网页趋势等尚未迁移的客户端读查询
 - Desktop 私有、可重建的 `data.bootstrap_snapshot` 渲染缓存读写
 
@@ -129,6 +129,7 @@ IPC 契约应保持稳定、可解析、可测试。
 - feature 不能直接跳过边界访问底层 DB
 - SQLite 访问应通过 `platform/persistence/*` 暴露的明确出口
 - settings / classification 写入必须经 Rust command 选择当前 owner，命令缺失或 daemon 不可用不得回退前端 SQL；tracker health 只读取 owner 产生的时间戳
+- 共享设置经 `/api/v1/settings/product`／SDK／薄 Desktop command 读取同一事务的生效策略和健康时间，只暴露 browser credential 是否存在。内容 revision 排除心跳及本机表现偏好；客户端启动不得将刚读取的策略写回 owner。设置事件使单请求协调器失效并重读；设置页基于上一份快照保留已编辑字段，未编辑字段跟随后端更新。旧普通写接口仍保留兼容，同字段并发写入的条件提交尚未完成，不能宣称与 classification 相同的冲突保证。
 - classification 配置读取经 `cmd_get_classification_snapshot`／独立 SDK 从 owner 获取固定命名空间的一致快照，不返回其他设置或凭据。内容 revision 与事件序号分离，条件提交在取得数据库写锁后比较 revision；冲突返回 409，不自动重试。旧客户端无条件写入口暂保留。分类迁移的已观察 executable 查询和其他历史读模型仍是待退出的 SQLite 例外。
 - 原始数据库访问适配归 `platform/persistence/*`；上述缓存例外不能扩展为 runtime 写入口
 - `app/services/*` 只保留应用启动、运行时同步或全局偏好写入所需的薄协调，不从 `features/settings/*` 借基础能力

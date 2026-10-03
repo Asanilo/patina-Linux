@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { loadAllSettingRows } from "./settingsPersistence.ts";
+import { loadRemoteBackupSettingRows } from "./settingsPersistence.ts";
 
 export const DEFAULT_WEBDAV_REMOTE_DIR = "/Patina";
 
@@ -38,7 +38,7 @@ function parseTimestamp(value: string | undefined): number | null {
 }
 
 export async function loadRemoteBackupConfig(): Promise<PersistedRemoteBackupConfig | null> {
-  const rows = await loadAllSettingRows();
+  const rows = await loadRemoteBackupSettingRows();
   const record: Record<string, string> = {};
   for (const row of rows) {
     record[row.key] = row.value;
@@ -51,11 +51,6 @@ export async function loadRemoteBackupConfig(): Promise<PersistedRemoteBackupCon
   }
 
   const remoteDir = normalizeRemoteDir(record[WEBDAV_BACKUP_REMOTE_DIR_KEY]);
-  if (record[WEBDAV_BACKUP_REMOTE_DIR_KEY] !== remoteDir) {
-    await commitRemoteBackupSettings({
-      [WEBDAV_BACKUP_REMOTE_DIR_KEY]: remoteDir,
-    });
-  }
 
   return {
     url,

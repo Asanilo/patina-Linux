@@ -4,65 +4,28 @@ use crate::engine::api::types::{
     TrackingPausedRequest,
 };
 
-const DEFAULT_IDLE_TIMEOUT_SECS: u64 = 180;
-const DEFAULT_TIMELINE_MERGE_GAP_SECS: u64 = 30;
-
 pub async fn get_tracker_settings(context: &ApiRuntimeContext) -> RouteResponse {
-    let pool = context.pool();
-
-    let idle_timeout = match crate::data::repositories::tracker_settings::load_idle_timeout_secs(
-        pool,
-        DEFAULT_IDLE_TIMEOUT_SECS,
+    match crate::data::repositories::product_settings::load_snapshot(
+        context.pool(),
+        context.now_ms(),
     )
     .await
     {
-        Ok(v) => v,
-        Err(e) => {
-            return RouteResponse {
-                status: 500,
-                body: serde_json::to_value(ApiError::internal(&e.to_string())).unwrap_or_default(),
-            };
-        }
-    };
-
-    let merge_gap = match crate::data::repositories::tracker_settings::load_timeline_merge_gap_secs(
-        pool,
-        DEFAULT_TIMELINE_MERGE_GAP_SECS,
-    )
-    .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            return RouteResponse {
-                status: 500,
-                body: serde_json::to_value(ApiError::internal(&e.to_string())).unwrap_or_default(),
-            };
-        }
-    };
-
-    let tracking_paused =
-        match crate::data::repositories::tracker_settings::load_tracking_paused_setting(pool).await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                return RouteResponse {
-                    status: 500,
-                    body: serde_json::to_value(ApiError::internal(&e.to_string()))
-                        .unwrap_or_default(),
-                };
-            }
-        };
-
-    RouteResponse {
-        status: 200,
-        body: serde_json::to_value(ApiResponse {
-            data: TrackerSettingsResponse {
-                idle_timeout_secs: idle_timeout,
-                timeline_merge_gap_secs: merge_gap,
-                tracking_paused,
-            },
-        })
-        .unwrap_or_default(),
+        Ok(snapshot) => RouteResponse {
+            status: 200,
+            body: serde_json::to_value(ApiResponse {
+                data: TrackerSettingsResponse {
+                    idle_timeout_secs: snapshot.settings.idle_timeout_secs,
+                    timeline_merge_gap_secs: snapshot.settings.timeline_merge_gap_secs,
+                    tracking_paused: snapshot.settings.tracking_paused,
+                },
+            })
+            .unwrap_or_default(),
+        },
+        Err(error) => RouteResponse {
+            status: 500,
+            body: serde_json::to_value(ApiError::internal(&error)).unwrap_or_default(),
+        },
     }
 }
 

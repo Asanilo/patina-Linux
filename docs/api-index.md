@@ -89,6 +89,7 @@ Current caveats:
 | `/api/v1/backups/restore` | `POST` | Managed tracking daemon | Validate a staged archive, reserve startup restore, and request a controlled restart |
 | `/api/v1/backups/restore/cancel` | `POST` | Managed tracking daemon | Explicitly cancel one failed restore reservation and remove its exact staged archive |
 | `/api/v1/settings/tracker` | `GET` | Implemented | Tracker settings snapshot |
+| `/api/v1/settings/product` | `GET` | Implemented on multi-client branch | Shared effective policy, revision and owner health; excludes credentials and client preferences |
 | `/api/v1/settings/tracker/afk-threshold` | `POST` | Implemented | Update idle timeout threshold |
 | `/api/v1/settings/tracker/pause` | `POST` | Implemented | Set tracking pause state |
 | `/api/v1/settings/classification` | `POST` | Implemented | Commit a validated classification mutation batch |
@@ -1543,6 +1544,35 @@ curl -s -X POST "$PATINA_API_BASE/api/v1/backups/restore/cancel" \
 
 Validation or transaction failures leave the original database usable and retain the owner-only staged archive until this explicit cancellation. Successful restore records a durable receipt before the exact staged file is deleted, so a crash between database commit and status-file update cannot apply the same reservation twice.
 
+### `GET /api/v1/settings/product`
+
+The multi-client branch exposes a single read transaction for shared product
+settings and tracker timestamps. The `data` object contains `revision`,
+`sampled_at_ms`, nullable `last_heartbeat_ms` / `last_successful_sample_ms`, and
+`settings` with:
+
+- `idle_timeout_secs`, `timeline_merge_gap_secs`, `min_session_secs`
+- `tracking_paused`, `audio_participation_enabled`
+- `web_activity_enabled`, `web_activity_port`, `web_activity_token_present`,
+  `web_activity_url_privacy`
+
+Absent idle/continuity settings use the actual tracking defaults, 900/180 seconds.
+The existing tracker endpoint now uses these same defaults. Minimum display
+duration retains the existing 60–600 second range and 60 second increments.
+The revision describes effective settings only; heartbeat updates, credential
+rotation with unchanged presence, and client appearance preferences do not change
+it. This read revision does not yet provide conditional ordinary-setting writes.
+
+The query has a five-second deadline, fixed keys and bounded stored values; the
+wire response is limited to 8 KiB. Oversized selected values fail the whole read.
+Credentials, arbitrary settings, theme, language, window behavior and remote
+backup accounts are excluded. Reads do not repair or persist settings.
+
+Successful nonempty ordinary setting commits publish `app-settings-changed` as a
+tracking-data event; rejected or rolled-back writes do not. Resource changes keep
+their dedicated runtime endpoints. Clients reload a snapshot after notification
+and never automatically retry writes.
+
 ### `GET /api/v1/settings/tracker`
 
 Curl:
@@ -1564,15 +1594,13 @@ Schema:
 {
   "data": {
     "idle_timeout_secs": 900,
-    "timeline_merge_gap_secs": 30,
+    "timeline_merge_gap_secs": 180,
     "tracking_paused": false
   }
 }
 ```
 
-Known gap:
-
-- Current API defaults must stay aligned with frontend/Rust startup defaults.
+Defaults are shared with the Rust tracking owner. Reading this endpoint does not persist them.
 
 ### `POST /api/v1/settings/tracker/afk-threshold`
 

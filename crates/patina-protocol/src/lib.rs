@@ -2,6 +2,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod configuration;
+pub mod product_settings;
 pub mod activity;
 pub mod dashboard;
 pub mod history;

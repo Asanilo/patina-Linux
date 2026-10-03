@@ -1,5 +1,23 @@
 use serde::{Deserialize, Serialize};
 
+pub const DEFAULT_IDLE_TIMEOUT_SECS: u64 = 900;
+pub const DEFAULT_TIMELINE_MERGE_GAP_SECS: u64 = 180;
+
+pub fn parse_min_session_secs(raw: Option<&str>) -> u64 {
+    let value = raw
+        .map(str::trim)
+        .and_then(|v| {
+            if v.is_empty() {
+                Some(0.0)
+            } else {
+                v.parse::<f64>().ok()
+            }
+        })
+        .filter(|v| v.is_finite())
+        .unwrap_or(300.0);
+    (value.clamp(60.0, 600.0) / 60.0).round() as u64 * 60
+}
+
 pub const DEFAULT_LAUNCH_AT_LOGIN: bool = true;
 pub const DEFAULT_BACKGROUND_TRACKING_AT_LOGIN: bool = true;
 pub const DEFAULT_START_MINIMIZED: bool = true;

@@ -17,8 +17,8 @@ use std::collections::HashMap;
 
 const TRACKER_TIMESTAMP_PERSIST_INTERVAL_MS: i64 = 3_000;
 const TRACKING_SETTINGS_CACHE_TTL_MS: i64 = 5_000;
-const DEFAULT_CONTINUITY_WINDOW_SECS: u64 = 180;
-const DEFAULT_SUSTAINED_PARTICIPATION_SECS: u64 = 900;
+use crate::domain::settings::DEFAULT_IDLE_TIMEOUT_SECS as DEFAULT_SUSTAINED_PARTICIPATION_SECS;
+use crate::domain::settings::DEFAULT_TIMELINE_MERGE_GAP_SECS as DEFAULT_CONTINUITY_WINDOW_SECS;
 
 pub(super) struct TrackingLoopState {
     pub continuity_window_secs: u64,

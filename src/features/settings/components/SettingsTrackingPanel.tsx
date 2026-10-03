@@ -41,8 +41,8 @@ function MinuteStepperSlider({
 }: MinuteStepperSliderProps) {
   const canDecrease = minutes > minMinutes;
   const canIncrease = minutes < maxMinutes;
-  const updateMinutes = (nextMinutes: number) => onMinutesChange(clampMinute(nextMinutes, minMinutes, maxMinutes));
-  const sliderProgress = ((minutes - minMinutes) / (maxMinutes - minMinutes)) * 100;
+  const updateMinutes = (nextMinutes: number) => onMinutesChange(clampMinute(Math.round(nextMinutes), minMinutes, maxMinutes));
+  const sliderProgress = ((clampMinute(minutes, minMinutes, maxMinutes) - minMinutes) / (maxMinutes - minMinutes)) * 100;
 
   return (
     <div className="flex w-full max-w-[224px] items-center gap-2.5 md:justify-self-end">
@@ -62,7 +62,8 @@ function MinuteStepperSlider({
           min={minMinutes}
           max={maxMinutes}
           step={1}
-          value={minutes}
+          value={clampMinute(minutes, minMinutes, maxMinutes)}
+          aria-valuetext={UI_TEXT.settings.minuteValue(minutes)}
           onChange={(event) => updateMinutes(Number(event.target.value))}
           aria-label={ariaLabel}
           style={{

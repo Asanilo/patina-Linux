@@ -10,7 +10,6 @@ import type { AppSettings } from "./appSettingsRuntimeService.ts";
 import {
   getCurrentTrackingSnapshot,
   getTrackerHealthRuntimeSnapshot,
-  setAfkThreshold,
 } from "../../platform/runtime/trackingRuntimeGateway.ts";
 import {
   loadCurrentAppSettings,
@@ -30,7 +29,6 @@ export interface AppRuntimeBootstrapSnapshot {
 
 interface AppRuntimeBootstrapDeps {
   loadCurrentAppSettings: () => Promise<AppSettings>;
-  setAfkThreshold: (seconds: number) => Promise<void>;
   initializeProcessMapperRuntime: () => Promise<void>;
   getCurrentTrackingSnapshot: typeof getCurrentTrackingSnapshot;
   loadTrackerHealthSnapshot: (nowMs?: number) => Promise<TrackerHealthSnapshot>;
@@ -45,7 +43,6 @@ interface TrackerHealthSnapshotDeps {
 
 const appRuntimeBootstrapDeps: AppRuntimeBootstrapDeps = {
   loadCurrentAppSettings,
-  setAfkThreshold,
   initializeProcessMapperRuntime,
   getCurrentTrackingSnapshot,
   loadTrackerHealthSnapshot,
@@ -98,10 +95,6 @@ export async function loadAppRuntimeBootstrapSnapshotWithDeps(
 ): Promise<AppRuntimeBootstrapSnapshot> {
   const settings = await deps.loadCurrentAppSettings();
   const reportWarning = deps.reportWarning ?? console.warn;
-  await deps.setAfkThreshold(settings.idleTimeoutSecs).catch((error) => {
-    reportWarning("Failed to sync AFK threshold during app bootstrap", error);
-  });
-
   await deps.initializeProcessMapperRuntime().catch((error) => {
     reportWarning("Failed to initialize process mapper during app bootstrap", error);
   });

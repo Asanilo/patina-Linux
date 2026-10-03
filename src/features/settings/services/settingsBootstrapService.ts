@@ -16,13 +16,11 @@ export interface SettingsPageBootstrapData {
 type SettingsPageBootstrapDeps = {
   getAppVersion: () => Promise<string>;
   loadAppSettings: () => Promise<AppSettings>;
-  setSettingsBootstrapCache: (bootstrap: SettingsPageBootstrapData) => void;
 };
 
 const settingsPageBootstrapDeps: SettingsPageBootstrapDeps = {
   getAppVersion: async () => getAppVersion().catch(() => "unknown"),
   loadAppSettings,
-  setSettingsBootstrapCache,
 };
 
 export async function loadSettingsPageBootstrapWithDeps(
@@ -45,7 +43,6 @@ export async function loadSettingsPageBootstrapWithDeps(
     settings: mergedSettings,
     appVersion,
   };
-  deps.setSettingsBootstrapCache(bootstrap);
   return bootstrap;
 }
 
@@ -67,5 +64,9 @@ export function getSettingsPageBootstrapCache(): SettingsPageBootstrapData | nul
 }
 
 export async function prewarmSettingsBootstrapCache(): Promise<SettingsPageBootstrapData> {
-  return loadSettingsPageBootstrap();
+  const bootstrap = await loadSettingsPageBootstrap();
+  setSettingsBootstrapCache(bootstrap);
+  return bootstrap;
 }
+
+export { onAppSettingsChanged as subscribeSettingsChanges } from "../../../platform/runtime/appSettingsEventGateway.ts";

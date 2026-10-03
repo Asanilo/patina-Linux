@@ -55,7 +55,7 @@ HTTP API 索引和源码以当前实现为准；索引中历史的 unreleased/st
 | --- | --- | --- | --- |
 | M0 | 工作区、缺口表、owner 决策、阶段计划与长期规则 | 新会话能准确继续；稳定 main 不受开发影响 | 已完成 |
 | M1 | 独立 Rust 传输／协议基础，Desktop 接入；同步契约和 SDK 回归 | 第二个非 Tauri 进程可使用相同连接基础；请求、错误和 SSE 帧只有一份传输实现；通用重连／快照协调从宿主提取 | M1a、M1b 已实现并验证 |
-| M2 | 以“今天 → 应用／网页详情 → 历史”为切片，补最小读 API，迁移 Tauri；统一产品配置读取 | Tauri 作为标准客户端完成核心链路，统计规则由后端负责 | M2a–M2e、M2g–M2h 已完成；网页与普通设置仍待迁移 |
+| M2 | 以“今天 → 应用／网页详情 → 历史”为切片，补最小读 API，迁移 Tauri；统一产品配置读取 | Tauri 作为标准客户端完成核心链路，统计规则由后端负责 | M2a–M2e、M2g–M2i 已完成；网页迁移、客户端偏好存储和普通设置条件写入仍待完成 |
 | M3 | 浏览器会话和适配层；共享 React 核心界面，复用 Quiet Pro | Tauri＋Web 并行读取／修改分类并同步，真实浏览器验收 | 待实施 |
 | M4 | Rust SDK typed 能力逐步补全，TUI 接入同一核心链路 | 实际交互式 TUI 可查看／筛选／修改分类，并参与同步；CLI 示例不算完成 | 待实施 |
 | M5 | GPUI 客户端，同一能力和同步契约，独立视图 | 可运行 GPUI 核心链路和四端同步验收；评估启动、资源和维护成本 | 待实施 |
@@ -303,3 +303,20 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 实际构建的独立 `patinad` 已保存并核对 ELF 和动态依赖，未链接 GTK／WebKit／GLib；仍需要 XCB、X11、PulseAudio 等 Linux 系统库，不能称为静态单文件。二进制 SHA256 为 `20c604654e2596ee1de404aa47ecf0e2833607c7b2d9992395e81c095f39135a`。在无宿主显示／D-Bus／音频连接的新 Local profile 下，两个独立 SDK 进程观察同一提交事件；未认证读取拒绝，SIGINT 正常退出，再次启动取得 lease，分类设置和 migration checksum 保留，SQLite integrity 为 ok。
 - 证据：`tmp/acceptance/multi-client-m6a-headless/` 保存二进制与依赖／迁移对照；各项门禁见 `tmp/acceptance/m6a-*.log`；隔离运行证据在 `/tmp/patina-independent-client-2td9q_7y/`。没有触碰生产 profile、安装、推送、合并或发布。图形硬件追踪、独立安装包及跨客户端 UI 不属于此次自动验收结论。
 - 整体阶段继续：普通共享设置／客户端偏好分离、网页产品决定及迁移、查询 admission／超时、契约生成和旧 replay 退出仍待完成。M6 的独立安装、兼容和发布集成也未完成；不得把本切片标成整个多客户端基础已交付。
+
+### M2i 执行设计：共享设置读取与事件
+
+- 新建 product settings 有界快照：同一只读事务返回生效的追踪／时间连续性规则、最短展示片段、暂停、audio／browser 配置及 owner 健康时间。只返回 browser token 是否存在，不返回凭据、界面偏好、远程备份账号或任意 settings key。revision 只描述设置内容，心跳变化不使其失效。
+- 默认 idle／continuity 值以追踪 owner 的 900／180 秒为准，消除旧 API 的 180／30 秒默认值差异。现有用户存储的数字仍按 owner 解析，Desktop 不再用滑块范围重新裁剪后端的实际值；最短展示片段继续沿用既有 60–600 秒、60 秒步长策略。
+- Desktop 设置合成改为共享快照加明确白名单的客户端／本机配置；共享读取失败不能退回 SQL 或默认值。删除整表 settings 读取与 tracker timestamp SQL；远程备份暂保留具名四键读取，但读取不再自动写入路径规范化。物理客户端偏好存储及旧 app-settings 写接口兼容仍是后续工作，不能把本切片称为完全分离。
+- 普通设置 API 在提交后发出刷新事件，Desktop 将明确的设置原因转成本地 app-settings 通知，不在每次采样时重读设置。后续需验证已有页面异步读取的失效顺序、跨端通知和断连恢复，避免较旧读取覆盖新的已提交状态。新 UI 与网页两项待讨论行为均不在此变更范围。
+
+### M2i 核验结果
+
+- 共享设置 snapshot／协议／SDK／OpenAPI／Desktop command 已落地。固定键及单值字节预算、只读事务和超时共同限制查询；修复超长 Unicode 被截断后先解码的问题，超限在返回字段内容前失败。测试证明无凭据泄露、GET 不修复数据、健康／主题／仅凭据轮换不改变配置 revision，以及暂停和策略变化改变 revision。
+- Desktop 共享设置与健康时间不再读 SQL，整表 settings getter 已删除。只保留明确列出的 Desktop／本机凭据键及 WebDAV 四键；远端备份读取不再偷偷保存路径规范化。普通 app-settings 写接口仍有兼容用途，物理客户端偏好存储尚未迁移，不能据此宣称 Desktop 全部退出 SQLite。
+- 追踪默认值收敛到 owner 的 900／180 秒；Desktop 不再在启动时把读取的 idle 阈值写回后端。已有设置控件显示后端实际阈值（非整分钟显示秒），操作范围保持原状，外部设置的 60 秒不会被展示成 5 分钟或在无关保存时改写。
+- 普通 API 提交后通知其他客户端，空批次和触发器导致的事务失败不发变更事件。真实 HTTP 测试对照独立 SDK 与 Desktop facade 的 revision／内容及新旧 tracker endpoint，验证写后 SSE 和回滚后的状态。Desktop 转发设置原因，主窗口与设置页共用已有读取协调器，丢弃过期响应；设置页用上一快照区分编辑字段，刷新未编辑值并保留草稿，取消后返回最新后端值。同字段普通写仍无 CAS 保证，后续必须单独完成。
+- 最终前端门禁通过 63 个 TypeScript 文件、43 项浏览器检查和原 bundle 预算；浏览器实际验证远端阈值更新、保留本地编辑及取消后的最新值。SDK 35 项测试与 Clippy 通过；最终 `check:rust` 为 756 passed / 21 ignored，`check:daemon` 为 599 passed / 10 ignored，均含对应依赖／边界和 Clippy。
+- 初轮门禁发现 SDK 的 Clippy 风格告警、OpenAPI 大 JSON 宏的递归限制、新测试类型路径、Unicode 超限处理及旧默认值断言，均已修复。前端／SDK 的最终证据为 `tmp/acceptance/m2i-complete-gate.log`；随后仅 Rust 修正，最终证据为 `tmp/acceptance/m2i-rust-verified.log` 与 `tmp/acceptance/m2i-daemon-verified.log`，未重复未变化的前端／SDK。
+- 本切片只做本地源码与提交，没有打包、安装、推送或合并 main。下一执行范围仍为客户端偏好物理归属、普通配置条件写入、网页决定与迁移、读取 admission、契约生成及旧业务／replay 分支退出；独立安装与新客户端产品阶段仍不能视为完成。

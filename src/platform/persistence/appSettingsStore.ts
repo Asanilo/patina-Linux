@@ -2,9 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   clearAllSessionWindowTitles,
   deleteSessionsBefore,
-  loadAllSettingRows,
-  loadSettingTimestamp,
+  loadDesktopSettingRows,
 } from "./settingsPersistence.ts";
+import { loadProductSettingsSnapshot } from "./productSettingsSnapshot.ts";
 import {
   DEFAULT_SETTINGS,
   BACKGROUND_OPTIMIZATION_DELAY_RANGE,
@@ -18,8 +18,6 @@ import {
   type WebActivityUrlPrivacy,
 } from "../../shared/settings/appSettings.ts";
 
-const TRACKER_LAST_HEARTBEAT_KEY = "__tracker_last_heartbeat_ms";
-const TRACKER_LAST_SUCCESSFUL_SAMPLE_KEY = "__tracker_last_successful_sample_ms";
 const COMMIT_APP_SETTINGS_COMMAND = "cmd_commit_app_settings";
 
 export type { AppSettings };
@@ -364,12 +362,12 @@ export function buildRawAppSettingsPatch(patch: AppSettingsPatch): Record<string
 }
 
 export async function loadAppSettings(): Promise<AppSettings> {
-  const rows = await loadAllSettingRows();
+  const [rows, product] = await Promise.all([loadDesktopSettingRows(), loadProductSettingsSnapshot()]);
   const record: Record<string, string> = {};
   for (const row of rows) {
     record[row.key] = row.value;
   }
-  return normalizeSettingsRecord(record);
+  return { ...normalizeSettingsRecord(record), ...product.settings };
 }
 
 export async function saveAppSetting<K extends keyof AppSettings>(
@@ -394,12 +392,8 @@ export async function clearAllWindowTitles(): Promise<void> {
 }
 
 export async function loadTrackerHealthTimestamp(): Promise<number | null> {
-  const lastSampleMs = await loadSettingTimestamp(TRACKER_LAST_SUCCESSFUL_SAMPLE_KEY);
-  if (lastSampleMs !== null) {
-    return lastSampleMs;
-  }
-
-  return loadSettingTimestamp(TRACKER_LAST_HEARTBEAT_KEY);
+  const snapshot = await loadProductSettingsSnapshot();
+  return snapshot.lastSuccessfulSampleMs ?? snapshot.lastHeartbeatMs;
 }
 
 export function buildAppSettingMutations(

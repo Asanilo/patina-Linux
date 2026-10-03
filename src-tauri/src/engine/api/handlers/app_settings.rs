@@ -8,6 +8,24 @@ use crate::engine::api::types::{
 
 const MAX_APP_SETTING_MUTATIONS: usize = 256;
 
+pub async fn get_product_settings(context: &ApiRuntimeContext) -> RouteResponse {
+    match crate::data::repositories::product_settings::load_snapshot(
+        context.pool(),
+        context.now_ms(),
+    )
+    .await
+    {
+        Ok(snapshot) => RouteResponse {
+            status: 200,
+            body: serde_json::to_value(ApiResponse { data: snapshot }).unwrap_or_default(),
+        },
+        Err(error) => RouteResponse {
+            status: 500,
+            body: serde_json::to_value(ApiError::internal(&error)).unwrap_or_default(),
+        },
+    }
+}
+
 pub async fn commit_app_settings(context: &ApiRuntimeContext, body: &[u8]) -> RouteResponse {
     let request: AppSettingsMutationsRequest = match serde_json::from_slice(body) {
         Ok(request) => request,
@@ -35,13 +53,18 @@ pub async fn commit_app_settings(context: &ApiRuntimeContext, body: &[u8]) -> Ro
     }
 
     match commit_app_setting_mutations(context.pool(), &mutations).await {
-        Ok(()) => RouteResponse {
-            status: 200,
-            body: serde_json::to_value(ApiResponse {
-                data: serde_json::json!({"ok": true}),
-            })
-            .unwrap_or_default(),
-        },
+        Ok(()) => {
+            if !mutations.is_empty() {
+                context.emit_tracking_data_changed("app-settings-changed");
+            }
+            RouteResponse {
+                status: 200,
+                body: serde_json::to_value(ApiResponse {
+                    data: serde_json::json!({"ok": true}),
+                })
+                .unwrap_or_default(),
+            }
+        }
         Err(error) => RouteResponse {
             status: 500,
             body: serde_json::to_value(ApiError::internal(&error)).unwrap_or_default(),

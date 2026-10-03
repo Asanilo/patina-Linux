@@ -38,7 +38,6 @@ export function runRuntimeEffectsTests() {
 
     const snapshot = await loadAppRuntimeBootstrapSnapshotWithDeps({
       loadCurrentAppSettings: async () => settings,
-      setAfkThreshold: async () => undefined,
       initializeProcessMapperRuntime: async () => {
         throw mapperError;
       },

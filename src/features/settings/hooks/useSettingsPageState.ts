@@ -1,9 +1,11 @@
+import { SnapshotReadController } from "../../../shared/lib/snapshotReadController.ts";
+import { rebaseSettingsDraft } from "../services/settingsDraftRebase.ts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getUiTextLanguage, setUiTextLanguage, UI_TEXT } from "../../../shared/copy/uiText.ts";
 import type { QuietToastTone } from "../../../shared/components/QuietToast";
 import { useQuietDialogs } from "../../../shared/hooks/useQuietDialogs";
 import { getSettingsBootstrapCache, setSettingsBootstrapCache } from "../services/settingsBootstrapCache";
-import { loadSettingsPageBootstrap } from "../services/settingsBootstrapService.ts";
+import { loadSettingsPageBootstrap, subscribeSettingsChanges } from "../services/settingsBootstrapService.ts";
 import { SettingsRuntimeAdapterService } from "../services/settingsRuntimeAdapterService";
 import {
   commitPreparedBackupRestoreFlow,
@@ -40,9 +42,7 @@ const IDLE_TIMEOUT_MINUTES_RANGE = { min: 5, max: 30 } as const;
 const TIMELINE_MERGE_GAP_MINUTES_RANGE = { min: 1, max: 5 } as const;
 const MIN_SESSION_MINUTES_RANGE = { min: 1, max: 10 } as const;
 
-const clampMinute = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-const secondsToMinute = (seconds: number, min: number, max: number) =>
-  clampMinute(Math.round(seconds / 60), min, max);
+const secondsToMinute = (seconds: number) => seconds / 60;
 
 export interface UseSettingsPageStateOptions {
   onSettingsChanged: (settings: AppSettings) => void;
@@ -61,13 +61,16 @@ export function useSettingsPageState({
 }: UseSettingsPageStateOptions) {
   const { confirm, dialogs } = useQuietDialogs();
   const initialBootstrap = getSettingsBootstrapCache();
-  const initialBootstrapRef = useRef(initialBootstrap);
   const [savedSettings, setSavedSettings] = useState<AppSettings | null>(
     () => (initialBootstrap ? { ...initialBootstrap.settings } : null),
   );
   const [draftSettings, setDraftSettings] = useState<AppSettings | null>(
     () => (initialBootstrap ? { ...initialBootstrap.settings } : null),
   );
+  const savedSettingsRef = useRef(savedSettings);
+  const draftSettingsRef = useRef(draftSettings);
+  savedSettingsRef.current = savedSettings;
+  draftSettingsRef.current = draftSettings;
   const [loading, setLoading] = useState(() => !initialBootstrap);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [localApiActionStatus, setLocalApiActionStatus] = useState<
@@ -82,7 +85,6 @@ export function useSettingsPageState({
   const [isExportingBackup, setIsExportingBackup] = useState(false);
   const [isRestoringBackup, setIsRestoringBackup] = useState(false);
   const [appVersion, setAppVersion] = useState(() => initialBootstrap?.appVersion ?? "-");
-  const hasUnsavedChangesRef = useRef(false);
   const cleanupOptions = buildCleanupOptions();
 
   const notify = useCallback((message: string, tone: QuietToastTone = "info") => {
@@ -99,35 +101,28 @@ export function useSettingsPageState({
 
   useEffect(() => {
     let cancelled = false;
-    const load = async () => {
-      const hadCacheAtStart = Boolean(initialBootstrapRef.current);
-      if (!hadCacheAtStart) {
-        setLoading(true);
-      }
-      try {
-        const bootstrap = await loadSettingsPageBootstrap();
-        setSettingsBootstrapCache({
-          settings: { ...bootstrap.settings },
-          appVersion: bootstrap.appVersion,
-        });
-        if (cancelled) return;
-        if (!hasUnsavedChangesRef.current) {
-          setSavedSettings({ ...bootstrap.settings });
-          setDraftSettings({ ...bootstrap.settings });
-        }
-        setAppVersion(bootstrap.appVersion);
-      } catch (error) {
-        console.error("load settings bootstrap failed", error);
-      } finally {
-        if (!cancelled && !hadCacheAtStart) {
-          setLoading(false);
-        }
-      }
-    };
-    void load();
-    return () => {
-      cancelled = true;
-    };
+    let unsubscribe: (() => void) | undefined;
+    const owner = new SnapshotReadController(loadSettingsPageBootstrap, bootstrap => {
+      setSettingsBootstrapCache({settings: {...bootstrap.settings}, appVersion: bootstrap.appVersion});
+      const nextDraft = rebaseSettingsDraft(savedSettingsRef.current, draftSettingsRef.current, bootstrap.settings);
+      savedSettingsRef.current = {...bootstrap.settings};
+      draftSettingsRef.current = nextDraft;
+      setSavedSettings(savedSettingsRef.current);
+      setDraftSettings(nextDraft);
+      setAppVersion(bootstrap.appVersion);
+      setLoading(false);
+    }, error => {
+      console.error("load settings bootstrap failed", error);
+      setLoading(false);
+    }, () => 0);
+    void subscribeSettingsChanges(() => owner.refresh(true)).then(off => {
+      if (cancelled) { off(); return; }
+      unsubscribe = off;
+      owner.refresh();
+    }).catch(error => {
+      if (!cancelled) { console.error("settings subscription failed", error); owner.refresh(); }
+    });
+    return () => { cancelled = true; owner.dispose(); unsubscribe?.(); };
   }, []);
 
   const hasUnsavedChanges = (() => {
@@ -137,10 +132,6 @@ export function useSettingsPageState({
     const keys = Object.keys(savedSettings) as Array<keyof AppSettings>;
     return keys.some((key) => savedSettings[key] !== draftSettings[key]);
   })();
-
-  useEffect(() => {
-    hasUnsavedChangesRef.current = hasUnsavedChanges;
-  }, [hasUnsavedChanges]);
 
   useEffect(() => {
     onDirtyChange?.(hasUnsavedChanges);
@@ -434,25 +425,13 @@ export function useSettingsPageState({
   }, [notify]);
 
   const idleTimeoutMinutes = draftSettings
-    ? secondsToMinute(
-      draftSettings.idleTimeoutSecs,
-      IDLE_TIMEOUT_MINUTES_RANGE.min,
-      IDLE_TIMEOUT_MINUTES_RANGE.max,
-    )
+    ? secondsToMinute(draftSettings.idleTimeoutSecs)
     : IDLE_TIMEOUT_MINUTES_RANGE.min;
   const timelineMergeGapMinutes = draftSettings
-    ? secondsToMinute(
-      draftSettings.timelineMergeGapSecs,
-      TIMELINE_MERGE_GAP_MINUTES_RANGE.min,
-      TIMELINE_MERGE_GAP_MINUTES_RANGE.max,
-    )
+    ? secondsToMinute(draftSettings.timelineMergeGapSecs)
     : TIMELINE_MERGE_GAP_MINUTES_RANGE.min;
   const minSessionMinutes = draftSettings
-    ? secondsToMinute(
-      draftSettings.minSessionSecs,
-      MIN_SESSION_MINUTES_RANGE.min,
-      MIN_SESSION_MINUTES_RANGE.max,
-    )
+    ? secondsToMinute(draftSettings.minSessionSecs)
     : MIN_SESSION_MINUTES_RANGE.min;
 
   return {

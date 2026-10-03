@@ -6,7 +6,7 @@ use crate::platform::linux::foreground as tracker;
 #[cfg(target_os = "windows")]
 use crate::platform::windows::foreground as tracker;
 
-const DEFAULT_AFK_THRESHOLD_SECS: u64 = 900;
+use crate::domain::settings::DEFAULT_IDLE_TIMEOUT_SECS as DEFAULT_AFK_THRESHOLD_SECS;
 
 pub async fn initialize_tracker(
     data: &TrackingRuntimeDataStore,

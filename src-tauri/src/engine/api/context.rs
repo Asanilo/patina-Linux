@@ -282,7 +282,7 @@ mod tests {
         let response = crate::engine::api::handlers::settings::get_tracker_settings(&context).await;
 
         assert_eq!(response.status, 200);
-        assert_eq!(response.body["data"]["idle_timeout_secs"], 180);
+        assert_eq!(response.body["data"]["idle_timeout_secs"], 900);
         pool.close().await;
         std::fs::remove_dir_all(root).unwrap();
     }

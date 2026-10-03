@@ -446,6 +446,65 @@ async fn independent_and_desktop_clients_observe_the_same_committed_classificati
         native.classification_snapshot().await.unwrap().entries
     );
     drop(cleanup_events);
+    let original = native.product_settings().await.unwrap();
+    assert_eq!(
+        original.settings,
+        desktop.product_settings().await.unwrap().settings
+    );
+    assert_eq!(original.settings.idle_timeout_secs, 900);
+    let mut settings_events = native.open_event_stream(None).await.unwrap();
+    desktop
+        .commit_app_settings(vec![crate::engine::api::types::AppSettingMutationRequest {
+            key: "timeline_merge_gap_secs".into(),
+            value: "240".into(),
+        }])
+        .await
+        .unwrap();
+    let event = tokio::time::timeout(Duration::from_secs(2), settings_events.next_event())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let envelope: patina_protocol::events::RuntimeEventEnvelope =
+        serde_json::from_str(&event.data).unwrap();
+    assert!(
+        matches!(envelope.event, patina_protocol::events::RuntimeEvent::TrackingDataChanged { ref reason, .. } if reason == "app-settings-changed")
+    );
+    let changed = native.product_settings().await.unwrap();
+    assert_eq!(changed.settings.timeline_merge_gap_secs, 240);
+    assert_ne!(changed.revision, original.revision);
+    assert_eq!(
+        changed.settings,
+        desktop.product_settings().await.unwrap().settings
+    );
+    let legacy: crate::engine::api::types::TrackerSettingsResponse = native
+        .get_json("/api/v1/settings/tracker", "tracker settings")
+        .await
+        .unwrap();
+    assert_eq!(legacy.idle_timeout_secs, changed.settings.idle_timeout_secs);
+    assert_eq!(
+        legacy.timeline_merge_gap_secs,
+        changed.settings.timeline_merge_gap_secs
+    );
+    desktop.commit_app_settings(vec![]).await.unwrap();
+    pool.execute("CREATE TRIGGER reject_policy BEFORE INSERT ON settings WHEN NEW.key='timeline_merge_gap_secs' BEGIN SELECT RAISE(ABORT,'synthetic write failure'); END;").await.unwrap();
+    assert!(desktop
+        .commit_app_settings(vec![crate::engine::api::types::AppSettingMutationRequest {
+            key: "timeline_merge_gap_secs".into(),
+            value: "300".into(),
+        }])
+        .await
+        .is_err());
+    assert_eq!(
+        native.product_settings().await.unwrap().revision,
+        changed.revision
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), settings_events.next_event())
+            .await
+            .is_err()
+    );
+    drop(settings_events);
     drop(reconnected);
     drop(desktop_events);
     shutdown.shutdown();

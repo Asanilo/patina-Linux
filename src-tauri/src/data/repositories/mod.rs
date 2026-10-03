@@ -9,6 +9,7 @@ pub mod daily_activity;
 pub mod exact_history;
 pub mod icon_cache;
 pub mod observed_apps;
+pub mod product_settings;
 pub mod scheduled_backup;
 pub mod session_title_samples;
 pub mod sessions;

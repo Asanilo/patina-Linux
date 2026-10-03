@@ -301,3 +301,21 @@ pub async fn cmd_get_classification_snapshot(
     )
     .await
 }
+
+#[tauri::command]
+pub async fn cmd_get_product_settings(
+    app: AppHandle,
+) -> Result<patina_protocol::product_settings::ProductSettingsSnapshot, String> {
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        return client
+            .product_settings()
+            .await
+            .map_err(|error| error.to_string());
+    }
+    let pool = crate::data::sqlite_pool::wait_for_sqlite_pool(&app).await?;
+    crate::data::repositories::product_settings::load_snapshot(
+        &pool,
+        crate::engine::runtime_context::now_ms().min(i64::MAX as u64) as i64,
+    )
+    .await
+}
