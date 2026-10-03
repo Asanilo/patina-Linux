@@ -5,7 +5,6 @@ import { SnapshotReadController } from "../../../shared/lib/snapshotReadControll
 import { getUiTextLanguage } from "../../../shared/copy/uiText.ts";
 export interface UseStatsResult {
   dashboard: DashboardReadModel;
-  icons: Record<string, string>;
   readError: unknown | null;
 }
 export function useDashboardStats(
@@ -51,5 +50,5 @@ export function useDashboardStats(
     lastInvalidation.current = { refreshKey, mappingVersion };
   }, [refreshKey, mappingVersion, foregroundRefreshEnabled]);
   const dashboard = useMemo(() => buildDashboardReadModel(classificationReady ? snapshot?.product ?? null : null), [classificationReady, snapshot, mappingVersion, language]);
-  return { dashboard, icons: snapshot?.icons ?? {}, readError };
+  return { dashboard, readError };
 }

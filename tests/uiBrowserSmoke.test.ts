@@ -224,6 +224,11 @@ function tauriStubFor(path: string) {
       ${HISTORY_FIXTURE_CODE}
 
       export async function invoke(command, payload = {}) {
+        if (command === "cmd_get_cached_icon_page") {
+          globalThis.__PATINA_SMOKE_ICON_CALLS=(globalThis.__PATINA_SMOKE_ICON_CALLS??0)+1;
+          if (globalThis.__PATINA_SMOKE_ICON_BLOCK) await new Promise(resolve=>{globalThis.__PATINA_SMOKE_ICON_RELEASE=resolve;});
+          return {entries:[],next_after:null};
+        }
         if (command === "cmd_get_exact_history") {
           globalThis.__PATINA_SMOKE_HISTORY_CALLS = (globalThis.__PATINA_SMOKE_HISTORY_CALLS ?? 0) + 1;
           if (globalThis.__PATINA_SMOKE_HISTORY_ERROR) throw new Error(globalThis.__PATINA_SMOKE_HISTORY_ERROR);
@@ -870,6 +875,7 @@ try {
     deviceScaleFactor: 1,
     mobile: false,
   }, sessionId);
+  await client.command("Page.addScriptToEvaluateOnNewDocument", {source:"globalThis.__PATINA_SMOKE_ICON_BLOCK = sessionStorage.getItem('icons-initial-tested') !== '1'; sessionStorage.setItem('icons-initial-tested','1');"}, sessionId);
   await client.command("Page.navigate", { url: appUrl }, sessionId);
 
   await runTest("Vite page renders dashboard in a real browser", async () => {
@@ -890,6 +896,12 @@ try {
         `dashboard marker ${marker}`,
       );
     }
+  });
+
+  await runTest("slow icon reads do not delay confirmed activity", async () => {
+    await waitForExpression(client!,sessionId,`typeof globalThis.__PATINA_SMOKE_ICON_RELEASE === 'function'`);
+    await waitForExpression(client!,sessionId,`document.querySelector('.dashboard-top-app-detail') !== null`);
+    await evaluate(client!,sessionId,`(() => {globalThis.__PATINA_SMOKE_ICON_BLOCK=false;globalThis.__PATINA_SMOKE_ICON_RELEASE();delete globalThis.__PATINA_SMOKE_ICON_RELEASE;})()`);
   });
 
   await runTest("Dashboard marks stale snapshots on read failure and recovers", async () => {

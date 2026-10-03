@@ -1,4 +1,4 @@
-import type { AggregateSessionRecord } from "../../src/platform/persistence/sessionReadRepository.ts";
+import type { AggregateSessionRecord } from "../../src/shared/types/sessions.ts";
 import type { DailyAppsRead } from "../../src/platform/persistence/dailyAppsRepository.ts";
 import { AppClassification } from "../../src/shared/classification/appClassification.ts";
 

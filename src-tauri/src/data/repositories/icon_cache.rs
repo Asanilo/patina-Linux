@@ -1,42 +1,9 @@
 use crate::domain::backup::BackupIconCache;
-use sqlx::{Pool, Row, Sqlite, Transaction};
-use std::collections::HashMap;
+use sqlx::{Pool, Sqlite, Transaction};
+#[cfg(test)]
+use sqlx::Row;
 
-pub async fn fetch_icon_map(pool: &Pool<Sqlite>) -> Result<HashMap<String, String>, String> {
-    let rows = sqlx::query("SELECT exe_name, icon_base64 FROM icon_cache")
-        .fetch_all(pool)
-        .await
-        .map_err(|error| format!("failed to read icon cache map: {error}"))?;
-
-    let mut map = HashMap::new();
-    for row in rows {
-        let exe_name: String = row.get("exe_name");
-        let icon_base64: String = row.get("icon_base64");
-        if !exe_name.trim().is_empty() {
-            map.insert(exe_name, icon_base64);
-        }
-    }
-
-    Ok(map)
-}
-
-pub async fn fetch_icon_for_exe(
-    pool: &Pool<Sqlite>,
-    exe_name: &str,
-) -> Result<Option<String>, String> {
-    let trimmed = exe_name.trim();
-    if trimmed.is_empty() {
-        return Ok(None);
-    }
-
-    let row = sqlx::query("SELECT icon_base64 FROM icon_cache WHERE exe_name = ? LIMIT 1")
-        .bind(trimmed)
-        .fetch_optional(pool)
-        .await
-        .map_err(|error| format!("failed to read icon cache entry: {error}"))?;
-
-    Ok(row.map(|row| row.get("icon_base64")))
-}
+pub mod read;
 
 #[cfg(test)]
 pub async fn fetch_all_for_backup<'e, E>(executor: E) -> Result<Vec<BackupIconCache>, String>

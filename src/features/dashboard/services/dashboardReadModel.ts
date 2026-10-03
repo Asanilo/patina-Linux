@@ -1,4 +1,3 @@
-import { getIconMap } from "../../../platform/persistence/sessionReadRepository.ts";
 import type { DashboardProductRead } from "../../../platform/persistence/dashboardRepository.ts";
 import { AppClassification } from "../../../shared/classification/appClassification.ts";
 import type { AppCategory } from "../../../shared/classification/categoryTokens.ts";
@@ -6,7 +5,6 @@ import { buildHourlyCategoryPresentation, type HourlyActivityPoint, type HourlyC
 import type { CategoryDistItem, TopApplicationItem } from "./dashboardFormatting.ts";
 export interface DashboardSnapshot {
   fetchedAtMs: number;
-  icons: Record<string, string>;
   product: DashboardProductRead;
 }
 export interface DashboardReadModel {
@@ -21,12 +19,8 @@ export interface DashboardReadModel {
 }
 export async function loadDashboardSnapshot(date: Date = new Date()): Promise<DashboardSnapshot> {
   const { getDashboardProduct } = await import("../../../platform/persistence/dashboardRepository.ts");
-  const [product, icons] = await Promise.all([
-    getDashboardProduct(date),
-    // Icons remain an explicit presentation-cache exception, not an activity fallback.
-    getIconMap().catch((error) => { console.warn("Dashboard icons unavailable", error); return {}; }),
-  ]);
-  return { fetchedAtMs: product.sampledAtMs, product, icons };
+  const product = await getDashboardProduct(date);
+  return { fetchedAtMs: product.sampledAtMs, product };
 }
 export function buildDashboardReadModel(product: DashboardProductRead | null): DashboardReadModel {
   const identities = new Map(product?.applications.map(app => [app.appKey, app]) ?? []);

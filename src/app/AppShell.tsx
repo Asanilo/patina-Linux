@@ -13,6 +13,7 @@ import type {
   ThemeMode,
 } from "../shared/settings/appSettings.ts";
 import type { ColorSchemePreview } from "../features/settings/types.ts";
+import { useAppIcons } from "./hooks/useAppIcons.ts";
 import { useDashboardStats } from "../features/dashboard/hooks/useDashboardStats";
 import { useWindowTracking } from "./hooks/useWindowTracking";
 import {
@@ -172,7 +173,8 @@ function AppShellContent() {
   const isDashboardRefreshEnabled = currentView === "dashboard" && isForegroundReady;
   const isHistoryRefreshEnabled = currentView === "history" && isForegroundReady;
   const isDataRefreshEnabled = currentView === "data" && isForegroundReady;
-  const { dashboard, icons, readError: dashboardReadError } = useDashboardStats(
+  const icons = useAppIcons(classificationReady, isForegroundReady);
+  const { dashboard, readError: dashboardReadError } = useDashboardStats(
     appSettings.refreshIntervalSecs,
     refreshSignal,
     loadDashboardRuntimeSnapshot,

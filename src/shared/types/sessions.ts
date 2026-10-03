@@ -32,3 +32,11 @@ export interface DailySummary {
   date: string;
   totalDuration: number;
 }
+
+export interface AggregateSessionRecord {
+  appName: string;
+  exeName: string;
+  startTime: number;
+  endTime: number;
+  isLive?: boolean;
+}

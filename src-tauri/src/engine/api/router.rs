@@ -25,6 +25,8 @@ pub(crate) async fn route_request(
         };
     }
     match (method, path) {
+        ("GET", "/api/v1/assets/icons") => handlers::icons::get_icons(context, query, false).await,
+        ("GET", "/api/v1/assets/icon") => handlers::icons::get_icons(context, query, true).await,
         ("GET", "/api/v1/health") => handlers::health::get_health(context),
         ("GET", "/api/v1/capabilities") => {
             handlers::capabilities::get_capabilities(context, surface)

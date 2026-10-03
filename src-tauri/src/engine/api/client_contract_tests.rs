@@ -256,6 +256,57 @@ async fn independent_and_desktop_clients_observe_the_same_committed_classificati
             .unwrap()
             .records
     );
+    crate::data::repositories::icon_cache::upsert_icon(
+        &pool,
+        " Cursor.exe ",
+        "data:image/png;base64,AAAA",
+        1,
+    )
+    .await
+    .unwrap();
+    crate::data::repositories::icon_cache::upsert_icon(
+        &pool,
+        "a&?#.exe",
+        "data:image/svg+xml;base64,AAAA",
+        2,
+    )
+    .await
+    .unwrap();
+    let icons = native.icon_page(None, 1).await.unwrap();
+    assert_eq!(icons, desktop.icon_page(None, 1).await.unwrap());
+    assert_eq!(icons, native.icon_page(None, 1).await.unwrap());
+    assert_eq!(icons.entries[0].keys, vec!["Cursor.exe", "cursor.exe"]);
+    let next = native
+        .icon_page(icons.next_after.as_deref(), 1)
+        .await
+        .unwrap();
+    assert_eq!(next.entries[0].source_key, "a&?#.exe");
+    assert!(next.next_after.is_none());
+    assert_eq!(
+        native.cached_icon("cursor.exe").await.unwrap(),
+        desktop.cached_icon("cursor.exe").await.unwrap()
+    );
+    assert_eq!(
+        native.cached_icon("a&?#.exe").await.unwrap().icon,
+        Some(next.entries[0].clone())
+    );
+    assert!(native
+        .cached_icon("/etc/passwd")
+        .await
+        .unwrap()
+        .icon
+        .is_none());
+    let duplicate_icon = native
+        .get_json::<Value>(
+            "/api/v1/assets/icons?limit=1&limit=2",
+            "duplicate icon limit",
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        duplicate_icon,
+        patina_client::ClientError::Http { status: 400, .. }
+    ));
     let web = native.web_history(1000, 2000, "en-US").await.unwrap();
     assert_eq!(web.records.len(), 1);
     assert_eq!(

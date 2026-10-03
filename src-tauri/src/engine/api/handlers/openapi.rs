@@ -269,6 +269,14 @@ fn paths(surface: ApiSurface) -> Value {
         }
     });
     let object = paths.as_object_mut().expect("OpenAPI paths object");
+    object.insert("/api/v1/assets/icons".into(),json!({"get":get_operation_with_parameters(
+        "Read cached inline PNG/SVG icons in binary source-key order. Optional after is the preceding next_after cursor; limit is 1..64 (default 64). Page bytes may stop before limit. Clients must continue until next_after is null, enforce total budgets and never publish partial maps on failure. Presentation cache pages are not a cross-page transaction; concurrent updates appear on a later refresh. No filesystem access or icon extraction.",
+        "IconPageResponse",vec![query_param("after","string","Exclusive source key from the preceding page, up to 1024 UTF-8 bytes."),query_param("limit","integer","Maximum entries, 1..64.")]
+    )}));
+    object.insert("/api/v1/assets/icon".into(),json!({"get":get_operation_with_parameters(
+        "Find a cached icon using backend executable aliases. Reads a bounded name catalog and only the selected image; no arbitrary file reads or extraction. Null icon means no match; read errors remain errors. Same binary-key precedence as the paginated map.",
+        "IconLookupResponse",vec![required_query_param("key","string","Executable or canonical key, 1..1024 UTF-8 bytes.")]
+    )}));
     object.insert("/api/v1/activity/web-history".into(), json!({"get": get_operation_with_parameters(
         "Bounded precise browser history with final domain metadata, recording state and URL privacy. Native parent, browser observation and owner heartbeat bound open rows. Deduplicates overlapping same-source/domain facts; independent browser sources remain separate. One read transaction, 32-day range, 20000 facts, 8 MiB UTF-8/JSON response, 12-second read deadline. Classification revision is not a combined privacy revision. No partial success or read-side repair.",
         "WebHistoryResponse", vec![required_query_param("from_ms","integer","Inclusive epoch milliseconds."),required_query_param("to_ms","integer","Exclusive epoch milliseconds."),query_param("language","string","en-US (default) or zh-CN.")]
@@ -1077,6 +1085,37 @@ fn schemas() -> Value {
                 ("active_ms",integer_schema()),
                 ("categories",bounded_array_schema(object_schema(vec![("category",bounded_string_schema(1,1024)),("active_ms",integer_schema())]),4096)),
             ])})),
+        ])),
+    );
+    schemas.insert(
+        "CachedIcon".into(),
+        object_schema(vec![
+            ("source_key", bounded_string_schema(1, 1024)),
+            (
+                "keys",
+                bounded_array_schema(bounded_string_schema(1, 1024), 3),
+            ),
+            ("data_url", bounded_string_schema(1, 524288)),
+        ]),
+    );
+    schemas.insert(
+        "IconPageResponse".into(),
+        envelope(object_schema(vec![
+            (
+                "entries",
+                bounded_array_schema(schema_ref("CachedIcon"), 64),
+            ),
+            ("next_after", bounded_nullable_string_schema(1024)),
+        ])),
+    );
+    schemas.insert(
+        "IconLookupResponse".into(),
+        envelope(object_schema(vec![
+            ("requested_key", bounded_string_schema(1, 1024)),
+            (
+                "icon",
+                json!({"anyOf":[schema_ref("CachedIcon"),{"type":"null"}]}),
+            ),
         ])),
     );
     schemas.insert(

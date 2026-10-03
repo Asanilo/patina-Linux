@@ -66,6 +66,8 @@ Current caveats:
 | `/api/v1/activity/daily-apps` | `GET` | Compatibility surface | Bounded daily application totals and optional identities |
 | `/api/v1/activity/daily-product` | `GET` | Development branch | Transaction-consistent daily totals, product classification and configuration revision; used by Desktop application/category charts |
 | `/api/v1/activity/dashboard` | `GET` | Development branch | Selected/previous day totals and conserving hourly category quantities; used by Desktop Dashboard |
+| `/api/v1/assets/icons` | `GET` | Development branch | Bounded cached icon pages and owner-provided executable aliases |
+| `/api/v1/assets/icon` | `GET` | Development branch | Bounded single cached icon lookup; no file access |
 | `/api/v1/activity/web-history` | `GET` | Development branch | Bounded browser facts with classification, recording state, privacy and trusted live boundaries; Desktop migration pending |
 | `/api/v1/activity/history` | `GET` | Development branch | Bounded precise native/imported records and stored titles; shared by Desktop History and app details |
 | `/api/v1/classification/observed-apps` | `GET` | Unreleased source | Bounded raw executable statistics for classification candidates |
@@ -712,6 +714,36 @@ The numeric boundaries above are illustrative; actual values follow the runtime 
 Budgets: shared heatmap/trend single-query permit, 30-second repository timeout (HTTP handler remains 15 seconds), 20,000 intersecting facts/day, 4,096 distinct canonical keys over the requested range, 50,000 day/app rows, and 4 MiB encoded response including JSON escaping and reserved envelope overhead. Existing heatmap settings/metadata limits also apply. Busy/read/budget failures return `500` without partial data or SQL fallback; the HTTP timeout uses the server's existing error policy. Per-day facts are released between days within one SQLite snapshot. These are retained-data limits, not a proven fixed process-memory ceiling.
 
 The compatibility endpoint retains its 4 MiB response cap. Daily totals are never interpreted as session start/end intervals. No dedicated MCP tool is exposed.
+
+### Cached application icons
+
+`GET /api/v1/assets/icons` returns `{ entries, next_after }` inside the normal
+`data` envelope. Each entry has `source_key`, up to three `keys` (trimmed original,
+lowercase and canonical executable aliases, without duplicates), and `data_url`.
+Only cached inline PNG/SVG base64 is returned. This is not an extraction service
+and accepts no filesystem path to read.
+
+Optional `limit` is 1–64 (default 64); optional `after` is the preceding page's
+`next_after`. Query values must be URL-encoded; duplicate/unknown parameters fail.
+Entries are ordered by the stored source key using SQLite UTF-8 binary order,
+which differs from JavaScript UTF-16 order for some Unicode names. The cursor
+must advance; clients continue until `next_after` is null. A byte-limited page
+may contain fewer entries than `limit`. Concurrent cache changes may appear on
+the next refresh; this presentation catalog is not a multi-page transaction.
+
+Limits are 1,024 UTF-8 bytes per key, 512 KiB per inline asset, 2 MiB per encoded
+page and a five-second repository deadline. Desktop additionally limits one
+catalog traversal to 4,096 entries, 128 pages and 32 MiB of encoded responses.
+Failures discard the partial map. Main-window icons refresh independently of
+activity data; a slow icon page cannot hold back the Dashboard snapshot.
+
+`GET /api/v1/assets/icon?key=...` returns `{ requested_key, icon }`; `icon` uses
+the same entry shape or is null when absent. The backend resolves executable
+aliases, scans at most 4,096 bounded names and fetches only the selected image.
+If several entries provide the same canonical alias, the last source key in
+binary order wins, matching the paginated map. A read/budget failure is an error,
+not a fabricated cache miss. Widget uses this owner boundary through its existing
+single-icon command. SDK methods are `icon_page(after, limit)` and `cached_icon(key)`.
 
 ### `GET /api/v1/activity/web-history`
 

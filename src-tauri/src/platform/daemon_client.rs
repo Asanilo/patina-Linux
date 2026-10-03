@@ -594,6 +594,20 @@ impl PatinadClient {
         self.transport.dashboard(date, language).await
     }
 
+    pub async fn icon_page(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<patina_protocol::icons::IconPage, PatinadClientError> {
+        self.transport.icon_page(after, limit).await
+    }
+    pub async fn cached_icon(
+        &self,
+        key: &str,
+    ) -> Result<patina_protocol::icons::IconLookup, PatinadClientError> {
+        self.transport.cached_icon(key).await
+    }
+
     pub async fn web_history(
         &self,
         from_ms: i64,

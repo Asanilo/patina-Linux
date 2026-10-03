@@ -1,7 +1,7 @@
 // Legacy candidate replay oracle; production Dashboard no longer reads aggregate SQL.
 import { AppClassification } from "../../src/shared/classification/appClassification.ts";
 import { resolveNativeSessionPrecedence, type ActivityResolutionScope, type TimeRecordOrigin } from "./legacyNativeSessionPrecedence.ts";
-import type { AggregateSessionRecord } from "../../src/platform/persistence/sessionReadRepository.ts";
+import type { AggregateSessionRecord } from "../../src/shared/types/sessions.ts";
 export interface RawAggregateSessionCandidateRow {
   record_id?: number;
   origin?: TimeRecordOrigin;

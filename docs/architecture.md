@@ -120,9 +120,8 @@ IPC 契约应保持稳定、可解析、可测试。
 前端当前保留受控的本地 SQLite 访问，用于：
 
 - 尚未迁移的普通 settings 读取；classification 配置已迁往 owner 快照
-- 网页明细、图标和最早记录时间等尚未迁移的客户端读查询
-- 应用图标的只读展示缓存（包括 Dashboard 使用的图标）
-- 桌面端本机活动与外部导入活动的只读组合
+- 网页明细、域名候选和网页趋势等尚未迁移的客户端读查询
+- 分类数据清理前的原始 executable 名称枚举（`loadDistinctSessionExeNames`）
 - Desktop 私有、可重建的 `data.bootstrap_snapshot` 渲染缓存读写
 
 这条通道不是默认自由边界，而是显式受控边界。规则如下：
@@ -339,11 +338,13 @@ src/
 
 Dashboard 后端读契约在同一事务内产生今天／昨天产品数量和逐小时分类，复用 `daily_activity`；Desktop 通过 `cmd_get_dashboard_product` 和共享 SDK 消费该快照。分区统计由 `domain/activity_read_model` 一次处理原生／导入优先级和桶容量，再分配整数余数，保证小时图和日总量守恒。`domain/activity_calendar` 负责实际本地日与 offset 转换边界，24 个显示小时不等于 24 小时实际日长。前端只格式化已确认数量，不能重新分类、按墙钟延长活动，或用独立小时查询／伪造 bucket 时间线拼装 Dashboard。
 
-Dashboard、History 与应用详情复用 `shared/lib/snapshotReadController` 管理快照请求生命周期：普通轮询合并，数据失效时丢弃旧响应并补读，停止后不再发布；读取 scope 包含缓存代数、本地日期和语言。缓存预热及运行时协调也必须检查代数，避免失效后的旧请求重新填充缓存。失败保留最后一份快照并明确标记，首读失败不冒充空数据；图标暂用既有只读缓存，图标失败不阻塞活动读取。
+Dashboard、History 与应用详情复用 `shared/lib/snapshotReadController` 管理快照请求生命周期：普通轮询合并，数据失效时丢弃旧响应并补读，停止后不再发布；读取 scope 包含缓存代数、本地日期和语言。缓存预热及运行时协调也必须检查代数，避免失效后的旧请求重新填充缓存。失败保留最后一份快照并明确标记，首读失败不冒充空数据；应用共享图标由 app 层独立读取后端缓存，不属于 Dashboard 活动快照；图标慢读或失败均不能阻塞活动数据。
 
 精确历史的产品读 owner 为 `data/repositories/exact_history`：配置、heartbeat、原生／精确导入事实和标题样本共享事务。复用领域优先级编译，小时汇总不能变成精确时间线；先读取紧凑候选，再批量加载贡献记录的有限元数据。返回源 ID／origin、规范应用分类和已裁剪区间，record caption 与真实标题样本分别表达。读取不修复数据库，超限不返回部分成功。Desktop History／应用详情通过薄 `cmd_get_exact_history`、SDK 与严格前端 adapter 使用同一契约；失败不退回 SQL。生产会话带 `confirmed` 元数据，展示不得重新分类、排除、改名或按本地时钟延长。窗口 caption 仅为未定时标签；缺少真实样本时标题明细为空，同标题采样之间的空档不得填满。原生重叠事实保留各自时长，不能用时间线去重改变应用详情总量。History 只读所选日，不再读取已退出页面的周趋势。
 
-`sessionReadRepository` 暂保留日期适配与图标／最早记录时间两个 SQLite 读取例外；网页读取仍待迁移。前端旧导入优先级实现已移到 `tests/helpers/legacyNativeSessionPrecedence`，只作历史契约 oracle，生产代码不得依赖 tests。会话表现编译器中的无 `confirmed` 分支暂留供历史 replay 对照；所有生产精确会话 adapter 均必须提供后端确认元数据，不能把可选类型当作生产 fallback。
+`sessionReadRepository` 仅保留精确历史的日期／范围适配，不再执行 SQL。最早记录时间随既有 heatmap 快照返回，未使用的旧 SQL getter 已删除；网页与分类清理前的名称枚举仍待迁移。前端旧导入优先级实现已移到 `tests/helpers/legacyNativeSessionPrecedence`，只作历史契约 oracle，生产代码不得依赖 tests。会话表现编译器中的无 `confirmed` 分支暂留供历史 replay 对照；所有生产精确会话 adapter 均必须提供后端确认元数据，不能把可选类型当作生产 fallback。
+
+应用图标的读取 owner 为 `data/repositories/icon_cache/read`。认证 API 提供有界 keyset 分页和单项查找，后端统一原始／小写／canonical key，SDK 验证顺序、游标、字段和内联图片预算；接口只读缓存，不执行平台图标提取或任意路径读取。主窗口由 `app/services/appIconService` 和 `useAppIcons` 独立分发图标至各页面：前景每 30 秒更新，restore／resync 失效时补读，停止后不发布或继续翻页。分页允许并发缓存更新在下次刷新体现，不冒充跨页事务；错误不发布半份 map，活动数据也不等待图片。Widget 的原有单图标 command 通过同一个后端边界读取，不扩展暂停中的 Widget 产品功能。
 
 网页精确产品读取由 `data/repositories/web_product` 负责，复用持久网页与原生关联表，并与配置／隐私／heartbeat 同事务读取。领域层 `web_product` 拥有域名元数据、URL 过滤和浏览器观察／原生父会话的可信截止；同浏览器来源和域名的重叠只贡献未覆盖区间，不把不同浏览器来源静默混成一份事实。输入事实、字段、元数据、编码输出和时长均有上限；HTTP、薄 command 与独立 SDK 共用这份 owner。此阶段新增 API 不代表 Desktop 网页读取已经迁移，也不提前决定“停止记录”对旧历史的可见性及跨客户端 URL 隐私政策。
 

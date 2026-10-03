@@ -55,7 +55,7 @@ HTTP API 索引和源码以当前实现为准；索引中历史的 unreleased/st
 | --- | --- | --- | --- |
 | M0 | 工作区、缺口表、owner 决策、阶段计划与长期规则 | 新会话能准确继续；稳定 main 不受开发影响 | 已完成 |
 | M1 | 独立 Rust 传输／协议基础，Desktop 接入；同步契约和 SDK 回归 | 第二个非 Tauri 进程可使用相同连接基础；请求、错误和 SSE 帧只有一份传输实现；通用重连／快照协调从宿主提取 | M1a、M1b 已实现并验证 |
-| M2 | 以“今天 → 应用／网页详情 → 历史”为切片，补最小读 API，迁移 Tauri；统一产品配置读取 | Tauri 作为标准客户端完成核心链路，统计规则由后端负责 | M2a–M2e 已完成；网页、图标与普通设置仍待迁移 |
+| M2 | 以“今天 → 应用／网页详情 → 历史”为切片，补最小读 API，迁移 Tauri；统一产品配置读取 | Tauri 作为标准客户端完成核心链路，统计规则由后端负责 | M2a–M2e、M2g 已完成；网页、分类清理枚举与普通设置仍待迁移 |
 | M3 | 浏览器会话和适配层；共享 React 核心界面，复用 Quiet Pro | Tauri＋Web 并行读取／修改分类并同步，真实浏览器验收 | 待实施 |
 | M4 | Rust SDK typed 能力逐步补全，TUI 接入同一核心链路 | 实际交互式 TUI 可查看／筛选／修改分类，并参与同步；CLI 示例不算完成 | 待实施 |
 | M5 | GPUI 客户端，同一能力和同步契约，独立视图 | 可运行 GPUI 核心链路和四端同步验收；评估启动、资源和维护成本 | 待实施 |
@@ -241,3 +241,21 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 首轮 `check:full` 通过：60 个 TypeScript 文件、41 项浏览器检查、31 项 SDK 测试／Clippy、744 Rust passed / 21 ignored 及 Clippy。补充 metadata／来源边界后，最终 SDK 门禁与产品 Rust 门禁通过（746 passed / 21 ignored）；新增测试夹具的原始字符串分隔符曾导致编译失败，修正后通过。最后 recording_enabled 防回归另通过全部六项 web_product 测试；对应最终源码 Clippy 已通过。前端未改动，未重复其门禁。
 - 证据位于 `tmp/acceptance/multi-client-m2f-web-backend/`。**M2f 仍未完成**：域名每日聚合、候选统计和现有 Desktop 的 SQL／重复规则退出尚未实施；精确接口通过不能替代这些验收。两项产品讨论仍待答复，Desktop 网页行为保持原状。
 - 仅本地开发，无安装、推送、合并 main 或发布。普通设置同步、图标／最早时间、全局读取 admission／超时统一、契约生成、旧 replay 退出及后端独立构建／安装继续在当前 goal 范围中；新多客户端 UI 不在此检查点交付范围。
+
+
+### M2g 执行设计：图标读取边界
+
+- 复核确认最早记录时间已由 heatmap 同事务返回，旧 `getEarliestSessionStartTime` 没有生产调用方；删除无用 SQL，不创建重复 endpoint。保留 Data 对原生／精确导入／小时桶最早时间的既有语义。
+- 图标 owner 为现有 `data/repositories/icon_cache` 的有界读取子模块；只读持久缓存，不接受路径读取／平台图标提取。API 提供按原始 key 的 keyset 分页及单图标查找，canonical／原始／小写别名由后端统一提供。SDK、Desktop Dashboard 与 Widget 共同消费，断连不退回客户端 SQL。
+- 图标是可重建表现缓存，分页不冒充跨页数据库原子快照；并发插入在下次刷新取得，不能与活动数量共享虚假的 revision。每页、单图标、客户端总页数／总字节均有限制，cursor 必须前进。Widget 查找只扫描有界名称并读取匹配图标，不把全量图片传给小窗口。
+- 页面仍可在图标读取失败时显示无图标的已确认活动数据，这不构成活动数据 fallback。Widget 已暂停的产品扩展继续暂停，仅迁移原有读取边界。
+
+
+### M2g 核验结果
+
+- 图标 API／协议／SDK 及 Desktop／Widget 原有入口已接到同一后端缓存 owner。分页按原始 key 的 UTF-8 binary 顺序推进，正确处理特殊字符、Unicode、字节提前分页与 canonical 别名；单项查找只读有界名称和选定图片，不执行平台提取。删除未使用的全量 Widget icon-map command 及旧未限定仓库 getter。
+- 最早记录时间旧 SQL getter 无生产调用方，已删除；现有 heatmap 返回仍是 Data 年份范围依据。`sessionReadRepository` 完全退出 SQL，只做精确历史适配。审计还发现分类清理的 `loadDistinctSessionExeNames` 是独立剩余读取，已在长期架构文档具名，不能宣称所有原生表读取已退出。
+- 为避免图标分页拖慢业务，图标从 DashboardSnapshot 分离到真实的跨页面 app owner。共享图标前景每 30 秒重读，restore／resync 补读；后台停止和卸载会中止后续翻页，迟到响应不更新视图。异常不发布半份 map，不阻塞活动数据。原有 Widget 产品范围未扩展。
+- `check:full` 通过：61 个 TypeScript 文件、41 项浏览器检查、32 项 SDK 测试／Clippy、748 Rust passed / 21 ignored 及 Clippy。初期类型检查发现 `.at` 超出当前 TS target，改成索引访问；只在测试使用的 Row import 已加 cfg。图标与活动解耦后最终 `npm run check` 再通过全部 61 个文件、42 项浏览器检查及构建／bundle 原预算（365.71 KiB 总 JS gzip）。Rust／SDK 未再改变，未重复门禁。
+- 浏览器主动阻塞图标读取，证明已确认活动仍能显示；适配器测试验证无 SQL fallback、游标卡住／重复／乱序拒绝、后续页失败不返回部分结果、取消后不继续读取、128 页上限及 `__proto__` key 不污染对象。真实 HTTP 合约对照 SDK／Desktop 图标与 URL 编码。
+- 证据位于 `tmp/acceptance/multi-client-m2g-icons/`。本批只做本地提交，不安装、推送、合并或发布。网页两项产品问题仍待答复；可独立推进分类清理枚举、普通设置与本地偏好、查询 admission、契约生成和独立后端构建，不把此切片等同于整体基础完成。
