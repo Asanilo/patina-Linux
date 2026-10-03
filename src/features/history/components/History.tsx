@@ -17,7 +17,7 @@ import {
   type HistorySnapshot,
 } from "../services/historyReadModel";
 import { SnapshotReadController } from "../../../shared/lib/snapshotReadController.ts";
-import { getSessionCategory } from "../../../shared/lib/sessionReadCompiler.ts";
+import { getDayRange, getSessionCategory } from "../../../shared/lib/sessionReadCompiler.ts";
 import type { TrackerHealthSnapshot } from "../../../shared/types/tracking";
 import { AppClassification } from "../../../shared/classification/appClassification.ts";
 import type { AppCategory } from "../../../shared/classification/categoryTokens.ts";
@@ -696,13 +696,10 @@ export default function History({
   const visibleHistoryTimelineView = showQuietPlaceholder
     ? historyTimelinePlaceholderView
     : historyTimelineView;
-  const selectedDayRange = useMemo(() => {
-    const startMs = startOfDay(selectedDate).getTime();
-    return {
-      startMs,
-      endMs: startMs + 24 * 60 * 60 * 1000,
-    };
-  }, [selectedDate]);
+  const selectedDayRange = useMemo(
+    () => getDayRange(selectedDate, Number.MAX_SAFE_INTEGER),
+    [selectedDate],
+  );
   const timelineViewport = useMemo(() => normalizeHistoryTimelineViewport({
     selectedDate,
     zoomHours: timelineZoomHours,

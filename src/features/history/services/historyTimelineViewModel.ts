@@ -1,6 +1,7 @@
 import { AppClassification } from "../../../shared/classification/appClassification.ts";
 import type { AppCategory } from "../../../shared/classification/categoryTokens.ts";
 import type { CompiledSession } from "../../../shared/lib/sessionReadCompiler.ts";
+import { getDayRange } from "../../../shared/lib/sessionReadCompiler.ts";
 import { snapTimelineFocusToNearestInterval } from "../../../shared/lib/timelineAxis.ts";
 
 const MINUTE_MS = 60 * 1000;
@@ -85,12 +86,10 @@ interface BuildHistoryTimelineViewModelParams {
 }
 
 function getFullDayRange(date: Date) {
-  const dayStart = new Date(date);
-  dayStart.setHours(0, 0, 0, 0);
-
+  const range = getDayRange(date, Number.MAX_SAFE_INTEGER);
   return {
-    dayStartMs: dayStart.getTime(),
-    dayEndMs: dayStart.getTime() + DAY_MS,
+    dayStartMs: range.startMs,
+    dayEndMs: range.endMs,
   };
 }
 
@@ -120,7 +119,8 @@ export function normalizeHistoryTimelineViewport({
   const { dayStartMs, dayEndMs } = getFullDayRange(selectedDate);
   const durationMs = getHistoryTimelineZoomDurationMs(zoomHours);
 
-  if (zoomHours === 24 || durationMs >= DAY_MS) {
+  // The 24 option denotes the full civil day, which need not last 24 hours.
+  if (zoomHours === 24 || durationMs >= dayEndMs - dayStartMs) {
     return {
       startMs: dayStartMs,
       endMs: dayEndMs,
