@@ -14,6 +14,10 @@ pub struct ApiEndpoint {
 const DESKTOP_ENDPOINTS: &[ApiEndpoint] = &[
     ApiEndpoint {
         method: "GET",
+        path: "/api/v1/activity/daily-product",
+    },
+    ApiEndpoint {
+        method: "GET",
         path: "/api/v1/settings/classification",
     },
     ApiEndpoint {
@@ -133,6 +137,10 @@ const DESKTOP_ENDPOINTS: &[ApiEndpoint] = &[
 const DAEMON_READ_ONLY_ENDPOINTS: &[ApiEndpoint] = &[
     ApiEndpoint {
         method: "GET",
+        path: "/api/v1/activity/daily-product",
+    },
+    ApiEndpoint {
+        method: "GET",
         path: "/api/v1/settings/classification",
     },
     ApiEndpoint {
@@ -226,6 +234,10 @@ const DAEMON_READ_ONLY_ENDPOINTS: &[ApiEndpoint] = &[
 ];
 
 const DAEMON_TRACKING_ENDPOINTS: &[ApiEndpoint] = &[
+    ApiEndpoint {
+        method: "GET",
+        path: "/api/v1/activity/daily-product",
+    },
     ApiEndpoint {
         method: "GET",
         path: "/api/v1/settings/classification",
@@ -596,7 +608,7 @@ mod tests {
 
     #[test]
     fn desktop_surface_keeps_shared_client_method_and_path_set() {
-        assert_eq!(ApiSurface::Desktop.endpoints().len(), 29);
+        assert_eq!(ApiSurface::Desktop.endpoints().len(), 30);
         assert!(ApiSurface::Desktop.allows("GET", "/api/v1/settings/classification"));
         assert!(ApiSurface::Desktop.allows("POST", "/api/v1/settings/classification/conditional"));
         assert!(ApiSurface::Desktop.allows("GET", "/api/v1/activity/daily-apps"));

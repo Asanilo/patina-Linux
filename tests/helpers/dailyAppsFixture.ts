@@ -7,7 +7,9 @@ export function dailyAppsFixture(sessions: AggregateSessionRecord[]): DailyAppsR
   const days = new Map<string, Map<string, number>>();
   for (const session of sessions) {
     const key = AppClassification.resolveCanonicalExecutable(session.exeName);
-    if (!applications.has(key)) applications.set(key, { appKey: key, appName: session.appName, exeName: AppClassification.normalizeExecutable(session.exeName) === key ? session.exeName : key });
+    if (!AppClassification.shouldTrackApp(key)) continue;
+    if (!applications.has(key)) applications.set(key, { appKey: key, appName: session.appName, exeName: AppClassification.normalizeExecutable(session.exeName) === key ? session.exeName : key,
+      category: AppClassification.mapApp(key).category, displayNameOverride: AppClassification.getUserOverride(key)?.displayName ?? null });
     for (let start = session.startTime;start < session.endTime;) {
       const date = new Date(start);
       const next = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).getTime();
@@ -19,7 +21,7 @@ export function dailyAppsFixture(sessions: AggregateSessionRecord[]): DailyAppsR
     }
   }
   return {
-    sampledAtMs: Date.now(), applications: [...applications.values()], days: [...days].map(([date, values]) => ({
+    sampledAtMs: Date.now(), configurationRevision: "0".repeat(64), applications: [...applications.values()], days: [...days].map(([date, values]) => ({
       date, duration: [...values.values()].reduce((a, b) => a + b, 0), apps: [...values].map(([appKey, duration]) => ({ appKey, duration })),
     }))
   };

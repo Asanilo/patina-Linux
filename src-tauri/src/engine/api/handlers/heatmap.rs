@@ -24,6 +24,45 @@ fn error_response(status: u16, error: ApiError) -> RouteResponse {
     }
 }
 
+pub async fn get_daily_product(context: &ApiRuntimeContext, query: Option<&str>) -> RouteResponse {
+    let (language, dates) = {
+        let mut language = None;
+        let mut dates = url::form_urlencoded::Serializer::new(String::new());
+        for (key, value) in url::form_urlencoded::parse(query.unwrap_or_default().as_bytes()) {
+            if key == "language" {
+                if language.is_some() || !matches!(value.as_ref(), "en-US" | "zh-CN") {
+                    return error_response(
+                        400,
+                        ApiError::bad_request("language must be a single en-US or zh-CN value"),
+                    );
+                }
+                language = Some(value.into_owned());
+            } else {
+                dates.append_pair(&key, &value);
+            }
+        }
+        (language, dates.finish())
+    };
+    let boundaries = match parse_boundaries(Some(&dates)) {
+        Ok(value) => value,
+        Err(error) => return error_response(400, ApiError::bad_request(&error)),
+    };
+    match crate::data::repositories::daily_activity::load_daily_product(
+        context.pool(),
+        &boundaries,
+        context.now_ms(),
+        language.as_deref().unwrap_or("en-US"),
+    )
+    .await
+    {
+        Ok(data) => RouteResponse {
+            status: 200,
+            body: serde_json::to_value(ApiResponse { data }).unwrap_or_default(),
+        },
+        Err(error) => error_response(500, ApiError::internal(&error)),
+    }
+}
+
 pub async fn get_daily_apps(context: &ApiRuntimeContext, query: Option<&str>) -> RouteResponse {
     let (named, dates) = {
         let mut named = None;

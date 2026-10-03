@@ -577,20 +577,13 @@ impl PatinadClient {
         ).await
     }
 
-    pub async fn daily_apps(
+    pub async fn daily_product(
         &self,
         from: &str,
         to: &str,
-    ) -> Result<crate::domain::daily_activity::DailyAppActivitySnapshot, PatinadClientError> {
-        crate::domain::daily_activity::local_day_boundaries(from, to)
-            .map_err(PatinadClientError::InvalidConfiguration)?;
-        self.get_json_with_limits(
-            &format!("/api/v1/activity/daily-apps?from={from}&to={to}&include_names=true"),
-            "daily applications",
-            Duration::from_secs(35),
-            crate::domain::daily_activity::MAX_DAILY_APPS_RESPONSE_BYTES,
-        )
-        .await
+        language: &str,
+    ) -> Result<patina_protocol::activity::DailyProductSnapshot, PatinadClientError> {
+        self.transport.daily_product(from, to, language).await
     }
 
     pub async fn daily_activity(
@@ -696,24 +689,33 @@ mod tests {
     };
 
     #[tokio::test]
-    async fn daily_apps_transport_has_scoped_budget_and_no_old_daemon_fallback() {
-        use crate::domain::daily_activity::{
-            DailyAppActivityDay, DailyAppActivitySnapshot, DailyAppTotal,
-            MAX_DAILY_APPS_RESPONSE_BYTES,
+    async fn daily_product_transport_has_scoped_budget_and_no_old_daemon_fallback() {
+        use crate::domain::daily_activity::MAX_DAILY_APPS_RESPONSE_BYTES;
+        use patina_protocol::activity::{
+            DailyProductAppTotal, DailyProductDay, DailyProductSnapshot, ProductAppIdentity,
         };
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let boundaries =
             crate::domain::daily_activity::local_day_boundaries("2026-01-01", "2026-01-02")
                 .unwrap();
-        let data = DailyAppActivitySnapshot {
-            applications: None,
+        let data = DailyProductSnapshot {
+            configuration_revision: "0".repeat(64),
+            applications: (0..2000)
+                .map(|index| ProductAppIdentity {
+                    app_key: format!("fixture-app-{index:04}"),
+                    app_name: "Fixture".into(),
+                    exe_name: format!("fixture-app-{index:04}"),
+                    category: "other".into(),
+                    display_name_override: None,
+                })
+                .collect(),
             sampled_at_ms: boundaries[1],
-            days: vec![DailyAppActivityDay {
+            days: vec![DailyProductDay {
                 start_ms: boundaries[0],
                 end_ms: boundaries[1],
                 active_ms: 2000,
                 apps: (0..2000)
-                    .map(|index| DailyAppTotal {
+                    .map(|index| DailyProductAppTotal {
                         app_key: format!("fixture-app-{index:04}"),
                         active_ms: 1,
                     })
@@ -747,12 +749,14 @@ mod tests {
                 }
                 let request = String::from_utf8(request).unwrap().to_lowercase();
                 assert!(request
-                    .starts_with("get /api/v1/activity/daily-apps?from=2026-01-01&to=2026-01-02&include_names=true "));
+                    .starts_with("get /api/v1/activity/daily-product?from=2026-01-01&to=2026-01-02&language=en-us "));
                 assert!(request.contains("authorization: bearer fixture-token\r\n"));
                 let response = format!("HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
                 let _ = socket.write_all(response.as_bytes()).await;
             });
-            let result = client.daily_apps("2026-01-01", "2026-01-02").await;
+            let result = client
+                .daily_product("2026-01-01", "2026-01-02", "en-US")
+                .await;
             if let Some(error) = error {
                 assert_eq!(result.unwrap_err().code(), error);
             } else {

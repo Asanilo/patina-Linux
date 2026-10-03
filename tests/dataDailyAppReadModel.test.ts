@@ -32,4 +32,12 @@ const range = resolveDataTrendRange({ kind: "rolling", days: 7 }, now);
 assert.equal(buildDailyAppTrendViewModel(dailyAppsFixture(sessions), range, null).appOptions.some(app => app.appKey === "alpha.exe"), false);
 assert.equal(buildDailyAppTrendViewModel(dailyAppsFixture([]), range, null).selectedApp, null);
 ProcessMapper.clearUserOverrides();
+// A newer local mapper must not reinterpret an already versioned server snapshot.
+const confirmed = dailyAppsFixture(sessions);
+ProcessMapper.setUserOverrides({ "alpha.exe": { category: "music", track: false, displayName: "Late rename" } });
+const confirmedModel = buildDailyAppTrendViewModel(confirmed, range, "alpha.exe");
+assert.equal(confirmedModel.selectedApp?.appName, "Alpha");
+assert.ok(buildDailyCategoryTrendViewModel(confirmed, range, ["other"]).summary.totalDuration > 0);
+assert.equal(buildDailyCategoryTrendViewModel(confirmed, range, ["music"]).summary.totalDuration, 0);
+ProcessMapper.clearUserOverrides();
 console.log("PASS daily application/category parity, local midnight/month, names, selection, exclusions and exact millisecond totals");

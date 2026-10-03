@@ -199,9 +199,9 @@ function tauriStubFor(path: string) {
               apps:active ? [{ app_key:"cursor.exe", active_ms:600000 },{ app_key:"deep-research-workbench.exe",active_ms:2400000 }] : [] });
             cursor = next;
           }
-          return { sampled_at_ms:Date.now(), days, applications:included ? [
-            { app_key:"deep-research-workbench.exe",app_name:"Extremely Long Research Workbench Application Name",exe_name:"deep-research-workbench.exe" },
-            { app_key:"cursor.exe", app_name:"Cursor",exe_name:"cursor.exe" },
+          return { sampled_at_ms:Date.now(), configuration_revision:"0".repeat(64), days, applications:included ? [
+            { app_key:"deep-research-workbench.exe",app_name:"Extremely Long Research Workbench Application Name",exe_name:"deep-research-workbench.exe", category:"other", display_name_override:null },
+            { app_key:"cursor.exe", app_name:"Cursor",exe_name:"cursor.exe", category:"other", display_name_override:null },
           ] : [] };
         }
         if (command === "cmd_get_daily_activity") {

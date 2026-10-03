@@ -269,6 +269,10 @@ fn paths(surface: ApiSurface) -> Value {
         }
     });
     let object = paths.as_object_mut().expect("OpenAPI paths object");
+    object.insert("/api/v1/activity/daily-product".into(), json!({"get": get_operation_with_parameters(
+        "Product daily application snapshot: one transaction for facts, manual classification, exclusions and configuration revision. Shares daily-apps limits. No titles or URLs. Clients must not reclassify or exclude totals again.",
+        "DailyProductResponse", vec![required_query_param("from", "string", "Inclusive host-local YYYY-MM-DD date."), required_query_param("to", "string", "Exclusive host-local YYYY-MM-DD date."), query_param("language", "string", "en-US (default) or zh-CN; legacy empty custom label normalization only.")]
+    )}));
     object.insert("/api/v1/settings/classification/conditional".into(), json!({
         "post": post_operation("Commit classification changes only if expected_revision still matches. Returns 409 on conflict; never retry automatically.", vec![], "ConditionalClassificationMutationsRequest", "ClassificationCommitResponse")
     }));
@@ -1004,6 +1008,36 @@ fn schemas() -> Value {
     schemas.insert(
         "DailyAppsResponse".to_string(),
         envelope(schema_ref("DailyAppsData")),
+    );
+    schemas.insert(
+        "DailyProductResponse".into(),
+        envelope(object_schema(vec![
+            ("sampled_at_ms", integer_schema()),
+            (
+                "configuration_revision",
+                json!({"type":"string","pattern":"^[0-9a-f]{64}$"}),
+            ),
+            (
+                "days",
+                bounded_array_schema(schema_ref("DailyAppsDay"), 378),
+            ),
+            (
+                "applications",
+                bounded_array_schema(
+                    object_schema(vec![
+                        ("app_key", bounded_string_schema(1, 1024)),
+                        ("app_name", bounded_string_schema(0, 1024)),
+                        ("exe_name", bounded_string_schema(1, 1024)),
+                        ("category", bounded_string_schema(1, 1024)),
+                        (
+                            "display_name_override",
+                            bounded_nullable_string_schema(4096),
+                        ),
+                    ]),
+                    4096,
+                ),
+            ),
+        ])),
     );
     schemas.insert(
         "HeatmapData".to_string(),

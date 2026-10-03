@@ -7,20 +7,23 @@ const end = new Date(2026, 8, 3).getTime();
 const app = { app_key: "zen", active_ms: 37 };
 const day = { start_ms: start, end_ms: middle, active_ms: 37, apps: [app] };
 const empty = { start_ms: middle, end_ms: end, active_ms: 0, apps: [] };
-const response = { sampled_at_ms: end, days: [day, empty], applications: [{ app_key: "zen", app_name: "Zen", exe_name: "zen" }] };
+const response = { sampled_at_ms: end, configuration_revision: "a".repeat(64), days: [day, empty], applications: [{ app_key: "zen", app_name: "Zen", exe_name: "zen", category: "other", display_name_override: null }] };
 assert.deepEqual(await getDailyApps(start, end, async (from, to) => {
   assert.equal(from, "2026-09-01");
   assert.equal(to, "2026-09-03");
   return response;
 }), {
   sampledAtMs: end,
-  applications: [{ appKey: "zen", appName: "Zen", exeName: "zen" }],
+  configurationRevision: "a".repeat(64),
+  applications: [{ appKey: "zen", appName: "Zen", exeName: "zen", category: "other", displayNameOverride: null }],
   days: [
     { date: "2026-09-01", duration: 37, apps: [{ appKey: "zen", duration: 37 }] },
     { date: "2026-09-02", duration: 0, apps: [] },
   ],
 });
 for (const invalid of [null, {}, { ...response, days: [day] },
+  { ...response, configuration_revision: undefined },
+  ...[undefined, "system", "unknown"].map(category => ({ ...response, applications: [{ ...response.applications[0], category }] })),
   ...[undefined, [], [response.applications[0], response.applications[0]],
     [{ ...response.applications[0], app_key: "other" }],
     [{ ...response.applications[0], app_name: "字".repeat(342) }],

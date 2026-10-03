@@ -23,6 +23,8 @@ const MAX_OVERRIDE_BYTES: usize = 16_384;
 const QUERY_TIMEOUT: Duration = Duration::from_secs(30);
 static DAILY_ACTIVITY_QUERY: Semaphore = Semaphore::const_new(1);
 mod names;
+#[cfg(test)]
+mod product_tests;
 
 #[derive(Debug)]
 pub struct DailyActivityTrend {
@@ -30,6 +32,10 @@ pub struct DailyActivityTrend {
     pub top_apps: Vec<Option<String>>,
     app_days: Vec<DailyAppActivityDay>,
     applications: Option<Vec<crate::domain::daily_activity::DailyAppIdentity>>,
+    product: Option<(
+        String,
+        crate::domain::product_classification::ProductClassification,
+    )>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -38,6 +44,83 @@ enum ReadMode {
     TopApp,
     Applications,
     ApplicationsNamed,
+    ProductEnglish,
+    ProductChinese,
+}
+
+impl ReadMode {
+    fn product(self) -> bool {
+        matches!(self, Self::ProductEnglish | Self::ProductChinese)
+    }
+    fn named(self) -> bool {
+        self == Self::ApplicationsNamed || self.product()
+    }
+    fn applications(self) -> bool {
+        self == Self::Applications || self.named()
+    }
+}
+
+pub async fn load_daily_product(
+    pool: &SqlitePool,
+    boundaries: &[i64],
+    sampled_at_ms: i64,
+    language: &str,
+) -> Result<patina_protocol::activity::DailyProductSnapshot, String> {
+    use patina_protocol::activity::{
+        DailyProductAppTotal, DailyProductDay, DailyProductSnapshot, ProductAppIdentity,
+    };
+    let mode = match language {
+        "en-US" => ReadMode::ProductEnglish,
+        "zh-CN" => ReadMode::ProductChinese,
+        _ => return Err("unsupported product language".into()),
+    };
+    let snapshot = load_bounded_snapshot(pool, boundaries, sampled_at_ms, mode).await?;
+    let (configuration_revision, policy) =
+        snapshot.product.ok_or("missing product classification")?;
+    let result = DailyProductSnapshot {
+        sampled_at_ms,
+        configuration_revision,
+        days: snapshot
+            .app_days
+            .into_iter()
+            .map(|day| DailyProductDay {
+                start_ms: day.start_ms,
+                end_ms: day.end_ms,
+                active_ms: day.active_ms,
+                apps: day
+                    .apps
+                    .into_iter()
+                    .map(|app| DailyProductAppTotal {
+                        app_key: app.app_key,
+                        active_ms: app.active_ms,
+                    })
+                    .collect(),
+            })
+            .collect(),
+        applications: snapshot
+            .applications
+            .unwrap_or_default()
+            .into_iter()
+            .map(|app| ProductAppIdentity {
+                category: policy.category(&app.app_key).into(),
+                display_name_override: policy
+                    .display_name_override(&app.app_key)
+                    .map(str::to_owned),
+                app_key: app.app_key,
+                app_name: app.app_name,
+                exe_name: app.exe_name,
+            })
+            .collect(),
+    };
+    if serde_json::to_vec(&result)
+        .map_err(|e| e.to_string())?
+        .len()
+        + 512
+        > MAX_DAILY_APPS_RESPONSE_BYTES
+    {
+        return Err("daily product response exceeds budget".into());
+    }
+    Ok(result)
 }
 
 #[derive(Clone, Debug)]
@@ -169,7 +252,32 @@ async fn load_snapshot_with_apps(
     mode: ReadMode,
 ) -> Result<DailyActivityTrend, String> {
     let mut transaction = pool.begin().await.map_err(query_error)?;
-    let excluded = load_excluded_apps(&mut transaction).await?;
+    let product = if mode.product() {
+        let configuration = super::classification_settings::read_classification_snapshot(
+            &mut transaction,
+            sampled_at_ms,
+        )
+        .await?;
+        let language = if mode == ReadMode::ProductChinese {
+            "zh-CN"
+        } else {
+            "en-US"
+        };
+        Some((
+            configuration.revision,
+            crate::domain::product_classification::ProductClassification::from_entries(
+                &configuration.entries,
+                language,
+            ),
+        ))
+    } else {
+        None
+    };
+    let excluded = if mode.product() {
+        HashSet::new()
+    } else {
+        load_excluded_apps(&mut transaction).await?
+    };
     let earliest_start_ms = sqlx::query_scalar::<_, Option<i64>>(
         "SELECT MIN(first_start) FROM (
            SELECT MIN(start_time) AS first_start FROM sessions
@@ -189,7 +297,7 @@ async fn load_snapshot_with_apps(
     let mut response_bytes = 1024;
     let mut identities = names::IdentityCollector::default();
     for day in boundaries.windows(2) {
-        let records = load_day_facts(
+        let mut records = load_day_facts(
             &mut transaction,
             day[0],
             day[1],
@@ -199,6 +307,18 @@ async fn load_snapshot_with_apps(
             mode != ReadMode::Totals,
         )
         .await?;
+        if let Some((_, policy)) = &product {
+            for record in &mut records {
+                if record
+                    .value
+                    .app
+                    .as_deref()
+                    .is_some_and(|app| policy.excludes(app))
+                {
+                    record.value.included = false;
+                }
+            }
+        }
         // Excluded native activity must still suppress overlapping imported facts.
         let mut app_totals = HashMap::<Arc<str>, i64>::new();
         let mut name_requests = Vec::new();
@@ -208,7 +328,7 @@ async fn load_snapshot_with_apps(
             .try_fold(0_i64, |sum, contribution| {
                 if contribution.duration_ms > 0 {
                     if let Some(app) = contribution.value.app {
-                        if mode == ReadMode::ApplicationsNamed {
+                        if mode.named() {
                             name_requests.push((
                                 contribution.origin,
                                 contribution.value.id,
@@ -230,7 +350,7 @@ async fn load_snapshot_with_apps(
                 .max_by(|(left, a), (right, b)| a.cmp(b).then_with(|| right.cmp(left)))
                 .map(|(app, _)| app.to_string()),
         );
-        if matches!(mode, ReadMode::Applications | ReadMode::ApplicationsNamed) {
+        if mode.applications() {
             if app_totals.keys().any(|key| key.len() > MAX_APP_KEY_BYTES) {
                 return Err("daily application canonical key exceeds budget".into());
             }
@@ -261,7 +381,7 @@ async fn load_snapshot_with_apps(
                 return Err("daily application response exceeds budget".into());
             }
             app_days.push(entry);
-            if mode == ReadMode::ApplicationsNamed {
+            if mode.named() {
                 identities.read(&mut transaction, name_requests).await?;
             }
         }
@@ -272,7 +392,7 @@ async fn load_snapshot_with_apps(
         });
     }
     transaction.commit().await.map_err(query_error)?;
-    let applications = if mode == ReadMode::ApplicationsNamed {
+    let applications = if mode.named() {
         let values = identities.finish();
         if response_bytes
             + serde_json::to_vec(&values)
@@ -295,6 +415,7 @@ async fn load_snapshot_with_apps(
         top_apps,
         app_days,
         applications,
+        product,
     })
 }
 

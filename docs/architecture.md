@@ -332,6 +332,8 @@ src/
 
 `features/data/*` 拥有长期趋势的页面状态与纯只读模型。`Data` 页面父级负责总趋势、热力图、应用趋势快照和首屏 bootstrap 持久化；feature-owned 目标趋势面板负责应用、分类、网页模式及其搜索、选择和图表交互，不能自行写入 bootstrap 或复制快照读取链路。应用趋势和分类趋势复用同一会话规范化、排除、别名合并、区间裁剪与本地日期边界；分类维度不能为方便展示而新建第二条数据库读取路径。网页趋势复用现有网页活动表、域名 override 与本地日期规则，但通过独立的域名级只读 adapter 只读取域名、图标和时间边界，不把 URL 或标题带入趋势模型；该 adapter 与快照仅在用户切换到网页趋势后加载。外部活动导入采用有明确 owner 的独立事实表，并在共享 persistence 读边界按“本机精确事实 > 外部精确事实 > 外部小时汇总”即时组合；它不引入持久化聚合 schema 或后台 worker。daemon client 模式下，Desktop 只负责文件选择和写入 profile 控制目录中的 owner-only 一次性暂存票据；API 不接受任意路径或 CSV 正文，`patinad` 必须重新校验大小、SHA-256 和 CSV 内容后再由 data owner 事务提交。小时汇总不得进入 History 或详情时间线，网页明细继续由 `features/destination/*` 统一读取和展示。
 
+多客户端分支中，Data 的应用／分类趋势使用 `daily-product`。`domain/product_classification` 决定手动分类、排除和删除分类回落，`data/repositories/daily_activity` 在同一事务读取配置与活动，共享协议返回最终分类、名称 override 与配置 revision。前端不能用另一个时刻的 mapper 重新分类或排除这些时长；名称本地化、颜色与图表格式仍属表现层。旧 daily-apps／Summary 的兼容语义保留，Dashboard、精确历史和网页读模型继续按执行单迁移。
+
 前端终局结构中不再保留：
 
 - 根层 `src/lib/`

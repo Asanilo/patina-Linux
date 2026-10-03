@@ -2,6 +2,7 @@ use sqlx::{Pool, Sqlite};
 
 mod snapshot;
 pub use snapshot::load_classification_snapshot;
+pub(crate) use snapshot::read_snapshot as read_classification_snapshot;
 
 const APP_OVERRIDE_KEY_PREFIX: &str = "__app_override::";
 const WEB_DOMAIN_OVERRIDE_KEY_PREFIX: &str = "__web_domain_override::";

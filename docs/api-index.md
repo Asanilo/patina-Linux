@@ -63,7 +63,8 @@ Current caveats:
 | `/api/v1/summary/week` | `GET` | Implemented | Local-week summary |
 | `/api/v1/trend` | `GET` | Partial | Daily activity trend for week/month |
 | `/api/v1/heatmap` | `GET` | Beta.17 candidate | Bounded local-calendar daily totals; used by Desktop heatmap |
-| `/api/v1/activity/daily-apps` | `GET` | Unreleased source | Bounded daily application totals and optional identities; used by Desktop application/category charts |
+| `/api/v1/activity/daily-apps` | `GET` | Compatibility surface | Bounded daily application totals and optional identities |
+| `/api/v1/activity/daily-product` | `GET` | Development branch | Transaction-consistent daily totals, product classification and configuration revision; used by Desktop application/category charts |
 | `/api/v1/classification/observed-apps` | `GET` | Unreleased source | Bounded raw executable statistics for classification candidates |
 | `/api/v1/web-activity` | `GET` | Implemented | Browser activity segment query |
 | `/api/v1/ai/activity-context` | `GET` | Implemented | Aggregated diagnostics, active session, summaries, and recent web activity for external AI analysis |
@@ -672,7 +673,7 @@ Desktop transport: `cmd_get_daily_activity {from, to}` forwards through the type
 
 ### `GET /api/v1/activity/daily-apps`
 
-Unreleased source endpoint on Desktop, read-only daemon and tracking daemon, using the existing Bearer authentication. Unlike `/trend`, this returns **all positive application totals** for each day, not only the top application. Desktop application/category charts use this read instead of transferring session details to JavaScript.
+Compatibility endpoint on Desktop, read-only daemon and tracking daemon, using the existing Bearer authentication. Unlike `/trend`, this returns **all positive application totals** for each day, not only the top application. The multi-client development branch moves Desktop application/category charts to `daily-product` below; this endpoint retains its previous behavior.
 
 ```bash
 curl --fail-with-body -H "Authorization: Bearer $PATINA_API_TOKEN" \
@@ -707,7 +708,48 @@ The numeric boundaries above are illustrative; actual values follow the runtime 
 
 Budgets: shared heatmap/trend single-query permit, 30-second repository timeout (HTTP handler remains 15 seconds), 20,000 intersecting facts/day, 4,096 distinct canonical keys over the requested range, 50,000 day/app rows, and 4 MiB encoded response including JSON escaping and reserved envelope overhead. Existing heatmap settings/metadata limits also apply. Busy/read/budget failures return `500` without partial data or SQL fallback; the HTTP timeout uses the server's existing error policy. Per-day facts are released between days within one SQLite snapshot. These are retained-data limits, not a proven fixed process-memory ceiling.
 
-Desktop transport `cmd_get_daily_apps {from,to}` requests identities through the typed daemon client in daemon-owned mode, otherwise the same repository. Only this response allows 4 MiB; other endpoints' caps remain unchanged. Its client timeout is 35 seconds, with no retry/fallback on errors. A `404` becomes `daily-apps-unsupported`. The frontend validates complete local-day boundaries, unique keys and identities, positive safe-integer durations, per-day sum consistency and key/row budgets, sharing the heatmap/overview request queue. It retains manual display-name/category overrides and canonical alias display names. Old persisted app charts without `appReadVersion: 1` are discarded. Failures show retry rather than a stale successful chart. No dedicated MCP tool is exposed yet. Daily totals are never interpreted as session start/end intervals.
+The compatibility endpoint retains its 4 MiB response cap. Daily totals are never interpreted as session start/end intervals. No dedicated MCP tool is exposed.
+
+### `GET /api/v1/activity/daily-product`
+
+Development-branch endpoint, available on all three API surfaces with the existing
+authentication. It uses the same required `from` and `to` host-local dates, range,
+fact/identity budgets, single-query admission and 30-second repository timeout as
+`daily-apps`. Optional `language` is exactly `en-US` (default) or `zh-CN`; duplicate
+or unknown parameters are rejected. Language only preserves the legacy fallback
+for an empty custom-category label after decoding; it does not change time ranges.
+
+`data` contains `sampled_at_ms`, `configuration_revision`, `days` in the daily-apps
+format, and a required `applications` array. Each identity contains `app_key`,
+`app_name`, `exe_name`, final `category`, and nullable `display_name_override`.
+The revision identifies classification configuration, not changes in activity.
+Configuration and all contributing facts are read in the same SQLite transaction.
+The full encoded response remains bounded to 4 MiB, including classification and
+names; no URL, title, raw override JSON or credential is returned.
+
+The domain policy applies manual classification, canonical aliases, literal
+`track: false`, disabled overrides, system exclusion and the existing ordered
+fallback for deleted built-in categories. Invalid legacy overrides are ignored as
+in the Desktop mapper, without writing repairs. Import source categories do not
+become manually confirmed product categories. Excluded native time still occupies
+capacity when imports are resolved; filtering never reveals suppressed imports.
+Legacy `__app_excluded` settings are not a second product configuration source.
+The older heatmap/Summary/`daily-apps` compatibility policies remain unchanged.
+
+Desktop `cmd_get_daily_apps {from,to,language}` now uses this endpoint through the
+shared SDK, or the identical repository in the embedded migration path. The SDK
+and JS adapter validate totals, identities, configuration revision and budgets.
+There is no old-endpoint or SQLite fallback; HTTP 404 remains an explicit runtime
+upgrade/restart error. The Data application/category projection consumes final
+classification and exclusions without applying a newer client mapper to an older
+snapshot. Existing name localization, category labels/colors and chart formatting
+remain presentation responsibilities. Persisted app charts now require
+`appReadVersion: 2`, so old projections are discarded and reloaded.
+
+This read does not yet replace Dashboard, exact History, web activity or the
+separate runtime-health cutoff logic. `sampled_at_ms` retains the existing daily
+aggregation semantics for open sessions; it is not a claim that stale tracking
+has been resolved across all clients.
 
 ### `GET /api/v1/classification/observed-apps`
 

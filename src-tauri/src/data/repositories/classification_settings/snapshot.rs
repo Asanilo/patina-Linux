@@ -30,7 +30,7 @@ pub async fn load_classification_snapshot(
     .map_err(|_| "classification snapshot exceeded its time budget".to_string())?
 }
 
-pub(super) async fn read_snapshot(
+pub(crate) async fn read_snapshot(
     connection: &mut SqliteConnection,
     sampled_at_ms: i64,
 ) -> Result<ClassificationSnapshot, String> {

@@ -1,0 +1,36 @@
+[
+  {"name":"manual categories and aliases","language":"en-US","deleted":[],"overrides":[
+    {"exe":"SteamWebHelper.exe","value":{"category":"game","displayName":"  Games  "}},
+    {"exe":"editor","value":{"category":"development"}},
+    {"exe":"off","value":{"category":"music","track":false,"enabled":false}},
+    {"exe":"hidden","value":{"track":false}},
+    {"exe":"bad","value":{"category":123,"track":false}}
+  ],"checks":[
+    {"exe":"steam.exe","category":"game","tracked":true,"name":"Games"},
+    {"exe":"editor","category":"development","tracked":true,"name":null},
+    {"exe":"off","category":"other","tracked":true,"name":null},
+    {"exe":"hidden","category":"other","tracked":false,"name":null},
+    {"exe":"bad","category":"other","tracked":true,"name":null},
+    {"exe":"svchost.exe","category":"system","tracked":false,"name":null}
+  ]},
+  {"name":"deleted category falls back in product order","language":"en-US","deleted":["ai","development"],"overrides":[
+    {"exe":"editor","value":{"category":"development"}},
+    {"exe":"unassigned","value":{"category":"Development"}}
+  ],"checks":[
+    {"exe":"editor","category":"office","tracked":true,"name":null},
+    {"exe":"unassigned","category":"other","tracked":true,"name":null}
+  ]},
+  {"name":"custom category encoding","language":"zh-CN","deleted":[],"overrides":[
+    {"exe":"cn","value":{"category":"custom:%25E7%25A0%2594%25E7%25A9%25B6"}},
+    {"exe":"spaces","value":{"category":"custom:%20%20"}},
+    {"exe":"broken","value":{"category":"custom:%E0%A4"}},
+    {"exe":"plus","value":{"category":"custom:a+b"}},
+    {"exe":"cut","value":{"category":"custom:1234567890123456789😀","track":false}}
+  ],"checks":[
+    {"exe":"cn","category":"custom:%E7%A0%94%E7%A9%B6","tracked":true,"name":null},
+    {"exe":"spaces","category":"custom:%E8%87%AA%E5%AE%9A%E4%B9%89","tracked":true,"name":null},
+    {"exe":"broken","category":"custom:%25E0%25A4","tracked":true,"name":null},
+    {"exe":"plus","category":"custom:a%2Bb","tracked":true,"name":null},
+    {"exe":"cut","category":"other","tracked":true,"name":null}
+  ]}
+]

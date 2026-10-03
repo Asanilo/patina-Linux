@@ -15,12 +15,11 @@ function context(activity: DailyAppsRead, range: ResolvedDataTrendRange) {
   const dates = buildDataDayRanges(range);
   const chartRanges = range.granularity === "month" ? buildDataMonthRanges(range) : dates;
   const days = new Map(activity.days.map(day => [day.date, new Map(day.apps.map(app => [app.appKey, app.duration]))]));
-  const apps = activity.applications.filter(app => AppClassification.shouldTrackApp(app.appKey)).map(app => {
-    const override = AppClassification.getUserOverride(app.appKey)?.displayName?.trim();
-    const name = override || AppClassification.resolveCanonicalDisplayName(app.appKey)
-      || app.appName || AppClassification.mapApp(app.appKey).name;
+  const apps = activity.applications.map(app => {
+    const name = app.displayNameOverride || AppClassification.resolveCanonicalDisplayName(app.appKey)
+      || app.appName || AppClassification.mapDefaultApp(app.appKey).name;
     const daily = dates.map(date => date.endMs <= date.startMs ? 0 : days.get(dateKey(date.startMs))?.get(app.appKey) ?? 0);
-    return { ...app, appName: name, daily, total: daily.reduce((sum, value) => sum + value, 0), category: AppClassification.mapApp(app.appKey, { appName: name }).category };
+    return { ...app, appName: name, daily, total: daily.reduce((sum, value) => sum + value, 0) };
   }).filter(app => app.total > 0);
   const sumRange = (daily: number[], start: number, end: number) => dates.reduce((sum, date, index) => (
     date.startMs >= start && date.startMs < end ? sum + daily[index] : sum

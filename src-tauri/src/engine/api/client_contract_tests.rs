@@ -25,6 +25,9 @@ async fn independent_and_desktop_clients_observe_the_same_committed_classificati
     pool.execute(crate::data::schema::ACTIVITY_IMPORT_SCHEMA_SQL)
         .await
         .unwrap();
+    pool.execute(crate::data::schema::SOFTWARE_REMINDER_RULES_SCHEMA_SQL)
+        .await
+        .unwrap();
     pool.execute("INSERT INTO sessions(app_name,exe_name,window_title,start_time,end_time,duration) VALUES('Fixture','fixture-app','synthetic',1000,2000,1000)").await.unwrap();
     let hub = Arc::new(RuntimeEventHub::new(2));
     let context = ApiRuntimeContext::with_state_and_events(
@@ -203,6 +206,29 @@ async fn independent_and_desktop_clients_observe_the_same_committed_classificati
         patina_client::ClientError::Http { status: 400, .. }
     ));
     drop(conditional_events);
+    // The independent SDK and Desktop consume the same product projection.
+    use chrono::TimeZone;
+    let day = chrono::Local
+        .timestamp_millis_opt(1000)
+        .single()
+        .unwrap()
+        .date_naive();
+    let from = day.format("%Y-%m-%d").to_string();
+    let to = day.succ_opt().unwrap().format("%Y-%m-%d").to_string();
+    let product = native.daily_product(&from, &to, "en-US").await.unwrap();
+    let desktop_product = desktop.daily_product(&from, &to, "en-US").await.unwrap();
+    assert_eq!(product.days, desktop_product.days);
+    assert_eq!(product.applications, desktop_product.applications);
+    assert_eq!(
+        product.configuration_revision,
+        desktop_product.configuration_revision
+    );
+    assert_eq!(product.days[0].active_ms, 1000);
+    assert_eq!(product.applications[0].category, "other"); // Legacy free-text 'research' is not a user-assignable product category.
+    assert_eq!(
+        product.applications[0].display_name_override.as_deref(),
+        Some("Updated fixture")
+    );
     drop(reconnected);
     drop(desktop_events);
     shutdown.shutdown();

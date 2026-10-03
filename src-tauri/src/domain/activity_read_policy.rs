@@ -73,6 +73,7 @@ const BLOCKED: &[&str] = &[
 #[derive(Deserialize)]
 struct CatalogEntry {
     name: String,
+    category: Option<String>,
 }
 
 fn catalog() -> &'static HashMap<String, CatalogEntry> {
@@ -85,7 +86,7 @@ fn catalog() -> &'static HashMap<String, CatalogEntry> {
     })
 }
 
-fn trim_js(value: &str) -> &str {
+pub(crate) fn trim_js(value: &str) -> &str {
     value.trim_matches(|ch| {
         matches!(ch,
             '\u{0009}'..='\u{000d}' | '\u{0020}' | '\u{00a0}' | '\u{1680}' |
@@ -93,6 +94,13 @@ fn trim_js(value: &str) -> &str {
             '\u{205f}' | '\u{3000}' | '\u{feff}'
         )
     })
+}
+
+pub(crate) fn default_category(exe: &str) -> &'static str {
+    catalog()
+        .get(exe)
+        .and_then(|entry| entry.category.as_deref())
+        .unwrap_or("other")
 }
 
 fn normalize(exe: &str) -> String {

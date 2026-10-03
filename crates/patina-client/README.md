@@ -18,6 +18,14 @@ classification namespaces, never arbitrary settings or credentials. These are
 configuration wire types; classification rules and activity read models still
 need further migration to the backend.
 
+`daily_product(from, to, language)` reads host-local daily totals with final
+product categories, transaction-consistent display-name overrides, and a
+classification configuration revision. This uses its own development endpoint;
+old runtimes fail explicitly, without falling back to a legacy projection.
+The client validates totals and identity completeness. Consumers must not apply
+local classification or exclusion rules to these confirmed totals again.
+Presentation labels/colors and exact History are separate concerns.
+
 The host supplies the port and credential. Requests only target `127.0.0.1`, do
 not use environment proxies or follow redirects, have time and response-size
 limits, and never automatically retry writes. Negotiate capabilities before
