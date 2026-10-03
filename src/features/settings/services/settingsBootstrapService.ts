@@ -1,6 +1,6 @@
 import { getAppVersion } from "../../../platform/desktop/appInfoGateway.ts";
 import {
-  loadAppSettings,
+  loadAppSettingsSnapshot,
   type AppSettings,
 } from "../../../platform/persistence/appSettingsStore.ts";
 import {
@@ -11,26 +11,28 @@ import {
 export interface SettingsPageBootstrapData {
   settings: AppSettings;
   appVersion: string;
+  productRevision?: string;
 }
 
 type SettingsPageBootstrapDeps = {
   getAppVersion: () => Promise<string>;
-  loadAppSettings: () => Promise<AppSettings>;
+  loadAppSettingsSnapshot: typeof loadAppSettingsSnapshot;
 };
 
 const settingsPageBootstrapDeps: SettingsPageBootstrapDeps = {
   getAppVersion: async () => getAppVersion().catch(() => "unknown"),
-  loadAppSettings,
+  loadAppSettingsSnapshot,
 };
 
 export async function loadSettingsPageBootstrapWithDeps(
   deps: SettingsPageBootstrapDeps,
 ): Promise<SettingsPageBootstrapData> {
-  const [settings, appVersion, localApiSettings] = await Promise.all([
-    deps.loadAppSettings(),
+  const [snapshot, appVersion, localApiSettings] = await Promise.all([
+    deps.loadAppSettingsSnapshot(),
     deps.getAppVersion(),
     loadLocalApiSettingsForBootstrap(),
   ]);
+  const settings = snapshot.settings;
   const mergedSettings = localApiSettings
     ? {
         ...settings,
@@ -42,6 +44,7 @@ export async function loadSettingsPageBootstrapWithDeps(
   const bootstrap = {
     settings: mergedSettings,
     appVersion,
+    productRevision: snapshot.productRevision,
   };
   return bootstrap;
 }

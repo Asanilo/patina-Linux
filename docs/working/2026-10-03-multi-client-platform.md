@@ -55,7 +55,7 @@ HTTP API 索引和源码以当前实现为准；索引中历史的 unreleased/st
 | --- | --- | --- | --- |
 | M0 | 工作区、缺口表、owner 决策、阶段计划与长期规则 | 新会话能准确继续；稳定 main 不受开发影响 | 已完成 |
 | M1 | 独立 Rust 传输／协议基础，Desktop 接入；同步契约和 SDK 回归 | 第二个非 Tauri 进程可使用相同连接基础；请求、错误和 SSE 帧只有一份传输实现；通用重连／快照协调从宿主提取 | M1a、M1b 已实现并验证 |
-| M2 | 以“今天 → 应用／网页详情 → 历史”为切片，补最小读 API，迁移 Tauri；统一产品配置读取 | Tauri 作为标准客户端完成核心链路，统计规则由后端负责 | M2a–M2e、M2g–M2i 已完成；网页迁移、客户端偏好存储和普通设置条件写入仍待完成 |
+| M2 | 以“今天 → 应用／网页详情 → 历史”为切片，补最小读 API，迁移 Tauri；统一产品配置读取 | Tauri 作为标准客户端完成核心链路，统计规则由后端负责 | M2a–M2e、M2g–M2j 已完成；网页迁移、客户端偏好存储和运行资源配置并发保护仍待完成 |
 | M3 | 浏览器会话和适配层；共享 React 核心界面，复用 Quiet Pro | Tauri＋Web 并行读取／修改分类并同步，真实浏览器验收 | 待实施 |
 | M4 | Rust SDK typed 能力逐步补全，TUI 接入同一核心链路 | 实际交互式 TUI 可查看／筛选／修改分类，并参与同步；CLI 示例不算完成 | 待实施 |
 | M5 | GPUI 客户端，同一能力和同步契约，独立视图 | 可运行 GPUI 核心链路和四端同步验收；评估启动、资源和维护成本 | 待实施 |
@@ -320,3 +320,19 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 最终前端门禁通过 63 个 TypeScript 文件、43 项浏览器检查和原 bundle 预算；浏览器实际验证远端阈值更新、保留本地编辑及取消后的最新值。SDK 35 项测试与 Clippy 通过；最终 `check:rust` 为 756 passed / 21 ignored，`check:daemon` 为 599 passed / 10 ignored，均含对应依赖／边界和 Clippy。
 - 初轮门禁发现 SDK 的 Clippy 风格告警、OpenAPI 大 JSON 宏的递归限制、新测试类型路径、Unicode 超限处理及旧默认值断言，均已修复。前端／SDK 的最终证据为 `tmp/acceptance/m2i-complete-gate.log`；随后仅 Rust 修正，最终证据为 `tmp/acceptance/m2i-rust-verified.log` 与 `tmp/acceptance/m2i-daemon-verified.log`，未重复未变化的前端／SDK。
 - 本切片只做本地源码与提交，没有打包、安装、推送或合并 main。下一执行范围仍为客户端偏好物理归属、普通配置条件写入、网页决定与迁移、读取 admission、契约生成及旧业务／replay 分支退出；独立安装与新客户端产品阶段仍不能视为完成。
+
+### M2j 执行设计：普通追踪策略条件提交
+
+- 普通策略（idle／continuity／最短展示时长／暂停）在 owner 取得 transition lock 和 SQLite writer 后检查读取时的 product revision，并原子提交。暂停沿用最后可信 probe 边界封口，不能绕开现有追踪恢复保护；idle 平台阈值只在事务成功后更新。独立 typed SDK 通过新 capability／endpoint 提交，不回退旧无条件写入，不自动重试冲突。
+- 设置页显式携带读取基线，不能在保存前偷偷读取一个新 revision 来绕过冲突。普通策略混合其他设置时先检查／提交条件策略，再执行已验证的其余操作；不能把数据库事务宣称为系统资源的全局原子事务。资源操作失败要保留真实错误和草稿，后续根据新快照恢复。
+- 复核发现设置保存 helper 已返回 save-failed，但页面将非 runtime-warning 全部提示为 saved；先修复此错误反馈并增加浏览器失败场景。其他客户端本地偏好的物理迁移保持后续范围，不因 CAS 交付宣称已完成。
+
+### M2j 核验结果
+
+- 新 capability／typed request／`POST /api/v1/settings/product/conditional`／SDK 已实现。普通策略先锁 tracking transition，再采样 owner 时间，在 SQLite writer 内比较最初读取的 revision 并原子写入。暂停封口复用既有事务 owner，失败保留 pending probe boundary；平台阈值及 pending seal 的确认只在提交成功后发生。不同 SQLite 连接同时提交同一旧 revision 时，只允许一个有实际变更的写者成功。
+- Desktop 设置编排从 command 移到 `app/settings_commit`。设置页携带明确读取基线；新接口缺失、冲突或网络错误不回退旧写入口，也不重新 GET 后偷偷换 revision 重试。混合保存先验证配置并提交条件策略，冲突时主题／音频等其余操作完全不执行。后续资源操作失败仍可能已有策略提交，返回真实错误并重新读取；不能宣称存在跨资源全局事务。
+- 草稿刷新不自动接受同字段冲突的新版本；不同字段正常合并。用户取消冲突编辑或将策略改回当前值后，即使仍有外观草稿，也会恢复最新策略基线。修复失败结果误提示 saved；确认后的 idle／audio 不再由前端重复写入，避免稍后的补写覆盖其他客户端的新值。保存期间的新编辑也按提交时草稿与当前草稿对照保留。
+- 自动验收覆盖：无效字段／旧 revision 拒绝、两连接竞争、SQL seal 失败整体回滚、最后可信 probe 边界、等待 transition lock 后再取时间、SDK 缺少 capability 不 fallback／冲突只提交一次，以及真实 MockRuntime Desktop → HTTP owner 的混合保存拒绝、成功和后续资源失败。浏览器验证失败 toast、同字段冲突保留草稿、取消后重新编辑成功；这些不是新 Web 客户端或本机安装验收。
+- 顺带修复 OpenAPI 写能力枚举遗漏既有 canonical／web cleanup 的问题，枚举现在从真实 API surface 合并生成；契约测试覆盖这些能力和新的条件写能力。
+- 最终通过：63 个 TypeScript 文件、44 项浏览器检查与原 bundle 预算；36 项 SDK 测试及 Clippy；Desktop 762 passed / 21 ignored，独立后端 604 passed / 10 ignored，边界／依赖图及各自 Clippy 均通过。证据为 `tmp/acceptance/m2j-frontend-final.log`、`m2j-full-2.log` 的 SDK 部分、`m2j-rust-verified.log`、`m2j-daemon-verified.log`；原生混合场景另有 `m2j-native-mixed.log`。初轮修正了旧测试对可选元数据形状的要求、测试读取的 owner 边界和缺失 event hub 的原生夹具。
+- 没有安装、打包、推送、合并或发布。后续仍需客户端偏好物理迁移、运行资源的并发保护、其余无条件便捷写入口的退出审计、网页产品决定／迁移、查询 admission／失败重读、契约生成和旧 replay／客户端业务退出。不能把 M2j 视为整个后端基础或 M2 已完成。

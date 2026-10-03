@@ -51,11 +51,30 @@ pub fn command_client<R: Runtime>(
         .map(Some)
 }
 
+pub struct OwnedAppSettingsPlan {
+    afk_threshold: Option<u64>,
+    tracking_paused: Option<bool>,
+    audio_participation_enabled: Option<bool>,
+    browser_configuration:
+        Option<crate::engine::api::runtime_control::BrowserActivityRuntimeConfiguration>,
+    remaining: Vec<crate::data::repositories::app_settings::AppSettingMutation>,
+}
+
 pub async fn route_owned_app_settings<R: Runtime>(
     app: &AppHandle<R>,
     client: &crate::platform::daemon_client::PatinadClient,
     mutations: Vec<crate::data::repositories::app_settings::AppSettingMutation>,
 ) -> Result<Vec<crate::data::repositories::app_settings::AppSettingMutation>, String> {
+    prepare_owned_app_settings(app, mutations)
+        .await?
+        .apply(client)
+        .await
+}
+
+pub async fn prepare_owned_app_settings<R: Runtime>(
+    app: &AppHandle<R>,
+    mutations: Vec<crate::data::repositories::app_settings::AppSettingMutation>,
+) -> Result<OwnedAppSettingsPlan, String> {
     crate::data::repositories::app_settings::validate_app_setting_mutations(&mutations)?;
     if mutations
         .iter()
@@ -148,31 +167,53 @@ pub async fn route_owned_app_settings<R: Runtime>(
             .map_err(runtime_control_error_message)?;
     }
 
-    if let Some(seconds) = afk_threshold {
-        client
-            .set_afk_threshold(seconds)
-            .await
-            .map_err(|error| error.to_string())?;
+    Ok(OwnedAppSettingsPlan {
+        afk_threshold,
+        tracking_paused,
+        audio_participation_enabled,
+        browser_configuration,
+        remaining,
+    })
+}
+
+impl OwnedAppSettingsPlan {
+    pub async fn apply(
+        self,
+        client: &crate::platform::daemon_client::PatinadClient,
+    ) -> Result<Vec<crate::data::repositories::app_settings::AppSettingMutation>, String> {
+        let Self {
+            afk_threshold,
+            tracking_paused,
+            audio_participation_enabled,
+            browser_configuration,
+            remaining,
+        } = self;
+        if let Some(seconds) = afk_threshold {
+            client
+                .set_afk_threshold(seconds)
+                .await
+                .map_err(|error| error.to_string())?;
+        }
+        if let Some(paused) = tracking_paused {
+            client
+                .set_tracking_paused(paused)
+                .await
+                .map_err(|error| error.to_string())?;
+        }
+        if let Some(enabled) = audio_participation_enabled {
+            client
+                .set_audio_participation_enabled(enabled)
+                .await
+                .map_err(|error| error.to_string())?;
+        }
+        if let Some(configuration) = browser_configuration {
+            client
+                .configure_browser_activity(configuration)
+                .await
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(remaining)
     }
-    if let Some(paused) = tracking_paused {
-        client
-            .set_tracking_paused(paused)
-            .await
-            .map_err(|error| error.to_string())?;
-    }
-    if let Some(enabled) = audio_participation_enabled {
-        client
-            .set_audio_participation_enabled(enabled)
-            .await
-            .map_err(|error| error.to_string())?;
-    }
-    if let Some(configuration) = browser_configuration {
-        client
-            .configure_browser_activity(configuration)
-            .await
-            .map_err(|error| error.to_string())?;
-    }
-    Ok(remaining)
 }
 
 fn require_browser_configuration(

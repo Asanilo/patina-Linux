@@ -49,3 +49,6 @@ pub mod web_activity;
 pub mod web_activity_bridge;
 #[cfg(feature = "desktop")]
 pub mod widget;
+
+#[cfg(feature = "desktop")]
+pub mod settings_commit;

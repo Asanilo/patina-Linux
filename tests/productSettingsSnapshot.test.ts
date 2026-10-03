@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { parseProductSettingsSnapshot, loadProductSettingsSnapshot } from "../src/platform/persistence/productSettingsSnapshot.ts";
 import { loadAppSettings, loadTrackerHealthTimestamp } from "../src/platform/persistence/appSettingsStore.ts";
-import { rebaseSettingsDraft } from "../src/features/settings/services/settingsDraftRebase.ts";
+import { rebaseSettingsDraft, hasSettingsDraftPolicyConflict, hasSettingsDraftPolicyEdits } from "../src/features/settings/services/settingsDraftRebase.ts";
+import { saveAppSettingsPatch } from "../src/platform/persistence/appSettingsStore.ts";
 import { DEFAULT_SETTINGS } from "../src/shared/settings/appSettings.ts";
 
 const fixture = () => ({revision: "a".repeat(64), sampled_at_ms: 100, last_heartbeat_ms: 99,
@@ -18,6 +19,11 @@ try {
   const edited = {...saved, minSessionSecs: 360};
   const remote = {...saved, idleTimeoutSecs: 1200, minSessionSecs: 420};
   const rebased = rebaseSettingsDraft(saved, edited, remote);
+  assert.equal(hasSettingsDraftPolicyConflict(saved, edited, remote), true);
+  assert.equal(hasSettingsDraftPolicyConflict(saved, edited, {...saved, idleTimeoutSecs: 1200}), false);
+  assert.equal(hasSettingsDraftPolicyConflict(saved, edited, {...edited}), false);
+  assert.equal(hasSettingsDraftPolicyEdits(saved, edited), true);
+  assert.equal(hasSettingsDraftPolicyEdits(remote, {...remote, themeMode: "dark"}), false);
   assert.equal(rebased.idleTimeoutSecs, 1200);
   assert.equal(rebased.minSessionSecs, 360);
   assert.deepEqual(rebaseSettingsDraft(saved, saved, remote), remote);
@@ -60,6 +66,15 @@ try {
   mockIPC((command) => { assert.equal(command, "cmd_get_product_settings"); throw new Error("owner unavailable"); });
   await assert.rejects(loadProductSettingsSnapshot, /owner unavailable/);
   await assert.rejects(loadTrackerHealthTimestamp, /owner unavailable/);
+  const mutations: string[] = [];
+  mockIPC((command, args) => {
+    mutations.push(command);
+    assert.equal(command, "cmd_commit_settings_if_revision");
+    assert.equal((args as {expectedRevision: string}).expectedRevision, "a".repeat(64));
+    throw new Error("product-settings-conflict");
+  });
+  await assert.rejects(() => saveAppSettingsPatch({minSessionSecs: 360, themeMode: "dark"}, "a".repeat(64)), /product-settings-conflict/);
+  assert.deepEqual(mutations, ["cmd_commit_settings_if_revision"]);
   console.log("PASS product settings validation, owner policy, scoped local preferences and no health SQL fallback");
 } finally {
   clearMocks();

@@ -40,6 +40,37 @@ async fn serve(router: Router) -> (Client, tokio::task::JoinHandle<()>) {
 }
 
 #[tokio::test]
+async fn policy_conflicts_are_not_retried_and_missing_capability_never_uses_legacy_writes() {
+    use patina_client::protocol::product_settings::{ProductSettingsCommitRequest, ProductSettingsPatch};
+    for advertised in [false, true] {
+        let writes = Arc::new(AtomicUsize::new(0));
+        let legacy = Arc::new(AtomicUsize::new(0));
+        let legacy_count = legacy.clone();
+        let router = Router::new()
+            .route("/api/v1/capabilities", get(move || async move {
+                let mut value = capabilities(true);
+                if advertised { value["data"]["write_api"]["operations"] = json!(["product-settings-conditional"]); }
+                Json(value)
+            }))
+            .route("/api/v1/settings/product/conditional", post(|State(count): State<Arc<AtomicUsize>>, Json(body): Json<Value>| async move {
+                count.fetch_add(1, Ordering::SeqCst);
+                assert_eq!(body["expected_revision"], "a".repeat(64));
+                (StatusCode::CONFLICT, Json(json!({"error":{"code":"conflict","message":"changed"}})))
+            }))
+            .route("/api/v1/settings/app", post(move || { let count = legacy_count.clone(); async move {
+                count.fetch_add(1, Ordering::SeqCst); Json(json!({"data":{"ok":true}}))
+            }})).with_state(writes.clone());
+        let (client, server) = serve(router).await;
+        let error = client.commit_product_settings(&ProductSettingsCommitRequest {expected_revision:"a".repeat(64),patch:ProductSettingsPatch {min_session_secs:Some(360),..Default::default()}}).await.unwrap_err();
+        if advertised { assert!(matches!(error, ClientError::Http {status:409,..})); }
+        else { assert!(matches!(error, ClientError::UnsupportedCapability(_))); }
+        assert_eq!(writes.load(Ordering::SeqCst), usize::from(advertised));
+        assert_eq!(legacy.load(Ordering::SeqCst), 0);
+        server.abort();
+    }
+}
+
+#[tokio::test]
 async fn product_settings_decode_effective_policy_and_reject_invalid_snapshots() {
     let valid = json!({"revision":"a".repeat(64),"sampled_at_ms":100,"last_heartbeat_ms":99,"last_successful_sample_ms":98,
         "settings":{"idle_timeout_secs":60,"timeline_merge_gap_secs":30,"min_session_secs":300,

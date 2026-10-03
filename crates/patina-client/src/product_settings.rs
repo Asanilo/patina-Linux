@@ -1,5 +1,5 @@
 use crate::{Client, ClientError};
-use patina_protocol::product_settings::{ProductSettingsSnapshot, MAX_PRODUCT_SETTINGS_RESPONSE_BYTES};
+use patina_protocol::product_settings::{ProductSettingsSnapshot, ProductSettingsCommitRequest, MAX_PRODUCT_SETTINGS_RESPONSE_BYTES};
 use std::time::Duration;
 
 impl Client {
@@ -8,6 +8,22 @@ impl Client {
             "/api/v1/settings/product", "product settings", Duration::from_secs(8),
             MAX_PRODUCT_SETTINGS_RESPONSE_BYTES,
         ).await?;
+        validate_snapshot(snapshot)
+    }
+
+    pub async fn commit_product_settings(&self, request: &ProductSettingsCommitRequest) -> Result<ProductSettingsSnapshot, ClientError> {
+        let capabilities = self.capabilities().await?;
+        if !capabilities.write_api.available || !capabilities.write_api.operations.iter().any(|value| value == "product-settings-conditional") {
+            return Err(ClientError::UnsupportedCapability("product-settings-conditional".into()));
+        }
+        crate::negotiate_tracking_capabilities(capabilities)?;
+        let snapshot = self.post_json_with_limits("/api/v1/settings/product/conditional", request,
+            "conditional product settings commit", Duration::from_secs(8), MAX_PRODUCT_SETTINGS_RESPONSE_BYTES).await?;
+        validate_snapshot(snapshot)
+    }
+}
+
+fn validate_snapshot(snapshot: ProductSettingsSnapshot) -> Result<ProductSettingsSnapshot, ClientError> {
         if !patina_protocol::configuration::is_revision(&snapshot.revision)
             || snapshot.settings.web_activity_port < 1024
             || (snapshot.settings.web_activity_enabled && !snapshot.settings.web_activity_token_present)
@@ -19,5 +35,4 @@ impl Client {
             return Err(ClientError::InvalidResponse("invalid product settings snapshot".into()));
         }
         Ok(snapshot)
-    }
 }

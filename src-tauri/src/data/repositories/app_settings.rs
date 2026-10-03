@@ -165,6 +165,20 @@ pub async fn commit_app_setting_mutations_at(
         .await
         .map_err(|error| format!("failed to start app settings transaction: {error}"))?;
 
+    apply_app_settings_tx(&mut tx, mutations, timestamp_ms).await?;
+
+    tx.commit()
+        .await
+        .map_err(|error| format!("failed to commit app settings transaction: {error}"))?;
+
+    Ok(())
+}
+
+pub(crate) async fn apply_app_settings_tx(
+    tx: &mut sqlx::Transaction<'_, Sqlite>,
+    mutations: &[AppSettingMutation],
+    timestamp_ms: i64,
+) -> Result<(), String> {
     for mutation in mutations {
         sqlx::query(
             "INSERT INTO settings (key, value) VALUES (?, ?)
@@ -172,22 +186,18 @@ pub async fn commit_app_setting_mutations_at(
         )
         .bind(&mutation.key)
         .bind(&mutation.value)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await
         .map_err(|error| format!("failed to save app setting: {error}"))?;
 
         if mutation.key == "tracking_paused"
             && crate::domain::settings::parse_boolean_setting(&mutation.value, false)
         {
-            super::sessions::end_active_sessions_tx(&mut tx, timestamp_ms, None)
+            super::sessions::end_active_sessions_tx(tx, timestamp_ms, None)
                 .await
                 .map_err(|error| format!("failed to seal paused tracking: {error}"))?;
         }
     }
-
-    tx.commit()
-        .await
-        .map_err(|error| format!("failed to commit app settings transaction: {error}"))?;
 
     Ok(())
 }

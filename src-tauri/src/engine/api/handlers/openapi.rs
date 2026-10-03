@@ -269,6 +269,8 @@ fn paths(surface: ApiSurface) -> Value {
         }
     });
     let object = paths.as_object_mut().expect("OpenAPI paths object");
+    object.insert("/api/v1/settings/product/conditional".into(), json!({"post": post_operation(
+        "Commit ordinary tracking policy against the revision originally read. Acquires the tracking transition lock and SQLite writer before comparison; 409 never mutates policy or seals sessions. Idle, continuity, minimum display duration and pause are atomic. Runtime resources and client preferences are not accepted. Never retry automatically; requires product-settings-conditional capability.", vec![], "ProductSettingsCommitRequest", "ProductSettingsResponse")}));
     object.insert("/api/v1/settings/product".into(), json!({"get": get_operation("Bounded shared product policy and owner health at one read point. Revision excludes timestamps. No secrets or client preferences; no read-side writes. Five-second read deadline and 8 KiB response budget.", "ProductSettingsResponse")}));
     object.insert("/api/v1/assets/icons".into(),json!({"get":get_operation_with_parameters(
         "Read cached inline PNG/SVG icons in binary source-key order. Optional after is the preceding next_after cursor; limit is 1..64 (default 64). Page bytes may stop before limit. Clients must continue until next_after is null, enforce total budgets and never publish partial maps on failure. Presentation cache pages are not a cross-page transaction; concurrent updates appear on a later refresh. No filesystem access or icon extraction.",
@@ -558,6 +560,15 @@ fn schemas() -> Value {
     let mut schemas = serde_json::Map::new();
 
     schemas.insert("OpenApiDocument".to_string(), open_object_schema(vec![]));
+    schemas.insert("ProductSettingsCommitRequest".into(), object_schema(vec![
+        ("expected_revision", json!({"type":"string","pattern":"^[a-f0-9]{64}$"})),
+        ("patch", json!({"type":"object","additionalProperties":false,"properties":{
+            "idle_timeout_secs":{"type":"integer","minimum":60,"maximum":86400},
+            "timeline_merge_gap_secs":{"type":"integer","minimum":0,"maximum":86400},
+            "min_session_secs":{"type":"integer","minimum":60,"maximum":600,"multipleOf":60},
+            "tracking_paused":{"type":"boolean"}
+        }})),
+    ]));
     schemas.insert(
         "ProductSettingsResponse".into(),
         envelope(object_schema(vec![
@@ -647,22 +658,18 @@ fn schemas() -> Value {
             ("available", bool_schema()),
             (
                 "operations",
-                array_schema(enum_schema(vec![
-                    "activity-import",
-                    "app-mapping",
-                    "app-settings",
-                    "backup-restore",
-                    "classification",
-                    "classification-conditional",
-                    "data-maintenance",
-                    "local-api-configuration",
-                    "remote-backup",
-                    "runtime-settings",
-                    "scheduled-backup",
-                    "service-lifecycle",
-                    "tools",
-                    "tracker-settings",
-                ])),
+                array_schema(enum_schema(
+                    [
+                        ApiSurface::Desktop,
+                        ApiSurface::DaemonReadOnly,
+                        ApiSurface::DaemonTracking,
+                    ]
+                    .into_iter()
+                    .flat_map(|surface| surface.write_operations().iter().copied())
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .into_iter()
+                    .collect(),
+                )),
             ),
         ]),
     );
@@ -2537,6 +2544,23 @@ fn enum_schema(values: Vec<&str>) -> Value {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn openapi_accepts_current_cleanup_and_conditional_policy_capabilities() {
+        let document = super::get_openapi(super::ApiSurface::DaemonTracking).body;
+        let values = document
+            .pointer("/components/schemas/WriteApiCapability/properties/operations/items/enum")
+            .unwrap()
+            .as_array()
+            .unwrap();
+        for operation in [
+            "product-settings-conditional",
+            "canonical-app-cleanup",
+            "web-history-cleanup",
+        ] {
+            assert!(values.iter().any(|value| value.as_str() == Some(operation)));
+        }
+    }
+
     use serde_json::json;
 
     #[test]

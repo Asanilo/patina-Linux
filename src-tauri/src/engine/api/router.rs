@@ -25,6 +25,9 @@ pub(crate) async fn route_request(
         };
     }
     match (method, path) {
+        ("POST", "/api/v1/settings/product/conditional") => {
+            handlers::app_settings::commit_product_settings(context, body).await
+        }
         ("GET", "/api/v1/settings/product") => {
             handlers::app_settings::get_product_settings(context).await
         }

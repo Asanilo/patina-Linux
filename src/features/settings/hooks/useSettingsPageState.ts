@@ -1,11 +1,11 @@
 import { SnapshotReadController } from "../../../shared/lib/snapshotReadController.ts";
-import { rebaseSettingsDraft } from "../services/settingsDraftRebase.ts";
+import { rebaseSettingsDraft, hasSettingsDraftPolicyConflict, hasSettingsDraftPolicyEdits } from "../services/settingsDraftRebase.ts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getUiTextLanguage, setUiTextLanguage, UI_TEXT } from "../../../shared/copy/uiText.ts";
 import type { QuietToastTone } from "../../../shared/components/QuietToast";
 import { useQuietDialogs } from "../../../shared/hooks/useQuietDialogs";
 import { getSettingsBootstrapCache, setSettingsBootstrapCache } from "../services/settingsBootstrapCache";
-import { loadSettingsPageBootstrap, subscribeSettingsChanges } from "../services/settingsBootstrapService.ts";
+import { loadSettingsPageBootstrap, subscribeSettingsChanges, type SettingsPageBootstrapData } from "../services/settingsBootstrapService.ts";
 import { SettingsRuntimeAdapterService } from "../services/settingsRuntimeAdapterService";
 import {
   commitPreparedBackupRestoreFlow,
@@ -69,6 +69,10 @@ export function useSettingsPageState({
   );
   const savedSettingsRef = useRef(savedSettings);
   const draftSettingsRef = useRef(draftSettings);
+  const productRevisionRef = useRef(initialBootstrap?.productRevision);
+  const latestProductRevisionRef = useRef(initialBootstrap?.productRevision);
+  const policyConflictRef = useRef(false);
+  const settingsReaderRef = useRef<SnapshotReadController<SettingsPageBootstrapData> | null>(null);
   savedSettingsRef.current = savedSettings;
   draftSettingsRef.current = draftSettings;
   const [loading, setLoading] = useState(() => !initialBootstrap);
@@ -103,7 +107,10 @@ export function useSettingsPageState({
     let cancelled = false;
     let unsubscribe: (() => void) | undefined;
     const owner = new SnapshotReadController(loadSettingsPageBootstrap, bootstrap => {
-      setSettingsBootstrapCache({settings: {...bootstrap.settings}, appVersion: bootstrap.appVersion});
+      setSettingsBootstrapCache({...bootstrap, settings: {...bootstrap.settings}});
+      latestProductRevisionRef.current = bootstrap.productRevision;
+      policyConflictRef.current ||= hasSettingsDraftPolicyConflict(savedSettingsRef.current, draftSettingsRef.current, bootstrap.settings);
+      if (!policyConflictRef.current) productRevisionRef.current = bootstrap.productRevision;
       const nextDraft = rebaseSettingsDraft(savedSettingsRef.current, draftSettingsRef.current, bootstrap.settings);
       savedSettingsRef.current = {...bootstrap.settings};
       draftSettingsRef.current = nextDraft;
@@ -115,6 +122,7 @@ export function useSettingsPageState({
       console.error("load settings bootstrap failed", error);
       setLoading(false);
     }, () => 0);
+    settingsReaderRef.current = owner;
     void subscribeSettingsChanges(() => owner.refresh(true)).then(off => {
       if (cancelled) { off(); return; }
       unsubscribe = off;
@@ -122,7 +130,7 @@ export function useSettingsPageState({
     }).catch(error => {
       if (!cancelled) { console.error("settings subscription failed", error); owner.refresh(); }
     });
-    return () => { cancelled = true; owner.dispose(); unsubscribe?.(); };
+    return () => { cancelled = true; owner.dispose(); unsubscribe?.(); settingsReaderRef.current = null; };
   }, []);
 
   const hasUnsavedChanges = (() => {
@@ -136,6 +144,14 @@ export function useSettingsPageState({
   useEffect(() => {
     onDirtyChange?.(hasUnsavedChanges);
   }, [hasUnsavedChanges, onDirtyChange]);
+
+  const hasPolicyEdits = hasSettingsDraftPolicyEdits(savedSettings, draftSettings);
+  useEffect(() => {
+    if (!hasPolicyEdits) {
+      policyConflictRef.current = false;
+      productRevisionRef.current = latestProductRevisionRef.current;
+    }
+  }, [hasPolicyEdits]);
 
   useEffect(() => () => {
     onDirtyChange?.(false);
@@ -241,29 +257,39 @@ export function useSettingsPageState({
         appVersion,
         hasUnsavedChanges,
         saveStatus,
+        productRevision: productRevisionRef.current,
       }, {
         buildPatch: SettingsRuntimeAdapterService.buildSettingsPatch,
         commitPatch: SettingsRuntimeAdapterService.commitSettingsPatch,
       });
-      if (result.nextSavedSettings) {
+      if (result.accepted && result.nextSavedSettings) {
         setSavedSettings(result.nextSavedSettings);
+        savedSettingsRef.current = result.nextSavedSettings;
       }
-      if (result.nextDraftSettings) {
-        setDraftSettings(result.nextDraftSettings);
+      if (result.accepted && result.nextDraftSettings) {
+        const nextDraft = rebaseSettingsDraft(draftSettings, draftSettingsRef.current, result.nextDraftSettings);
+        setDraftSettings(nextDraft);
+        draftSettingsRef.current = nextDraft;
       }
       if (result.nextBootstrap) {
+        productRevisionRef.current = result.nextBootstrap.productRevision;
+        latestProductRevisionRef.current = result.nextBootstrap.productRevision;
+        policyConflictRef.current = false;
         setSettingsBootstrapCache(result.nextBootstrap);
         setUiTextLanguage(result.nextBootstrap.settings.language);
         onSettingsChanged(result.nextBootstrap.settings);
       }
       setSaveStatus(result.nextSaveStatus);
+      settingsReaderRef.current?.refresh(true);
       if (result.nextSaveStatus === "saved") {
         window.setTimeout(() => setSaveStatus("idle"), 1800);
       }
       if (result.toastKind === "runtime-sync-warning") {
         notify(UI_TEXT.toast.settingsRuntimeSyncPartial, "warning");
-      } else {
+      } else if (result.toastKind === "saved") {
         notify(UI_TEXT.settings.saved, "success");
+      } else if (result.toastKind === "save-failed") {
+        notify(UI_TEXT.settings.saveFailed, "warning");
       }
       return result.accepted;
     } catch (error) {

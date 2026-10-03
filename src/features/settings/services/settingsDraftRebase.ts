@@ -1,5 +1,17 @@
 import type { AppSettings } from "../../../shared/settings/appSettings.ts";
 
+const POLICY_KEYS = ["idleTimeoutSecs", "timelineMergeGapSecs", "minSessionSecs", "trackingPaused"] as const;
+
+export function hasSettingsDraftPolicyEdits(saved: AppSettings | null, draft: AppSettings | null): boolean {
+  return !!saved && !!draft && POLICY_KEYS.some(key => draft[key] !== saved[key]);
+}
+
+export function hasSettingsDraftPolicyConflict(saved: AppSettings | null, draft: AppSettings | null, incoming: AppSettings): boolean {
+  if (!saved || !draft) return false;
+  return POLICY_KEYS
+    .some(key => draft[key] !== saved[key] && incoming[key] !== saved[key] && incoming[key] !== draft[key]);
+}
+
 /** Refresh untouched fields while retaining edits relative to the last snapshot. */
 export function rebaseSettingsDraft(
   saved: AppSettings | null,

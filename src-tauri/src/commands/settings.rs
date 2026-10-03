@@ -1,11 +1,9 @@
 use crate::app::desktop_behavior;
 use crate::app::state::DesktopBehaviorState;
-use crate::data::app_settings_service::commit_app_setting_mutations_with_recovery;
 use crate::data::classification_service::commit_classification_setting_mutations_with_recovery;
 use crate::data::repositories::app_settings::AppSettingMutation;
 use crate::data::repositories::classification_settings::ClassificationSettingMutation;
-use serde_json::json;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
 
 #[derive(Clone, Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -190,70 +188,31 @@ pub async fn cmd_commit_app_settings(
     mutations: Vec<AppSettingMutationDto>,
     app: AppHandle,
 ) -> Result<(), String> {
-    let mut mutations = mutations
-        .into_iter()
-        .map(AppSettingMutation::from)
-        .collect::<Vec<_>>();
-    if mutations
-        .iter()
-        .any(|mutation| mutation.key == "background_tracking_at_login")
-    {
-        return Err(
-            "background tracking login preference requires the dedicated service command"
-                .to_string(),
-        );
-    }
+    crate::app::settings_commit::commit_legacy(
+        &app,
+        mutations
+            .into_iter()
+            .map(AppSettingMutation::from)
+            .collect(),
+    )
+    .await
+}
 
-    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
-        mutations =
-            crate::app::daemon_client::route_owned_app_settings(&app, &client, mutations).await?;
-        if !mutations.is_empty() {
-            let daemon_mutations = mutations
-                .into_iter()
-                .map(
-                    |mutation| crate::engine::api::types::AppSettingMutationRequest {
-                        key: mutation.key,
-                        value: mutation.value,
-                    },
-                )
-                .collect();
-            client
-                .commit_app_settings(daemon_mutations)
-                .await
-                .map_err(|error| error.to_string())?;
-        }
-        app.emit("app-settings-changed", json!({}))
-            .map_err(|error| format!("failed to emit settings refresh event: {error}"))?;
-        return Ok(());
-    }
-
-    if !mutations.is_empty() {
-        let changes_tracking_policy = mutations.iter().any(|mutation| {
-            matches!(
-                mutation.key.as_str(),
-                "tracking_paused"
-                    | "web_activity_enabled"
-                    | "web_activity_token"
-                    | "web_activity_port"
-            )
-        });
-        let runtime_state = app
-            .state::<crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState>()
-            .inner()
-            .clone();
-        let _transition_guard = if changes_tracking_policy {
-            Some(runtime_state.lock_transition().await)
-        } else {
-            None
-        };
-        commit_app_setting_mutations_with_recovery(&app, &mutations).await?;
-        if changes_tracking_policy {
-            runtime_state.note_tracking_policy_change();
-        }
-    }
-    app.emit("app-settings-changed", json!({}))
-        .map_err(|error| format!("failed to emit settings refresh event: {error}"))?;
-    Ok(())
+#[tauri::command]
+pub async fn cmd_commit_settings_if_revision(
+    mutations: Vec<AppSettingMutationDto>,
+    expected_revision: String,
+    app: AppHandle,
+) -> Result<patina_protocol::product_settings::ProductSettingsSnapshot, String> {
+    crate::app::settings_commit::commit_if_revision(
+        &app,
+        mutations
+            .into_iter()
+            .map(AppSettingMutation::from)
+            .collect(),
+        expected_revision,
+    )
+    .await
 }
 
 #[tauri::command]

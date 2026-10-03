@@ -8,6 +8,47 @@ use crate::engine::api::types::{
 
 const MAX_APP_SETTING_MUTATIONS: usize = 256;
 
+pub async fn commit_product_settings(context: &ApiRuntimeContext, body: &[u8]) -> RouteResponse {
+    use crate::data::repositories::product_settings::conditional::CommitError;
+    let request: patina_protocol::product_settings::ProductSettingsCommitRequest =
+        match serde_json::from_slice(body) {
+            Ok(request) => request,
+            Err(_) => return bad_request("invalid product settings request"),
+        };
+    let state = context.tracking_runtime_state();
+    match crate::engine::tracking::runtime_settings::commit_product_settings(
+        context.runtime(),
+        state.as_ref(),
+        &request,
+    )
+    .await
+    {
+        Ok(snapshot) => {
+            if request.patch != Default::default() {
+                context.emit_tracking_data_changed("app-settings-changed");
+            }
+            RouteResponse {
+                status: 200,
+                body: serde_json::to_value(ApiResponse { data: snapshot }).unwrap_or_default(),
+            }
+        }
+        Err(error) => {
+            let (status, error) = match error {
+                CommitError::Conflict => (
+                    409,
+                    ApiError::conflict("product settings changed since they were read"),
+                ),
+                CommitError::InvalidInput(message) => (400, ApiError::bad_request(&message)),
+                CommitError::Storage(message) => (500, ApiError::internal(&message)),
+            };
+            RouteResponse {
+                status,
+                body: serde_json::to_value(error).unwrap_or_default(),
+            }
+        }
+    }
+}
+
 pub async fn get_product_settings(context: &ApiRuntimeContext) -> RouteResponse {
     match crate::data::repositories::product_settings::load_snapshot(
         context.pool(),

@@ -309,6 +309,21 @@ impl Client {
         T: DeserializeOwned,
         B: Serialize + ?Sized,
     {
+        self.post_json_with_limits(path, body, response_name, timeout, MAX_RESPONSE_BYTES).await
+    }
+
+    pub async fn post_json_with_limits<T, B>(
+        &self,
+        path: &str,
+        body: &B,
+        response_name: &str,
+        timeout: Duration,
+        max_bytes: usize,
+    ) -> Result<T, ClientError>
+    where
+        T: DeserializeOwned,
+        B: Serialize + ?Sized,
+    {
         let request_body = serde_json::to_vec(body).map_err(|error| {
             ClientError::InvalidConfiguration(format!(
                 "failed to encode patinad {response_name} request: {error}"
@@ -325,7 +340,7 @@ impl Client {
             .await
             .map_err(map_transport_error)?;
         let status = response.status();
-        let body = read_limited_body(response).await?;
+        let body = read_body_with_limit(response, max_bytes).await?;
 
         if status == StatusCode::UNAUTHORIZED {
             return Err(ClientError::Unauthorized);

@@ -4,6 +4,10 @@ use sha2::{Digest, Sha256};
 use sqlx::{Row, SqlitePool};
 use std::{collections::BTreeMap, time::Duration};
 
+pub mod conditional;
+#[cfg(test)]
+mod conditional_tests;
+
 // Exact keys and bounded values prevent unrelated settings/secrets from entering
 // the snapshot. A single SELECT provides the same read point for policy/health.
 const KEYS: &[&str] = &[
@@ -26,54 +30,101 @@ pub async fn load_snapshot(
 ) -> Result<ProductSettingsSnapshot, String> {
     tokio::time::timeout(Duration::from_secs(5), async {
         let mut transaction = pool.begin().await.map_err(|e| e.to_string())?;
-        let sql = format!(
+        let snapshot = read_snapshot(&mut transaction, sampled_at_ms).await?;
+        transaction.commit().await.map_err(|e| e.to_string())?;
+        Ok(snapshot)
+    })
+    .await
+    .map_err(|_| "product settings snapshot exceeded its time budget".to_string())?
+}
+
+pub(crate) async fn read_snapshot(
+    connection: &mut sqlx::SqliteConnection,
+    sampled_at_ms: i64,
+) -> Result<ProductSettingsSnapshot, String> {
+    let sql = format!(
             "SELECT key, length(CAST(value AS BLOB)) AS value_bytes, CASE WHEN length(CAST(value AS BLOB)) <= {} THEN value ELSE '' END AS value FROM settings WHERE key IN ({})",
             MAX_VALUE_BYTES, vec!["?"; KEYS.len()].join(",")
         );
-        let mut query = sqlx::query(&sql);
-        for key in KEYS { query = query.bind(key); }
-        let mut values = BTreeMap::<String, String>::new();
-        for row in query.fetch_all(&mut *transaction).await.map_err(|e| e.to_string())? {
-            let key: String = row.try_get("key").map_err(|e| e.to_string())?;
-            if row.try_get::<i64,_>("value_bytes").map_err(|e| e.to_string())? > MAX_VALUE_BYTES as i64 { return Err("product setting exceeds its value budget".into()); }
-            let value: String = row.try_get("value").map_err(|e| e.to_string())?;
-            values.insert(key, value);
+    let mut query = sqlx::query(&sql);
+    for key in KEYS {
+        query = query.bind(key);
+    }
+    let mut values = BTreeMap::<String, String>::new();
+    for row in query
+        .fetch_all(&mut *connection)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        let key: String = row.try_get("key").map_err(|e| e.to_string())?;
+        if row
+            .try_get::<i64, _>("value_bytes")
+            .map_err(|e| e.to_string())?
+            > MAX_VALUE_BYTES as i64
+        {
+            return Err("product setting exceeds its value budget".into());
         }
-        // No credential bytes cross the repository boundary or enter its revision.
-        // Bound before trimming, with Rust's whitespace semantics matching the runtime.
-        let token_row: Option<(i64, String)> = sqlx::query_as(
+        let value: String = row.try_get("value").map_err(|e| e.to_string())?;
+        values.insert(key, value);
+    }
+    // No credential bytes cross the repository boundary or enter its revision.
+    // Bound before trimming, with Rust's whitespace semantics matching the runtime.
+    let token_row: Option<(i64, String)> = sqlx::query_as(
             "SELECT length(CAST(value AS BLOB)), CASE WHEN length(CAST(value AS BLOB)) <= 4096 THEN value ELSE '' END FROM settings WHERE key='web_activity_token'"
-        ).fetch_optional(&mut *transaction).await.map_err(|e| e.to_string())?;
-        if token_row.as_ref().is_some_and(|(bytes, _)| *bytes > MAX_VALUE_BYTES as i64) {
-            return Err("browser credential exceeds its value budget".into());
-        }
-        let token = token_row.map(|(_, value)| value);
-        let raw = |key: &str| values.get(key).map(String::as_str);
-        let number = |key: &str, fallback: u64| raw(key).and_then(|v| v.parse::<u64>().ok()).unwrap_or(fallback);
-        let token_present = token.as_ref().is_some_and(|v| !v.trim().is_empty());
-        let preferences = ProductSettings {
-            idle_timeout_secs: number("idle_timeout_secs", settings::DEFAULT_IDLE_TIMEOUT_SECS),
-            timeline_merge_gap_secs: number("timeline_merge_gap_secs", settings::DEFAULT_TIMELINE_MERGE_GAP_SECS),
-            min_session_secs: settings::parse_min_session_secs(raw("min_session_secs")),
-            tracking_paused: raw("tracking_paused").is_some_and(|v| settings::parse_boolean_setting(v, false)),
-            audio_participation_enabled: settings::parse_audio_participation_enabled(raw("audio_participation_enabled")),
-            web_activity_enabled: raw("web_activity_enabled").is_some_and(|v| settings::parse_boolean_setting(v, settings::DEFAULT_WEB_ACTIVITY_ENABLED)) && token_present,
-            web_activity_port: raw("web_activity_port").and_then(settings::parse_web_activity_port).unwrap_or(settings::DEFAULT_WEB_ACTIVITY_PORT),
-            web_activity_token_present: token_present,
-            web_activity_url_privacy: settings::parse_web_activity_url_privacy(raw("web_activity_url_privacy")),
-        };
-        let timestamp = |key: &str| raw(key).and_then(|v| v.parse::<i64>().ok()).filter(|v| *v >= 0);
-        let mut hash = Sha256::new();
-        hash.update(b"patina.product-settings.v1\0");
-        hash.update(serde_json::to_vec(&preferences).map_err(|e| e.to_string())?);
-        let snapshot = ProductSettingsSnapshot {
-            revision: format!("{:x}", hash.finalize()), sampled_at_ms, settings: preferences,
-            last_heartbeat_ms: timestamp("__tracker_last_heartbeat_ms"),
-            last_successful_sample_ms: timestamp("__tracker_last_successful_sample_ms"),
-        };
-        transaction.commit().await.map_err(|e| e.to_string())?;
-        Ok(snapshot)
-    }).await.map_err(|_| "product settings snapshot exceeded its time budget".to_string())?
+        ).fetch_optional(&mut *connection).await.map_err(|e| e.to_string())?;
+    if token_row
+        .as_ref()
+        .is_some_and(|(bytes, _)| *bytes > MAX_VALUE_BYTES as i64)
+    {
+        return Err("browser credential exceeds its value budget".into());
+    }
+    let token = token_row.map(|(_, value)| value);
+    let raw = |key: &str| values.get(key).map(String::as_str);
+    let number = |key: &str, fallback: u64| {
+        raw(key)
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(fallback)
+    };
+    let token_present = token.as_ref().is_some_and(|v| !v.trim().is_empty());
+    let preferences = ProductSettings {
+        idle_timeout_secs: number("idle_timeout_secs", settings::DEFAULT_IDLE_TIMEOUT_SECS),
+        timeline_merge_gap_secs: number(
+            "timeline_merge_gap_secs",
+            settings::DEFAULT_TIMELINE_MERGE_GAP_SECS,
+        ),
+        min_session_secs: settings::parse_min_session_secs(raw("min_session_secs")),
+        tracking_paused: raw("tracking_paused")
+            .is_some_and(|v| settings::parse_boolean_setting(v, false)),
+        audio_participation_enabled: settings::parse_audio_participation_enabled(raw(
+            "audio_participation_enabled",
+        )),
+        web_activity_enabled: raw("web_activity_enabled").is_some_and(|v| {
+            settings::parse_boolean_setting(v, settings::DEFAULT_WEB_ACTIVITY_ENABLED)
+        }) && token_present,
+        web_activity_port: raw("web_activity_port")
+            .and_then(settings::parse_web_activity_port)
+            .unwrap_or(settings::DEFAULT_WEB_ACTIVITY_PORT),
+        web_activity_token_present: token_present,
+        web_activity_url_privacy: settings::parse_web_activity_url_privacy(raw(
+            "web_activity_url_privacy",
+        )),
+    };
+    let timestamp = |key: &str| {
+        raw(key)
+            .and_then(|v| v.parse::<i64>().ok())
+            .filter(|v| *v >= 0)
+    };
+    let mut hash = Sha256::new();
+    hash.update(b"patina.product-settings.v1\0");
+    hash.update(serde_json::to_vec(&preferences).map_err(|e| e.to_string())?);
+    let snapshot = ProductSettingsSnapshot {
+        revision: format!("{:x}", hash.finalize()),
+        sampled_at_ms,
+        settings: preferences,
+        last_heartbeat_ms: timestamp("__tracker_last_heartbeat_ms"),
+        last_successful_sample_ms: timestamp("__tracker_last_successful_sample_ms"),
+    };
+    Ok(snapshot)
 }
 
 #[cfg(test)]

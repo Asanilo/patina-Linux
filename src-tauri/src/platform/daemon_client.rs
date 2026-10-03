@@ -34,6 +34,14 @@ pub use patina_client::events::{
 };
 
 impl PatinadClient {
+    pub async fn commit_product_settings(
+        &self,
+        request: &patina_protocol::product_settings::ProductSettingsCommitRequest,
+    ) -> Result<patina_protocol::product_settings::ProductSettingsSnapshot, PatinadClientError>
+    {
+        self.transport.commit_product_settings(request).await
+    }
+
     pub async fn product_settings(
         &self,
     ) -> Result<patina_protocol::product_settings::ProductSettingsSnapshot, PatinadClientError>

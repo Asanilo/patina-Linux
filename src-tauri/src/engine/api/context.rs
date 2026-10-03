@@ -154,6 +154,10 @@ impl ApiRuntimeContext {
         self
     }
 
+    pub(crate) fn runtime(&self) -> &RuntimeContext {
+        &self.runtime
+    }
+
     pub fn pool(&self) -> &sqlx::Pool<sqlx::Sqlite> {
         self.runtime.pool()
     }

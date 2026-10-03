@@ -110,6 +110,7 @@ fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Build
         commands::settings::cmd_apply_local_api_port,
         commands::settings::cmd_rotate_local_api_token,
         commands::settings::cmd_commit_app_settings,
+        commands::settings::cmd_commit_settings_if_revision,
         commands::settings::cmd_commit_classification_settings,
         commands::settings::cmd_get_classification_snapshot,
         commands::settings::cmd_get_product_settings,

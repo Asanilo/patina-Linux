@@ -170,6 +170,21 @@ function tauriStubFor(path: string) {
         }
       }
 
+      function productSettingsSnapshot() {
+          const stored = loadStoredSettings();
+          const enabled = key => ["1","true","yes","on"].includes(stored[key]);
+          return { revision: [Number(stored.idle_timeout_secs ?? 900), Number(stored.timeline_merge_gap_secs ?? 180), Number(stored.min_session_secs ?? 300), enabled("tracking_paused") ? 1 : 0].map(v => v.toString(16).padStart(16,"0")).join(""), sampled_at_ms: Date.now(), last_heartbeat_ms: null,
+            last_successful_sample_ms: null, settings: {
+              idle_timeout_secs: Number(stored.idle_timeout_secs ?? 900),
+              timeline_merge_gap_secs: Number(stored.timeline_merge_gap_secs ?? 180),
+              min_session_secs: Number(stored.min_session_secs ?? 300),
+              tracking_paused: enabled("tracking_paused"), audio_participation_enabled: stored.audio_participation_enabled !== "0",
+              web_activity_enabled: enabled("web_activity_enabled") && !!stored.web_activity_token,
+              web_activity_port: Number(stored.web_activity_port ?? 12345), web_activity_token_present: !!stored.web_activity_token,
+              web_activity_url_privacy: stored.web_activity_url_privacy ?? "full",
+            }};
+      }
+
       function storageSnapshot() {
         return {
           paths: {
@@ -279,20 +294,7 @@ function tauriStubFor(path: string) {
             previous:{start_ms:previous.getTime(),end_ms:start,active_ms:0,apps:[]},
             hours:Array.from({length:24},(_,hour)=>({hour,active_ms:hour===0?total:0,categories:hour===0?[...categories].map(([category,active_ms])=>({category,active_ms})):[]}))};
         }
-        if (command === "cmd_get_product_settings") {
-          const stored = loadStoredSettings();
-          const enabled = key => ["1","true","yes","on"].includes(stored[key]);
-          return { revision: "0".repeat(64), sampled_at_ms: Date.now(), last_heartbeat_ms: null,
-            last_successful_sample_ms: null, settings: {
-              idle_timeout_secs: Number(stored.idle_timeout_secs ?? 900),
-              timeline_merge_gap_secs: Number(stored.timeline_merge_gap_secs ?? 180),
-              min_session_secs: Number(stored.min_session_secs ?? 300),
-              tracking_paused: enabled("tracking_paused"), audio_participation_enabled: stored.audio_participation_enabled !== "0",
-              web_activity_enabled: enabled("web_activity_enabled") && !!stored.web_activity_token,
-              web_activity_port: Number(stored.web_activity_port ?? 12345), web_activity_token_present: !!stored.web_activity_token,
-              web_activity_url_privacy: stored.web_activity_url_privacy ?? "full",
-            }};
-        }
+        if (command === "cmd_get_product_settings") return productSettingsSnapshot();
         if (command === "cmd_get_classification_snapshot") {
           const prefixes = ["__app_override::", "__web_domain_override::", "__category_color_override::", "__category_label_override::", "__category_default_color_assignment::", "__custom_category::", "__deleted_category::", "__classification_manual_confirmation_migration::"];
           const entries = Object.entries(loadStoredSettings()).filter(([key]) => prefixes.some(prefix => key.startsWith(prefix) && key.length > prefix.length))
@@ -393,12 +395,18 @@ function tauriStubFor(path: string) {
         if (command === "cmd_list_activity_import_batches") {
           return [];
         }
-        if (command === "cmd_commit_app_settings") {
+        if (command === "cmd_commit_app_settings" || command === "cmd_commit_settings_if_revision") {
+          if (globalThis.__PATINA_SMOKE_FAIL_SETTINGS_SAVE) throw new Error("synthetic settings persistence failure");
+          if (command === "cmd_commit_settings_if_revision" && payload.expectedRevision !== productSettingsSnapshot().revision) {
+            globalThis.__PATINA_SMOKE_SETTINGS_CONFLICTS = (globalThis.__PATINA_SMOKE_SETTINGS_CONFLICTS || 0) + 1;
+            throw new Error("product-settings-conflict");
+          }
           const settings = loadStoredSettings();
           for (const mutation of payload.mutations ?? []) {
             settings[mutation.key] = mutation.value;
           }
           localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+          if (command === "cmd_commit_settings_if_revision") return productSettingsSnapshot();
         }
         return null;
       }
@@ -1898,6 +1906,43 @@ try {
     await waitForExpression(client!, sessionId, `${minimum}.value === '5' && ${idle}.getAttribute('aria-valuetext') === '20 分钟'`);
     await remote(900);
     await waitForExpression(client!, sessionId, `${idle}.getAttribute('aria-valuetext') === '15 分钟'`);
+  });
+
+  await runTest("failed and conflicting settings saves retain drafts and never report success", async () => {
+    const label = COPY["zh-CN"].settings.minSessionLabel;
+    const field = `document.querySelector('input[aria-label=' + ${jsonString(JSON.stringify(label))} + ']')`;
+    const click = async (label: string) => evaluate(client!, sessionId, `Array.from(document.querySelectorAll('button')).find(node => node.textContent.trim() === ${jsonString(label)} && !node.disabled).click()`);
+    const step = async (label: string) => evaluate(client!, sessionId, `document.querySelector('[aria-label=' + ${jsonString(JSON.stringify(label))} + ']').click()`);
+    await step(COPY["zh-CN"].settings.increaseMinute(label));
+    await waitForExpression(client!, sessionId, `${field}.value === '6'`);
+    await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_FAIL_SETTINGS_SAVE = true`);
+    await click(COPY["zh-CN"].settings.save);
+    await waitForExpression(client!, sessionId, `document.querySelector('.qp-toast-warning')?.textContent.includes(${jsonString(COPY["zh-CN"].settings.saveFailed)})`);
+    assert.equal(await evaluate(client!, sessionId, `${field}.value`), "6");
+    assert.equal(await evaluate(client!, sessionId, `JSON.parse(localStorage.getItem('__time_tracker_smoke_settings')).min_session_secs || '300'`), "300");
+    await evaluate(client!, sessionId, `(() => {
+      globalThis.__PATINA_SMOKE_FAIL_SETTINGS_SAVE = false;
+      const value = JSON.parse(localStorage.getItem('__time_tracker_smoke_settings'));
+      value.min_session_secs = '420'; value.idle_timeout_secs = '1200'; localStorage.setItem('__time_tracker_smoke_settings', JSON.stringify(value));
+      globalThis.__PATINA_SMOKE_EMIT('app-settings-changed', {});
+    })()`);
+    await waitForExpression(client!, sessionId, `document.querySelector('input[aria-label=' + ${jsonString(JSON.stringify(COPY["zh-CN"].settings.idleTimeoutLabel))} + ']')?.getAttribute('aria-valuetext') === '20 分钟'`);
+    await click(COPY["zh-CN"].settings.save);
+    await waitForExpression(client!, sessionId, `globalThis.__PATINA_SMOKE_SETTINGS_CONFLICTS === 1`);
+    assert.equal(await evaluate(client!, sessionId, `${field}.value`), "6");
+    assert.equal(await evaluate(client!, sessionId, `JSON.parse(localStorage.getItem('__time_tracker_smoke_settings')).min_session_secs`), "420");
+    await click(COPY["zh-CN"].settings.cancel);
+    await waitForExpression(client!, sessionId, `${field}.value === '7'`);
+    await step(COPY["zh-CN"].settings.decreaseMinute(label));
+    await click(COPY["zh-CN"].settings.save);
+    await waitForExpression(client!, sessionId, `JSON.parse(localStorage.getItem('__time_tracker_smoke_settings')).min_session_secs === '360'`);
+    await waitForExpression(client!, sessionId, `document.querySelector('.qp-toast-success')?.textContent.includes(${jsonString(COPY["zh-CN"].settings.saved)})`);
+    await evaluate(client!, sessionId, `(() => {
+      const value = JSON.parse(localStorage.getItem('__time_tracker_smoke_settings'));
+      value.min_session_secs = '300'; value.idle_timeout_secs = '900'; localStorage.setItem('__time_tracker_smoke_settings', JSON.stringify(value));
+      globalThis.__PATINA_SMOKE_EMIT('app-settings-changed', {});
+    })()`);
+    await waitForExpression(client!, sessionId, `${field}.value === '5'`);
   });
 
   await runTest("background delay persists, cancels drafts and stays disabled when optimization is off", async () => {

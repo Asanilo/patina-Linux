@@ -10,16 +10,18 @@ export interface SettingsSaveFlowInput {
   appVersion: string;
   hasUnsavedChanges: boolean;
   saveStatus: SaveStatus;
+  productRevision?: string;
 }
 
 export interface SettingsSaveFlowDeps {
   buildPatch: (saved: AppSettings, draft: AppSettings) => SettingsPatch;
-  commitPatch: (patch: SettingsPatch) => Promise<SettingsCommitResult>;
+  commitPatch: (patch: SettingsPatch, expectedProductRevision?: string) => Promise<SettingsCommitResult>;
 }
 
 export interface SettingsBootstrapSnapshot {
   settings: AppSettings;
   appVersion: string;
+  productRevision?: string;
 }
 
 export interface SettingsSaveFlowResult {
@@ -109,8 +111,8 @@ export async function saveSettingsPageStateWithDeps(
   try {
     const normalizedDraftSettings = normalizeSettingsForSave(input.draftSettings);
     const patch = deps.buildPatch(input.savedSettings, normalizedDraftSettings);
-    const commitResult = await deps.commitPatch(patch);
-    const nextSettings = { ...normalizedDraftSettings };
+    const commitResult = await deps.commitPatch(patch, input.productRevision);
+    const nextSettings = { ...normalizedDraftSettings, ...commitResult.confirmedProductSettings };
     return {
       accepted: true,
       skippedReason: null,
@@ -119,6 +121,8 @@ export async function saveSettingsPageStateWithDeps(
       nextBootstrap: {
         settings: nextSettings,
         appVersion: input.appVersion,
+        ...((commitResult.productRevision ?? input.productRevision) !== undefined
+          ? {productRevision: commitResult.productRevision ?? input.productRevision} : {}),
       },
       nextSaveStatus: "saved",
       toastKind: commitResult.runtimeSync === "failed" ? "runtime-sync-warning" : "saved",

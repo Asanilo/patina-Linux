@@ -13,6 +13,10 @@ pub struct ApiEndpoint {
 
 const DESKTOP_ENDPOINTS: &[ApiEndpoint] = &[
     ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/settings/product/conditional",
+    },
+    ApiEndpoint {
         method: "GET",
         path: "/api/v1/settings/product",
     },
@@ -282,6 +286,10 @@ const DAEMON_READ_ONLY_ENDPOINTS: &[ApiEndpoint] = &[
 ];
 
 const DAEMON_TRACKING_ENDPOINTS: &[ApiEndpoint] = &[
+    ApiEndpoint {
+        method: "POST",
+        path: "/api/v1/settings/product/conditional",
+    },
     ApiEndpoint {
         method: "GET",
         path: "/api/v1/settings/product",
@@ -584,6 +592,7 @@ const DESKTOP_WRITE_OPERATIONS: &[&str] = &[
     "app-mapping",
     "classification",
     "classification-conditional",
+    "product-settings-conditional",
     "tracker-settings",
 ];
 const DAEMON_TRACKING_WRITE_OPERATIONS: &[&str] = &[
@@ -594,6 +603,7 @@ const DAEMON_TRACKING_WRITE_OPERATIONS: &[&str] = &[
     "canonical-app-cleanup",
     "classification",
     "classification-conditional",
+    "product-settings-conditional",
     "data-maintenance",
     "local-api-configuration",
     "remote-backup",
@@ -685,7 +695,7 @@ mod tests {
 
     #[test]
     fn desktop_surface_keeps_shared_client_method_and_path_set() {
-        assert_eq!(ApiSurface::Desktop.endpoints().len(), 36);
+        assert_eq!(ApiSurface::Desktop.endpoints().len(), 37);
         assert!(ApiSurface::Desktop.allows("GET", "/api/v1/settings/classification"));
         assert!(ApiSurface::Desktop.allows("POST", "/api/v1/settings/classification/conditional"));
         assert!(ApiSurface::Desktop.allows("GET", "/api/v1/activity/daily-apps"));
@@ -804,6 +814,7 @@ mod tests {
                 "canonical-app-cleanup",
                 "classification",
                 "classification-conditional",
+                "product-settings-conditional",
                 "data-maintenance",
                 "local-api-configuration",
                 "remote-backup",

@@ -4,7 +4,7 @@ import {
   deleteSessionsBefore,
   loadDesktopSettingRows,
 } from "./settingsPersistence.ts";
-import { loadProductSettingsSnapshot } from "./productSettingsSnapshot.ts";
+import { loadProductSettingsSnapshot, parseProductSettingsSnapshot, type ProductSettingsSnapshot } from "./productSettingsSnapshot.ts";
 import {
   DEFAULT_SETTINGS,
   BACKGROUND_OPTIMIZATION_DELAY_RANGE,
@@ -361,13 +361,17 @@ export function buildRawAppSettingsPatch(patch: AppSettingsPatch): Record<string
   return rawPatch;
 }
 
-export async function loadAppSettings(): Promise<AppSettings> {
+export async function loadAppSettingsSnapshot(): Promise<{settings: AppSettings; productRevision: string}> {
   const [rows, product] = await Promise.all([loadDesktopSettingRows(), loadProductSettingsSnapshot()]);
   const record: Record<string, string> = {};
   for (const row of rows) {
     record[row.key] = row.value;
   }
-  return { ...normalizeSettingsRecord(record), ...product.settings };
+  return { settings: {...normalizeSettingsRecord(record), ...product.settings}, productRevision: product.revision };
+}
+
+export async function loadAppSettings(): Promise<AppSettings> {
+  return (await loadAppSettingsSnapshot()).settings;
 }
 
 export async function saveAppSetting<K extends keyof AppSettings>(
@@ -379,8 +383,13 @@ export async function saveAppSetting<K extends keyof AppSettings>(
   } as AppSettingsPatch);
 }
 
-export async function saveAppSettingsPatch(patch: AppSettingsPatch): Promise<void> {
-  await commitAppSettingMutations(buildAppSettingMutations(buildRawAppSettingsPatch(patch)));
+export async function saveAppSettingsPatch(patch: AppSettingsPatch, expectedProductRevision?: string): Promise<ProductSettingsSnapshot | void> {
+  const mutations = buildAppSettingMutations(buildRawAppSettingsPatch(patch));
+  if (expectedProductRevision !== undefined && mutations.some(mutation =>
+    ["idle_timeout_secs", "timeline_merge_gap_secs", "min_session_secs", "tracking_paused"].includes(mutation.key))) {
+    return parseProductSettingsSnapshot(await invoke<unknown>("cmd_commit_settings_if_revision", {mutations, expectedRevision: expectedProductRevision}));
+  }
+  await commitAppSettingMutations(mutations);
 }
 
 export async function clearSessionsBefore(cutoffTime: number): Promise<void> {

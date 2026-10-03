@@ -129,7 +129,9 @@ IPC 契约应保持稳定、可解析、可测试。
 - feature 不能直接跳过边界访问底层 DB
 - SQLite 访问应通过 `platform/persistence/*` 暴露的明确出口
 - settings / classification 写入必须经 Rust command 选择当前 owner，命令缺失或 daemon 不可用不得回退前端 SQL；tracker health 只读取 owner 产生的时间戳
-- 共享设置经 `/api/v1/settings/product`／SDK／薄 Desktop command 读取同一事务的生效策略和健康时间，只暴露 browser credential 是否存在。内容 revision 排除心跳及本机表现偏好；客户端启动不得将刚读取的策略写回 owner。设置事件使单请求协调器失效并重读；设置页基于上一份快照保留已编辑字段，未编辑字段跟随后端更新。旧普通写接口仍保留兼容，同字段并发写入的条件提交尚未完成，不能宣称与 classification 相同的冲突保证。
+- 共享设置经 `/api/v1/settings/product`／SDK／薄 Desktop command 读取同一事务的生效策略和健康时间，只暴露 browser credential 是否存在。内容 revision 排除心跳及本机表现偏好；客户端启动不得将刚读取的策略写回 owner。设置事件使单请求协调器失效并重读；设置页基于上一份快照保留已编辑字段，未编辑字段跟随后端更新。
+- 普通追踪策略的条件提交归 `engine/tracking/runtime_settings` 与 `data/repositories/product_settings`：先取得 tracking transition lock，再读取 owner clock；SQLite writer 内比较原始 revision，原子更新 idle／continuity／最短展示时长／暂停及必要封口。只有事务成功才能确认 pending probe seal 和更新平台阈值。独立 SDK 必须验证 capability，冲突和传输失败不得自动重试或回退旧入口。
+- 设置页不得用保存前的新 GET 覆盖编辑基线，也不得在收到同字段远端修改后悄悄接受新 revision。Desktop 混合保存的宿主编排归 `app/settings_commit`，command 保持薄；先准备／验证其余配置，再执行条件策略提交，冲突时不执行其余资源和偏好操作。系统资源操作不属于 SQLite 的全局原子事务，后续失败须如实报告并重读；确认过的 idle／audio 不得由前端再次写回。浏览器／音频配置自身的条件写入、本机偏好存储，以及显式的旧无条件便捷写入口仍是后续范围。
 - classification 配置读取经 `cmd_get_classification_snapshot`／独立 SDK 从 owner 获取固定命名空间的一致快照，不返回其他设置或凭据。内容 revision 与事件序号分离，条件提交在取得数据库写锁后比较 revision；冲突返回 409，不自动重试。旧客户端无条件写入口暂保留。分类迁移的已观察 executable 查询和其他历史读模型仍是待退出的 SQLite 例外。
 - 原始数据库访问适配归 `platform/persistence/*`；上述缓存例外不能扩展为 runtime 写入口
 - `app/services/*` 只保留应用启动、运行时同步或全局偏好写入所需的薄协调，不从 `features/settings/*` 借基础能力

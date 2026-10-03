@@ -90,6 +90,7 @@ Current caveats:
 | `/api/v1/backups/restore/cancel` | `POST` | Managed tracking daemon | Explicitly cancel one failed restore reservation and remove its exact staged archive |
 | `/api/v1/settings/tracker` | `GET` | Implemented | Tracker settings snapshot |
 | `/api/v1/settings/product` | `GET` | Implemented on multi-client branch | Shared effective policy, revision and owner health; excludes credentials and client preferences |
+| `/api/v1/settings/product/conditional` | `POST` | Implemented on multi-client branch | Atomic conditional ordinary tracking policy; requires `product-settings-conditional` |
 | `/api/v1/settings/tracker/afk-threshold` | `POST` | Implemented | Update idle timeout threshold |
 | `/api/v1/settings/tracker/pause` | `POST` | Implemented | Set tracking pause state |
 | `/api/v1/settings/classification` | `POST` | Implemented | Commit a validated classification mutation batch |
@@ -1561,7 +1562,7 @@ The existing tracker endpoint now uses these same defaults. Minimum display
 duration retains the existing 60–600 second range and 60 second increments.
 The revision describes effective settings only; heartbeat updates, credential
 rotation with unchanged presence, and client appearance preferences do not change
-it. This read revision does not yet provide conditional ordinary-setting writes.
+it. Use this revision for the conditional ordinary-policy endpoint below.
 
 The query has a five-second deadline, fixed keys and bounded stored values; the
 wire response is limited to 8 KiB. Oversized selected values fail the whole read.
@@ -1572,6 +1573,43 @@ Successful nonempty ordinary setting commits publish `app-settings-changed` as a
 tracking-data event; rejected or rolled-back writes do not. Resource changes keep
 their dedicated runtime endpoints. Clients reload a snapshot after notification
 and never automatically retry writes.
+
+### `POST /api/v1/settings/product/conditional`
+
+Requires the advertised `product-settings-conditional` write capability. Submit
+the revision from the snapshot used for editing, with an explicit patch:
+
+```json
+{
+  "expected_revision": "<64 lowercase hexadecimal characters from the original snapshot>",
+  "patch": {
+    "idle_timeout_secs": 900,
+    "timeline_merge_gap_secs": 180,
+    "min_session_secs": 300,
+    "tracking_paused": false
+  }
+}
+```
+
+Each patch field is optional. Idle accepts 60–86400 seconds, continuity 0–86400,
+and minimum display duration 60–600 in increments of 60. Unknown fields reject;
+credentials, resource configuration and client preferences are not accepted.
+The returned `data` is a `ProductSettingsSnapshot` confirming the transaction.
+An empty patch still checks the revision and emits no change event.
+
+The owner takes its tracking transition lock before sampling time, then acquires
+the SQLite writer before comparing the revision. A conflict returns `409` without
+writing settings, sealing a session, or changing runtime policy. Pausing preserves
+any pending failed-probe boundary; SQL errors roll back policy and session changes
+together. Confirmation of the pending seal and the platform idle threshold occur
+only after commit. The database operation has a five-second deadline; transport
+failures are ambiguous and clients must not automatically retry writes.
+
+This does not make a Desktop save containing browser/audio/host operations one
+global transaction. Desktop validates the remaining configuration and performs
+the guarded policy commit first; a conflict prevents those remaining operations.
+Later resource failures are reported and the current snapshot is reread. Legacy
+unconditional endpoints remain compatibility paths, without this guarantee.
 
 ### `GET /api/v1/settings/tracker`
 

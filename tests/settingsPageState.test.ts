@@ -943,4 +943,33 @@ await runTest("runBackupRestoreFlow restores and reloads after confirmation", as
   ]);
 });
 
+await runTest("conditional policy confirmation preserves its revision and does not replay runtime writes", async () => {
+  const calls: string[] = [];
+  const result = await commitSettingsPatchWithDeps({idleTimeoutSecs: 600, audioParticipationEnabled: false}, {
+    persistPatch: async (_patch, revision) => {
+      assert.equal(revision, "a".repeat(64)); calls.push("conditional");
+      return {revision: "b".repeat(64), settings: buildSettings({idleTimeoutSecs:600, audioParticipationEnabled:false}), lastHeartbeatMs:null, lastSuccessfulSampleMs:null};
+    },
+    syncIdleTimeout: async () => {calls.push("replayed-idle");},
+    syncAudioParticipation: async () => {calls.push("replayed-audio");},
+    notifySettingsChanged: async () => {calls.push("notify");},
+  }, "a".repeat(64));
+  assert.equal(result.productRevision, "b".repeat(64));
+  assert.deepEqual(calls, ["conditional", "notify"]);
+});
+
+await runTest("policy save uses the originally read revision and keeps drafts on conflict", async () => {
+  const saved = buildSettings();
+  const draft = {...saved, minSessionSecs:360};
+  const result = await saveSettingsPageStateWithDeps({savedSettings:saved,draftSettings:draft,
+    appVersion:"test",hasUnsavedChanges:true,saveStatus:"idle",productRevision:"a".repeat(64)}, {
+    buildPatch: SettingsRuntimeAdapterService.buildSettingsPatch,
+    commitPatch: async (_patch, revision) => {assert.equal(revision,"a".repeat(64));throw new Error("product-settings-conflict");},
+  });
+  assert.equal(result.accepted, false);
+  assert.equal(result.toastKind, "save-failed");
+  assert.deepEqual(result.nextDraftSettings, draft);
+  assert.equal(result.nextBootstrap, null);
+});
+
 console.log(`Passed ${passed} settings page state tests`);

@@ -50,6 +50,11 @@ pub async fn set_afk_threshold(context: &ApiRuntimeContext, body: &[u8]) -> Rout
         };
     }
 
+    let state = context.tracking_runtime_state();
+    let _guard = match state.as_ref() {
+        Some(state) => Some(state.lock_transition().await),
+        None => None,
+    };
     let key = "idle_timeout_secs";
     let value = req.seconds.to_string();
     if let Err(error) =
