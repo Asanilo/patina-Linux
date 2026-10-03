@@ -699,6 +699,12 @@ mod tests {
             crate::domain::daily_activity::local_day_boundaries("2026-01-01", "2026-01-02")
                 .unwrap();
         let data = DailyProductSnapshot {
+            tracking_health: patina_protocol::activity::ActivityReadHealth {
+                status: patina_protocol::activity::ActivityReadStatus::Unavailable,
+                last_heartbeat_ms: None,
+                live_cutoff_ms: 0,
+                stale_after_ms: 8000,
+            },
             configuration_revision: "0".repeat(64),
             applications: (0..2000)
                 .map(|index| ProductAppIdentity {

@@ -2,6 +2,96 @@ use super::*;
 use sqlx::Executor;
 
 #[tokio::test]
+async fn stale_open_time_stops_at_owner_heartbeat_across_days_and_recovers() {
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    for schema in [
+        crate::data::schema::CURRENT_BASELINE_SCHEMA_SQL,
+        crate::data::schema::ACTIVITY_IMPORT_SCHEMA_SQL,
+        crate::data::schema::SOFTWARE_REMINDER_RULES_SCHEMA_SQL,
+    ] {
+        pool.execute(schema).await.unwrap();
+    }
+    let day = 24 * HOUR_MS;
+    sqlx::query("INSERT INTO sessions(app_name,exe_name,start_time,end_time,duration) VALUES('Editor','editor',?,NULL,NULL),('Closed','closed',100,200,100)")
+        .bind(day - 2000).execute(&pool).await.unwrap();
+    for (heartbeat, now, expected, status) in [
+        (
+            Some((day + 9000).to_string()),
+            day + 10000,
+            vec![2100, 10000],
+            patina_protocol::activity::ActivityReadStatus::Healthy,
+        ),
+        (
+            Some((day + 9000).to_string()),
+            day + 20000,
+            vec![2100, 9000],
+            patina_protocol::activity::ActivityReadStatus::Stale,
+        ),
+        (
+            Some((day + 9000).to_string()),
+            day + 30000,
+            vec![2100, 9000],
+            patina_protocol::activity::ActivityReadStatus::Stale,
+        ),
+        (
+            Some((day + 29000).to_string()),
+            day + 30000,
+            vec![2100, 30000],
+            patina_protocol::activity::ActivityReadStatus::Healthy,
+        ),
+        (
+            None,
+            day + 30000,
+            vec![100, 0],
+            patina_protocol::activity::ActivityReadStatus::Unavailable,
+        ),
+        (
+            Some("invalid".into()),
+            day + 30000,
+            vec![100, 0],
+            patina_protocol::activity::ActivityReadStatus::Unavailable,
+        ),
+        (
+            Some(i64::MAX.to_string()),
+            day + 30000,
+            vec![100, 0],
+            patina_protocol::activity::ActivityReadStatus::Unavailable,
+        ),
+    ] {
+        pool.execute("DELETE FROM settings WHERE key='__tracker_last_heartbeat_ms'")
+            .await
+            .unwrap();
+        if let Some(value) = heartbeat {
+            sqlx::query("INSERT INTO settings(key,value) VALUES('__tracker_last_heartbeat_ms',?)")
+                .bind(value)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let result =
+            load_snapshot_with_apps(&pool, &[0, day, day * 2], now, ReadMode::ProductEnglish)
+                .await
+                .unwrap();
+        assert_eq!(
+            result
+                .app_days
+                .iter()
+                .map(|day| day.active_ms)
+                .collect::<Vec<_>>(),
+            expected
+        );
+        let health = result.tracking_health.unwrap();
+        assert_eq!(health.status, status);
+        assert!(health.is_valid_at(now));
+    }
+    pool.close().await;
+}
+
+#[tokio::test]
 async fn product_snapshot_uses_one_classification_policy_and_preserves_occupied_time() {
     let pool = sqlx::sqlite::SqlitePoolOptions::new()
         .max_connections(1)

@@ -24,6 +24,9 @@ classification configuration revision. This uses its own development endpoint;
 old runtimes fail explicitly, without falling back to a legacy projection.
 The client validates totals and identity completeness. Consumers must not apply
 local classification or exclusion rules to these confirmed totals again.
+The snapshot also carries validated `tracking_health` and a backend live cutoff:
+stale owner heartbeats stop open-session growth, while closed facts retain their
+stored boundaries. Consumers must not extrapolate these totals with local clocks.
 Presentation labels/colors and exact History are separate concerns.
 
 The host supplies the port and credential. Requests only target `127.0.0.1`, do

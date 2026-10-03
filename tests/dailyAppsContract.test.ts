@@ -7,13 +7,14 @@ const end = new Date(2026, 8, 3).getTime();
 const app = { app_key: "zen", active_ms: 37 };
 const day = { start_ms: start, end_ms: middle, active_ms: 37, apps: [app] };
 const empty = { start_ms: middle, end_ms: end, active_ms: 0, apps: [] };
-const response = { sampled_at_ms: end, configuration_revision: "a".repeat(64), days: [day, empty], applications: [{ app_key: "zen", app_name: "Zen", exe_name: "zen", category: "other", display_name_override: null }] };
+const response = { sampled_at_ms: end, tracking_health: { status: "unavailable", last_heartbeat_ms: null, live_cutoff_ms: 0, stale_after_ms: 8000 }, configuration_revision: "a".repeat(64), days: [day, empty], applications: [{ app_key: "zen", app_name: "Zen", exe_name: "zen", category: "other", display_name_override: null }] };
 assert.deepEqual(await getDailyApps(start, end, async (from, to) => {
   assert.equal(from, "2026-09-01");
   assert.equal(to, "2026-09-03");
   return response;
 }), {
   sampledAtMs: end,
+  trackingHealth: { status: "unavailable", lastHeartbeatMs: null, liveCutoffMs: 0, staleAfterMs: 8000 },
   configurationRevision: "a".repeat(64),
   applications: [{ appKey: "zen", appName: "Zen", exeName: "zen", category: "other", displayNameOverride: null }],
   days: [
@@ -22,6 +23,12 @@ assert.deepEqual(await getDailyApps(start, end, async (from, to) => {
   ],
 });
 for (const invalid of [null, {}, { ...response, days: [day] },
+  { ...response, tracking_health: undefined },
+  ...[
+    { status: "healthy", last_heartbeat_ms: null, live_cutoff_ms: end, stale_after_ms: 8000 },
+    { status: "stale", last_heartbeat_ms: end - 9000, live_cutoff_ms: end, stale_after_ms: 8000 },
+    { status: "unavailable", last_heartbeat_ms: null, live_cutoff_ms: end, stale_after_ms: 8000 },
+  ].map(tracking_health => ({ ...response, tracking_health })),
   { ...response, configuration_revision: undefined },
   ...[undefined, "system", "unknown"].map(category => ({ ...response, applications: [{ ...response.applications[0], category }] })),
   ...[undefined, [], [response.applications[0], response.applications[0]],

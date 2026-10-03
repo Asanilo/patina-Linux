@@ -36,6 +36,7 @@ pub struct DailyActivityTrend {
         String,
         crate::domain::product_classification::ProductClassification,
     )>,
+    tracking_health: Option<patina_protocol::activity::ActivityReadHealth>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -79,6 +80,9 @@ pub async fn load_daily_product(
         snapshot.product.ok_or("missing product classification")?;
     let result = DailyProductSnapshot {
         sampled_at_ms,
+        tracking_health: snapshot
+            .tracking_health
+            .ok_or("missing product tracking health")?,
         configuration_revision,
         days: snapshot
             .app_days
@@ -252,6 +256,14 @@ async fn load_snapshot_with_apps(
     mode: ReadMode,
 ) -> Result<DailyActivityTrend, String> {
     let mut transaction = pool.begin().await.map_err(query_error)?;
+    let tracking_health = if mode.product() {
+        Some(super::activity_read_health::read_health(&mut transaction, sampled_at_ms).await?)
+    } else {
+        None
+    };
+    let live_cutoff_ms = tracking_health
+        .as_ref()
+        .map_or(sampled_at_ms, |health| health.live_cutoff_ms);
     let product = if mode.product() {
         let configuration = super::classification_settings::read_classification_snapshot(
             &mut transaction,
@@ -301,7 +313,7 @@ async fn load_snapshot_with_apps(
             &mut transaction,
             day[0],
             day[1],
-            sampled_at_ms,
+            live_cutoff_ms,
             &excluded,
             MAX_FACTS_PER_DAY,
             mode != ReadMode::Totals,
@@ -416,6 +428,7 @@ async fn load_snapshot_with_apps(
         app_days,
         applications,
         product,
+        tracking_health,
     })
 }
 

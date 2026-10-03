@@ -21,7 +21,7 @@ export function dailyAppsFixture(sessions: AggregateSessionRecord[]): DailyAppsR
     }
   }
   return {
-    sampledAtMs: Date.now(), configurationRevision: "0".repeat(64), applications: [...applications.values()], days: [...days].map(([date, values]) => ({
+    sampledAtMs: Date.now(), trackingHealth: { status: "unavailable", lastHeartbeatMs: null, liveCutoffMs: 0, staleAfterMs: 8000 }, configurationRevision: "0".repeat(64), applications: [...applications.values()], days: [...days].map(([date, values]) => ({
       date, duration: [...values.values()].reduce((a, b) => a + b, 0), apps: [...values].map(([appKey, duration]) => ({ appKey, duration })),
     }))
   };

@@ -1,5 +1,6 @@
 pub mod activity_import;
 pub mod activity_read_model;
+pub mod activity_read_health;
 pub mod activity_read_policy;
 pub mod backup;
 pub mod backup_schedule;

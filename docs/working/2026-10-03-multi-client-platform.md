@@ -149,3 +149,17 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 实际 HTTP 测试中，独立 SDK 与 Desktop facade 返回相同每日数据与配置 revision。仓库测试验证排除的原生记录仍压制重叠导入，导入来源分类不冒充手动确认分类，响应不包含标题或凭据。旧 daily-apps 继续保持兼容。
 - 最终 `npm run check:full` 全部通过：58 个 TypeScript 测试文件、38 项浏览器回归、生产构建／bundle、28 项 SDK 测试及依赖图／Clippy、729 Rust passed / 21 ignored、Rust 边界和 Clippy。初轮新测试夹具缺少生产索引及合法导入指纹，补齐后通过；未降低约束。
 - 证据位于 `tmp/acceptance/multi-client-m2b/`。仅本地开发；未安装、推送、合并 main 或发布。该结果不是整个多客户端基础完成：新 UI、精确历史／网页读取、可信 live 截止、普通设置同步与独立后端构建／安装尚未完成。
+
+### M2c 执行设计：后端活跃读取截止
+
+- 先给产品每日快照增加显式健康与 cutoff 契约，读取 owner 持久化的 heartbeat，和事实处于同一 SQLite 事务。沿用现有 Desktop 的八秒 stale 边界；健康时允许读取到 sampled time，陈旧时最多计到最后 heartbeat，缺失／无效时不为开放会话推算时长。已封口和导入事实不受该 cutoff 影响。
+- 该策略属于 domain，数据库获取属于 data；SDK／Desktop 只校验并消费，不按客户端墙钟重新推算。不把读取健康等同于采样来源可靠性或运行时 watchdog 修复。
+- 用恢复 heartbeat、陈旧 heartbeat、无 heartbeat、未来时间及跨日夹具验证，不改变生产 runtime。随后复用此策略迁移 Dashboard／History，旧兼容 API 明确保留边界。
+
+### M2c 核验结果
+
+- 产品每日快照新增 `tracking_health`：健康状态、最后 heartbeat、live cutoff 与 stale 阈值来自后端。固定 heartbeat 与活动／分类共用读取事务；陈旧时长不随后续请求时钟增长。轻微未来 heartbeat 在八秒窗口内钳制到本次 sampled time，超过窗口视作无效，避免读取期间刚提交的时间戳被误判。
+- SQL 只读取固定 heartbeat key，按字节限制持久值；无效／超长值不成为可信时间。`domain/activity_read_health` 独立拥有读取政策，SDK／JS 校验状态与数值关系，不自行延长时长。
+- 新增跨日数据库回归和纯策略回归，覆盖停滞、重复读取、恢复、缺失／非法／过远未来值与已封口记录保留；实际双客户端契约继续通过。现有 Data 缓存版本升为 3，版本 2 缓存自动重读。
+- 完整门禁通过：58 个 TypeScript 测试文件、38 项浏览器回归、28 项 SDK 测试及 Clippy、731 Rust passed / 21 ignored、产品 Clippy。缓存版本补充变更另完成针对性回归、TypeScript／生产构建和 bundle 检查；未因文档变更重复全量构建。
+- 证据位于 `tmp/acceptance/multi-client-m2c/`。没有安装、推送、合并或发布。读取健康不保证前台 provider 质量；旧兼容 daily-apps／heatmap／Summary、Dashboard、精确 History 和网页仍有待迁移，不把该切片计作整体后端基础完成。

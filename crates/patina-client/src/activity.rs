@@ -40,6 +40,7 @@ impl Client {
 fn validate(snapshot: &DailyProductSnapshot) -> Result<(), ClientError> {
     let error = || ClientError::InvalidResponse("invalid daily product snapshot".into());
     if !patina_protocol::configuration::is_revision(&snapshot.configuration_revision)
+        || !snapshot.tracking_health.is_valid_at(snapshot.sampled_at_ms)
         || snapshot.days.is_empty()
         || snapshot.days.len() > 378
         || snapshot.applications.len() > 4096
@@ -102,6 +103,12 @@ mod tests {
     #[test]
     fn rejects_inconsistent_totals_identities_and_legacy_category_values() {
         let valid = DailyProductSnapshot {
+            tracking_health: patina_protocol::activity::ActivityReadHealth {
+                status: patina_protocol::activity::ActivityReadStatus::Unavailable,
+                last_heartbeat_ms: None,
+                live_cutoff_ms: 0,
+                stale_after_ms: 8000,
+            },
             sampled_at_ms: 1000,
             configuration_revision: "a".repeat(64),
             days: vec![DailyProductDay {
@@ -122,6 +129,9 @@ mod tests {
             }],
         };
         assert!(validate(&valid).is_ok());
+        let mut wrong_health = valid.clone();
+        wrong_health.tracking_health.live_cutoff_ms = 1000;
+        assert!(validate(&wrong_health).is_err());
         let mut invalid = valid.clone();
         invalid.days[0].active_ms = 38;
         assert!(validate(&invalid).is_err());

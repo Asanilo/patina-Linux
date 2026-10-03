@@ -1014,6 +1014,18 @@ fn schemas() -> Value {
         envelope(object_schema(vec![
             ("sampled_at_ms", integer_schema()),
             (
+                "tracking_health",
+                object_schema(vec![
+                    (
+                        "status",
+                        enum_schema(vec!["healthy", "stale", "unavailable"]),
+                    ),
+                    ("last_heartbeat_ms", nullable_integer_schema()),
+                    ("live_cutoff_ms", integer_schema()),
+                    ("stale_after_ms", integer_schema()),
+                ]),
+            ),
+            (
                 "configuration_revision",
                 json!({"type":"string","pattern":"^[0-9a-f]{64}$"}),
             ),

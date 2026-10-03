@@ -334,6 +334,8 @@ src/
 
 多客户端分支中，Data 的应用／分类趋势使用 `daily-product`。`domain/product_classification` 决定手动分类、排除和删除分类回落，`data/repositories/daily_activity` 在同一事务读取配置与活动，共享协议返回最终分类、名称 override 与配置 revision。前端不能用另一个时刻的 mapper 重新分类或排除这些时长；名称本地化、颜色与图表格式仍属表现层。旧 daily-apps／Summary 的兼容语义保留，Dashboard、精确历史和网页读模型继续按执行单迁移。
 
+产品每日快照的开放会话截止由 `domain/activity_read_health` 决定，`data` 在事实事务内读取 owner heartbeat。陈旧 heartbeat 不随读取时钟继续增长；缺少可信证据时不推算开放会话。SDK 和 Desktop 只校验快照中的健康/cutoff 契约，不能自行延长后端时长。该读取策略不代替 runtime watchdog、锁屏／挂起封口或采样来源诊断；尚未迁移的旧读接口必须明确标识。
+
 前端终局结构中不再保留：
 
 - 根层 `src/lib/`

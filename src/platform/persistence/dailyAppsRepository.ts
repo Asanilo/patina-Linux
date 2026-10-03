@@ -6,6 +6,7 @@ import { getUiTextLanguage } from "../../shared/copy/uiText.ts";
 export interface DailyAppsRead {
   sampledAtMs: number;
   configurationRevision: string;
+  trackingHealth: { status: "healthy" | "stale" | "unavailable"; lastHeartbeatMs: number | null; liveCutoffMs: number; staleAfterMs: number };
   applications: Array<{ appKey: string; appName: string; exeName: string; category: AppCategory; displayNameOverride: string | null }>;
   days: Array<{
     date: string;
@@ -25,6 +26,7 @@ export async function getDailyApps(
 ): Promise<DailyAppsRead> {
   let sampledAtMs = 0;
   let configurationRevision = "";
+  let trackingHealth: DailyAppsRead["trackingHealth"] | undefined;
   let applications: DailyAppsRead["days"][number]["apps"][] = [];
   let identities: DailyAppsRead["applications"] = [];
   // Reuse local midnight validation and the Desktop daily-read queue. This does
@@ -38,6 +40,19 @@ export async function getDailyApps(
     }
     sampledAtMs = value.sampled_at_ms as number;
     configurationRevision = value.configuration_revision;
+    const health = value.tracking_health;
+    if (!record(health) || !Number.isSafeInteger(health.live_cutoff_ms) || !Number.isSafeInteger(health.stale_after_ms)
+      || (health.live_cutoff_ms as number) < 0 || (health.live_cutoff_ms as number) > sampledAtMs || (health.stale_after_ms as number) <= 0) {
+      throw new Error("Invalid activity read health");
+    }
+    const heartbeat = health.last_heartbeat_ms;
+    const hasHeartbeat = typeof heartbeat === "number" && Number.isSafeInteger(heartbeat) && heartbeat > 0 && heartbeat <= sampledAtMs;
+    const valid = health.status === "unavailable" ? heartbeat === null && health.live_cutoff_ms === 0
+      : health.status === "healthy" ? hasHeartbeat && sampledAtMs - (heartbeat as number) <= (health.stale_after_ms as number) && health.live_cutoff_ms === sampledAtMs
+      : health.status === "stale" && hasHeartbeat && sampledAtMs - (heartbeat as number) > (health.stale_after_ms as number) && health.live_cutoff_ms === heartbeat;
+    if (!valid) throw new Error("Inconsistent activity read health");
+    trackingHealth = { status: health.status as DailyAppsRead["trackingHealth"]["status"], lastHeartbeatMs: heartbeat as number | null,
+      liveCutoffMs: health.live_cutoff_ms as number, staleAfterMs: health.stale_after_ms as number };
     const keys = new Set<string>();
     let rowCount = 0;
     const encoder = new TextEncoder();
@@ -86,9 +101,11 @@ export async function getDailyApps(
     });
     return { ...value, earliest_start_ms: null };
   });
+  if (!trackingHealth) throw new Error("Missing activity read health");
   return {
     sampledAtMs,
     configurationRevision,
+    trackingHealth,
     applications: identities,
     days: daily.days.map((day, index) => ({ ...day, apps: applications[index] })),
   };

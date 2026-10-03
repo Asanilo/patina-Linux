@@ -719,7 +719,7 @@ fact/identity budgets, single-query admission and 30-second repository timeout a
 or unknown parameters are rejected. Language only preserves the legacy fallback
 for an empty custom-category label after decoding; it does not change time ranges.
 
-`data` contains `sampled_at_ms`, `configuration_revision`, `days` in the daily-apps
+`data` contains `sampled_at_ms`, `tracking_health`, `configuration_revision`, `days` in the daily-apps
 format, and a required `applications` array. Each identity contains `app_key`,
 `app_name`, `exe_name`, final `category`, and nullable `display_name_override`.
 The revision identifies classification configuration, not changes in activity.
@@ -744,12 +744,24 @@ upgrade/restart error. The Data application/category projection consumes final
 classification and exclusions without applying a newer client mapper to an older
 snapshot. Existing name localization, category labels/colors and chart formatting
 remain presentation responsibilities. Persisted app charts now require
-`appReadVersion: 2`, so old projections are discarded and reloaded.
+`appReadVersion: 3`, so old projections are discarded and reloaded.
 
-This read does not yet replace Dashboard, exact History, web activity or the
-separate runtime-health cutoff logic. `sampled_at_ms` retains the existing daily
-aggregation semantics for open sessions; it is not a claim that stale tracking
-has been resolved across all clients.
+`tracking_health` contains `status` (`healthy`, `stale` or `unavailable`),
+`last_heartbeat_ms`, `live_cutoff_ms` and `stale_after_ms` (8,000). The owner reads
+its persisted heartbeat in the same transaction as the facts. A heartbeat at
+most eight seconds old allows open native activity through `sampled_at_ms`.
+Older evidence caps open activity at the heartbeat, even if subsequent reads have
+later clocks. Missing, invalid, nonpositive or far-future evidence contributes no
+open activity (`live_cutoff_ms=0`). A heartbeat slightly ahead of the request's
+sample time, within the same eight-second window, is clamped to the sample time
+to tolerate a concurrent commit or small clock adjustment. Closed native and
+imported facts retain their stored boundaries. No heartbeat is changed by reading.
+
+SDK and Desktop validate these health/cutoff relationships and consume backend
+totals without client-clock extrapolation. Persisted timestamps are read evidence,
+not proof of foreground-provider quality; runtime watchdog and lifecycle sealing
+remain separate. Dashboard, exact History, web activity and older compatibility
+endpoints have not yet migrated to this product read policy.
 
 ### `GET /api/v1/classification/observed-apps`
 
