@@ -6,6 +6,7 @@ mod configuration;
 mod dashboard;
 mod error;
 pub mod events;
+mod history;
 pub mod state;
 pub mod sync;
 pub use patina_protocol as protocol;

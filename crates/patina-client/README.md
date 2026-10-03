@@ -37,6 +37,14 @@ The existing Desktop Dashboard command delegates to this method; its frontend
 formats confirmed quantities and refreshes from the owner instead of extrapolating
 with a local clock. Exact History and icon transport remain separate migrations.
 
+`exact_history(from_ms, to_ms, language)` reads precise native/imported fragments
+with final classification and clipped title samples. It never includes hour
+buckets, fabricates dated observations from record captions, or extends open rows
+past owner liveness. Source IDs require their origin; imported facts can produce
+multiple fragments. The SDK validates the response within an 8 MiB budget and
+rejects unsupported endpoints instead of using legacy sessions or local SQLite.
+Desktop History/Details hookup is still pending at this backend checkpoint.
+
 The host supplies the port and credential. Requests only target `127.0.0.1`, do
 not use environment proxies or follow redirects, have time and response-size
 limits, and never automatically retry writes. Negotiate capabilities before

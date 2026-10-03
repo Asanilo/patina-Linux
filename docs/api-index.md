@@ -66,6 +66,7 @@ Current caveats:
 | `/api/v1/activity/daily-apps` | `GET` | Compatibility surface | Bounded daily application totals and optional identities |
 | `/api/v1/activity/daily-product` | `GET` | Development branch | Transaction-consistent daily totals, product classification and configuration revision; used by Desktop application/category charts |
 | `/api/v1/activity/dashboard` | `GET` | Development branch | Selected/previous day totals and conserving hourly category quantities; used by Desktop Dashboard |
+| `/api/v1/activity/history` | `GET` | Development branch | Bounded precise native/imported records and stored titles; Desktop History hookup pending |
 | `/api/v1/classification/observed-apps` | `GET` | Unreleased source | Bounded raw executable statistics for classification candidates |
 | `/api/v1/web-activity` | `GET` | Implemented | Browser activity segment query |
 | `/api/v1/ai/activity-context` | `GET` | Implemented | Aggregated diagnostics, active session, summaries, and recent web activity for external AI analysis |
@@ -710,6 +711,58 @@ The numeric boundaries above are illustrative; actual values follow the runtime 
 Budgets: shared heatmap/trend single-query permit, 30-second repository timeout (HTTP handler remains 15 seconds), 20,000 intersecting facts/day, 4,096 distinct canonical keys over the requested range, 50,000 day/app rows, and 4 MiB encoded response including JSON escaping and reserved envelope overhead. Existing heatmap settings/metadata limits also apply. Busy/read/budget failures return `500` without partial data or SQL fallback; the HTTP timeout uses the server's existing error policy. Per-day facts are released between days within one SQLite snapshot. These are retained-data limits, not a proven fixed process-memory ceiling.
 
 The compatibility endpoint retains its 4 MiB response cap. Daily totals are never interpreted as session start/end intervals. No dedicated MCP tool is exposed.
+
+### `GET /api/v1/activity/history`
+
+Development-branch endpoint for authenticated local clients on all three API
+surfaces. Required `from_ms` / `to_ms` define an inclusive/exclusive epoch-millisecond
+range, positive in length and at most 32 elapsed days. Integers must remain within
+the JavaScript-safe range; duplicate/unknown parameters are rejected. Optional
+`language` is `en-US` (default) or `zh-CN`, with the same legacy custom-label
+normalization as other product reads. Invalid requests return 400.
+
+`data` contains `from_ms`, `to_ms`, `sampled_at_ms`, `configuration_revision`,
+`tracking_health`, and sorted `records`. Each record includes:
+
+- `origin`: `native` or `import_exact`; hourly buckets never appear.
+- `record_id`: positive source-table ID. Pair it with origin; imported records can
+  produce multiple surviving fragments. Start/end distinguish fragments.
+- `app_key`, `app_name`, `exe_name`, final `category`, nullable
+  `display_name_override`: product identity from the same configuration snapshot.
+- `start_ms`, `end_ms`: clipped, positive precise interval. Duration is their
+  difference. Native overlaps retain their existing meaning and are not deduplicated.
+- `continuity_start_ms`: native continuity hint, clamped no later than the returned
+  start; imported fragments start a new continuity interval.
+- `is_open`: source native row is not sealed. Its returned end remains bounded by
+  owner liveness and the requested range; clients must not extend it with local clocks.
+- `window_title`: stored record caption, **not** proof of a timed title observation.
+- `title_samples`: stored native `{title,start_ms,end_ms}` observations clipped to
+  the record and request. Captions are never turned into synthetic samples, and
+  imported captions do not create native observations.
+
+One read transaction covers heartbeat, classification, compact facts and title
+samples. Native intervals suppress overlapping exact imports before filtering;
+excluded native time still suppresses imports. Titles are read in bounded
+primary-key batches after precedence, not carried through the ordered fact UNION.
+Reads never migrate, seal, repair or delete records. Existing stored captions and
+samples remain historical data; disabling future title capture does not itself
+erase them. No new MCP exposure or browser-session authorization is introduced.
+
+Budgets: 20,000 intersecting input facts, 40,000 output fragments, 50,000 scanned
+title samples, 1,024 UTF-8 bytes per name/executable, 16,384 per caption/sample, and
+8 MiB encoded response. Retained raw metadata and raw sample text each have an
+8 MiB budget. JSON escape expansion counts toward the response budget. A busy
+query or budget/read failure returns an error without a truncated success. One
+history query is admitted per process; its repository timeout is 30 seconds,
+while the existing HTTP handler has a shorter 15-second deadline. These are
+retained-data limits, not a claim that SQLite/OS total memory is capped at 8 MiB.
+
+The shared SDK `exact_history(from_ms,to_ms,language)` uses the scoped response
+budget, validates record/sample boundaries and liveness, and never falls back to
+legacy `/sessions` or SQL. Two independent clients are tested against the real
+loopback server. Desktop History/Details still use their old adapters at this
+checkpoint; their migration, caption presentation and refresh behavior remain work
+in progress.
 
 ### `GET /api/v1/activity/dashboard`
 

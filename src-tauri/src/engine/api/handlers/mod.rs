@@ -8,6 +8,7 @@ pub mod classification;
 pub mod data_maintenance;
 pub mod diagnostics;
 pub mod dashboard;
+pub mod exact_history;
 pub mod health;
 pub mod heatmap;
 pub mod local_api;

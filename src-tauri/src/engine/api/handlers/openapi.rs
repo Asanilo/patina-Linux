@@ -269,6 +269,10 @@ fn paths(surface: ApiSurface) -> Value {
         }
     });
     let object = paths.as_object_mut().expect("OpenAPI paths object");
+    object.insert("/api/v1/activity/history".into(), json!({"get": get_operation_with_parameters(
+        "Precise native/imported history, clipped to an explicit epoch-millisecond range. No hour buckets. Includes stored captions and dated title samples for authenticated local clients. One configuration/heartbeat/fact transaction, 32-day range, 20000 input facts, 40000 records, 50000 samples, 8 MiB response, 30-second read budget; errors return no partial data.",
+        "ExactHistoryResponse", vec![required_query_param("from_ms","integer","Inclusive epoch milliseconds."),required_query_param("to_ms","integer","Exclusive epoch milliseconds."),query_param("language","string","en-US (default) or zh-CN.")]
+    )}));
     object.insert("/api/v1/activity/dashboard".into(), json!({"get": get_operation_with_parameters(
         "Consistent selected-day and previous-day product quantities with 24 host-local display hours. Repeated DST hours combine; missing hours are zero. Bucket quantities conserve daily totals and do not describe exact intervals. Shares product read limits and health policy.",
         "DashboardProductResponse", vec![required_query_param("date", "string", "Selected host-local YYYY-MM-DD date."), query_param("language", "string", "en-US (default) or zh-CN.")]
@@ -1069,6 +1073,59 @@ fn schemas() -> Value {
                 ("active_ms",integer_schema()),
                 ("categories",bounded_array_schema(object_schema(vec![("category",bounded_string_schema(1,1024)),("active_ms",integer_schema())]),4096)),
             ])})),
+        ])),
+    );
+    schemas.insert(
+        "ExactHistoryRecord".into(),
+        object_schema(vec![
+            ("origin", enum_schema(vec!["native", "import_exact"])),
+            ("record_id", integer_schema()),
+            ("app_key", bounded_string_schema(1, 1024)),
+            ("app_name", bounded_string_schema(0, 1024)),
+            ("exe_name", bounded_string_schema(1, 1024)),
+            ("category", bounded_string_schema(1, 1024)),
+            (
+                "display_name_override",
+                bounded_nullable_string_schema(4096),
+            ),
+            ("window_title", bounded_string_schema(0, 16384)),
+            ("start_ms", integer_schema()),
+            ("end_ms", integer_schema()),
+            ("continuity_start_ms", integer_schema()),
+            ("is_open", bool_schema()),
+            (
+                "title_samples",
+                bounded_array_schema(
+                    object_schema(vec![
+                        ("title", bounded_string_schema(0, 16384)),
+                        ("start_ms", integer_schema()),
+                        ("end_ms", integer_schema()),
+                    ]),
+                    50000,
+                ),
+            ),
+        ]),
+    );
+    schemas.insert(
+        "ExactHistoryResponse".into(),
+        envelope(object_schema(vec![
+            ("from_ms", integer_schema()),
+            ("to_ms", integer_schema()),
+            ("sampled_at_ms", integer_schema()),
+            (
+                "configuration_revision",
+                json!({"type":"string","pattern":"^[0-9a-f]{64}$"}),
+            ),
+            (
+                "tracking_health",
+                schemas["DailyProductResponse"]["properties"]["data"]["properties"]
+                    ["tracking_health"]
+                    .clone(),
+            ),
+            (
+                "records",
+                bounded_array_schema(schema_ref("ExactHistoryRecord"), 40000),
+            ),
         ])),
     );
     schemas.insert(

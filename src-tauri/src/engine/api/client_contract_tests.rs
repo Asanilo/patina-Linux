@@ -225,6 +225,35 @@ async fn independent_and_desktop_clients_observe_the_same_committed_classificati
     );
     assert_eq!(product.days[0].active_ms, 1000);
     let dashboard = native.dashboard(&from, "en-US").await.unwrap();
+    let history = native.exact_history(1000, 2000, "en-US").await.unwrap();
+    assert_eq!(history.records.len(), 1);
+    assert_eq!(history.records[0].start_ms, 1000);
+    assert_eq!(history.records[0].end_ms, 2000);
+    assert_eq!(history.records[0].window_title, "synthetic");
+    assert!(history.records[0].title_samples.is_empty()); // Captions are not invented dated samples.
+    assert_eq!(
+        history.configuration_revision,
+        product.configuration_revision
+    );
+    assert_eq!(
+        history.records,
+        another
+            .exact_history(1000, 2000, "en-US")
+            .await
+            .unwrap()
+            .records
+    );
+    let bad_history = native
+        .get_json::<Value>(
+            "/api/v1/activity/history?from_ms=0&to_ms=1&from_ms=2",
+            "invalid history",
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        bad_history,
+        patina_client::ClientError::Http { status: 400, .. }
+    ));
     let desktop_dashboard = desktop.dashboard(&from, "en-US").await.unwrap();
     assert_eq!(dashboard.current, desktop_dashboard.current);
     assert_eq!(dashboard.hours, desktop_dashboard.hours);
