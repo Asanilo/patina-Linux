@@ -269,6 +269,10 @@ fn paths(surface: ApiSurface) -> Value {
         }
     });
     let object = paths.as_object_mut().expect("OpenAPI paths object");
+    object.insert("/api/v1/activity/web-history".into(), json!({"get": get_operation_with_parameters(
+        "Bounded precise browser history with final domain metadata, recording state and URL privacy. Native parent, browser observation and owner heartbeat bound open rows. Deduplicates overlapping same-source/domain facts; independent browser sources remain separate. One read transaction, 32-day range, 20000 facts, 8 MiB UTF-8/JSON response, 12-second read deadline. Classification revision is not a combined privacy revision. No partial success or read-side repair.",
+        "WebHistoryResponse", vec![required_query_param("from_ms","integer","Inclusive epoch milliseconds."),required_query_param("to_ms","integer","Exclusive epoch milliseconds."),query_param("language","string","en-US (default) or zh-CN.")]
+    )}));
     object.insert("/api/v1/activity/history".into(), json!({"get": get_operation_with_parameters(
         "Precise native/imported history, clipped to an explicit epoch-millisecond range. No hour buckets. Includes stored captions and dated title samples for authenticated local clients. One configuration/heartbeat/fact transaction, 32-day range, 20000 input facts, 40000 records, 50000 samples, 8 MiB response, 30-second read budget; errors return no partial data.",
         "ExactHistoryResponse", vec![required_query_param("from_ms","integer","Inclusive epoch milliseconds."),required_query_param("to_ms","integer","Exclusive epoch milliseconds."),query_param("language","string","en-US (default) or zh-CN.")]
@@ -1073,6 +1077,57 @@ fn schemas() -> Value {
                 ("active_ms",integer_schema()),
                 ("categories",bounded_array_schema(object_schema(vec![("category",bounded_string_schema(1,1024)),("active_ms",integer_schema())]),4096)),
             ])})),
+        ])),
+    );
+    schemas.insert(
+        "WebHistoryRecord".into(),
+        object_schema(vec![
+            ("record_id", integer_schema()),
+            ("browser_client_id", bounded_string_schema(1, 1024)),
+            ("browser_kind", bounded_string_schema(1, 1024)),
+            ("browser_exe_name", bounded_string_schema(1, 1024)),
+            ("domain", bounded_string_schema(1, 1024)),
+            ("normalized_domain", bounded_string_schema(1, 1024)),
+            ("category", bounded_string_schema(1, 1024)),
+            (
+                "display_name_override",
+                bounded_nullable_string_schema(4096),
+            ),
+            ("color_override", bounded_nullable_string_schema(7)),
+            ("recording_enabled", json!({"type":"boolean"})),
+            ("url", bounded_nullable_string_schema(65536)),
+            ("title", bounded_nullable_string_schema(16384)),
+            ("favicon_url", bounded_nullable_string_schema(32768)),
+            ("start_ms", integer_schema()),
+            ("end_ms", integer_schema()),
+            ("is_open", json!({"type":"boolean"})),
+            ("is_live", json!({"type":"boolean"})),
+        ]),
+    );
+    schemas.insert(
+        "WebHistoryResponse".into(),
+        envelope(object_schema(vec![
+            ("from_ms", integer_schema()),
+            ("to_ms", integer_schema()),
+            ("sampled_at_ms", integer_schema()),
+            (
+                "classification_revision",
+                json!({"type":"string","pattern":"^[0-9a-f]{64}$"}),
+            ),
+            (
+                "tracking_health",
+                schemas["DailyProductResponse"]["properties"]["data"]["properties"]
+                    ["tracking_health"]
+                    .clone(),
+            ),
+            (
+                "url_privacy",
+                enum_schema(vec!["full", "strip_query", "domain_only"]),
+            ),
+            (
+                "records",
+                bounded_array_schema(schema_ref("WebHistoryRecord"), 20000),
+            ),
         ])),
     );
     schemas.insert(

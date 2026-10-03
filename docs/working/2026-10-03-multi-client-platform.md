@@ -55,7 +55,7 @@ HTTP API 索引和源码以当前实现为准；索引中历史的 unreleased/st
 | --- | --- | --- | --- |
 | M0 | 工作区、缺口表、owner 决策、阶段计划与长期规则 | 新会话能准确继续；稳定 main 不受开发影响 | 已完成 |
 | M1 | 独立 Rust 传输／协议基础，Desktop 接入；同步契约和 SDK 回归 | 第二个非 Tauri 进程可使用相同连接基础；请求、错误和 SSE 帧只有一份传输实现；通用重连／快照协调从宿主提取 | M1a、M1b 已实现并验证 |
-| M2 | 以“今天 → 应用／网页详情 → 历史”为切片，补最小读 API，迁移 Tauri；统一产品配置读取 | Tauri 作为标准客户端完成核心链路，统计规则由后端负责 | M2a–M2d 已完成；精确历史／网页、图标与普通设置仍待迁移 |
+| M2 | 以“今天 → 应用／网页详情 → 历史”为切片，补最小读 API，迁移 Tauri；统一产品配置读取 | Tauri 作为标准客户端完成核心链路，统计规则由后端负责 | M2a–M2e 已完成；网页、图标与普通设置仍待迁移 |
 | M3 | 浏览器会话和适配层；共享 React 核心界面，复用 Quiet Pro | Tauri＋Web 并行读取／修改分类并同步，真实浏览器验收 | 待实施 |
 | M4 | Rust SDK typed 能力逐步补全，TUI 接入同一核心链路 | 实际交互式 TUI 可查看／筛选／修改分类，并参与同步；CLI 示例不算完成 | 待实施 |
 | M5 | GPUI 客户端，同一能力和同步契约，独立视图 | 可运行 GPUI 核心链路和四端同步验收；评估启动、资源和维护成本 | 待实施 |
@@ -222,3 +222,22 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 完整 `check:full` 通过：60 个 TypeScript 文件、40 项浏览器检查、30 项 SDK 测试及 Clippy、740 Rust passed / 21 ignored、产品边界与 Clippy。随后仅前端刷新并发发生变化，最终 `npm run check` 再通过全部 60 个文件／41 项浏览器检查，生产构建及 bundle 原预算通过（总 JS gzip 364.54 KiB）；Rust 未变化，未重复其门禁。
 - 当前 History 表现层微基准以一个高量日的 700 条确认记录／2,800 个真实采样为输入，平均约 3.9 ms，保留原预算。该结果不代表后端查询、网络或整机性能。证据位于 `tmp/acceptance/multi-client-m2e-desktop/`，未安装、打包、推送、合并 main 或发布。
 - 基础阶段继续进行：网页活动／详情、图标／最早时间、普通设置同步与客户端本地偏好、读取 admission／超时统一、契约类型生成和后端独立构建／安装尚未完成。还应将旧 replay 分支移出生产、核对 History 日历／小时展示在 DST 日的范围，避免把可复用后端已正确的日边界再次剪坏。新 TUI／GPUI／Web UI 仍在讨论边界之外，本次未开发。
+
+
+### M2f 执行设计：网页产品读取
+
+- 新建有界 `data/repositories/web_product` 读 owner；分类配置、URL 隐私模式、heartbeat、网页记录及其原生会话关联来自同一个只读事务。复用既有持久表，不增加第二份后端事实。先交付精确网页接口／独立 SDK，再做域名每日汇总和现有 Desktop 迁移。
+- 当前 Data 的重复记录处理按 browser client／kind／exe／domain 去重；后端将身份元组显式建模，保留不同浏览器来源的独立贡献。先查紧凑 ID／时间，再按实际贡献候选读取有字节限制的元数据，范围、输入记录、单字段、整体内存、JSON 转义和查询时长均有预算。
+- 开放网页记录必须同时受 owner heartbeat、最后网页上报和关联原生会话约束；沿用既有 75 秒浏览器宽限，超过后止于最后上报。无原生关联的旧开放记录最多读到最后持久观察，不因 GET 修复、重新打开或延长。已关闭记录保留事实边界，并服从已知父会话关闭边界。
+- URL 过滤继续由后端执行。隐私枚举移到 serde-only 协议，现有 settings 重导出；旧 API 与新接口共用 domain 过滤函数，避免新 SDK 绕过 strip-query／domain-only。新精确 API 仍限已认证本地读取，不新增 MCP 工具或浏览器授权。
+- 两项产品差异已向用户询问，答复前不切 Desktop：停止记录域名是否隐藏旧历史（现有 Data／History 不一致）；URL 设置是否统一限制所有客户端（现有说明只限制 API／AI，Desktop SQL 可见原文）。后端独立工作先继续，快照明确携带 recording_enabled、classification_revision 与 url_privacy，不以隐式默认决定页面行为。
+
+
+### M2f 网页精确后端检查点
+
+- 已交付 `/api/v1/activity/web-history`、共享 DTO／隐私枚举、独立 SDK、OpenAPI 和薄 Tauri command。三个认证表面使用相同 owner；真实 loopback 测试对照独立 SDK、第二个客户端和 Desktop facade 的记录与隐私模式切换，重复参数拒绝。
+- 一个只读事务取得分类、隐私、heartbeat、紧凑网页事实和原生关联，再批量加载有限元数据。32 天范围、20,000 事实、8 MiB 原始元数据／编码输出和单字段上限均由后端执行，12 秒读取期限低于 HTTP 总期限；超限整批报错。domain-only 不读取原始 URL；旧 API 与新接口共用过滤政策。
+- 测试覆盖同来源同域名重叠、独立来源和含分隔字符的身份元组、查询裁剪、上报过期／owner 停滞／恢复、无心跳不推算、GET 不封口，以及 Unicode 字段、数量与 JSON 转义预算。域名 recording_enabled 独立于显示元数据解析，错误的颜色或名称不会把已停止记录误报为启用。
+- 首轮 `check:full` 通过：60 个 TypeScript 文件、41 项浏览器检查、31 项 SDK 测试／Clippy、744 Rust passed / 21 ignored 及 Clippy。补充 metadata／来源边界后，最终 SDK 门禁与产品 Rust 门禁通过（746 passed / 21 ignored）；新增测试夹具的原始字符串分隔符曾导致编译失败，修正后通过。最后 recording_enabled 防回归另通过全部六项 web_product 测试；对应最终源码 Clippy 已通过。前端未改动，未重复其门禁。
+- 证据位于 `tmp/acceptance/multi-client-m2f-web-backend/`。**M2f 仍未完成**：域名每日聚合、候选统计和现有 Desktop 的 SQL／重复规则退出尚未实施；精确接口通过不能替代这些验收。两项产品讨论仍待答复，Desktop 网页行为保持原状。
+- 仅本地开发，无安装、推送、合并 main 或发布。普通设置同步、图标／最早时间、全局读取 admission／超时统一、契约生成、旧 replay 退出及后端独立构建／安装继续在当前 goal 范围中；新多客户端 UI 不在此检查点交付范围。

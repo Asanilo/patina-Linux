@@ -66,6 +66,7 @@ Current caveats:
 | `/api/v1/activity/daily-apps` | `GET` | Compatibility surface | Bounded daily application totals and optional identities |
 | `/api/v1/activity/daily-product` | `GET` | Development branch | Transaction-consistent daily totals, product classification and configuration revision; used by Desktop application/category charts |
 | `/api/v1/activity/dashboard` | `GET` | Development branch | Selected/previous day totals and conserving hourly category quantities; used by Desktop Dashboard |
+| `/api/v1/activity/web-history` | `GET` | Development branch | Bounded browser facts with classification, recording state, privacy and trusted live boundaries; Desktop migration pending |
 | `/api/v1/activity/history` | `GET` | Development branch | Bounded precise native/imported records and stored titles; shared by Desktop History and app details |
 | `/api/v1/classification/observed-apps` | `GET` | Unreleased source | Bounded raw executable statistics for classification candidates |
 | `/api/v1/web-activity` | `GET` | Implemented | Browser activity segment query |
@@ -711,6 +712,42 @@ The numeric boundaries above are illustrative; actual values follow the runtime 
 Budgets: shared heatmap/trend single-query permit, 30-second repository timeout (HTTP handler remains 15 seconds), 20,000 intersecting facts/day, 4,096 distinct canonical keys over the requested range, 50,000 day/app rows, and 4 MiB encoded response including JSON escaping and reserved envelope overhead. Existing heatmap settings/metadata limits also apply. Busy/read/budget failures return `500` without partial data or SQL fallback; the HTTP timeout uses the server's existing error policy. Per-day facts are released between days within one SQLite snapshot. These are retained-data limits, not a proven fixed process-memory ceiling.
 
 The compatibility endpoint retains its 4 MiB response cap. Daily totals are never interpreted as session start/end intervals. No dedicated MCP tool is exposed.
+
+### `GET /api/v1/activity/web-history`
+
+Development-branch endpoint on Desktop and both daemon surfaces. Required
+`from_ms` / `to_ms` delimit a positive range of at most 32 days; `language` is
+`en-US` (default) or `zh-CN`. Unknown and duplicate parameters reject the request.
+The owner reads classification, URL privacy, heartbeat, web records and native
+session links in one transaction. `classification_revision` identifies only the
+classification snapshot; `url_privacy` is reported separately.
+
+Each record contains its source ID and browser identity, normalized domain,
+resolved category, optional display/color override, `recording_enabled`, clipped
+`start_ms` / `end_ms`, `is_open` / `is_live`, and stored title/URL/favicon fields.
+The precise-fact contract exposes the recording flag alongside retained history;
+Desktop visibility policy has not yet switched. Same-source/domain overlaps only
+contribute uncovered time. Distinct browser sources remain independent.
+
+An open row requires valid owner heartbeat evidence. A fresh browser observation
+uses the existing 75-second grace window; expired observations freeze at the
+last persisted update. A closed linked native session bounds its web child, and
+legacy open rows without a native link never extrapolate past their last update.
+GET does not seal or repair records. Closed records do not require a fresh
+heartbeat. Clients consume numeric boundaries and must not extend them locally.
+
+`full`, `strip_query`, and `domain_only` apply on the server. Domain-only responses
+omit URLs and do not load their raw storage values. Titles and favicon fields keep
+the existing privacy semantics; this URL setting is not a title-redaction mode.
+No credentials are included, and this endpoint is not added as an MCP tool.
+
+Limits: 20,000 candidate facts, 8 MiB metadata and encoded JSON response, 1,024-byte
+identity fields, 16,384-byte titles, 65,536-byte URLs, 32,768-byte favicons, and a
+12-second repository deadline. Overflow returns an error, never a partial
+success. The SDK `web_history(from_ms,to_ms,language)` checks scope, ordering,
+source overlap, metadata, privacy and live boundaries. A thin Tauri command is
+available; existing Desktop web pages still use their previous adapters pending
+the recorded product decisions and subsequent migration.
 
 ### `GET /api/v1/activity/history`
 

@@ -29,6 +29,13 @@ async fn independent_and_desktop_clients_observe_the_same_committed_classificati
         .await
         .unwrap();
     pool.execute("INSERT INTO sessions(app_name,exe_name,window_title,start_time,end_time,duration) VALUES('Fixture','fixture-app','synthetic',1000,2000,1000)").await.unwrap();
+    pool.execute(crate::data::schema::WEB_ACTIVITY_SCHEMA_SQL)
+        .await
+        .unwrap();
+    pool.execute(crate::data::schema::WEB_ACTIVITY_SESSION_SCHEMA_SQL)
+        .await
+        .unwrap();
+    pool.execute("INSERT INTO web_activity_segments(browser_client_id,browser_kind,browser_exe_name,domain,normalized_domain,url,title,start_time,end_time,created_at,updated_at) VALUES('fixture','firefox','firefox','example.com','example.com','https://example.com/path?secret','Stored title',1000,2000,1000,2000)").await.unwrap();
     let hub = Arc::new(RuntimeEventHub::new(2));
     let context = ApiRuntimeContext::with_state_and_events(
         RuntimeContext::system(pool.clone()),
@@ -249,6 +256,51 @@ async fn independent_and_desktop_clients_observe_the_same_committed_classificati
             .unwrap()
             .records
     );
+    let web = native.web_history(1000, 2000, "en-US").await.unwrap();
+    assert_eq!(web.records.len(), 1);
+    assert_eq!(
+        web.records[0].url.as_deref(),
+        Some("https://example.com/path?secret")
+    );
+    assert_eq!(
+        web.records,
+        desktop
+            .web_history(1000, 2000, "en-US")
+            .await
+            .unwrap()
+            .records
+    );
+    assert_eq!(
+        web.records,
+        another
+            .web_history(1000, 2000, "en-US")
+            .await
+            .unwrap()
+            .records
+    );
+    pool.execute(
+        "INSERT INTO settings(key,value) VALUES('web_activity_url_privacy','domain_only')",
+    )
+    .await
+    .unwrap();
+    assert!(native
+        .web_history(1000, 2000, "en-US")
+        .await
+        .unwrap()
+        .records[0]
+        .url
+        .is_none());
+    let invalid_web = native
+        .get_json::<Value>(
+            "/api/v1/activity/web-history?from_ms=1000&to_ms=2000&from_ms=0",
+            "duplicate web range",
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        invalid_web,
+        patina_client::ClientError::Http { status: 400, .. }
+    ));
     let bad_history = native
         .get_json::<Value>(
             "/api/v1/activity/history?from_ms=0&to_ms=1&from_ms=2",

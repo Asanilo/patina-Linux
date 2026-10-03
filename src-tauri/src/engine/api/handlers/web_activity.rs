@@ -2,6 +2,7 @@ use crate::data::repositories::web_activity::{
     query_segments, WebActivitySegmentQuery, WebActivitySegmentRecord,
 };
 use crate::domain::settings::WebActivityUrlPrivacyMode;
+use crate::domain::web_product::apply_url_privacy;
 use crate::engine::api::context::ApiRuntimeContext;
 use crate::engine::api::types::{
     ApiError, ApiResponse, RouteResponse, WebActivityEntry, WebActivityResponse,
@@ -91,28 +92,6 @@ fn build_web_activity_response(
             })
             .collect(),
     }
-}
-
-fn apply_url_privacy(
-    url: Option<String>,
-    url_privacy: WebActivityUrlPrivacyMode,
-) -> Option<String> {
-    match url_privacy {
-        WebActivityUrlPrivacyMode::Full => url,
-        WebActivityUrlPrivacyMode::StripQuery => url.map(|value| strip_query_and_fragment(&value)),
-        WebActivityUrlPrivacyMode::DomainOnly => None,
-    }
-}
-
-fn strip_query_and_fragment(url: &str) -> String {
-    let query_index = url.find('?');
-    let fragment_index = url.find('#');
-    let truncate_at = [query_index, fragment_index]
-        .into_iter()
-        .flatten()
-        .min()
-        .unwrap_or(url.len());
-    url[..truncate_at].to_string()
 }
 
 #[cfg(test)]

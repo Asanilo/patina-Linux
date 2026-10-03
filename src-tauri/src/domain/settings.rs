@@ -69,24 +69,7 @@ pub struct RuntimeActivitySettings {
     pub web_activity_url_privacy: WebActivityUrlPrivacyMode,
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum WebActivityUrlPrivacyMode {
-    #[default]
-    Full,
-    StripQuery,
-    DomainOnly,
-}
-
-impl WebActivityUrlPrivacyMode {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Full => "full",
-            Self::StripQuery => "strip_query",
-            Self::DomainOnly => "domain_only",
-        }
-    }
-}
+pub use patina_protocol::web_history::WebActivityUrlPrivacyMode;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RemoteStatusBridgeSettings {

@@ -17,7 +17,7 @@ use sqlx::{Pool, Sqlite};
 use std::sync::Mutex;
 use std::time::Duration;
 
-const BROWSER_BRIDGE_STALE_AFTER_MS: i64 = 75_000;
+use patina_protocol::web_history::BROWSER_BRIDGE_STALE_AFTER_MS;
 pub const WEB_ACTIVITY_STALE_CHECK_INTERVAL: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Debug, Default)]

@@ -132,7 +132,7 @@ fn parse_override(raw: &str, language: &str) -> Option<Override> {
     })
 }
 
-fn normalize_category(raw: &str, language: &str) -> Result<Option<String>, ()> {
+pub(crate) fn normalize_category(raw: &str, language: &str) -> Result<Option<String>, ()> {
     let raw = trim_js(raw);
     if ASSIGNABLE.contains(&raw) {
         return Ok(Some(raw.into()));

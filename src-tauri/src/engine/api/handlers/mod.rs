@@ -23,6 +23,7 @@ pub mod settings;
 pub mod tools;
 pub mod trend;
 pub mod web_activity;
+pub mod web_product;
 
 #[cfg(test)]
 mod diagnostics_api_contract_tests {

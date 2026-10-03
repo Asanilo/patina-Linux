@@ -120,7 +120,7 @@ IPC 契约应保持稳定、可解析、可测试。
 前端当前保留受控的本地 SQLite 访问，用于：
 
 - 尚未迁移的普通 settings 读取；classification 配置已迁往 owner 快照
-- history、网页明细等尚未迁移的读模型查询
+- 网页明细、图标和最早记录时间等尚未迁移的客户端读查询
 - 应用图标的只读展示缓存（包括 Dashboard 使用的图标）
 - 桌面端本机活动与外部导入活动的只读组合
 - Desktop 私有、可重建的 `data.bootstrap_snapshot` 渲染缓存读写
@@ -344,6 +344,8 @@ Dashboard、History 与应用详情复用 `shared/lib/snapshotReadController` �
 精确历史的产品读 owner 为 `data/repositories/exact_history`：配置、heartbeat、原生／精确导入事实和标题样本共享事务。复用领域优先级编译，小时汇总不能变成精确时间线；先读取紧凑候选，再批量加载贡献记录的有限元数据。返回源 ID／origin、规范应用分类和已裁剪区间，record caption 与真实标题样本分别表达。读取不修复数据库，超限不返回部分成功。Desktop History／应用详情通过薄 `cmd_get_exact_history`、SDK 与严格前端 adapter 使用同一契约；失败不退回 SQL。生产会话带 `confirmed` 元数据，展示不得重新分类、排除、改名或按本地时钟延长。窗口 caption 仅为未定时标签；缺少真实样本时标题明细为空，同标题采样之间的空档不得填满。原生重叠事实保留各自时长，不能用时间线去重改变应用详情总量。History 只读所选日，不再读取已退出页面的周趋势。
 
 `sessionReadRepository` 暂保留日期适配与图标／最早记录时间两个 SQLite 读取例外；网页读取仍待迁移。前端旧导入优先级实现已移到 `tests/helpers/legacyNativeSessionPrecedence`，只作历史契约 oracle，生产代码不得依赖 tests。会话表现编译器中的无 `confirmed` 分支暂留供历史 replay 对照；所有生产精确会话 adapter 均必须提供后端确认元数据，不能把可选类型当作生产 fallback。
+
+网页精确产品读取由 `data/repositories/web_product` 负责，复用持久网页与原生关联表，并与配置／隐私／heartbeat 同事务读取。领域层 `web_product` 拥有域名元数据、URL 过滤和浏览器观察／原生父会话的可信截止；同浏览器来源和域名的重叠只贡献未覆盖区间，不把不同浏览器来源静默混成一份事实。输入事实、字段、元数据、编码输出和时长均有上限；HTTP、薄 command 与独立 SDK 共用这份 owner。此阶段新增 API 不代表 Desktop 网页读取已经迁移，也不提前决定“停止记录”对旧历史的可见性及跨客户端 URL 隐私政策。
 
 前端终局结构中不再保留：
 

@@ -47,6 +47,9 @@ pub(crate) async fn route_request(
         ("GET", "/api/v1/activity/dashboard") => {
             handlers::dashboard::get_dashboard(context, query).await
         }
+        ("GET", "/api/v1/activity/web-history") => {
+            handlers::web_product::get_web_history(context, query).await
+        }
         ("GET", "/api/v1/activity/history") => {
             handlers::exact_history::get_history(context, query).await
         }
