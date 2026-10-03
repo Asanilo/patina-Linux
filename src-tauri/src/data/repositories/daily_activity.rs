@@ -22,7 +22,9 @@ const MAX_APP_KEY_BYTES: usize = 1024;
 const MAX_OVERRIDE_BYTES: usize = 16_384;
 const QUERY_TIMEOUT: Duration = Duration::from_secs(30);
 static DAILY_ACTIVITY_QUERY: Semaphore = Semaphore::const_new(1);
+mod dashboard;
 mod names;
+pub use dashboard::load_dashboard_product;
 #[cfg(test)]
 mod product_tests;
 
@@ -37,6 +39,7 @@ pub struct DailyActivityTrend {
         crate::domain::product_classification::ProductClassification,
     )>,
     tracking_health: Option<patina_protocol::activity::ActivityReadHealth>,
+    hours: Vec<patina_protocol::dashboard::DashboardHour>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -47,11 +50,22 @@ enum ReadMode {
     ApplicationsNamed,
     ProductEnglish,
     ProductChinese,
+    DashboardEnglish,
+    DashboardChinese,
 }
 
 impl ReadMode {
     fn product(self) -> bool {
-        matches!(self, Self::ProductEnglish | Self::ProductChinese)
+        matches!(
+            self,
+            Self::ProductEnglish
+                | Self::ProductChinese
+                | Self::DashboardEnglish
+                | Self::DashboardChinese
+        )
+    }
+    fn dashboard(self) -> bool {
+        matches!(self, Self::DashboardEnglish | Self::DashboardChinese)
     }
     fn named(self) -> bool {
         self == Self::ApplicationsNamed || self.product()
@@ -67,15 +81,22 @@ pub async fn load_daily_product(
     sampled_at_ms: i64,
     language: &str,
 ) -> Result<patina_protocol::activity::DailyProductSnapshot, String> {
-    use patina_protocol::activity::{
-        DailyProductAppTotal, DailyProductDay, DailyProductSnapshot, ProductAppIdentity,
-    };
     let mode = match language {
         "en-US" => ReadMode::ProductEnglish,
         "zh-CN" => ReadMode::ProductChinese,
         _ => return Err("unsupported product language".into()),
     };
     let snapshot = load_bounded_snapshot(pool, boundaries, sampled_at_ms, mode).await?;
+    project_product(snapshot)
+}
+
+fn project_product(
+    snapshot: DailyActivityTrend,
+) -> Result<patina_protocol::activity::DailyProductSnapshot, String> {
+    use patina_protocol::activity::{
+        DailyProductAppTotal, DailyProductDay, DailyProductSnapshot, ProductAppIdentity,
+    };
+    let sampled_at_ms = snapshot.activity.sampled_at_ms;
     let (configuration_revision, policy) =
         snapshot.product.ok_or("missing product classification")?;
     let result = DailyProductSnapshot {
@@ -270,7 +291,7 @@ async fn load_snapshot_with_apps(
             sampled_at_ms,
         )
         .await?;
-        let language = if mode == ReadMode::ProductChinese {
+        let language = if matches!(mode, ReadMode::ProductChinese | ReadMode::DashboardChinese) {
             "zh-CN"
         } else {
             "en-US"
@@ -308,6 +329,7 @@ async fn load_snapshot_with_apps(
     // Reserve envelope/date overhead; encoded day bytes include escaped app keys.
     let mut response_bytes = 1024;
     let mut identities = names::IdentityCollector::default();
+    let mut hours = Vec::new();
     for day in boundaries.windows(2) {
         let mut records = load_day_facts(
             &mut transaction,
@@ -332,6 +354,13 @@ async fn load_snapshot_with_apps(
             }
         }
         // Excluded native activity must still suppress overlapping imported facts.
+        if mode.dashboard() && day[0] == boundaries[boundaries.len() - 2] {
+            hours = dashboard::build_hours(
+                &records,
+                day,
+                &product.as_ref().ok_or("missing product classification")?.1,
+            )?;
+        }
         let mut app_totals = HashMap::<Arc<str>, i64>::new();
         let mut name_requests = Vec::new();
         let active_ms = summarize_activity_range(&records, day[0], day[1])
@@ -429,6 +458,7 @@ async fn load_snapshot_with_apps(
         applications,
         product,
         tracking_health,
+        hours,
     })
 }
 

@@ -7,6 +7,7 @@ pub mod capabilities;
 pub mod classification;
 pub mod data_maintenance;
 pub mod diagnostics;
+pub mod dashboard;
 pub mod health;
 pub mod heatmap;
 pub mod local_api;

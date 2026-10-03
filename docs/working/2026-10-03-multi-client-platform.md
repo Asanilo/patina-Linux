@@ -163,3 +163,19 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 新增跨日数据库回归和纯策略回归，覆盖停滞、重复读取、恢复、缺失／非法／过远未来值与已封口记录保留；实际双客户端契约继续通过。现有 Data 缓存版本升为 3，版本 2 缓存自动重读。
 - 完整门禁通过：58 个 TypeScript 测试文件、38 项浏览器回归、28 项 SDK 测试及 Clippy、731 Rust passed / 21 ignored、产品 Clippy。缓存版本补充变更另完成针对性回归、TypeScript／生产构建和 bundle 检查；未因文档变更重复全量构建。
 - 证据位于 `tmp/acceptance/multi-client-m2c/`。没有安装、推送、合并或发布。读取健康不保证前台 provider 质量；旧兼容 daily-apps／heatmap／Summary、Dashboard、精确 History 和网页仍有待迁移，不把该切片计作整体后端基础完成。
+
+### M2d 执行设计：Dashboard 产品快照
+
+- Dashboard 需要今天／昨天总量、应用分组和逐小时分类，不能用 daily totals 冒充完整替代。先统一领域层的分区分配：小时桶在完整查询范围内分配后，再按剩余容量分摊至显示小时，保留整数余数，避免各小时独立查询导致数量丢失。
+- 后端复用有界产品读取与分类／健康 owner，在一个事务内取得本地日数据并生成 Dashboard 契约。小时汇总导入只提供数量，不伪造精确活动区间；原生和精确导入保留优先级及原生重叠规则。
+- 日历边界归后端宿主时区，重复本地小时汇入同一显示小时，缺失小时为零；实际日长不得假定固定 24 小时。随后接入现有 Dashboard hook，退出对应 SQL、客户端 live 推算和重复分类，保留既有布局与交互。精确历史另用相同分类／健康策略。
+
+### M2d 后端检查点（页面接入仍待完成）
+
+- 新增 `/api/v1/activity/dashboard`、OpenAPI 与 SDK `dashboard(date, language)`。选定日和前一日、应用身份、配置 revision、可信 live 截止、24 个显示小时的分类数量来自同一次有界产品读取；复用原有日事实查询，不新增存储表。
+- `summarize_activity_range` 与分区查询共用同一领域实现。先在父范围按优先级／容量分配，再把桶数量及整数余数分配到小时；一毫秒桶拆分不会消失。穷举小数量、竞争容量和切点证明各记录守恒且不超剩余容量，原有跨运行时夹具继续通过。
+- 日历 owner 按 offset 转换切割实际时间，重复小时合并到同一个显示槽。三个独立进程分别使用 `America/New_York`、`Australia/Lord_Howe` 和 `Asia/Kolkata` 验证整小时 DST、半小时 DST、半小时时区的接口数量守恒；不修改宿主时区。
+- 真实 HTTP 契约验证新 SDK Dashboard 总量与同日产品快照一致。SDK 拒绝小时遗漏、重复小时和分类错配；返回的小时数量不是精确活动时间线。
+- `check:full` 通过：58 个 TypeScript 文件、38 项浏览器回归、736 Rust passed / 21 ignored 及 Clippy。新增 Dashboard 负向 SDK 测试后单独完成最终 `check:client`，共 29 项 SDK 测试及 Clippy 通过；未重复未变化的前端门禁。证据位于 `tmp/acceptance/multi-client-m2d-backend/`。
+- **M2d 未完成**：现有 Desktop Dashboard hook 仍走旧 SQL／TS 编译链，下一执行项是使用新快照并删除该链路重复计算。随后继续精确历史／网页、普通设置同步、客户端本地偏好和独立后端构建／安装。多客户端高频读取还需复核共享查询 admission 的 busy 行为，不能仅以单请求测试替代并发使用验收。
+- 本检查点仅本地提交，不安装、不推送、不合并 main、不发布，不启动新客户端 UI 工作。

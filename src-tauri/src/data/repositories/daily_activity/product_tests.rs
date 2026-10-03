@@ -2,6 +2,53 @@ use super::*;
 use sqlx::Executor;
 
 #[tokio::test]
+async fn dashboard_hourly_quantities_match_daily_totals_and_do_not_expose_titles() {
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    for schema in [
+        crate::data::schema::CURRENT_BASELINE_SCHEMA_SQL,
+        crate::data::schema::ACTIVITY_IMPORT_SCHEMA_SQL,
+        crate::data::schema::SOFTWARE_REMINDER_RULES_SCHEMA_SQL,
+    ] {
+        pool.execute(schema).await.unwrap();
+    }
+    let days = crate::domain::activity_calendar::dashboard_boundaries("2026-03-08").unwrap();
+    let start = days[1];
+    let bucket_start = (start.div_euclid(HOUR_MS) + 2) * HOUR_MS;
+    sqlx::query("INSERT INTO import_batches(id,imported_at,source_name,source_kind,source_fingerprint,exact_session_count,hour_bucket_count) VALUES('fixture',0,'fixture','patina-csv',?,0,1)").bind("a".repeat(64)).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO import_time_buckets(batch_id,fingerprint,app_name,exe_name,bucket_start_time,duration) VALUES('fixture',?,'Imported','imported',?,1)").bind("b".repeat(64)).bind(bucket_start).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO sessions(app_name,exe_name,window_title,start_time,end_time,duration) VALUES('Editor','editor','private title',?,?,1000)").bind(start+1000).bind(start+2000).execute(&pool).await.unwrap();
+    let result = load_snapshot_with_apps(&pool, &days, days[2], ReadMode::DashboardEnglish)
+        .await
+        .unwrap();
+    assert_eq!(result.app_days[1].active_ms, 1001);
+    assert_eq!(
+        result.hours.iter().map(|hour| hour.active_ms).sum::<i64>(),
+        1001
+    );
+    assert_eq!(
+        result
+            .hours
+            .iter()
+            .flat_map(|hour| &hour.categories)
+            .map(|category| category.active_ms)
+            .sum::<i64>(),
+        1001
+    );
+    assert!(!serde_json::to_string(&result.hours)
+        .unwrap()
+        .contains("private title"));
+    let daily = load_snapshot_with_apps(&pool, &days, days[2], ReadMode::ProductEnglish)
+        .await
+        .unwrap();
+    assert_eq!(result.app_days, daily.app_days);
+    pool.close().await;
+}
+
+#[tokio::test]
 async fn stale_open_time_stops_at_owner_heartbeat_across_days_and_recovers() {
     let pool = sqlx::sqlite::SqlitePoolOptions::new()
         .max_connections(1)

@@ -45,9 +45,23 @@ pub fn summarize_activity_range<T: Clone>(
     from_ms: i64,
     to_ms: i64,
 ) -> Vec<ActivityContribution<T>> {
-    if to_ms <= from_ms {
+    summarize_activity_partitions(records, &[from_ms, to_ms])
+        .pop()
+        .unwrap_or_default()
+}
+
+/// Resolves one scope once, then distributes duration quantities into consecutive
+/// display partitions. Bucket contributions are never exact observed intervals.
+/// Splitting the same scope conserves every record's allocated milliseconds.
+pub fn summarize_activity_partitions<T: Clone>(
+    records: &[OwnedActivityRange<T>],
+    boundaries: &[i64],
+) -> Vec<Vec<ActivityContribution<T>>> {
+    if boundaries.len() < 2 || boundaries.windows(2).any(|pair| pair[1] <= pair[0]) {
         return Vec::new();
     }
+    let from_ms = boundaries[0];
+    let to_ms = *boundaries.last().unwrap();
 
     let indexed = records
         .iter()
@@ -82,23 +96,25 @@ pub fn summarize_activity_range<T: Clone>(
             })
             .collect(),
     );
-    let mut contributions = exact_ranges
-        .into_iter()
-        .filter_map(|candidate| {
+    let mut contributions = vec![Vec::new(); boundaries.len() - 1];
+    for candidate in exact_ranges {
+        for (index, partition) in boundaries.windows(2).enumerate() {
             let duration_ms = overlap_duration(
                 candidate.range.start_ms,
                 candidate.range.end_ms,
-                from_ms,
-                to_ms,
+                partition[0],
+                partition[1],
             );
-            (duration_ms > 0).then_some(ActivityContribution {
-                origin: candidate.range.origin,
-                start_ms: candidate.range.start_ms.max(from_ms),
-                duration_ms,
-                value: candidate.range.value,
-            })
-        })
-        .collect::<Vec<_>>();
+            if duration_ms > 0 {
+                contributions[index].push(ActivityContribution {
+                    origin: candidate.range.origin,
+                    start_ms: candidate.range.start_ms.max(partition[0]),
+                    duration_ms,
+                    value: candidate.range.value.clone(),
+                });
+            }
+        }
+    }
 
     let mut buckets_by_window: BTreeMap<(i64, i64), Vec<IndexedRange<T>>> = BTreeMap::new();
     for candidate in indexed
@@ -130,6 +146,18 @@ pub fn summarize_activity_range<T: Clone>(
         let scoped_duration = scoped_end_ms - scoped_start_ms;
         let occupied_duration = intersected_duration(&occupied, scoped_start_ms, scoped_end_ms);
         let mut available_duration = (scoped_duration - occupied_duration).max(0);
+        let mut capacities: Vec<i64> = boundaries
+            .windows(2)
+            .map(|part| {
+                let start = part[0].max(scoped_start_ms);
+                let end = part[1].min(scoped_end_ms);
+                if end <= start {
+                    0
+                } else {
+                    (end - start - intersected_duration(&occupied, start, end)).max(0)
+                }
+            })
+            .collect();
         let requested = group
             .iter()
             .map(|candidate| {
@@ -148,12 +176,29 @@ pub fn summarize_activity_range<T: Clone>(
                 0
             };
             if allocated > 0 {
-                contributions.push(ActivityContribution {
-                    origin: ActivityOrigin::ImportBucket,
-                    start_ms: scoped_start_ms,
-                    duration_ms: allocated,
-                    value: candidate.range.value,
-                });
+                let mut remainder = allocated;
+                let mut remaining_capacity = available_duration;
+                for (index, capacity) in capacities.iter_mut().enumerate() {
+                    let original_capacity = *capacity;
+                    let share = if remaining_capacity > 0 {
+                        (i128::from(remainder) * i128::from(original_capacity)
+                            / i128::from(remaining_capacity)) as i64
+                    } else {
+                        0
+                    };
+                    if share > 0 {
+                        contributions[index].push(ActivityContribution {
+                            origin: ActivityOrigin::ImportBucket,
+                            start_ms: scoped_start_ms.max(boundaries[index]),
+                            duration_ms: share,
+                            value: candidate.range.value.clone(),
+                        });
+                    }
+                    remainder -= share;
+                    *capacity -= share;
+                    remaining_capacity -= original_capacity;
+                }
+                debug_assert_eq!(remainder, 0);
             }
             remaining_requested -= requested_duration;
             available_duration -= allocated;
@@ -333,6 +378,59 @@ mod tests {
             capacity_end_ms,
             value,
         }
+    }
+
+    #[test]
+    fn partitions_preserve_small_bucket_quantities_instead_of_rounding_them_away() {
+        let records = [range(ActivityOrigin::ImportBucket, 0, 1, Some(100), "one")];
+        let partitions = summarize_activity_partitions(&records, &[0, 50, 100]);
+        assert_eq!(
+            partitions
+                .iter()
+                .flatten()
+                .map(|value| value.duration_ms)
+                .sum::<i64>(),
+            1
+        );
+        assert_eq!(partitions[0].len(), 0);
+        assert_eq!(partitions[1][0].duration_ms, 1);
+        assert_eq!(partitions[1][0].origin, ActivityOrigin::ImportBucket);
+        // Independent queries cannot retain the parent scope's integer remainder.
+        assert!(summarize_activity_range(&records, 0, 50).is_empty());
+        assert!(summarize_activity_range(&records, 50, 100).is_empty());
+    }
+
+    #[test]
+    fn partitions_conserve_each_record_and_do_not_overfill_remaining_capacity() {
+        for first in 0..=12 {
+            for second in 0..=12 {
+                for cut in 1..10 {
+                    let records = [
+                        range(ActivityOrigin::Native, 2, 4, None, "native"),
+                        range(ActivityOrigin::ImportExact, 1, 5, None, "exact"),
+                        range(ActivityOrigin::ImportBucket, 0, first, Some(10), "first"),
+                        range(ActivityOrigin::ImportBucket, 0, second, Some(10), "second"),
+                    ];
+                    let sum = |values: Vec<ActivityContribution<&'static str>>| {
+                        let mut totals = HashMap::new();
+                        for value in values {
+                            *totals.entry(value.value).or_insert(0) += value.duration_ms;
+                        }
+                        totals
+                    };
+                    let full = sum(summarize_activity_range(&records, 0, 10));
+                    let partitions = summarize_activity_partitions(&records, &[0, cut, 10]);
+                    for (part, capacity) in partitions.iter().zip([cut, 10 - cut]) {
+                        assert!(
+                            part.iter().map(|value| value.duration_ms).sum::<i64>() <= capacity
+                        );
+                    }
+                    assert_eq!(sum(partitions.into_iter().flatten().collect()), full);
+                }
+            }
+        }
+        assert!(summarize_activity_partitions::<()>(&[], &[1, 1]).is_empty());
+        assert!(summarize_activity_partitions::<()>(&[], &[1, 0]).is_empty());
     }
 
     #[test]

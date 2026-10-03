@@ -65,6 +65,7 @@ Current caveats:
 | `/api/v1/heatmap` | `GET` | Beta.17 candidate | Bounded local-calendar daily totals; used by Desktop heatmap |
 | `/api/v1/activity/daily-apps` | `GET` | Compatibility surface | Bounded daily application totals and optional identities |
 | `/api/v1/activity/daily-product` | `GET` | Development branch | Transaction-consistent daily totals, product classification and configuration revision; used by Desktop application/category charts |
+| `/api/v1/activity/dashboard` | `GET` | Development branch | Selected/previous day totals and conserving hourly category quantities; Desktop hookup pending |
 | `/api/v1/classification/observed-apps` | `GET` | Unreleased source | Bounded raw executable statistics for classification candidates |
 | `/api/v1/web-activity` | `GET` | Implemented | Browser activity segment query |
 | `/api/v1/ai/activity-context` | `GET` | Implemented | Aggregated diagnostics, active session, summaries, and recent web activity for external AI analysis |
@@ -709,6 +710,37 @@ The numeric boundaries above are illustrative; actual values follow the runtime 
 Budgets: shared heatmap/trend single-query permit, 30-second repository timeout (HTTP handler remains 15 seconds), 20,000 intersecting facts/day, 4,096 distinct canonical keys over the requested range, 50,000 day/app rows, and 4 MiB encoded response including JSON escaping and reserved envelope overhead. Existing heatmap settings/metadata limits also apply. Busy/read/budget failures return `500` without partial data or SQL fallback; the HTTP timeout uses the server's existing error policy. Per-day facts are released between days within one SQLite snapshot. These are retained-data limits, not a proven fixed process-memory ceiling.
 
 The compatibility endpoint retains its 4 MiB response cap. Daily totals are never interpreted as session start/end intervals. No dedicated MCP tool is exposed.
+
+### `GET /api/v1/activity/dashboard`
+
+Development-branch read endpoint on Desktop and both daemon surfaces. Required
+`date` is a strict host-local `YYYY-MM-DD`; optional `language` accepts `en-US`
+(default) or `zh-CN`. Duplicate/unknown parameters and nonexistent local-day
+boundaries return 400. The repository uses the same query admission, 30-second
+timeout, 20,000 input facts per day and 4 MiB response budget as product daily
+reads. The selected day and previous day share one configuration/health/fact
+transaction. No titles, URLs or raw settings are returned.
+
+`data` contains `sampled_at_ms`, `tracking_health`, `configuration_revision`,
+`applications`, `current`, `previous`, and `hours`. The first four fields follow
+the daily-product contract. `current` and `previous` contain actual day boundaries,
+`active_ms` and positive per-app totals. `hours` contains exactly 24 ordered
+entries: `hour` (0–23), `active_ms`, and positive `{category, active_ms}` quantities.
+Each hour's categories sum to its total, and every category's hourly sum agrees
+with the selected day's classified app totals.
+
+UTC-offset transitions split actual time ranges. Repeated local hours combine in
+one display slot; missing hours remain zero. Neither the 24-slot display nor
+hourly imported quantities imply exact observed intervals. Bucket allocation is
+resolved over the whole day before distributing its integer remainder into
+available hourly capacity; independently rounding each hour could lose time.
+Native/exact precedence remains unchanged, including native overlaps and excluded
+native time suppressing imports before filtering.
+
+The independent Rust SDK validates category conservation and offers
+`dashboard(date, language)`. At this checkpoint the existing Desktop Dashboard
+still uses its previous read path; the endpoint is backend preparation, not a
+claim that Dashboard or exact History migration is complete.
 
 ### `GET /api/v1/activity/daily-product`
 

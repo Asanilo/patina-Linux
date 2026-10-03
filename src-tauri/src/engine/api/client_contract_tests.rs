@@ -224,6 +224,21 @@ async fn independent_and_desktop_clients_observe_the_same_committed_classificati
         desktop_product.configuration_revision
     );
     assert_eq!(product.days[0].active_ms, 1000);
+    let dashboard = native.dashboard(&from, "en-US").await.unwrap();
+    assert_eq!(dashboard.current, product.days[0]);
+    assert_eq!(
+        dashboard.configuration_revision,
+        product.configuration_revision
+    );
+    assert_eq!(dashboard.hours.len(), 24);
+    assert_eq!(
+        dashboard
+            .hours
+            .iter()
+            .map(|hour| hour.active_ms)
+            .sum::<i64>(),
+        1000
+    );
     assert_eq!(product.applications[0].category, "other"); // Legacy free-text 'research' is not a user-assignable product category.
     assert_eq!(
         product.applications[0].display_name_override.as_deref(),

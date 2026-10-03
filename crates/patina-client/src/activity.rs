@@ -37,7 +37,7 @@ impl Client {
     }
 }
 
-fn validate(snapshot: &DailyProductSnapshot) -> Result<(), ClientError> {
+pub(crate) fn validate(snapshot: &DailyProductSnapshot) -> Result<(), ClientError> {
     let error = || ClientError::InvalidResponse("invalid daily product snapshot".into());
     if !patina_protocol::configuration::is_revision(&snapshot.configuration_revision)
         || !snapshot.tracking_health.is_valid_at(snapshot.sampled_at_ms)

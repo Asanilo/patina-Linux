@@ -29,6 +29,12 @@ stale owner heartbeats stop open-session growth, while closed facts retain their
 stored boundaries. Consumers must not extrapolate these totals with local clocks.
 Presentation labels/colors and exact History are separate concerns.
 
+`dashboard(date, language)` returns one selected/previous-day product snapshot and
+24 host-local display-hour quantities. It validates hourly totals against final
+product categories. Missing/repeated DST hours retain accurate day totals, and
+imported bucket quantities must not be presented as exact observed intervals.
+The existing Desktop Dashboard hookup remains a separate migration step.
+
 The host supplies the port and credential. Requests only target `127.0.0.1`, do
 not use environment proxies or follow redirects, have time and response-size
 limits, and never automatically retry writes. Negotiate capabilities before

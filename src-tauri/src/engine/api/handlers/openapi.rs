@@ -269,6 +269,10 @@ fn paths(surface: ApiSurface) -> Value {
         }
     });
     let object = paths.as_object_mut().expect("OpenAPI paths object");
+    object.insert("/api/v1/activity/dashboard".into(), json!({"get": get_operation_with_parameters(
+        "Consistent selected-day and previous-day product quantities with 24 host-local display hours. Repeated DST hours combine; missing hours are zero. Bucket quantities conserve daily totals and do not describe exact intervals. Shares product read limits and health policy.",
+        "DashboardProductResponse", vec![required_query_param("date", "string", "Selected host-local YYYY-MM-DD date."), query_param("language", "string", "en-US (default) or zh-CN.")]
+    )}));
     object.insert("/api/v1/activity/daily-product".into(), json!({"get": get_operation_with_parameters(
         "Product daily application snapshot: one transaction for facts, manual classification, exclusions and configuration revision. Shares daily-apps limits. No titles or URLs. Clients must not reclassify or exclude totals again.",
         "DailyProductResponse", vec![required_query_param("from", "string", "Inclusive host-local YYYY-MM-DD date."), required_query_param("to", "string", "Exclusive host-local YYYY-MM-DD date."), query_param("language", "string", "en-US (default) or zh-CN; legacy empty custom label normalization only.")]
@@ -1049,6 +1053,22 @@ fn schemas() -> Value {
                     4096,
                 ),
             ),
+        ])),
+    );
+    schemas.insert(
+        "DashboardProductResponse".into(),
+        envelope(object_schema(vec![
+            ("sampled_at_ms",integer_schema()),
+            ("configuration_revision",json!({"type":"string","pattern":"^[0-9a-f]{64}$"})),
+            ("tracking_health",schemas["DailyProductResponse"]["properties"]["data"]["properties"]["tracking_health"].clone()),
+            ("applications",schemas["DailyProductResponse"]["properties"]["data"]["properties"]["applications"].clone()),
+            ("current",schema_ref("DailyAppsDay")),
+            ("previous",schema_ref("DailyAppsDay")),
+            ("hours",json!({"type":"array","minItems":24,"maxItems":24,"items":object_schema(vec![
+                ("hour",json!({"type":"integer","minimum":0,"maximum":23})),
+                ("active_ms",integer_schema()),
+                ("categories",bounded_array_schema(object_schema(vec![("category",bounded_string_schema(1,1024)),("active_ms",integer_schema())]),4096)),
+            ])})),
         ])),
     );
     schemas.insert(

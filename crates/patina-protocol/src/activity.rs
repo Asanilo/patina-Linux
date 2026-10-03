@@ -2,9 +2,22 @@
 use serde::{Deserialize, Serialize};
 
 pub fn is_product_category(value: &str) -> bool {
-    value.len() <= 1024 && (matches!(value, "ai" | "development" | "office" | "browser" |
-        "communication" | "video" | "music" | "game" | "design" | "utility" | "other")
-        || value.strip_prefix("custom:").is_some_and(|label| !label.is_empty()))
+    value.len() <= 1024
+        && (matches!(
+            value,
+            "ai" | "development"
+                | "office"
+                | "browser"
+                | "communication"
+                | "video"
+                | "music"
+                | "game"
+                | "design"
+                | "utility"
+                | "other"
+        ) || value
+            .strip_prefix("custom:")
+            .is_some_and(|label| !label.is_empty()))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -18,7 +31,11 @@ pub struct DailyProductSnapshot {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ActivityReadStatus { Healthy, Stale, Unavailable }
+pub enum ActivityReadStatus {
+    Healthy,
+    Stale,
+    Unavailable,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActivityReadHealth {
@@ -30,13 +47,27 @@ pub struct ActivityReadHealth {
 
 impl ActivityReadHealth {
     pub fn is_valid_at(&self, sampled_at_ms: i64) -> bool {
-        if sampled_at_ms < 0 || self.stale_after_ms <= 0 || self.live_cutoff_ms < 0 || self.live_cutoff_ms > sampled_at_ms { return false; }
+        if sampled_at_ms < 0
+            || self.stale_after_ms <= 0
+            || self.live_cutoff_ms < 0
+            || self.live_cutoff_ms > sampled_at_ms
+        {
+            return false;
+        }
         match (self.status, self.last_heartbeat_ms) {
             (ActivityReadStatus::Unavailable, None) => self.live_cutoff_ms == 0,
-            (ActivityReadStatus::Healthy, Some(heartbeat)) => heartbeat > 0 && heartbeat <= sampled_at_ms
-                && sampled_at_ms - heartbeat <= self.stale_after_ms && self.live_cutoff_ms == sampled_at_ms,
-            (ActivityReadStatus::Stale, Some(heartbeat)) => heartbeat > 0 && heartbeat <= sampled_at_ms
-                && sampled_at_ms - heartbeat > self.stale_after_ms && self.live_cutoff_ms == heartbeat,
+            (ActivityReadStatus::Healthy, Some(heartbeat)) => {
+                heartbeat > 0
+                    && heartbeat <= sampled_at_ms
+                    && sampled_at_ms - heartbeat <= self.stale_after_ms
+                    && self.live_cutoff_ms == sampled_at_ms
+            }
+            (ActivityReadStatus::Stale, Some(heartbeat)) => {
+                heartbeat > 0
+                    && heartbeat <= sampled_at_ms
+                    && sampled_at_ms - heartbeat > self.stale_after_ms
+                    && self.live_cutoff_ms == heartbeat
+            }
             _ => false,
         }
     }
