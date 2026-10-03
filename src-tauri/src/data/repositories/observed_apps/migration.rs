@@ -14,9 +14,12 @@ pub async fn load_migration_observed_apps(
     let _permit = QUERY
         .try_acquire()
         .map_err(|_| "observed apps query is busy")?;
-    tokio::time::timeout(Duration::from_secs(30), load(pool, to_ms, sampled_at_ms))
-        .await
-        .map_err(|_| "migration evidence exceeded its time budget".to_string())?
+    tokio::time::timeout(
+        patina_protocol::read_budget::ANALYTICS.query,
+        load(pool, to_ms, sampled_at_ms),
+    )
+    .await
+    .map_err(|_| "migration evidence exceeded its time budget".to_string())?
 }
 
 async fn load(pool: &SqlitePool, to: i64, sampled: i64) -> Result<Vec<ObservedAppStat>, String> {

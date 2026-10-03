@@ -349,3 +349,17 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 删除 runtime bootstrap 中已经没有消费者的 settings 读取，设置继续由独立 owner 加载；单次设置接口失败不再阻断后续 mapper／tracking bootstrap，也减少重复冷启动读取。原有 mapper 失败仍保留 tracking 观察的回归测试已更新。
 - 最终 `npm run check` 通过：64 个 TypeScript 文件、45 项浏览器检查、类型／架构与构建／原 bundle 预算。虚拟计时器覆盖耗尽不自旋、恢复后重置、失效抢占、动态 scope 和卸载。浏览器真实触发失败后，仅解除故障、不发送新事件也能恢复；缺少事件时恢复焦点能取得新值。首轮唯一失败为故障注入产生的预期 console.error 尚未登记；最终只断言并移除该场景的精确合成错误前缀，其他 console.error 仍使验收失败。
 - 证据：`tmp/acceptance/m2k-frontend-final.log`。本切片没有 Rust／协议／安装包变化，未重复已通过的 Rust 门禁，也没有安装、推送、合并或发布。整体基础阶段仍继续，客户端偏好物理存储、运行资源并发保护、后端读取 admission、网页迁移及契约生成等范围没有被缩减。
+
+### M2l 执行设计：分析读取期限一致性
+
+- 客户端偏好迁移发现产品选择：现有恢复会覆盖主题／语言等界面设置。已询问用户迁移到客户端本地后应保留当前偏好还是继续随数据备份恢复，答复前不改变恢复行为。
+- 独立审计确认多条分析 repository 允许 30 秒，而统一 HTTP handler 15 秒先超时；原生 heatmap SDK 也只有 18 秒。将分析读取 query／HTTP／SDK 的 30／32／35 秒预算放在无运行时依赖的协议模块，普通 observed-apps 用 15／17／18 秒，精确网页保持 12／15／20 秒。通用 SDK GET 同样识别这些已知端点；显式调用者 timeout 覆盖仍由调用者负责，写操作期限不变。
+- 保留范围／数量／字节限制，不通过缩短允许查询范围规避期限问题。增加真实 HTTP＋SDK 的 16 秒隔离连接阻塞验收，证明旧 15 秒边界不再提前终止有效查询；该慢测明确忽略于普通套件，在本切片单独执行。
+- 本切片不等同于 admission 完成。单连接 SQLite pool 与不同分析族 semaphore 的相互影响、取消后的实际 SQLite 工作、写侧响应和跨查询共享容量仍需专项验证；不把 async timeout 宣称为 SQLite CPU 或总内存上限。
+
+### M2l 核验结果
+
+- 查询、HTTP 和 SDK 已使用同一份有界分析读取预算。daily／Dashboard／History／trend／heatmap 及 legacy migration 使用 30／32／35 秒；普通 observed-apps 和精确网页使用各自预算。通用 SDK GET 会按已知路径和解码后的 legacy scope 选择期限；显式 timeout 覆盖仍保留。普通元数据与写操作的既有期限未改变。
+- `npm run check:full` 完整通过：64 个 TypeScript 文件、45 项浏览器检查、36 项 SDK 测试及 Clippy；Desktop 763 passed / 22 ignored，独立后端 605 passed / 11 ignored，均包含对应依赖／边界和 Clippy。新增加的 ignored 项是明确需要 16 秒的传输验收，不是略过失败测试。
+- 随后单独执行该慢测并通过：在内存 SQLite 中持有唯一连接 16 秒，通用独立 SDK 经真实 HTTP 读取 exact history，在释放连接后成功取得结果，再由 typed SDK 正常读取。它会发现原来的 3 秒通用 SDK 或 15 秒 HTTP 早退，实际用时 16.01 秒。证据：`tmp/acceptance/m2l-full.log`、`tmp/acceptance/m2l-delayed-http.log`。没有读取用户 profile 或启动生产追踪。
+- API 文档已移除“HTTP 在 15 秒先超时”等过时说明，开发文档记录慢测入口。本批没有安装、打包、推送、合并或发布。客户端偏好的备份选择尚待答复；后续可独立推进 SQLite 分析读取与写侧的隔离及 admission 验证，整体目标保持未完成。

@@ -4,7 +4,7 @@ use patina_protocol::{
     configuration::is_revision,
     history::*,
 };
-use std::{collections::HashSet, time::Duration};
+use std::collections::HashSet;
 
 impl Client {
     pub async fn exact_history(
@@ -24,7 +24,7 @@ impl Client {
                     "/api/v1/activity/history?from_ms={from_ms}&to_ms={to_ms}&language={language}"
                 ),
                 "exact history",
-                Duration::from_secs(35),
+                patina_protocol::read_budget::ANALYTICS.client,
                 MAX_HISTORY_RESPONSE_BYTES,
             )
             .await?;

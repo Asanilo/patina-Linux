@@ -42,6 +42,22 @@ classification/schema metadata. It does not install a service or validate real
 GNOME tracking. If sharing `CARGO_TARGET_DIR` across configurations, preserve the
 selected binary before another build replaces `debug/patinad`.
 
+## Analytical Read Deadline Acceptance
+
+Bounded analytical reads share query, HTTP and SDK deadlines in
+`crates/patina-protocol/src/read_budget.rs`. The normal gate checks routing and
+deadline ordering. When changing these budgets, also run the deliberately slow
+transport regression:
+
+```bash
+cargo test --manifest-path src-tauri/Cargo.toml --no-default-features engine::api::server::tests::analytical_read_survives_the_former_fifteen_second_http_deadline -- --ignored --exact --nocapture
+```
+
+It holds a connection in an isolated in-memory database for 16 seconds, then
+requires an actual HTTP request through the independent SDK to succeed. It does
+not discover a user profile or run tracking. This checks deadline composition,
+not query throughput, SQLite interruption, or writer responsiveness.
+
 ## Build Storage
 
 Rust artifacts are under `src-tauri/target`, not the installed application's data directory. Repeated builds, tests, compiler versions and feature combinations can leave multiple artifact variants. Incremental compilation stores additional compiler state; full debug information also increases dependency and binary size. See the [Cargo profile reference](https://doc.rust-lang.org/cargo/reference/profiles.html).

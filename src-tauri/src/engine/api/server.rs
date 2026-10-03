@@ -122,6 +122,28 @@ struct ApiTransportState {
     sse_budget: Arc<Semaphore>,
 }
 
+fn request_timeout(request: &ApiRequest) -> Duration {
+    if request.method == "POST"
+        && matches!(
+            request.path.as_str(),
+            "/api/v1/imports/canonical/commit"
+                | "/api/v1/backups/restore"
+                | "/api/v1/backups/remote/upload"
+                | "/api/v1/backups/remote/list"
+                | "/api/v1/backups/remote/restore"
+        )
+    {
+        STAGED_FILE_HANDLER_TIMEOUT
+    } else if request.method == "GET" {
+        let legacy = url::form_urlencoded::parse(request.query.as_deref().unwrap_or("").as_bytes())
+            .any(|(key, value)| key == "scope" && value == "legacy-migration");
+        patina_protocol::read_budget::for_endpoint(&request.path, legacy)
+            .map_or(API_HANDLER_TIMEOUT, |budget| budget.handler)
+    } else {
+        API_HANDLER_TIMEOUT
+    }
+}
+
 struct TransportRejection {
     status: StatusCode,
     error: ApiError,
@@ -397,19 +419,7 @@ async fn api_handler(State(state): State<ApiTransportState>, request: Request) -
         body: body.to_vec(),
     };
     let request_label = format!("{} {}", request.method, request.path);
-    let handler_timeout = if request.method == "POST"
-        && matches!(
-            request.path.as_str(),
-            "/api/v1/imports/canonical/commit"
-                | "/api/v1/backups/restore"
-                | "/api/v1/backups/remote/upload"
-                | "/api/v1/backups/remote/list"
-                | "/api/v1/backups/remote/restore"
-        ) {
-        STAGED_FILE_HANDLER_TIMEOUT
-    } else {
-        API_HANDLER_TIMEOUT
-    };
+    let handler_timeout = request_timeout(&request);
     let routed = AssertUnwindSafe(router::route_request(
         request,
         state.context.as_ref(),
@@ -694,6 +704,125 @@ mod tests {
     use super::*;
     use crate::engine::runtime_event::{RuntimeEvent, RuntimeEventSink};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[test]
+    fn analytical_read_deadlines_fit_between_repository_and_client() {
+        for (path, query, expected) in [
+            (
+                "/api/v1/activity/history",
+                None,
+                patina_protocol::read_budget::ANALYTICS,
+            ),
+            (
+                "/api/v1/heatmap",
+                None,
+                patina_protocol::read_budget::ANALYTICS,
+            ),
+            (
+                "/api/v1/activity/dashboard",
+                None,
+                patina_protocol::read_budget::ANALYTICS,
+            ),
+            (
+                "/api/v1/classification/observed-apps",
+                None,
+                patina_protocol::read_budget::OBSERVED_APPS,
+            ),
+            (
+                "/api/v1/classification/observed-apps",
+                Some("scope=legacy%2dmigration"),
+                patina_protocol::read_budget::ANALYTICS,
+            ),
+            (
+                "/api/v1/activity/web-history",
+                None,
+                patina_protocol::read_budget::WEB_HISTORY,
+            ),
+        ] {
+            let request = ApiRequest {
+                method: "GET".into(),
+                path: path.into(),
+                query: query.map(str::to_owned),
+                body: vec![],
+            };
+            let timeout = request_timeout(&request);
+            assert!(
+                timeout > expected.query && timeout < expected.client,
+                "{path}"
+            );
+        }
+        let request = ApiRequest {
+            method: "POST".into(),
+            path: "/api/v1/backups/restore".into(),
+            query: None,
+            body: vec![],
+        };
+        assert_eq!(request_timeout(&request), STAGED_FILE_HANDLER_TIMEOUT);
+        let request = ApiRequest {
+            method: "POST".into(),
+            path: "/api/v1/settings/product/conditional".into(),
+            query: None,
+            body: vec![],
+        };
+        assert_eq!(request_timeout(&request), API_HANDLER_TIMEOUT);
+    }
+
+    #[tokio::test]
+    #[ignore = "takes 16 seconds; run explicitly when changing analytical read deadlines"]
+    async fn analytical_read_survives_the_former_fifteen_second_http_deadline() {
+        let context = test_context().await;
+        let pool = context.pool().clone();
+        sqlx::Executor::execute(&pool, crate::data::schema::ACTIVITY_IMPORT_SCHEMA_SQL)
+            .await
+            .unwrap();
+        let held = pool.acquire().await.unwrap();
+        let server = prepare_standalone_server_with_events(
+            0,
+            test_credentials(),
+            context,
+            ApiSurface::DaemonReadOnly,
+            Arc::new(RuntimeEventHub::new(8)),
+        )
+        .await
+        .unwrap();
+        let client = patina_client::Client::new(server.port(), "test-token").unwrap();
+        let shutdown = server.shutdown_handle();
+        let server_task = tokio::spawn(server.run());
+        let reader = client.clone();
+        let mut read = tokio::spawn(async move {
+            reader
+                .get_json::<patina_protocol::history::ExactHistorySnapshot>(
+                    "/api/v1/activity/history?from_ms=0&to_ms=1000&language=en-US",
+                    "delayed history",
+                )
+                .await
+        });
+        // Holding the only fixture connection delays the real repository and
+        // exercises SDK + HTTP + query deadlines, without large or user datasets.
+        assert!(
+            tokio::time::timeout(Duration::from_secs(16), &mut read)
+                .await
+                .is_err(),
+            "read returned before the held database connection was released"
+        );
+        drop(held);
+        let snapshot = tokio::time::timeout(Duration::from_secs(5), read)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(snapshot.records.is_empty());
+        assert_eq!((snapshot.from_ms, snapshot.to_ms), (0, 1000));
+        assert!(client
+            .exact_history(0, 1000, "en-US")
+            .await
+            .unwrap()
+            .records
+            .is_empty());
+        shutdown.shutdown();
+        server_task.await.unwrap();
+        pool.close().await;
+    }
 
     fn test_credentials() -> ApiCredentialStore {
         let path = std::env::temp_dir().join(format!(

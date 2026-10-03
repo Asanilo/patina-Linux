@@ -5,7 +5,7 @@ use crate::domain::activity_read_model::{
 use crate::domain::observed_apps::{validate_range, ObservedAppStat, MAX_OBSERVED_APPS};
 use futures_util::TryStreamExt;
 use sqlx::{Row, SqlitePool};
-use std::{collections::HashMap, time::Duration};
+use std::collections::HashMap;
 use tokio::sync::Semaphore;
 
 const MAX_FACTS: usize = 50_000;
@@ -38,7 +38,7 @@ pub async fn load_observed_apps(
         .try_acquire()
         .map_err(|_| "observed apps query is busy")?;
     tokio::time::timeout(
-        Duration::from_secs(15),
+        patina_protocol::read_budget::OBSERVED_APPS.query,
         load_snapshot(pool, from_ms, to_ms, sampled_at_ms, MAX_FACTS),
     )
     .await

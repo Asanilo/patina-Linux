@@ -214,7 +214,11 @@ impl Client {
     where
         T: DeserializeOwned,
     {
-        self.get_json_with_timeout(path, response_name, REQUEST_TIMEOUT)
+        let endpoint = reqwest::Url::parse(&self.endpoint(path)?).map_err(|e| ClientError::InvalidConfiguration(e.to_string()))?;
+        let legacy = endpoint.query_pairs().any(|(key, value)| key == "scope" && value == "legacy-migration");
+        let timeout = protocol::read_budget::for_endpoint(endpoint.path(), legacy)
+            .map_or(REQUEST_TIMEOUT, |budget| budget.client);
+        self.get_json_with_timeout(path, response_name, timeout)
             .await
     }
 

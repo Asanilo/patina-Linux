@@ -20,7 +20,7 @@ const MAX_FACTS_PER_DAY: usize = 20_000;
 const MAX_EXCLUSION_SETTINGS: usize = 20_000;
 const MAX_APP_KEY_BYTES: usize = 1024;
 const MAX_OVERRIDE_BYTES: usize = 16_384;
-const QUERY_TIMEOUT: Duration = Duration::from_secs(30);
+const QUERY_TIMEOUT: Duration = patina_protocol::read_budget::ANALYTICS.query;
 static DAILY_ACTIVITY_QUERY: Semaphore = Semaphore::const_new(1);
 mod dashboard;
 mod names;

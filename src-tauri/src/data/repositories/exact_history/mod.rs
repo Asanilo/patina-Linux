@@ -10,7 +10,6 @@ use sqlx::{Row, SqliteConnection, SqlitePool};
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
-    time::Duration,
 };
 use tokio::sync::Semaphore;
 
@@ -41,7 +40,7 @@ pub async fn load_exact_history(
         .try_acquire()
         .map_err(|_| "exact history query is busy")?;
     tokio::time::timeout(
-        Duration::from_secs(30),
+        patina_protocol::read_budget::ANALYTICS.query,
         read_snapshot(pool, from_ms, to_ms, sampled_at_ms, language),
     )
     .await

@@ -1,6 +1,6 @@
 use crate::{Client, ClientError};
 use patina_protocol::{activity::DailyProductSnapshot, dashboard::DashboardProductSnapshot};
-use std::{collections::BTreeMap, time::Duration};
+use std::collections::BTreeMap;
 
 impl Client {
     pub async fn dashboard(
@@ -26,7 +26,7 @@ impl Client {
             .get_json_with_limits(
                 &format!("/api/v1/activity/dashboard?date={date}&language={language}"),
                 "Dashboard product snapshot",
-                Duration::from_secs(35),
+                patina_protocol::read_budget::ANALYTICS.client,
                 4 * 1024 * 1024,
             )
             .await?;

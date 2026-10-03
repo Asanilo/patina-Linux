@@ -575,7 +575,7 @@ impl PatinadClient {
         self.get_json_with_limits(
             &format!("/api/v1/classification/observed-apps?from_ms={from_ms}&to_ms={to_ms}"),
             "observed apps",
-            Duration::from_secs(18),
+            patina_protocol::read_budget::OBSERVED_APPS.client,
             crate::domain::observed_apps::MAX_OBSERVED_APPS_RESPONSE_BYTES,
         )
         .await
@@ -593,7 +593,7 @@ impl PatinadClient {
         self.get_json_with_limits(
             &format!("/api/v1/classification/observed-apps?from_ms=0&to_ms={to_ms}&scope=legacy-migration"),
             "legacy classification evidence",
-            Duration::from_secs(35),
+            patina_protocol::read_budget::ANALYTICS.client,
             crate::domain::observed_apps::MAX_OBSERVED_APPS_RESPONSE_BYTES,
         ).await
     }
@@ -657,7 +657,7 @@ impl PatinadClient {
         self.get_json_with_timeout(
             &format!("/api/v1/heatmap?from={from}&to={to}"),
             "daily activity",
-            Duration::from_secs(18),
+            patina_protocol::read_budget::ANALYTICS.client,
         )
         .await
     }

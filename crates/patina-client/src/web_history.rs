@@ -7,7 +7,6 @@ use patina_protocol::{
 };
 use std::{
     collections::{HashMap, HashSet},
-    time::Duration,
 };
 impl Client {
     pub async fn web_history(
@@ -23,7 +22,7 @@ impl Client {
         }
         let read:WebHistorySnapshot=self.get_json_with_limits(
             &format!("/api/v1/activity/web-history?from_ms={from_ms}&to_ms={to_ms}&language={language}"),
-            "web history",Duration::from_secs(20),MAX_WEB_HISTORY_RESPONSE_BYTES).await?;
+            "web history",patina_protocol::read_budget::WEB_HISTORY.client,MAX_WEB_HISTORY_RESPONSE_BYTES).await?;
         validate(&read, from_ms, to_ms)?;
         Ok(read)
     }

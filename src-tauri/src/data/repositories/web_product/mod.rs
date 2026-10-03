@@ -6,7 +6,7 @@ use patina_protocol::{
     web_history::*,
 };
 use sqlx::{Row, SqlitePool};
-use std::{collections::HashMap, time::Duration};
+use std::collections::HashMap;
 use tokio::sync::Semaphore;
 mod metadata;
 #[cfg(test)]
@@ -38,7 +38,7 @@ pub async fn load_web_history(
         .try_acquire()
         .map_err(|_| "web history query is busy")?;
     tokio::time::timeout(
-        Duration::from_secs(12),
+        patina_protocol::read_budget::WEB_HISTORY.query,
         read_snapshot(pool, from_ms, to_ms, sampled_at_ms, language),
     )
     .await

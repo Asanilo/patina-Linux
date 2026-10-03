@@ -1,6 +1,6 @@
 use crate::{Client, ClientError};
 use patina_protocol::activity::DailyProductSnapshot;
-use std::{collections::HashSet, time::Duration};
+use std::collections::HashSet;
 
 impl Client {
     pub async fn daily_product(
@@ -28,7 +28,7 @@ impl Client {
             .get_json_with_limits(
                 &format!("/api/v1/activity/daily-product?from={from}&to={to}&language={language}"),
                 "daily product snapshot",
-                Duration::from_secs(35),
+                patina_protocol::read_budget::ANALYTICS.client,
                 4 * 1024 * 1024,
             )
             .await?;
