@@ -7,6 +7,32 @@ use crate::engine::api::types::{
     RouteResponse, RuntimeSettingsResponse,
 };
 
+pub async fn get_resource_settings(context: &ApiRuntimeContext) -> RouteResponse {
+    match crate::data::repositories::resource_settings::load_snapshot(
+        context.pool(),
+        context.now_ms(),
+    )
+    .await
+    {
+        Ok(snapshot) => ok(snapshot),
+        Err(error) => control_error(RuntimeControlError::Internal(error)),
+    }
+}
+
+pub async fn commit_resource_settings(context: &ApiRuntimeContext, body: &[u8]) -> RouteResponse {
+    let request = match serde_json::from_slice(body) {
+        Ok(request) => request,
+        Err(_) => return bad_request("invalid resource settings request"),
+    };
+    let Some(control) = context.runtime_control() else {
+        return unavailable();
+    };
+    match control.commit_resource_settings(request).await {
+        Ok(snapshot) => ok(snapshot),
+        Err(error) => control_error(error),
+    }
+}
+
 pub async fn get_runtime_settings(context: &ApiRuntimeContext) -> RouteResponse {
     let settings = match crate::data::repositories::app_settings::load_runtime_activity_settings(
         context.pool(),

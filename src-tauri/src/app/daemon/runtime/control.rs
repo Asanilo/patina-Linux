@@ -8,6 +8,7 @@ use crate::engine::api::runtime_control::{
 use std::sync::Arc;
 
 const STORAGE_ERROR_PREFIX: &str = "storage:";
+mod resource_settings;
 
 #[derive(Clone)]
 pub(crate) struct DaemonApiRuntimeControl {
@@ -129,6 +130,20 @@ impl DaemonApiRuntimeControl {
 }
 
 impl ApiRuntimeControl for DaemonApiRuntimeControl {
+    fn commit_resource_settings(
+        &self,
+        request: patina_protocol::resource_settings::ResourceSettingsCommitRequest,
+    ) -> RuntimeControlFuture<'_, patina_protocol::resource_settings::ResourceSettingsSnapshot>
+    {
+        let control = self.clone();
+        Box::pin(async move {
+            let resources = control.resources.clone();
+            resources
+                .run(async move { control.apply_resource_patch(request).await })
+                .await
+        })
+    }
+
     fn daemon_service_managed(&self) -> bool {
         self.service_lifecycle.managed_by_systemd()
     }
@@ -279,7 +294,7 @@ mod tests {
 
     static TEST_PATH_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-    async fn test_control() -> (
+    pub(super) async fn test_control() -> (
         sqlx::SqlitePool,
         Arc<DaemonApiRuntimeControl>,
         DaemonWebActivityControl,

@@ -96,6 +96,8 @@ Current caveats:
 | `/api/v1/settings/classification` | `POST` | Implemented | Commit a validated classification mutation batch |
 | `/api/v1/settings/app` | `POST` | Tracking daemon | Commit a validated non-resource app settings batch |
 | `/api/v1/settings/runtime` | `GET` | Implemented | Sanitized audio and browser activity runtime settings |
+| `/api/v1/settings/resources` | `GET` | Multi-client branch | Resource configuration with an opaque revision; no credentials |
+| `/api/v1/settings/resources/conditional` | `POST` | Tracking daemon, multi-client branch | Merge an audio/browser patch against the original resource revision |
 | `/api/v1/settings/runtime/audio-participation` | `POST` | Tracking daemon | Apply and persist the Linux audio participation switch |
 | `/api/v1/settings/runtime/browser-activity` | `POST` | Tracking daemon | Atomically replace browser listener, Token, and URL privacy settings |
 | `/api/v1/settings/local-api` | `GET` | Tracking daemon | Read sanitized local API listener and credential-file state |
@@ -1885,6 +1887,56 @@ event. Desktop uses this endpoint in daemon-client mode and never falls back to
 local SQL when the daemon is unavailable or does not support it. This destructive
 endpoint is intentionally absent from MCP. It is a source candidate addition,
 not a claim that older installed daemons support it.
+
+### `GET /api/v1/settings/resources` and `POST /api/v1/settings/resources/conditional`
+
+On the multi-client branch, the independent SDK exposes `resource_settings()` and
+`commit_resource_settings()`. The snapshot contains `revision`, `sampled_at_ms`,
+`audio_participation_enabled`, and `browser_activity` (`enabled`, `port`,
+`token_present`, `url_privacy`). The five-second read is bounded to the specific
+resource keys and returns no credentials. SDK responses are limited to 8 KiB.
+
+Submit the revision originally read and only fields the user edited:
+
+```json
+{
+  "expected_revision": "<64 lowercase hex characters from the snapshot>",
+  "patch": {
+    "audio_participation_enabled": false,
+    "browser_activity": { "port": 12346, "url_privacy": "domain_only" }
+  }
+}
+```
+
+Browser patch fields are `enabled`, `port`, `token`, and `url_privacy`. Omitted or
+null fields preserve the current value. An explicit empty Token clears it and
+requires the resulting browser configuration to be disabled; enabling requires a
+non-empty Token. Tokens are trimmed, limited to 512 UTF-8 bytes, reject control
+characters, and are never returned. Unknown fields are rejected. An empty patch
+checks the revision without writing or publishing an event.
+
+The `runtime-settings-conditional` capability is required. Only the tracking daemon
+accepts this POST; the other surfaces expose the read. A resource operation uses
+the daemon admission and cancellation rules below. It first checks the revision
+and merged values, reserves any required listener, then compares the revision again
+inside the SQLite write transaction. Audio/browser settings, resource generation
+and a disabled browser's active-segment seal commit together. Binding, stale revision
+or SQL failure leaves persistent settings and live resources unchanged.
+
+The resource revision excludes ordinary tracking policy, health timestamps and
+client preferences. A persisted generation advances in the same transaction for
+all resource writes through the settings owner, including legacy complete-replacement
+and audio operations. Credential rotation therefore invalidates old revisions
+without exposing a credential hash. `409` may mean a stale revision, busy resource
+owner or port conflict; inspect the error and reread instead of retrying blindly.
+Backup restore retains this host's resource generation alongside its retained
+browser credential; an older archive cannot reset that generation.
+The new SDK never falls back to an unconditional endpoint.
+
+This is separate from ordinary product-policy CAS. It does not make a sequence of
+different endpoint calls globally atomic. Existing Desktop settings still need
+resource-baseline and draft-conflict integration; this backend capability alone
+does not migrate that UI flow. Legacy replacement endpoints remain unconditional.
 
 ### `GET /api/v1/settings/runtime`
 

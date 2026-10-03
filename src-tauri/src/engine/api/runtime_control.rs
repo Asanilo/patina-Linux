@@ -90,6 +90,11 @@ pub enum RuntimeControlError {
 }
 
 pub trait ApiRuntimeControl: Send + Sync {
+    fn commit_resource_settings(
+        &self,
+        request: patina_protocol::resource_settings::ResourceSettingsCommitRequest,
+    ) -> RuntimeControlFuture<'_, patina_protocol::resource_settings::ResourceSettingsSnapshot>;
+
     fn daemon_service_managed(&self) -> bool;
 
     fn daemon_service_snapshot(&self) -> RuntimeControlFuture<'_, DaemonServiceRuntimeSnapshot>;

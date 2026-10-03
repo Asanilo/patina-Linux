@@ -94,6 +94,62 @@ async fn product_settings_decode_effective_policy_and_reject_invalid_snapshots()
 }
 
 #[tokio::test]
+async fn resource_conflicts_are_not_retried_and_never_use_legacy_replacement() {
+    use patina_client::protocol::resource_settings::{ResourceSettingsCommitRequest, ResourceSettingsPatch};
+    for advertised in [false, true] {
+        let writes = Arc::new(AtomicUsize::new(0));
+        let legacy = Arc::new(AtomicUsize::new(0));
+        let count = writes.clone();
+        let legacy_count = legacy.clone();
+        let router = Router::new()
+            .route("/api/v1/capabilities", get(move || async move {
+                let mut value = capabilities(false);
+                value["data"]["write_api"]["operations"] = json!(if advertised { vec!["runtime-settings-conditional"] } else { vec!["runtime-settings"] });
+                Json(value)
+            }))
+            .route("/api/v1/settings/resources/conditional", post(move || {
+                let count = count.clone(); async move {
+                    count.fetch_add(1, Ordering::SeqCst);
+                    (StatusCode::CONFLICT,Json(json!({"error":{"code":"conflict","message":"stale resources"}})))
+                }
+            }))
+            .fallback(move || { let count=legacy_count.clone(); async move {
+                count.fetch_add(1,Ordering::SeqCst); StatusCode::INTERNAL_SERVER_ERROR
+            }});
+        let (client, server) = serve(router).await;
+        let error = client.commit_resource_settings(&ResourceSettingsCommitRequest {
+            expected_revision:"a".repeat(64), patch:ResourceSettingsPatch {audio_participation_enabled:Some(false),..Default::default()},
+        }).await.unwrap_err();
+        if advertised { assert!(matches!(error,ClientError::Http {status:409,..})); }
+        else { assert!(matches!(error,ClientError::UnsupportedCapability(_))); }
+        assert_eq!(writes.load(Ordering::SeqCst),usize::from(advertised));
+        assert_eq!(legacy.load(Ordering::SeqCst),0);
+        server.abort();
+    }
+}
+
+#[tokio::test]
+async fn resource_read_rejects_invalid_or_oversized_snapshots() {
+    let valid = json!({"revision":"a".repeat(64),"sampled_at_ms":100,"audio_participation_enabled":false,
+        "browser_activity":{"enabled":true,"port":12345,"token_present":true,"url_privacy":"domain_only"}});
+    for (index, body) in [valid.clone(),
+        {let mut v=valid.clone();v["browser_activity"]["token_present"]=json!(false);v},
+        {let mut v=valid.clone();v["browser_activity"]["port"]=json!(80);v},
+        {let mut v=valid.clone();v["sampled_at_ms"]=json!(-1);v},
+        {let mut v=valid.clone();v["revision"]=json!("bad");v},
+        {let mut v=valid.clone();v["padding"]=json!("x".repeat(8192));v},
+    ].into_iter().enumerate() {
+        let router = Router::new().route("/api/v1/settings/resources", get(move || {
+            let body=body.clone(); async move {Json(json!({"data":body}))}
+        }));
+        let (client,server)=serve(router).await;
+        let result=client.resource_settings().await;
+        if index==0 { assert!(result.unwrap().browser_activity.enabled); } else { assert!(result.is_err()); }
+        server.abort();
+    }
+}
+
+#[tokio::test]
 async fn conditional_updates_never_fall_back_to_a_legacy_unconditional_endpoint() {
     for advertised in [false, true] {
         let legacy_writes = Arc::new(AtomicUsize::new(0));

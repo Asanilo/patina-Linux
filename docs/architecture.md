@@ -184,7 +184,7 @@ Raw DTO 只能停留在明确边界：
 - `src-tauri/**` 继续使用 Rust 与协议侧命名
 - 测试 raw payload fixture 必须让 raw 意图清楚，优先使用 `Raw` 前缀或直接验证 raw parser
 
-已接入的共享 wire 类型以 `patina-protocol` 的 Rust DTO 为来源，经显式 `typegen` feature 生成到 `src/platform/protocol/protocol.generated.ts`。`npm run generate:protocol` 更新产物，`npm run check:protocol` 只读核对并纳入完整门禁；生成器固定配置，不接受环境变量改变导出形状。普通 SDK／daemon 依赖图不得包含生成工具。当前范围为 product settings、classification 和 cached icons，不代表全部协议或 OpenAPI 已自动生成。adapter 必须继续从 unknown 验证并构造符合生成类型的对象，然后映射为前端模型；类型生成不能替代安全整数、大小、权限或业务约束校验。
+已接入的共享 wire 类型以 `patina-protocol` 的 Rust DTO 为来源，经显式 `typegen` feature 生成到 `src/platform/protocol/protocol.generated.ts`。`npm run generate:protocol` 更新产物，`npm run check:protocol` 只读核对并纳入完整门禁；生成器固定配置，不接受环境变量改变导出形状。普通 SDK／daemon 依赖图不得包含生成工具。当前范围为 product settings、resource settings、classification 和 cached icons，不代表全部协议或 OpenAPI 已自动生成。adapter 必须继续从 unknown 验证并构造符合生成类型的对象，然后映射为前端模型；类型生成不能替代安全整数、大小、权限或业务约束校验。
 
 前端业务层默认不承载 raw DTO：
 
@@ -259,7 +259,11 @@ daemon 写侧按 capability 和真实 runtime owner 开放。默认 daemon surfa
 
 daemon 的音频、浏览器配置、Local API 端口和 Token 变更由 `app/daemon/runtime/resource_operations` 持有已接受操作的生命周期；HTTP future 被取消不撤销该操作，客户端不得因超时自动重试写入。每个 daemon 同时只接受一项此类资源变更，重叠请求明确返回 conflict，不积累无界任务。关闭时先停止接收并等待已接受变更完成，再停止后台、listener 和存储。此约束不替代旧草稿的 revision 检查，也不宣称所有写接口或 embedded 兼容路径具有同样的取消语义。
 
+音频与浏览器配置的新客户端契约使用 `/settings/resources` snapshot 和 `runtime-settings-conditional` patch。局部字段由 daemon 合并，省略 token 表示保留而不是清空；客户端不必为写入聚合完整凭据配置。`data/repositories/resource_settings` 在 writer transaction 内复查原始 revision，并与配置、必要封口一同提交。资源 revision 只覆盖该组资源及其持久化 generation，不绑定普通策略、心跳或客户端偏好；经 app settings owner 的资源写入统一在同一事务推进 generation，包括旧接口与仅凭据轮换，不对外返回凭据或凭据哈希。空 patch 只验证版本。listener 预留早于事务，运行资源发布晚于事务；新 SDK 缺少 capability 或遇到冲突不回退旧写接口。现有 Desktop 资源草稿基线仍待接入，旧完整替换接口不获得条件写语义，普通策略与资源的连续请求也不是跨请求原子事务。
+
 浏览器 disabled 设置和当前网页段封口在 data owner 的同一事务提交。daemon ingress 的策略读取与事实写入和配置提交共享 transition，防止旧 enabled 请求越过关闭边界；该锁不跨 listener 的优雅关闭等待，以免关闭等待在途请求、请求又等待配置锁。封口失败时保留旧设置与 listener，事件只在提交与资源切换成功后发布。
+
+资源 generation 属于本机集成元数据，备份恢复时与当前浏览器凭据一起保留；不能从旧 archive 导入或回退该计数，否则凭据已经轮换但公开字段相同的旧 revision 可能重新有效。
 
 需要重建运行资源的配置不属于普通 settings upsert：browser bridge 端口/Token/隐私、audio source 启停和 local API listener/Token 现已由 daemon runtime control 应用；listener 换端口统一使用“预绑定、事务提交、切换旧 listener”的顺序。local API Token 只原子写入 owner-only 文件，轮换后撤销旧 bearer 与已有 SSE 会话，响应不返回密钥。service restart 由 systemd lifecycle owner 先持久化 owner-only ticket 并返回 `202 pending`，再触发有序关闭；只有下一 systemd 实例把同一 ticket 标记为 `completed` 后，客户端才能确认成功。手工启动的 preview daemon 不提供该写 scope。
 

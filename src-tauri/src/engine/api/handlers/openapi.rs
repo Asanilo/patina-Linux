@@ -269,6 +269,10 @@ fn paths(surface: ApiSurface) -> Value {
         }
     });
     let object = paths.as_object_mut().expect("OpenAPI paths object");
+    object.insert("/api/v1/settings/resources".into(), json!({"get": get_operation(
+        "Read bounded resource configuration and revision without credentials. Revision also changes on legacy resource writes and credential rotation.", "ResourceSettingsResponse")}));
+    object.insert("/api/v1/settings/resources/conditional".into(), json!({"post": post_operation(
+        "Merge only supplied audio/browser fields against the originally read resource revision. Reserve listener before the atomic settings/seal transaction. Overlap or stale revision returns 409. Accepted operations survive caller cancellation; never retry automatically. Requires runtime-settings-conditional.", vec![], "ResourceSettingsCommitRequest", "ResourceSettingsResponse")}));
     object.insert("/api/v1/settings/product/conditional".into(), json!({"post": post_operation(
         "Commit ordinary tracking policy against the revision originally read. Acquires the tracking transition lock and SQLite writer before comparison; 409 never mutates policy or seals sessions. Idle, continuity, minimum display duration and pause are atomic. Runtime resources and client preferences are not accepted. Never retry automatically; requires product-settings-conditional capability.", vec![], "ProductSettingsCommitRequest", "ProductSettingsResponse")}));
     object.insert("/api/v1/settings/product".into(), json!({"get": get_operation("Bounded shared product policy and owner health at one read point. Revision excludes timestamps. No secrets or client preferences; no read-side writes. Five-second read deadline and 8 KiB response budget.", "ProductSettingsResponse")}));
@@ -560,6 +564,32 @@ fn schemas() -> Value {
     let mut schemas = serde_json::Map::new();
 
     schemas.insert("OpenApiDocument".to_string(), open_object_schema(vec![]));
+    schemas.insert("ResourceSettingsResponse".into(), envelope(object_schema(vec![
+        ("revision", json!({"type":"string","pattern":"^[a-f0-9]{64}$"})),
+        ("sampled_at_ms", json!({"type":"integer","minimum":0})),
+        ("audio_participation_enabled", json!({"type":"boolean"})),
+        ("browser_activity", object_schema(vec![
+            ("enabled", json!({"type":"boolean"})),
+            ("port", json!({"type":"integer","minimum":1024,"maximum":65535})),
+            ("token_present", json!({"type":"boolean"})),
+            ("url_privacy", json!({"type":"string","enum":["full","strip_query","domain_only"]})),
+        ])),
+    ])));
+    schemas.insert("ResourceSettingsCommitRequest".into(), json!({
+        "type":"object", "additionalProperties":false, "required":["expected_revision","patch"],
+        "properties": {
+            "expected_revision":{"type":"string","pattern":"^[a-f0-9]{64}$"},
+            "patch":{"type":"object","additionalProperties":false,"properties":{
+                "audio_participation_enabled":{"type":["boolean","null"]},
+                "browser_activity":{"type":["object","null"],"additionalProperties":false,"properties":{
+                    "enabled":{"type":["boolean","null"]},
+                    "port":{"type":["integer","null"],"minimum":1024,"maximum":65535},
+                    "token":{"type":["string","null"],"maxLength":512,"writeOnly":true},
+                    "url_privacy":{"type":["string","null"],"enum":["full","strip_query","domain_only",null]}
+                }}
+            }}
+        }
+    }));
     schemas.insert("ProductSettingsCommitRequest".into(), object_schema(vec![
         ("expected_revision", json!({"type":"string","pattern":"^[a-f0-9]{64}$"})),
         ("patch", json!({"type":"object","additionalProperties":false,"properties":{

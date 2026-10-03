@@ -408,3 +408,19 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 完整门禁各项通过：64 个 TypeScript 文件、45 项浏览器检查、36 项 SDK 测试；Desktop 773 passed / 22 ignored，独立后端 615 passed / 11 ignored，以及生成器、架构／依赖图、Clippy 与 bundle 预算。初轮发现测试 schema 未带网页表、测试读 SQL 越过 owner 边界及旧便利 helper 仅剩测试消费者，均已修正；helper 明确限定为测试，生产传入 owner 时间。前端／SDK 未变化，没有重复它们已通过的检查。证据为 `tmp/acceptance/m2o-full.log` 的前端／SDK部分、`m2o-rust.log` 的 Desktop 测试、`m2o-clippy-final.log`、`m2o-daemon.log` 和 `m2o-runtime.log`。
 - 新 headless 成品及两独立 SDK 进程通过临时 Local profile 验收：认证拒绝、共享分类事件、正常关闭、lease 重获、分类与 migration checksum 保留。成品 SHA256 为 `9cd5347062473b9b7801680463b18127163bfd5091d6b1a82bebfb207a911e26`，证据为 `tmp/acceptance/multi-client-m2o-resources/`、`tmp/acceptance/m2o-independent-client.log` 和 `/tmp/patina-independent-client-0st1vlou/`。未连接生产 profile 或实际桌面／音频采样环境。
 - 未安装、推送、合并或发布。资源条件 patch／revision、Desktop 浏览器全量配置与 SQL 读取退出仍需继续；此批没有宣称旧草稿防覆盖、跨端点全局事务、崩溃／断电恢复或 embedded 全路径已经完成。
+
+### M2p 执行设计：音频与浏览器资源条件写入
+
+- 新增共享协议与独立 SDK 的 resource snapshot／conditional patch，局部浏览器字段由 daemon 合并，省略 token 不读取或回传凭据、不覆盖现有凭据。使用独立资源 revision；普通追踪策略／健康时间／客户端偏好不使它失效。运行资源操作继续使用 M2o 的 admission、取消后持有及关闭 drain。
+- revision 由公开资源状态和持久化 generation 计算，不散列凭据。所有经 app settings data owner 的资源写入（包括旧完整替换和音频接口）在原事务中推进 generation，因而非空 Token 轮换也使旧 baseline 失效。GET 不初始化 metadata；空 patch 只检查 baseline，不推进版本或发布事件。
+- daemon 先对照读取版本并校验合并后的配置；需要换端口时先预留 listener，再在 `BEGIN IMMEDIATE` 内复查 revision，并原子提交音频／浏览器设置、generation 与必要的网页封口。成功后完成运行资源发布与事件；绑定／比较／SQL 失败不部分写入。该原子性只覆盖此资源请求，不延伸到普通策略或系统服务命令。
+- 此批先完成后端契约、SDK、生成类型、真实传输及事务验收。现有 Desktop 设置页仍需携带资源基线、处理草稿冲突并退出完整配置聚合／SQL 读取，不能把新 endpoint 存在当作 Desktop 已获得资源 CAS。旧接口保留兼容，不用于新 SDK fallback。
+
+### M2p 核验结果
+
+- 新增资源 GET／条件 POST、`runtime-settings-conditional` capability、共享 Rust DTO、独立 SDK 和生成 TypeScript；条件 POST 只向 tracking daemon 开放。服务端合并省略字段，并在 listener 预留后于 SQLite writer transaction 再次校验版本。音频／浏览器配置、generation 与必要封口同事务提交，成功后发布 live resource 与事件；空 patch 不写、不发事件。条件请求继承 M2o 的取消与 drain 语义。
+- 旧资源接口及其他经 app settings owner 的资源写入同步推进 generation，非空凭据轮换也会使旧 revision 失效，返回值不含凭据或凭据哈希。复核发现备份保留当前凭据却可能导入旧 generation，已将 generation 归为同一组本机保留元数据；测试确认恢复旧 archive 后当前凭据和版本保留，旧 revision 仍被拒绝。此改动不涉及待讨论的界面偏好恢复语义。
+- 验证包括：两独立 SQLite writer 竞争只允许一个版本提交；封口 trigger 失败整体回滚音频／浏览器／generation；实际独立 SDK → HTTP → daemon 合并端口／隐私 patch 时保留凭据；旧版本、旧接口凭据轮换后的旧版本及端口占用均拒绝且无部分写入；空 patch 无事件；SDK 缺少 capability 不 fallback、409 不重试、非法／超限响应拒绝。初轮修正测试模块路径，专项最终 4 项通过，证据 `tmp/acceptance/m2p-resource-final.log`。
+- 首轮 `check:full` 全部通过，包含 64 个 TypeScript 文件、45 项浏览器检查、38 项 SDK 测试、生成器与全部边界／Clippy／bundle 门禁。随后仅补充恢复归属及其测试，相关 Rust 门禁再次通过：Desktop 777 passed / 22 ignored，独立后端 619 passed / 11 ignored。证据为 `tmp/acceptance/m2p-full.log`、`m2p-rust-final.log`、`m2p-daemon-final.log`；未重复未变化的前端与 SDK 检查。
+- 隔离进程脚本已补资源 patch、仅凭据轮换后的旧版本拒绝及 generation 重启保留；浏览器／音频采集保持关闭。最终 headless 成品通过双 SDK 同步、认证拒绝、资源条件写入、正常关闭与重启／分类和 checksum 保留。SHA256 为 `a6a0c8a4cc7d9d1c62bed8a6a085f3b1cc6fd7ea411c0e460b5a5f1d537fc4b0`，证据为 `tmp/acceptance/multi-client-m2p-resources-final/`、`tmp/acceptance/m2p-independent-client-final.log` 及 `/tmp/patina-independent-client-kmr2o05t/`。中间构建证据保留，不能代替最终成品。
+- 本批只在开发分支本地实现与提交，没有安装、推送、合并或发布。下一项是现有 Desktop 资源保存的实际迁移：读取／保存携带资源 baseline、保留同字段冲突、取消恢复最新值，以及退出浏览器完整配置／SQL 聚合。普通策略与资源之间仍不构成跨请求全局事务；基础阶段及新客户端讨论边界不变。

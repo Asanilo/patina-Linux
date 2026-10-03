@@ -8,8 +8,8 @@ The source merge does not change beta or AppImage release gates.
 
 ## Shared Client Contracts
 
-On `feature/multi-client-platform`, product settings, classification and cached
-icon wire types are generated from `crates/patina-protocol` into
+On `feature/multi-client-platform`, product settings, resource settings,
+classification and cached icon wire types are generated from `crates/patina-protocol` into
 `src/platform/protocol/protocol.generated.ts`. After editing these Rust DTOs:
 
 ```bash
@@ -62,8 +62,10 @@ python3 scripts/acceptance/independent-client.py /absolute/path/patinad /absolut
 The script creates a fresh Local profile under `/tmp`, disables host display,
 D-Bus and audio connections, uses an ephemeral API port, and checks authentication,
 two SDK event subscriptions, graceful shutdown, lease reacquisition and persisted
-classification/schema metadata. It does not install a service or validate real
-GNOME tracking. If sharing `CARGO_TARGET_DIR` across configurations, preserve the
+classification/schema metadata. It also checks conditional resource patches,
+credential rotation invalidating stale revisions, and resource-generation retention
+across restart while leaving browser/audio collection disabled. It does not install
+a service or validate real GNOME tracking. If sharing `CARGO_TARGET_DIR` across configurations, preserve the
 selected binary before another build replaces `debug/patinad`.
 
 ## Daemon Analytical Read Isolation

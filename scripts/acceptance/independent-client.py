@@ -108,6 +108,38 @@ def main():
                           "two_independent_sdk_processes": True, "shared_classification_event": True,
                           "unauthenticated_read_rejected": True,
                           "tracking_hardware_verified": False, "gui_or_tui_verified": False}
+            def resource_request(payload=None):
+                path = "/api/v1/settings/resources" + ("/conditional" if payload is not None else "")
+                request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}{path}",
+                    data=None if payload is None else json.dumps(payload).encode(),
+                    headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+                    method="GET" if payload is None else "POST",
+                )
+                with opener.open(request, timeout=10) as response:
+                    return json.load(response)["data"]
+
+            baseline = resource_request()
+            first_resource = resource_request({"expected_revision": baseline["revision"],
+                "patch": {"browser_activity": {"token": "fixture-resource-token"}}})
+            rotated_resource = resource_request({"expected_revision": first_resource["revision"],
+                "patch": {"browser_activity": {"token": "fixture-resource-rotated"}}})
+            assert first_resource["browser_activity"] == rotated_resource["browser_activity"]
+            assert first_resource["revision"] != rotated_resource["revision"]
+            assert not rotated_resource["browser_activity"]["enabled"]
+            assert not rotated_resource["audio_participation_enabled"]
+            assert "fixture-resource" not in json.dumps(rotated_resource)
+            try:
+                resource_request({"expected_revision": first_resource["revision"],
+                                  "patch": {"audio_participation_enabled": True}})
+            except urllib.error.HTTPError as error:
+                assert error.code == 409, "stale resource revision was not rejected"
+            else:
+                raise AssertionError("stale resource revision was accepted")
+            assert resource_request()["revision"] == rotated_resource["revision"]
+            result.update(resource_patch_preserves_omitted_fields=True,
+                          credential_rotation_invalidates_revision=True,
+                          stale_resource_write_rejected=True)
             owner.send_signal(signal.SIGINT)
             assert owner.wait(timeout=10) == 0, "daemon did not shut down cleanly"
             with sqlite3.connect(db) as connection:
@@ -118,17 +150,22 @@ def main():
                 migrations = connection.execute(
                     "SELECT version, description, checksum FROM _sqlx_migrations ORDER BY version"
                 ).fetchall()
+                generation_query = "SELECT value FROM settings WHERE key='__runtime_resource_generation'"
+                generation = connection.execute(generation_query).fetchone()
+                assert generation and int(generation[0]) >= 2
             # Reacquire the released lease and reopen the same schema without a UI.
             subprocess.run([str(daemon), "--profile", "local"], env=env, stdout=log,
                            stderr=subprocess.STDOUT, timeout=20, check=True)
             with sqlite3.connect(db) as connection:
                 assert connection.execute(classification_query).fetchone() == before
+                assert connection.execute(generation_query).fetchone() == generation
                 assert connection.execute(
                     "SELECT version, description, checksum FROM _sqlx_migrations ORDER BY version"
                 ).fetchall() == migrations
                 assert connection.execute("PRAGMA integrity_check").fetchone() == ("ok",)
             result.update(graceful_shutdown=True, lease_reacquired=True,
-                          classification_survives_restart=True, migration_checksums_preserved=True)
+                          classification_survives_restart=True, migration_checksums_preserved=True,
+                          resource_generation_survives_restart=True)
             (root / "result.json").write_text(json.dumps(result, indent=2) + "\n")
             print(json.dumps({"passed": True, "evidence": str(root), "clients": 2}))
         finally:

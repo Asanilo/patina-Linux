@@ -199,6 +199,19 @@ pub(crate) async fn apply_app_settings_tx(
         }
     }
 
+    if mutations.iter().any(|mutation| {
+        matches!(
+            mutation.key.as_str(),
+            "audio_participation_enabled"
+                | "web_activity_enabled"
+                | "web_activity_port"
+                | "web_activity_token"
+                | "web_activity_url_privacy"
+        )
+    }) {
+        super::resource_settings::advance_generation(tx).await?;
+    }
+
     Ok(())
 }
 

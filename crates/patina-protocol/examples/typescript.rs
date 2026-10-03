@@ -1,6 +1,7 @@
 //! Explicit export surface; no file writes, runtime startup or environment config.
 use patina_protocol::{
-    configuration::*, icons::*, product_settings::*, web_history::WebActivityUrlPrivacyMode,
+    configuration::*, icons::*, product_settings::*, resource_settings::*,
+    web_history::WebActivityUrlPrivacyMode,
 };
 use ts_rs::{Config, TS};
 
@@ -26,5 +27,10 @@ fn main() {
         CachedIcon,
         IconPage,
         IconLookup,
+        BrowserResourceSettings,
+        ResourceSettingsSnapshot,
+        BrowserResourcePatch,
+        ResourceSettingsPatch,
+        ResourceSettingsCommitRequest,
     );
 }

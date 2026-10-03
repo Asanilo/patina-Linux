@@ -7,6 +7,8 @@ const HOST_INTEGRATION_SETTING_KEYS: &[&str] = &[
     "background_tracking_at_login",
     "web_activity_port",
     "web_activity_token",
+    // This version belongs to the same host as its retained resource credentials.
+    "__runtime_resource_generation",
     "remote_status_bridge_enabled",
     "remote_status_bridge_url",
     "remote_status_bridge_token",

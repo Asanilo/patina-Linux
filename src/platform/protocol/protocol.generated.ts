@@ -27,3 +27,13 @@ export type IconPage = { entries: Array<CachedIcon>, next_after: string | null, 
 
 export type IconLookup = { requested_key: string, icon: CachedIcon | null, };
 
+export type BrowserResourceSettings = { enabled: boolean, port: number, token_present: boolean, url_privacy: WebActivityUrlPrivacyMode, };
+
+export type ResourceSettingsSnapshot = { revision: string, sampled_at_ms: number, audio_participation_enabled: boolean, browser_activity: BrowserResourceSettings, };
+
+export type BrowserResourcePatch = { enabled?: boolean | null, port?: number | null, token?: string | null, url_privacy?: WebActivityUrlPrivacyMode | null, };
+
+export type ResourceSettingsPatch = { audio_participation_enabled?: boolean | null, browser_activity?: BrowserResourcePatch | null, };
+
+export type ResourceSettingsCommitRequest = { expected_revision: string, patch: ResourceSettingsPatch, };
+

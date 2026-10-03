@@ -25,6 +25,12 @@ pub(crate) async fn route_request(
         };
     }
     match (method, path) {
+        ("GET", "/api/v1/settings/resources") => {
+            handlers::runtime_settings::get_resource_settings(context).await
+        }
+        ("POST", "/api/v1/settings/resources/conditional") => {
+            handlers::runtime_settings::commit_resource_settings(context, body).await
+        }
         ("POST", "/api/v1/settings/product/conditional") => {
             handlers::app_settings::commit_product_settings(context, body).await
         }
@@ -193,6 +199,18 @@ mod tests {
     }
 
     impl crate::engine::api::runtime_control::ApiRuntimeControl for TestRuntimeControl {
+        fn commit_resource_settings(
+            &self,
+            _: patina_protocol::resource_settings::ResourceSettingsCommitRequest,
+        ) -> crate::engine::api::runtime_control::RuntimeControlFuture<
+            '_, patina_protocol::resource_settings::ResourceSettingsSnapshot,
+        > {
+            Box::pin(async {
+                Err(crate::engine::api::runtime_control::RuntimeControlError::Internal(
+                    "conditional owner not installed in this fixture".into(),
+                ))
+            })
+        }
         fn daemon_service_managed(&self) -> bool {
             true
         }
