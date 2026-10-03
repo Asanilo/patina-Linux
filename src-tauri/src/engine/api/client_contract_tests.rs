@@ -225,6 +225,9 @@ async fn independent_and_desktop_clients_observe_the_same_committed_classificati
     );
     assert_eq!(product.days[0].active_ms, 1000);
     let dashboard = native.dashboard(&from, "en-US").await.unwrap();
+    let desktop_dashboard = desktop.dashboard(&from, "en-US").await.unwrap();
+    assert_eq!(dashboard.current, desktop_dashboard.current);
+    assert_eq!(dashboard.hours, desktop_dashboard.hours);
     assert_eq!(dashboard.current, product.days[0]);
     assert_eq!(
         dashboard.configuration_revision,

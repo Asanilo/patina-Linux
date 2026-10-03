@@ -1,59 +1,15 @@
-import type { AppStat } from "../../../shared/types/app.ts";
-import type { HistorySession } from "../../../shared/types/sessions.ts";
-import type { TrackerHealthSnapshot } from "../../../shared/types/tracking.ts";
-import {
-  getIconMap,
-  getSessionSummariesInRange,
-} from "../../../platform/persistence/sessionReadRepository.ts";
-import {
-  buildCategoryDistribution,
-  buildTopApplications,
-  getTotalTrackedTime,
-  type CategoryDistItem,
-  type TopApplicationItem,
-} from "./dashboardFormatting.ts";
-import {
-  buildHourlyActivity,
-  buildHourlyCategoryActivity,
-  type HourlyActivityPoint,
-  type HourlyCategoryActivity,
-} from "../../../shared/lib/hourlyActivityCompiler.ts";
-import {
-  buildNormalizedAppStats,
-  getDayRange,
-  type CompiledSession,
-} from "../../../shared/lib/sessionReadCompiler.ts";
-import {
-  buildReadModelDiagnostics,
-  compileForRange,
-  materializeLiveSessions,
-  resolveLiveCutoffMs,
-  type ReadModelDiagnostics,
-} from "../../../shared/lib/readModelCore.ts";
-
+import { getIconMap } from "../../../platform/persistence/sessionReadRepository.ts";
+import type { DashboardProductRead } from "../../../platform/persistence/dashboardRepository.ts";
+import { AppClassification } from "../../../shared/classification/appClassification.ts";
+import type { AppCategory } from "../../../shared/classification/categoryTokens.ts";
+import { buildHourlyCategoryPresentation, type HourlyActivityPoint, type HourlyCategoryActivity } from "../../../shared/lib/hourlyActivityCompiler.ts";
+import type { CategoryDistItem, TopApplicationItem } from "./dashboardFormatting.ts";
 export interface DashboardSnapshot {
   fetchedAtMs: number;
   icons: Record<string, string>;
-  sessions: DashboardActivityRecord[];
-  yesterdaySessions?: DashboardActivityRecord[];
+  product: DashboardProductRead;
 }
-
-export interface DashboardActivityRecord {
-  appName: string;
-  exeName: string;
-  startTime: number;
-  endTime: number | null;
-  isLive?: boolean;
-}
-
-export interface IconSnapshot {
-  fetchedAtMs: number;
-  icons: Record<string, string>;
-}
-
 export interface DashboardReadModel {
-  compiledSessions: CompiledSession[];
-  stats: AppStat[];
   totalTrackedTime: number;
   yesterdayTrackedTime: number;
   dayDeltaTrackedTime: number;
@@ -61,102 +17,40 @@ export interface DashboardReadModel {
   hourlyActivity: HourlyActivityPoint[];
   hourlyCategoryActivity: HourlyCategoryActivity;
   categoryDist: CategoryDistItem[];
-  diagnostics: ReadModelDiagnostics;
+  trackingHealth: DashboardProductRead["trackingHealth"] | null;
 }
-
-export async function loadDashboardSnapshot(
-  date: Date = new Date(),
-): Promise<DashboardSnapshot> {
-  const fetchedAtMs = Date.now();
-  const dayRange = getDayRange(date, fetchedAtMs);
-  const yesterday = new Date(date);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayRange = getDayRange(yesterday, fetchedAtMs);
-  const [sessions, yesterdaySessions, icons] = await Promise.all([
-    getSessionSummariesInRange(dayRange.startMs, dayRange.endMs),
-    getSessionSummariesInRange(yesterdayRange.startMs, yesterdayRange.endMs),
-    getIconMap(),
+export async function loadDashboardSnapshot(date: Date = new Date()): Promise<DashboardSnapshot> {
+  const { getDashboardProduct } = await import("../../../platform/persistence/dashboardRepository.ts");
+  const [product, icons] = await Promise.all([
+    getDashboardProduct(date),
+    // Icons remain an explicit presentation-cache exception, not an activity fallback.
+    getIconMap().catch((error) => { console.warn("Dashboard icons unavailable", error); return {}; }),
   ]);
-
-  return {
-    fetchedAtMs,
-    icons,
-    sessions,
-    yesterdaySessions,
-  };
+  return { fetchedAtMs: product.sampledAtMs, product, icons };
 }
-
-function toDashboardHistorySessions(
-  records: DashboardActivityRecord[],
-): HistorySession[] {
-  return records.map((record, index) => {
-    const endTime = Math.max(record.startTime, record.endTime ?? record.startTime);
-    const isLive = record.isLive ?? record.endTime === null;
-
-    return {
-      id: -(index + 1),
-      appName: record.appName,
-      exeName: record.exeName,
-      windowTitle: "",
-      startTime: record.startTime,
-      endTime: isLive ? null : endTime,
-      duration: endTime - record.startTime,
-      continuityGroupStartTime: record.startTime,
-      titleSampleDetails: [],
-    };
-  });
-}
-
-export async function loadIconSnapshot(): Promise<IconSnapshot> {
-  const icons = await getIconMap();
-
+export function buildDashboardReadModel(product: DashboardProductRead | null): DashboardReadModel {
+  const identities = new Map(product?.applications.map(app => [app.appKey, app]) ?? []);
+  const totalTrackedTime = product?.current.duration ?? 0;
+  const yesterdayTrackedTime = product?.previous.duration ?? 0;
+  const categoryTotals = new Map<AppCategory, number>();
+  const topApplications = (product?.current.apps ?? []).map(item => {
+    const identity = identities.get(item.appKey)!;
+    const name = identity.displayNameOverride || AppClassification.resolveCanonicalDisplayName(item.appKey)
+      || identity.appName || AppClassification.mapDefaultApp(item.appKey).name;
+    categoryTotals.set(identity.category, (categoryTotals.get(identity.category) ?? 0) + item.duration);
+    return { exeName: item.appKey, name, duration: item.duration,
+      color: AppClassification.getCategoryColor(identity.category),
+      percentage: totalTrackedTime > 0 ? Math.round(item.duration / totalTrackedTime * 100) : 0,
+      categoryInitial: identity.category[0].toUpperCase() };
+  }).sort((a, b) => b.duration - a.duration);
+  const categoryDist = [...categoryTotals].map(([category, value]) => ({ category, value,
+    name: AppClassification.getCategoryLabel(category), color: AppClassification.getCategoryColor(category),
+  })).sort((a, b) => b.value - a.value);
+  const hours = product?.hours ?? Array.from({ length: 24 }, (_, hour) => ({ hour, duration: 0, categories: [] }));
   return {
-    fetchedAtMs: Date.now(),
-    icons,
-  };
-}
-
-export function buildDashboardReadModel(
-  sessions: DashboardActivityRecord[],
-  trackerHealth: TrackerHealthSnapshot,
-  nowMs: number,
-  yesterdaySessions: DashboardActivityRecord[] = [],
-): DashboardReadModel {
-  const dayRange = getDayRange(new Date(nowMs), nowMs);
-  const yesterday = new Date(nowMs);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayRange = getDayRange(yesterday, nowMs);
-  const liveSessions = materializeLiveSessions(
-    toDashboardHistorySessions(sessions),
-    trackerHealth,
-    nowMs,
-  );
-  const compiledSessions = compileForRange(liveSessions, dayRange, 0);
-  const compiledYesterdaySessions = compileForRange(
-    toDashboardHistorySessions(yesterdaySessions),
-    yesterdayRange,
-    0,
-  );
-  const stats = buildNormalizedAppStats(compiledSessions);
-  const yesterdayStats = buildNormalizedAppStats(compiledYesterdaySessions);
-  const totalTrackedTime = getTotalTrackedTime(stats);
-  const yesterdayTrackedTime = getTotalTrackedTime(yesterdayStats);
-  const diagnostics = buildReadModelDiagnostics(
-    compiledSessions,
-    trackerHealth,
-    resolveLiveCutoffMs(trackerHealth, nowMs),
-  );
-
-  return {
-    compiledSessions,
-    stats,
-    totalTrackedTime,
-    yesterdayTrackedTime,
-    dayDeltaTrackedTime: totalTrackedTime - yesterdayTrackedTime,
-    topApplications: buildTopApplications(stats),
-    hourlyActivity: buildHourlyActivity(compiledSessions),
-    hourlyCategoryActivity: buildHourlyCategoryActivity(compiledSessions),
-    categoryDist: buildCategoryDistribution(stats),
-    diagnostics,
+    totalTrackedTime, yesterdayTrackedTime, dayDeltaTrackedTime: totalTrackedTime - yesterdayTrackedTime,
+    topApplications, categoryDist, trackingHealth: product?.trackingHealth ?? null,
+    hourlyActivity: hours.map(hour => ({ hour: `${String(hour.hour).padStart(2, "0")}:00`, minutes: hour.duration < 60000 ? 0 : Math.round(hour.duration / 60000) })),
+    hourlyCategoryActivity: buildHourlyCategoryPresentation(hours.map(hour => new Map(hour.categories.map(category => [category.category, category.duration / 60000])))),
   };
 }

@@ -65,7 +65,7 @@ Current caveats:
 | `/api/v1/heatmap` | `GET` | Beta.17 candidate | Bounded local-calendar daily totals; used by Desktop heatmap |
 | `/api/v1/activity/daily-apps` | `GET` | Compatibility surface | Bounded daily application totals and optional identities |
 | `/api/v1/activity/daily-product` | `GET` | Development branch | Transaction-consistent daily totals, product classification and configuration revision; used by Desktop application/category charts |
-| `/api/v1/activity/dashboard` | `GET` | Development branch | Selected/previous day totals and conserving hourly category quantities; Desktop hookup pending |
+| `/api/v1/activity/dashboard` | `GET` | Development branch | Selected/previous day totals and conserving hourly category quantities; used by Desktop Dashboard |
 | `/api/v1/classification/observed-apps` | `GET` | Unreleased source | Bounded raw executable statistics for classification candidates |
 | `/api/v1/web-activity` | `GET` | Implemented | Browser activity segment query |
 | `/api/v1/ai/activity-context` | `GET` | Implemented | Aggregated diagnostics, active session, summaries, and recent web activity for external AI analysis |
@@ -738,9 +738,19 @@ Native/exact precedence remains unchanged, including native overlaps and exclude
 native time suppressing imports before filtering.
 
 The independent Rust SDK validates category conservation and offers
-`dashboard(date, language)`. At this checkpoint the existing Desktop Dashboard
-still uses its previous read path; the endpoint is backend preparation, not a
-claim that Dashboard or exact History migration is complete.
+`dashboard(date, language)`. Desktop `cmd_get_dashboard_product {date,language}`
+delegates to that SDK in daemon mode or the same repository in the embedded
+migration path. The JS adapter validates the complete snapshot and uses the shared
+daily-read queue. Dashboard formats the confirmed quantities; it no longer reads
+activity SQL, repeats classification/precedence or extends durations with its own
+clock. Icons still use the existing read-only presentation cache.
+
+Foreground refreshes request new snapshots. Ordinary overlapping polls coalesce;
+invalidation, date/language scope changes and disposal prevent stale publication.
+Read failure labels the retained snapshot and automatically retries; a first-read
+failure is not presented as an empty history. These changes are implemented and
+automatically tested on the development branch, not installed or released.
+Exact History and web activity remain separate migrations.
 
 ### `GET /api/v1/activity/daily-product`
 

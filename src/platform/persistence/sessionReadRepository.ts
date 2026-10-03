@@ -3,7 +3,6 @@ import { AppClassification } from "../../shared/classification/appClassification
 import type { HistorySession, TitleSampleDetail } from "../../shared/types/sessions.ts";
 import {
   resolveNativeSessionPrecedence,
-  type ActivityResolutionScope,
   type TimeRecordOrigin,
 } from "./nativeSessionPrecedence.ts";
 
@@ -24,18 +23,6 @@ interface RawTitleSampleRow {
   title: string;
   start_time: number;
   end_time: number | null;
-}
-
-export interface RawAggregateSessionCandidateRow {
-  record_id?: number;
-  origin?: TimeRecordOrigin;
-  app_name: string;
-  exe_name: string;
-  window_title: string;
-  start_time: number;
-  effective_end_time: number;
-  capacity_end_time?: number;
-  is_live?: number | boolean;
 }
 
 export interface AggregateSessionRecord {
@@ -69,40 +56,6 @@ function mapRawHistorySession(
     continuityGroupStartTime: row.continuity_group_start_time,
     titleSampleDetails,
   };
-}
-
-export function mapRawAggregateSessionCandidates(
-  rows: RawAggregateSessionCandidateRow[],
-  scope?: ActivityResolutionScope,
-): AggregateSessionRecord[] {
-  const resolved = resolveNativeSessionPrecedence(
-    rows.map((row, index) => ({
-      key: `${row.origin ?? "native"}:${row.record_id ?? index}`,
-      origin: row.origin ?? "native",
-      startTime: row.start_time,
-      endTime: Math.max(row.start_time, row.effective_end_time),
-      capacityEndTime: row.capacity_end_time,
-      value: row,
-    })),
-    scope,
-  );
-  return resolved
-    .map((range) => ({
-      ...range.value!,
-      start_time: range.startTime,
-      effective_end_time: range.endTime,
-    }))
-    .filter((row) => AppClassification.shouldTrackProcess(row.exe_name, {
-      appName: row.app_name,
-      windowTitle: row.window_title,
-    }))
-    .map((row) => ({
-      appName: row.app_name,
-      exeName: row.exe_name,
-      startTime: row.start_time,
-      endTime: Math.max(row.start_time, row.effective_end_time),
-      ...(row.is_live ? { isLive: true } : {}),
-    }));
 }
 
 export async function getIconMap(): Promise<Record<string, string>> {
@@ -198,36 +151,6 @@ export async function getSessionsInRange(startMs: number, endMs: number): Promis
         : [];
     return mapRawHistorySession(adjusted, samples);
   });
-}
-
-export async function getSessionSummariesInRange(startMs: number, endMs: number): Promise<AggregateSessionRecord[]> {
-  const db = await getDB();
-  const now = Date.now();
-  const rows = await db.select<RawAggregateSessionCandidateRow[]>(
-    `SELECT id AS record_id, 'native' AS origin, app_name, exe_name,
-            COALESCE(window_title, '') AS window_title, start_time,
-            COALESCE(end_time, ?) AS effective_end_time,
-            COALESCE(end_time, ?) AS capacity_end_time,
-            end_time IS NULL AS is_live
-     FROM sessions
-     WHERE start_time < ? AND COALESCE(end_time, ?) > ?
-     UNION ALL
-     SELECT id, 'import_exact', app_name, exe_name, window_title, start_time,
-            end_time, end_time, 0
-     FROM import_exact_sessions
-     WHERE start_time < ? AND end_time > ?
-     UNION ALL
-     SELECT id, 'import_bucket', app_name, exe_name, '' AS window_title,
-            bucket_start_time AS start_time,
-            bucket_start_time + duration AS effective_end_time,
-            bucket_start_time + 3600000 AS capacity_end_time,
-            0
-     FROM import_time_buckets
-     WHERE bucket_start_time < ? AND bucket_start_time + 3600000 > ?
-     ORDER BY start_time ASC, origin ASC, record_id ASC`,
-    [now, now, endMs, now, startMs, endMs, startMs, endMs, startMs],
-  );
-  return mapRawAggregateSessionCandidates(rows, { startTime: startMs, endTime: endMs });
 }
 
 export async function getEarliestSessionStartTime(): Promise<number | null> {

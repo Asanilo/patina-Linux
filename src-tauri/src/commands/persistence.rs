@@ -4,6 +4,29 @@ use crate::engine::tracking::runtime::emit_tracking_data_changed;
 use tauri::{AppHandle, Manager, Runtime};
 
 #[tauri::command]
+pub async fn cmd_get_dashboard_product<R: Runtime>(
+    date: String,
+    language: String,
+    app: AppHandle<R>,
+) -> Result<patina_protocol::dashboard::DashboardProductSnapshot, String> {
+    let boundaries = crate::domain::activity_calendar::dashboard_boundaries(&date)?;
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        return client
+            .dashboard(&date, &language)
+            .await
+            .map_err(|error| error.to_string());
+    }
+    let pool = sqlite_pool::wait_for_sqlite_pool(&app).await?;
+    crate::data::repositories::daily_activity::load_dashboard_product(
+        &pool,
+        &boundaries,
+        crate::app::runtime::now_ms() as i64,
+        &language,
+    )
+    .await
+}
+
+#[tauri::command]
 pub async fn cmd_get_migration_observed_apps<R: Runtime>(
     to_ms: i64,
     app: AppHandle<R>,

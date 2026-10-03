@@ -172,10 +172,9 @@ function AppShellContent() {
   const isDashboardRefreshEnabled = currentView === "dashboard" && isForegroundReady;
   const isHistoryRefreshEnabled = currentView === "history" && isForegroundReady;
   const isDataRefreshEnabled = currentView === "data" && isForegroundReady;
-  const { dashboard, icons } = useDashboardStats(
+  const { dashboard, icons, readError: dashboardReadError } = useDashboardStats(
     appSettings.refreshIntervalSecs,
     refreshSignal,
-    trackerHealth,
     loadDashboardRuntimeSnapshot,
     mappingVersion,
     classificationReady,
@@ -435,6 +434,7 @@ function AppShellContent() {
                 <Dashboard
                   key="dashboard"
                   dashboard={dashboard}
+                  readFailed={dashboardReadError !== null}
                   icons={icons}
                   isAfk={activeWindow?.isAfk ?? false}
                   isTrackingActive={activeApp !== null}

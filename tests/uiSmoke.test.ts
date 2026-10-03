@@ -756,18 +756,10 @@ await runTest("app shell uses one five minute threshold for long background beha
 await runTest("Dashboard first snapshot load is not gated by foreground refresh", () => {
   const hook = readUtf8("src/features/dashboard/hooks/useDashboardStats.ts");
 
-  const firstLoadEffect = hook.slice(
-    hook.indexOf("if (!classificationReady || hasRequestedInitialSnapshotRef.current) return;"),
-    hook.indexOf("if (refreshKey === 0"),
-  );
-  const refreshEffect = hook.slice(
-    hook.indexOf("if (refreshKey === 0"),
-    hook.indexOf("const hasLiveSession"),
-  );
+  assert.match(hook, /if \(!hasRequestedInitialSnapshot.current \|\| foregroundRefreshEnabled\)/);
+  assert.match(hook, /const timer = foregroundRefreshEnabled \?/);
+  assert.doesNotMatch(hook, /setNowMs|materializeLiveSessions/);
 
-  assert.doesNotMatch(firstLoadEffect, /foregroundRefreshEnabled/);
-  assert.match(firstLoadEffect, /void loadSnapshot\(\)/);
-  assert.match(refreshEffect, /foregroundRefreshEnabled/);
 });
 
 await runTest("update snapshot listener disposes if subscription resolves after unmount", () => {

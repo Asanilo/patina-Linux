@@ -2,6 +2,8 @@ import { loadDashboardSnapshot, type DashboardSnapshot } from "./dashboardReadMo
 
 const DASHBOARD_SNAPSHOT_CACHE_LIMIT = 3;
 const DASHBOARD_SNAPSHOT_CACHE = new Map<string, DashboardSnapshot>();
+let generation = 0;
+export function getDashboardSnapshotCacheGeneration(): number { return generation; }
 
 function formatDashboardSnapshotCacheKey(date: Date): string {
   const localDate = new Date(date);
@@ -32,6 +34,7 @@ export function setDashboardSnapshotCache(snapshot: DashboardSnapshot, date: Dat
 }
 
 export function clearDashboardSnapshotCache(): void {
+  generation++;
   DASHBOARD_SNAPSHOT_CACHE.clear();
 }
 
@@ -40,7 +43,8 @@ export function getDashboardSnapshotCacheSizeForTests(): number {
 }
 
 export async function prewarmDashboardSnapshotCache(date: Date = new Date()): Promise<DashboardSnapshot> {
+  const before = generation;
   const snapshot = await loadDashboardSnapshot(date);
-  setDashboardSnapshotCache(snapshot, date);
+  if (before === generation) setDashboardSnapshotCache(snapshot, date);
   return snapshot;
 }

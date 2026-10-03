@@ -149,6 +149,18 @@ export function buildHourlyCategoryActivity(
     });
   }
 
+  return buildHourlyCategoryPresentation(hourlyCategoryMinutes, categoryDescriptors, categoryTotals);
+}
+
+export function buildHourlyCategoryPresentation(
+  hourlyCategoryMinutes: readonly ReadonlyMap<AppCategory, number>[],
+  categoryDescriptors: Map<AppCategory, CategoryDescriptor> = new Map(),
+  existingTotals?: ReadonlyMap<AppCategory, number>,
+): HourlyCategoryActivity {
+  const categoryTotals = new Map<AppCategory, number>(existingTotals);
+  for (const hour of existingTotals ? [] : hourlyCategoryMinutes) {
+    for (const [category, minutes] of hour) incrementCategoryMinutes(categoryTotals, category, minutes);
+  }
   const series = buildVisibleSeries(
     categoryTotals,
     categoryDescriptors,

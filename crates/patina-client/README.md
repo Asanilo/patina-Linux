@@ -33,7 +33,9 @@ Presentation labels/colors and exact History are separate concerns.
 24 host-local display-hour quantities. It validates hourly totals against final
 product categories. Missing/repeated DST hours retain accurate day totals, and
 imported bucket quantities must not be presented as exact observed intervals.
-The existing Desktop Dashboard hookup remains a separate migration step.
+The existing Desktop Dashboard command delegates to this method; its frontend
+formats confirmed quantities and refreshes from the owner instead of extrapolating
+with a local clock. Exact History and icon transport remain separate migrations.
 
 The host supplies the port and credential. Requests only target `127.0.0.1`, do
 not use environment proxies or follow redirects, have time and response-size

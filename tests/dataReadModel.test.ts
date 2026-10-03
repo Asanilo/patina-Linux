@@ -3,7 +3,7 @@ import { dailyAppsFixture } from "./helpers/dailyAppsFixture.ts";
 import { readFile } from "node:fs/promises";
 import { getDailyActivity } from "../src/platform/persistence/dailyActivityRepository.ts";
 import { ProcessMapper } from "../src/shared/classification/processMapper.ts";
-import { mapRawAggregateSessionCandidates } from "../src/platform/persistence/sessionReadRepository.ts";
+import { mapRawAggregateSessionCandidates } from "./helpers/legacyActivityCandidates.ts";
 import {
   buildActivityHeatmap,
   aggregateHeatmapDays,

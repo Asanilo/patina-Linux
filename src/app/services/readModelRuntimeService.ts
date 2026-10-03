@@ -1,7 +1,7 @@
 import { loadDashboardSnapshot, type DashboardSnapshot } from "../../features/dashboard/services/dashboardReadModel.ts";
 import { loadHistorySnapshot, type HistorySnapshot } from "../../features/history/services/historyReadModel.ts";
 import { ensureProcessMapperRuntimeReady } from "./processMapperRuntimeGate.ts";
-import { setDashboardSnapshotCache } from "../../features/dashboard/services/dashboardSnapshotCache.ts";
+import { setDashboardSnapshotCache, getDashboardSnapshotCacheGeneration } from "../../features/dashboard/services/dashboardSnapshotCache.ts";
 import { setHistorySnapshotCache } from "../../features/history/services/historySnapshotCache.ts";
 import {
   loadDataTrendSnapshot,
@@ -54,9 +54,10 @@ export async function loadDashboardRuntimeSnapshotWithDeps(
   date: Date = new Date(),
   deps: DashboardRuntimeSnapshotDeps,
 ): Promise<DashboardSnapshot> {
+  const generation = getDashboardSnapshotCacheGeneration();
   await deps.ensureProcessMapperRuntimeReady();
   const snapshot = await deps.loadDashboardSnapshot(date);
-  deps.setDashboardSnapshotCache(snapshot, date);
+  if (generation === getDashboardSnapshotCacheGeneration()) deps.setDashboardSnapshotCache(snapshot, date);
   return snapshot;
 }
 

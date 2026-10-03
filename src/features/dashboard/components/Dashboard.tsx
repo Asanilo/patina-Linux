@@ -14,6 +14,7 @@ const DashboardTopApplications = lazy(() => import("./DashboardTopApplications.t
 
 interface Props {
   dashboard: DashboardReadModel;
+  readFailed?: boolean;
   icons: Record<string, string>;
   isAfk: boolean;
   isTrackingActive: boolean;
@@ -49,6 +50,7 @@ function buildFocusCategoryDist(categoryDist: DashboardReadModel["categoryDist"]
 
 export default function Dashboard({
   dashboard,
+  readFailed = false,
   icons,
   hourlyActivityChartMode,
   onHourlyActivityChartModeChange,
@@ -103,10 +105,12 @@ export default function Dashboard({
       <QuietPageHeader
         icon={<Monitor size={18} />}
         title={UI_TEXT.dashboard.title}
-        subtitle={UI_TEXT.dashboard.subtitle}
+        subtitle={readFailed ? <span role="status">{dashboard.trackingHealth ? UI_TEXT.dashboard.readStale : UI_TEXT.dashboard.readUnavailable}</span> : UI_TEXT.dashboard.subtitle}
       />
 
-      <div className="flex gap-4 md:gap-5 flex-1 min-h-0 overflow-hidden dashboard-workspace">
+      {readFailed && !dashboard.trackingHealth ? (
+        <div className="qp-panel p-5 text-sm text-[var(--qp-text-secondary)]">{UI_TEXT.dashboard.readUnavailable}</div>
+      ) : <div className="flex gap-4 md:gap-5 flex-1 min-h-0 overflow-hidden dashboard-workspace">
         <div className="w-5/12 flex flex-col gap-4 md:gap-5 min-h-0 dashboard-left-column">
           <div
             ref={focusCardRef}
@@ -220,7 +224,7 @@ export default function Dashboard({
             onOpenDestinationDetail={onOpenDestinationDetail}
           />
         </Suspense>
-      </div>
+      </div>}
     </div>
   );
 }

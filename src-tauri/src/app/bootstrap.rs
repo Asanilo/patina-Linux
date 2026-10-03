@@ -181,6 +181,7 @@ fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Build
         commands::persistence::cmd_reopen_sqlite_pool,
         commands::persistence::cmd_get_daily_activity,
         commands::persistence::cmd_get_daily_apps,
+        commands::persistence::cmd_get_dashboard_product,
         commands::persistence::cmd_get_observed_apps,
         commands::persistence::cmd_get_migration_observed_apps,
         commands::persistence::cmd_delete_tracking_data_before,

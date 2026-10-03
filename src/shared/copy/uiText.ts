@@ -191,6 +191,8 @@ const ZH_CN_UI_TEXT = {
   dashboard: {
     title: "今天",
     subtitle: "查看今天的使用概览",
+    readUnavailable: "暂时无法读取追踪数据，将自动重试。",
+    readStale: "刷新失败，当前显示上次读取的数据，将自动重试。",
     tracking: (activeAppName: string) => `正在追踪：${activeAppName}`,
     trackingPaused: "追踪已暂停",
     idle: "空闲",
@@ -1007,6 +1009,8 @@ const EN_US_UI_TEXT: UiText = {
   dashboard: {
     title: "Today",
     subtitle: "Review today's usage overview",
+    readUnavailable: "Tracking data is unavailable. Retrying automatically.",
+    readStale: "Refresh failed. Showing the last snapshot and retrying automatically.",
     tracking: (activeAppName: string) => `Tracking: ${activeAppName}`,
     trackingPaused: "Tracking paused",
     idle: "Idle",

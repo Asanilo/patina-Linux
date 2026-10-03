@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import {
   buildDashboardReadModel,
-} from "../src/features/dashboard/services/dashboardReadModel.ts";
+} from "./helpers/legacyDashboardReadModel.ts";
 import { buildHistoryReadModel } from "../src/features/history/services/historyReadModel.ts";
-import { buildTopApplications } from "../src/features/dashboard/services/dashboardFormatting.ts";
+import { buildTopApplications } from "./helpers/legacyDashboardFormatting.ts";
 import {
   buildHourlyActivity,
   buildHourlyCategoryActivity,

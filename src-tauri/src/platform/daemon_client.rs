@@ -586,6 +586,14 @@ impl PatinadClient {
         self.transport.daily_product(from, to, language).await
     }
 
+    pub async fn dashboard(
+        &self,
+        date: &str,
+        language: &str,
+    ) -> Result<patina_protocol::dashboard::DashboardProductSnapshot, PatinadClientError> {
+        self.transport.dashboard(date, language).await
+    }
+
     pub async fn daily_activity(
         &self,
         from: &str,

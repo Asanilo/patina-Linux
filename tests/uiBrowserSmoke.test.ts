@@ -156,6 +156,34 @@ function tauriStubFor(path: string) {
       }
 
       export async function invoke(command, payload = {}) {
+        if (command === "cmd_get_dashboard_product") {
+          globalThis.__PATINA_SMOKE_DASHBOARD_CALLS = (globalThis.__PATINA_SMOKE_DASHBOARD_CALLS ?? 0) + 1;
+          if (globalThis.__PATINA_SMOKE_DASHBOARD_ERROR) throw new Error(globalThis.__PATINA_SMOKE_DASHBOARD_ERROR);
+          const date = new Date(payload.date + "T00:00:00");
+          const start = date.getTime();
+          const previous = new Date(date); previous.setDate(previous.getDate()-1);
+          const end = new Date(date); end.setDate(end.getDate()+1);
+          const settings = loadStoredSettings();
+          const specifications = [
+            ["deep-research-workbench.exe","Extremely Long Research Workbench Application Name","office",2400000],
+            ["cursor.exe","Cursor","development",600000],
+          ];
+          const applications = [], apps = [], categories = new Map();
+          for (const [key,name,fallback,duration] of specifications) {
+            const override = JSON.parse(settings["__app_override::"+key] ?? "{}");
+            if (override.enabled !== false && override.track === false) continue;
+            const category = override.enabled === false ? "other" : override.category ?? fallback;
+            applications.push({app_key:key,app_name:name,exe_name:key,category,display_name_override:override.enabled === false ? null : override.displayName ?? null});
+            apps.push({app_key:key,active_ms:duration});
+            categories.set(category,(categories.get(category)??0)+duration);
+          }
+          const total = apps.reduce((sum,app)=>sum+app.active_ms,0);
+          return {sampled_at_ms:Date.now(),configuration_revision:"0".repeat(64),
+            tracking_health:{status:"unavailable",last_heartbeat_ms:null,live_cutoff_ms:0,stale_after_ms:8000},applications,
+            current:{start_ms:start,end_ms:end.getTime(),active_ms:total,apps},
+            previous:{start_ms:previous.getTime(),end_ms:start,active_ms:0,apps:[]},
+            hours:Array.from({length:24},(_,hour)=>({hour,active_ms:hour===0?total:0,categories:hour===0?[...categories].map(([category,active_ms])=>({category,active_ms})):[]}))};
+        }
         if (command === "cmd_get_classification_snapshot") {
           const prefixes = ["__app_override::", "__web_domain_override::", "__category_color_override::", "__category_label_override::", "__category_default_color_assignment::", "__custom_category::", "__deleted_category::", "__classification_manual_confirmation_migration::"];
           const entries = Object.entries(loadStoredSettings()).filter(([key]) => prefixes.some(prefix => key.startsWith(prefix) && key.length > prefix.length))
@@ -827,6 +855,25 @@ try {
         `dashboard marker ${marker}`,
       );
     }
+  });
+
+  await runTest("Dashboard marks stale snapshots on read failure and recovers", async () => {
+    await waitForExpression(client!,sessionId,`document.querySelector('.dashboard-top-app-detail') !== null`);
+    await evaluate(client!,sessionId,`(async()=>{
+      globalThis.__PATINA_SMOKE_DASHBOARD_ERROR='synthetic unavailable';
+      globalThis.__TIME_TRACKER_SET_FOREGROUND_STATE({visible:false,focused:false});
+      await new Promise(resolve=>setTimeout(resolve,100));
+      globalThis.__TIME_TRACKER_SET_FOREGROUND_STATE({visible:true,focused:true});
+    })()`);
+    await waitForExpression(client!,sessionId,`document.querySelector('[role="status"]')?.textContent?.includes('上次读取的数据') === true`,10000);
+    assert.equal(await evaluate(client!,sessionId,`document.querySelector('.dashboard-top-app-detail') !== null`),true);
+    await evaluate(client!,sessionId,`(async()=>{
+      globalThis.__PATINA_SMOKE_DASHBOARD_ERROR=null;
+      globalThis.__TIME_TRACKER_SET_FOREGROUND_STATE({visible:false,focused:false});
+      await new Promise(resolve=>setTimeout(resolve,100));
+      globalThis.__TIME_TRACKER_SET_FOREGROUND_STATE({visible:true,focused:true});
+    })()`);
+    await waitForExpression(client!,sessionId,`!document.querySelector('[role="status"]')?.textContent?.includes('上次读取的数据')`,10000);
   });
 
   await runTest("Dashboard opens shared application details", async () => {

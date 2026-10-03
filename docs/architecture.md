@@ -120,7 +120,8 @@ IPC 契约应保持稳定、可解析、可测试。
 前端当前保留受控的本地 SQLite 访问，用于：
 
 - 尚未迁移的普通 settings 读取；classification 配置已迁往 owner 快照
-- history / dashboard 读模型查询
+- history、网页明细等尚未迁移的读模型查询
+- 应用图标的只读展示缓存（包括 Dashboard 使用的图标）
 - 桌面端本机活动与外部导入活动的只读组合
 - Desktop 私有、可重建的 `data.bootstrap_snapshot` 渲染缓存读写
 
@@ -336,7 +337,9 @@ src/
 
 产品每日快照的开放会话截止由 `domain/activity_read_health` 决定，`data` 在事实事务内读取 owner heartbeat。陈旧 heartbeat 不随读取时钟继续增长；缺少可信证据时不推算开放会话。SDK 和 Desktop 只校验快照中的健康/cutoff 契约，不能自行延长后端时长。该读取策略不代替 runtime watchdog、锁屏／挂起封口或采样来源诊断；尚未迁移的旧读接口必须明确标识。
 
-Dashboard 后端读契约在同一事务内产生今天／昨天产品数量和逐小时分类，复用 `daily_activity`；现有 Desktop Dashboard 尚未切换。分区统计由 `domain/activity_read_model` 一次处理原生／导入优先级和桶容量，再分配整数余数，保证小时图和日总量守恒。`domain/activity_calendar` 负责实际本地日与 offset 转换边界，24 个显示小时不等于 24 小时实际日长。不能通过多次独立小时查询或伪造 bucket 时间线来拼装 Dashboard。
+Dashboard 后端读契约在同一事务内产生今天／昨天产品数量和逐小时分类，复用 `daily_activity`；Desktop 通过 `cmd_get_dashboard_product` 和共享 SDK 消费该快照。分区统计由 `domain/activity_read_model` 一次处理原生／导入优先级和桶容量，再分配整数余数，保证小时图和日总量守恒。`domain/activity_calendar` 负责实际本地日与 offset 转换边界，24 个显示小时不等于 24 小时实际日长。前端只格式化已确认数量，不能重新分类、按墙钟延长活动，或用独立小时查询／伪造 bucket 时间线拼装 Dashboard。
+
+Dashboard 的视图请求生命周期由 feature-owned `DashboardRefresh` 管理：普通轮询合并，数据失效时丢弃旧响应并补读，停止后不再发布；读取 scope 包含缓存代数、本地日期和语言。缓存预热及运行时协调也必须检查代数，避免失效后的旧请求重新填充缓存。失败保留最后一份快照并明确标记，首读失败不冒充空数据；图标暂用既有只读缓存，图标失败不阻塞活动读取。
 
 前端终局结构中不再保留：
 
