@@ -2,7 +2,7 @@ import { loadDashboardSnapshot, type DashboardSnapshot } from "../../features/da
 import { loadHistorySnapshot, type HistorySnapshot } from "../../features/history/services/historyReadModel.ts";
 import { ensureProcessMapperRuntimeReady } from "./processMapperRuntimeGate.ts";
 import { setDashboardSnapshotCache, getDashboardSnapshotCacheGeneration } from "../../features/dashboard/services/dashboardSnapshotCache.ts";
-import { setHistorySnapshotCache } from "../../features/history/services/historySnapshotCache.ts";
+import { setHistorySnapshotCache, getHistorySnapshotCacheGeneration } from "../../features/history/services/historySnapshotCache.ts";
 import {
   loadDataTrendSnapshot,
   type DataTrendSnapshot,
@@ -17,11 +17,10 @@ type DashboardRuntimeSnapshotDeps = {
 
 type HistoryRuntimeSnapshotDeps = {
   ensureProcessMapperRuntimeReady: () => Promise<void>;
-  loadHistorySnapshot: (date: Date, rollingDayCount?: number) => Promise<HistorySnapshot>;
+  loadHistorySnapshot: (date: Date) => Promise<HistorySnapshot>;
   setHistorySnapshotCache: (
     snapshot: HistorySnapshot,
     date?: Date,
-    rollingDayCount?: number,
   ) => void;
 };
 
@@ -67,20 +66,19 @@ export async function loadDashboardRuntimeSnapshot(date: Date = new Date()): Pro
 
 export async function loadHistoryRuntimeSnapshotWithDeps(
   date: Date,
-  rollingDayCount: number = 7,
   deps: HistoryRuntimeSnapshotDeps,
 ): Promise<HistorySnapshot> {
+  const generation = getHistorySnapshotCacheGeneration();
   await deps.ensureProcessMapperRuntimeReady();
-  const snapshot = await deps.loadHistorySnapshot(date, rollingDayCount);
-  deps.setHistorySnapshotCache(snapshot, date, rollingDayCount);
+  const snapshot = await deps.loadHistorySnapshot(date);
+  if (generation === getHistorySnapshotCacheGeneration()) deps.setHistorySnapshotCache(snapshot, date);
   return snapshot;
 }
 
 export async function loadHistoryRuntimeSnapshot(
   date: Date,
-  rollingDayCount: number = 7,
 ): Promise<HistorySnapshot> {
-  return loadHistoryRuntimeSnapshotWithDeps(date, rollingDayCount, historyRuntimeSnapshotDeps);
+  return loadHistoryRuntimeSnapshotWithDeps(date, historyRuntimeSnapshotDeps);
 }
 
 export async function loadDataTrendRuntimeSnapshot(

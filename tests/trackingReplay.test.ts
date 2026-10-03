@@ -87,7 +87,6 @@ runTest("history replay filters pickerhost and keeps alias aggregation stable", 
 
   const readModel = buildHistoryReadModel({
     daySessions,
-    weeklySessions: daySessions,
     selectedDate: new Date(0),
     trackerHealth,
     nowMs: 400_000,
@@ -184,7 +183,6 @@ runTest("replay keeps stale live session growth capped in history and dashboard"
 
   const history = buildHistoryReadModel({
     daySessions: sessions,
-    weeklySessions: sessions,
     selectedDate: new Date(0),
     trackerHealth: staleTrackerHealth,
     nowMs: 30_000,
@@ -219,7 +217,6 @@ runTest("replay keeps startup-sealed sessions closed under stale tracker", () =>
 
   const history = buildHistoryReadModel({
     daySessions: sessions,
-    weeklySessions: sessions,
     selectedDate: new Date(0),
     trackerHealth: staleTrackerHealth,
     nowMs: 30_000,
@@ -267,7 +264,6 @@ runTest("replay keeps startup-sealed sessions stable after cleanup on stale trac
 
   const history = buildHistoryReadModel({
     daySessions: sessions,
-    weeklySessions: sessions,
     selectedDate: new Date(0),
     trackerHealth: staleTrackerHealth,
     nowMs: 30_000,
@@ -317,7 +313,6 @@ runTest("replay keeps sessions starting at cleanup cutoff in stale tracker views
 
   const history = buildHistoryReadModel({
     daySessions: sessions,
-    weeklySessions: sessions,
     selectedDate: new Date(0),
     trackerHealth: staleTrackerHealth,
     nowMs: 35_000,
@@ -369,7 +364,6 @@ runTest("replay keeps active sessions starting at cleanup cutoff and caps them f
 
   const history = buildHistoryReadModel({
     daySessions: sessions,
-    weeklySessions: sessions,
     selectedDate: new Date(0),
     trackerHealth: staleTrackerHealth,
     nowMs: 35_000,
@@ -687,7 +681,6 @@ runTest("dashboard and history replay produce matching hourly category activity"
   const dashboard = buildDashboardReadModel(sessions, currentTrackerHealth, nowMs);
   const history = buildHistoryReadModel({
     daySessions: sessions,
-    weeklySessions: sessions,
     selectedDate: new Date(nowMs),
     trackerHealth: currentTrackerHealth,
     nowMs,

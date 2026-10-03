@@ -46,12 +46,11 @@ function resolveSegmentColor(
 
   const overrideColor = AppClassification.getUserOverride(segment.appKey)?.color
     ?? AppClassification.getUserOverride(segment.exeName)?.color;
-  const mapped = AppClassification.mapApp(segment.appKey, { appName: segment.displayName });
 
   return overrideColor
     ?? iconThemeColors[segment.appKey]
     ?? iconThemeColors[segment.exeName]
-    ?? mapped.color;
+    ?? AppClassification.getCategoryColor(segment.category);
 }
 
 function resolveLegendColor(
@@ -65,12 +64,11 @@ function resolveLegendColor(
 
   const overrideColor = AppClassification.getUserOverride(item.key)?.color
     ?? AppClassification.getUserOverride(item.exeName)?.color;
-  const mapped = AppClassification.mapApp(item.key);
 
   return overrideColor
     ?? iconThemeColors[item.key]
     ?? iconThemeColors[item.exeName]
-    ?? mapped.color;
+    ?? AppClassification.getCategoryColor(item.category);
 }
 
 function getSegmentLabel(segment: HistoryTimelineSegment, mode: HistoryTimelineDisplayMode) {

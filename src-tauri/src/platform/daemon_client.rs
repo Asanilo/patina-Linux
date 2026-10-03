@@ -594,6 +594,15 @@ impl PatinadClient {
         self.transport.dashboard(date, language).await
     }
 
+    pub async fn exact_history(
+        &self,
+        from_ms: i64,
+        to_ms: i64,
+        language: &str,
+    ) -> Result<patina_protocol::history::ExactHistorySnapshot, PatinadClientError> {
+        self.transport.exact_history(from_ms, to_ms, language).await
+    }
+
     pub async fn daily_activity(
         &self,
         from: &str,

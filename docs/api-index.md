@@ -66,7 +66,7 @@ Current caveats:
 | `/api/v1/activity/daily-apps` | `GET` | Compatibility surface | Bounded daily application totals and optional identities |
 | `/api/v1/activity/daily-product` | `GET` | Development branch | Transaction-consistent daily totals, product classification and configuration revision; used by Desktop application/category charts |
 | `/api/v1/activity/dashboard` | `GET` | Development branch | Selected/previous day totals and conserving hourly category quantities; used by Desktop Dashboard |
-| `/api/v1/activity/history` | `GET` | Development branch | Bounded precise native/imported records and stored titles; Desktop History hookup pending |
+| `/api/v1/activity/history` | `GET` | Development branch | Bounded precise native/imported records and stored titles; shared by Desktop History and app details |
 | `/api/v1/classification/observed-apps` | `GET` | Unreleased source | Bounded raw executable statistics for classification candidates |
 | `/api/v1/web-activity` | `GET` | Implemented | Browser activity segment query |
 | `/api/v1/ai/activity-context` | `GET` | Implemented | Aggregated diagnostics, active session, summaries, and recent web activity for external AI analysis |
@@ -760,9 +760,12 @@ retained-data limits, not a claim that SQLite/OS total memory is capped at 8 MiB
 The shared SDK `exact_history(from_ms,to_ms,language)` uses the scoped response
 budget, validates record/sample boundaries and liveness, and never falls back to
 legacy `/sessions` or SQL. Two independent clients are tested against the real
-loopback server. Desktop History/Details still use their old adapters at this
-checkpoint; their migration, caption presentation and refresh behavior remain work
-in progress.
+loopback server; the Desktop facade is compared with the independent SDK.
+Desktop History and app details use `cmd_get_exact_history` and a strict typed
+adapter. Closed numeric boundaries stay frozen on disconnect; caption-only
+records do not acquire synthetic title samples. Historical native overlaps retain
+their recorded durations. Current-day views poll the owner, coalesce concurrent
+polls and discard invalidated responses. Web details remain a separate migration.
 
 ### `GET /api/v1/activity/dashboard`
 
@@ -803,7 +806,7 @@ invalidation, date/language scope changes and disposal prevent stale publication
 Read failure labels the retained snapshot and automatically retries; a first-read
 failure is not presented as an empty history. These changes are implemented and
 automatically tested on the development branch, not installed or released.
-Exact History and web activity remain separate migrations.
+Exact History uses its own precise-fact endpoint; web activity remains a separate migration.
 
 ### `GET /api/v1/activity/daily-product`
 
@@ -855,8 +858,8 @@ imported facts retain their stored boundaries. No heartbeat is changed by readin
 SDK and Desktop validate these health/cutoff relationships and consume backend
 totals without client-clock extrapolation. Persisted timestamps are read evidence,
 not proof of foreground-provider quality; runtime watchdog and lifecycle sealing
-remain separate. Dashboard, exact History, web activity and older compatibility
-endpoints have not yet migrated to this product read policy.
+remain separate. Dashboard and exact History share this policy; web activity and
+older compatibility endpoints remain separate migrations.
 
 ### `GET /api/v1/classification/observed-apps`
 

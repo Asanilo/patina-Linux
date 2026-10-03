@@ -1,6 +1,7 @@
 import type { AppStat } from "../types/app";
 import type { DailySummary, HistorySession, TitleSampleDetail } from "../types/sessions";
 import { AppClassification } from "../classification/appClassification.ts";
+import type { AppCategory } from "../classification/categoryTokens.ts";
 import { cleanWindowTitle } from "./windowTitleCleaner.ts";
 
 const DIRECT_MERGE_GAP_MS = 5_000;
@@ -31,6 +32,8 @@ export interface CompiledSession extends HistorySession {
   displayName: string;
   displayTitle: string;
   titleSamples: string[];
+  // Untimed record labels; never promoted into titleSampleDetails.
+  captionTitles?: string[];
   titleSampleDetails: Array<TitleSampleDetail & { endTime: number }>;
   sourceIds: number[];
   diagnosticCodes: SessionDiagnosticCode[];
@@ -62,6 +65,7 @@ function normalizeTitle(title: string, displayName: string) {
 function mergeTitleSampleDetails(
   current: Array<TitleSampleDetail & { endTime: number }>,
   incoming: Array<TitleSampleDetail & { endTime: number }>,
+  preserveGaps: boolean = false,
 ) {
   const merged = current.map((sample) => ({ ...sample }));
 
@@ -73,6 +77,7 @@ function mergeTitleSampleDetails(
     if (
       previous
       && previous.title === title
+      && (!preserveGaps || sample.startTime <= previous.endTime)
     ) {
       previous.endTime = Math.max(previous.endTime, sample.endTime);
       continue;
@@ -102,6 +107,7 @@ function mergeDiagnosticCodes(
 }
 
 function shouldTrackInReadModel(session: HistorySession) {
+  if (session.confirmed) return true;
   const exeName = session.exeName;
   const canonicalExe = AppClassification.resolveCanonicalExecutable(exeName);
   return AppClassification.shouldTrackProcess(exeName, {
@@ -110,10 +116,18 @@ function shouldTrackInReadModel(session: HistorySession) {
   }) && AppClassification.shouldTrackApp(canonicalExe);
 }
 
+export function getSessionCategory(session: HistorySession): AppCategory {
+  return session.confirmed?.category ?? AppClassification.mapApp(session.exeName, {appName:session.appName}).category;
+}
+
 function resolveCompiledDisplayName(
   session: DiagnosableHistorySession,
   appKey: string,
 ) {
+  if (session.confirmed) {
+    return session.confirmed.displayNameOverride || AppClassification.resolveCanonicalDisplayName(appKey)
+      || session.appName.trim() || AppClassification.mapDefaultApp(appKey).name;
+  }
   const overrideDisplayName = AppClassification.getUserOverride(appKey)?.displayName?.trim();
   if (overrideDisplayName) {
     return overrideDisplayName;
@@ -142,6 +156,7 @@ function resolveCompiledDisplayName(
 }
 
 function resolveStatsExeName(session: CompiledSession) {
+  if (session.confirmed) return session.confirmed.appKey;
   const rawExeKey = AppClassification.normalizeExecutable(session.exeName);
   // Keep original exeName only when it already matches the canonical key.
   // Otherwise persist the canonical executable as the stats identity.
@@ -173,7 +188,7 @@ function prepareSession(
   session: DiagnosableHistorySession,
 ): CompiledSession {
   const rawEndTime = Math.max(session.startTime, getSessionRawEndTime(session));
-  const appKey = AppClassification.resolveCanonicalExecutable(session.exeName);
+  const appKey = session.confirmed?.appKey ?? AppClassification.resolveCanonicalExecutable(session.exeName);
   const displayName = resolveCompiledDisplayName(session, appKey);
   const cleanedTitle = cleanWindowTitle(session.windowTitle, session.exeName);
   const normalizedTitle = normalizeTitle(cleanedTitle, displayName);
@@ -189,8 +204,8 @@ function prepareSession(
     })
     .filter((sample) => sample.title && sample.endTime > sample.startTime)
     .sort((a, b) => a.startTime - b.startTime);
-  const normalizedTitleSampleDetails = mergeTitleSampleDetails([], titleSampleDetails);
-  const fallbackTitleSampleDetails = normalizedTitle ? [{
+  const normalizedTitleSampleDetails = mergeTitleSampleDetails([], titleSampleDetails, Boolean(session.confirmed));
+  const fallbackTitleSampleDetails = normalizedTitle && !session.confirmed ? [{
     title: normalizedTitle,
     startTime: session.startTime,
     endTime: rawEndTime,
@@ -211,13 +226,14 @@ function prepareSession(
         ? normalizedTitleSampleDetails
         : fallbackTitleSampleDetails,
     ),
+    ...(session.confirmed ? {captionTitles: normalizedTitle ? [normalizedTitle] : []} : {}),
     titleSampleDetails: normalizedTitleSampleDetails.length > 0
       ? normalizedTitleSampleDetails
       : fallbackTitleSampleDetails,
     sourceIds: [session.id],
     diagnosticCodes: [...(session.diagnosticCodes ?? [])],
     suspiciousDuration: Math.max(0, session.suspiciousDuration ?? 0),
-    isLive: session.endTime === null,
+    isLive: session.confirmed?.isLive ?? session.endTime === null,
   };
 }
 
@@ -247,13 +263,13 @@ function clipCompiledSession(
     endTime: clippedEnd,
     duration: clippedEnd - clippedStart,
     titleSampleDetails,
-    titleSamples: titleSamplesFromDetails(titleSampleDetails),
+    titleSamples: titleSampleDetails.length ? titleSamplesFromDetails(titleSampleDetails) : session.captionTitles ?? [],
     suspiciousDuration: Math.min(Math.max(0, session.suspiciousDuration), clippedEnd - clippedStart),
   };
 }
 
 function finalizeCompiledSession(session: CompiledSession): CompiledSession {
-  const titleSamples = titleSamplesFromDetails(session.titleSampleDetails);
+  const titleSamples = session.titleSampleDetails.length ? titleSamplesFromDetails(session.titleSampleDetails) : session.captionTitles ?? [];
   const displayTitle = summarizeTitleSamples(titleSamples);
 
   return {
@@ -297,8 +313,10 @@ function buildCompiledSessionBase(
       previous.titleSampleDetails = mergeTitleSampleDetails(
         previous.titleSampleDetails,
         session.titleSampleDetails,
+        Boolean(previous.confirmed || session.confirmed),
       );
-      previous.titleSamples = titleSamplesFromDetails(previous.titleSampleDetails);
+      if (previous.confirmed || session.confirmed) previous.captionTitles = [...new Set([...(previous.captionTitles ?? []), ...(session.captionTitles ?? [])])];
+      previous.titleSamples = previous.titleSampleDetails.length ? titleSamplesFromDetails(previous.titleSampleDetails) : previous.captionTitles ?? [];
       previous.sourceIds = [...previous.sourceIds, ...session.sourceIds];
       previous.diagnosticCodes = mergeDiagnosticCodes(previous.diagnosticCodes, session.diagnosticCodes);
       previous.suspiciousDuration += session.suspiciousDuration;
@@ -488,8 +506,10 @@ export function buildTimelineSessions(
           current.titleSampleDetails = mergeTitleSampleDetails(
             current.titleSampleDetails,
             nextCandidate.titleSampleDetails,
+            Boolean(current.confirmed || nextCandidate.confirmed),
           );
-          current.titleSamples = titleSamplesFromDetails(current.titleSampleDetails);
+          if (current.confirmed || nextCandidate.confirmed) current.captionTitles = [...new Set([...(current.captionTitles ?? []), ...(nextCandidate.captionTitles ?? [])])];
+          current.titleSamples = current.titleSampleDetails.length ? titleSamplesFromDetails(current.titleSampleDetails) : current.captionTitles ?? [];
           current.sourceIds = [...current.sourceIds, ...nextCandidate.sourceIds];
           current.diagnosticCodes = mergeDiagnosticCodes(current.diagnosticCodes, nextCandidate.diagnosticCodes);
           current.suspiciousDuration += nextCandidate.suspiciousDuration;

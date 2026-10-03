@@ -1,19 +1,23 @@
 import { loadHistorySnapshot, type HistorySnapshot } from "./historyReadModel.ts";
 
+import { getUiTextLanguage } from "../../../shared/copy/uiText.ts";
+
 const HISTORY_SNAPSHOT_CACHE_LIMIT = 14;
 const HISTORY_SNAPSHOT_CACHE = new Map<string, HistorySnapshot>();
 
-function formatHistorySnapshotCacheKey(date: Date, rollingDayCount: number): string {
+let generation = 0;
+export function getHistorySnapshotCacheGeneration(): number { return generation; }
+
+function formatHistorySnapshotCacheKey(date: Date, language: string = getUiTextLanguage()): string {
   const localDate = new Date(date);
   localDate.setHours(0, 0, 0, 0);
-  return `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, "0")}-${String(localDate.getDate()).padStart(2, "0")}:${rollingDayCount}`;
+  return `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, "0")}-${String(localDate.getDate()).padStart(2, "0")}:${language}`;
 }
 
 export function getHistorySnapshotCache(
   date: Date = new Date(),
-  rollingDayCount: number = 7,
 ): HistorySnapshot | null {
-  const cacheKey = formatHistorySnapshotCacheKey(date, rollingDayCount);
+  const cacheKey = formatHistorySnapshotCacheKey(date);
   const snapshot = HISTORY_SNAPSHOT_CACHE.get(cacheKey);
   if (!snapshot) return null;
 
@@ -25,9 +29,8 @@ export function getHistorySnapshotCache(
 export function setHistorySnapshotCache(
   snapshot: HistorySnapshot,
   date: Date = new Date(),
-  rollingDayCount: number = 7,
 ): void {
-  const cacheKey = formatHistorySnapshotCacheKey(date, rollingDayCount);
+  const cacheKey = formatHistorySnapshotCacheKey(date, snapshot.language);
   HISTORY_SNAPSHOT_CACHE.delete(cacheKey);
   HISTORY_SNAPSHOT_CACHE.set(cacheKey, snapshot);
 
@@ -39,6 +42,7 @@ export function setHistorySnapshotCache(
 }
 
 export function clearHistorySnapshotCache(): void {
+  generation++;
   HISTORY_SNAPSHOT_CACHE.clear();
 }
 
@@ -48,9 +52,9 @@ export function getHistorySnapshotCacheSizeForTests(): number {
 
 export async function prewarmHistorySnapshotCache(
   date: Date = new Date(),
-  rollingDayCount: number = 7,
 ): Promise<HistorySnapshot> {
-  const snapshot = await loadHistorySnapshot(date, rollingDayCount);
-  setHistorySnapshotCache(snapshot, date, rollingDayCount);
+  const before = generation;
+  const snapshot = await loadHistorySnapshot(date);
+  if (before === generation) setHistorySnapshotCache(snapshot, date);
   return snapshot;
 }

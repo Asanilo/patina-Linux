@@ -116,6 +116,9 @@ function findArchitectureViolations(files: SourceFile[]): ArchitectureViolation[
       const specifier = importSpecifier(node);
       if (specifier !== undefined) {
         const importedPath = normalizeImportPath(file.path, specifier);
+        if (/^tests\//.test(importedPath)) {
+          report("production-no-test-import");
+        }
         if (isSharedSource(file.path) && /^src\/app\//.test(importedPath)) {
           report("shared-no-app-import");
         }
@@ -277,6 +280,11 @@ function runSelfTest() {
   ].sort();
 
   assert.deepEqual(rules, expectedRules, "All existing boundary rules must be enforced");
+
+  assert.deepEqual(findArchitectureViolations([{
+    path: "src/platform/persistence/example.ts",
+    content: "import { resolveNativeSessionPrecedence } from '../../../tests/helpers/legacyNativeSessionPrecedence.ts';",
+  }]).map(({rule}) => rule), ["production-no-test-import"]);
 
   const dependencyForms = [
     "import {\n  gateway,\n} from '@/platform/runtime/gateway';",

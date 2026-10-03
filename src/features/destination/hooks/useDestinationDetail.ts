@@ -1,4 +1,6 @@
 import { startTransition, useCallback, useEffect, useRef, useState } from "react";
+import { SnapshotReadController } from "../../../shared/lib/snapshotReadController.ts";
+import { getUiTextLanguage } from "../../../shared/copy/uiText.ts";
 import { formatLocalDateKey } from "../../../shared/lib/localDate.ts";
 import {
   loadDestinationDetailDay,
@@ -42,7 +44,9 @@ export function useDestinationDetail({
   const [focusedDateKey, setFocusedDateKeyState] = useState(() => (
     resolveDestinationDetailInitialDateKey(initialDateKey, nowMs)
   ));
-  const requestRef = useRef<string | null>(null);
+  const healthRef = useRef(trackerHealth);
+  healthRef.current = trackerHealth;
+  const language = getUiTextLanguage();
   const [retryRevision, setRetryRevision] = useState(0);
   const [dayState, setDayState] = useState<DetailDayState>({
     requestKey: "",
@@ -51,6 +55,14 @@ export function useDestinationDetail({
     error: null,
   });
   const cacheVersion = `${mappingVersion}:${refreshKey}`;
+  const cacheScope = useRef(cacheVersion);
+  cacheScope.current = cacheVersion;
+  const controller = useRef<SnapshotReadController<DestinationDetailDayViewModel> | null>(null);
+  const previousVersion = useRef(cacheVersion);
+  useEffect(() => {
+    if (previousVersion.current !== cacheVersion) controller.current?.refresh(true);
+    previousVersion.current = cacheVersion;
+  }, [cacheVersion]);
   useEffect(() => {
     const requestNowMs = Date.now();
     setNowMs(requestNowMs);
@@ -59,10 +71,10 @@ export function useDestinationDetail({
       focusedDateKey,
       cacheVersion,
     );
-    requestRef.current = requestKey;
-    let cancelled = false;
+    let failed = false;
     setDayState((current) => {
-      const sameTarget = current.requestKey.startsWith(`${target.mode}:${target.key}:`);
+      const sameTarget = current.requestKey.startsWith(`${target.mode}:${target.key}:`)
+        && current.viewModel?.dateKey === focusedDateKey;
       return {
         requestKey,
         viewModel: sameTarget ? current.viewModel : null,
@@ -70,41 +82,39 @@ export function useDestinationDetail({
         error: null,
       };
     });
-    void loadDestinationDetailDay(
-      target,
-      focusedDateKey,
-      requestNowMs,
-      mergeThresholdSecs,
-      undefined,
-      trackerHealth.status,
-      trackerHealth.lastHeartbeatMs,
-    )
-      .then((viewModel) => {
-        if (cancelled || requestRef.current !== requestKey) return;
-        startTransition(() => setDayState({
-          requestKey,
-          viewModel,
-          status: "ready",
-          error: null,
-        }));
-      })
-      .catch((error: unknown) => {
-        if (cancelled || requestRef.current !== requestKey) return;
-        setDayState((current) => ({
-          ...current,
-          status: "error",
-          error: error instanceof Error ? error : new Error(String(error)),
-        }));
-      });
-    return () => { cancelled = true; };
+    const owner = new SnapshotReadController(
+      () => loadDestinationDetailDay(
+        target, focusedDateKey, Date.now(), mergeThresholdSecs, undefined,
+        healthRef.current.status, healthRef.current.lastHeartbeatMs,
+      ),
+      viewModel => {
+        failed = false;
+        setNowMs(Date.now());
+        startTransition(() => setDayState({requestKey, viewModel, status: "ready", error: null}));
+      },
+      error => {
+        failed = true;
+        setDayState(current => ({...current, status: "error",
+          error: error instanceof Error ? error : new Error(String(error))}));
+      },
+      () => `${cacheScope.current}:${getUiTextLanguage()}`,
+    );
+    controller.current = owner;
+    owner.refresh();
+    const timer = window.setInterval(() => {
+      if (failed || focusedDateKey === formatLocalDateKey(new Date())) owner.refresh();
+    }, 2000);
+    return () => {
+      window.clearInterval(timer);
+      owner.dispose();
+      if (controller.current === owner) controller.current = null;
+    };
   }, [
-    cacheVersion,
     focusedDateKey,
     mergeThresholdSecs,
     retryRevision,
     target,
-    trackerHealth.lastHeartbeatMs,
-    trackerHealth.status,
+    language,
   ]);
 
   const setFocusedDateKey = useCallback((dateKey: string) => {

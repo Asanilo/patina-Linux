@@ -203,3 +203,22 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - SQLite 测试覆盖原生压制精确导入、排除后仍压制、裁剪父记录与标题、开放记录冻结／恢复、无 heartbeat 不推算、原生／导入同 ID、敏感配置隔离，以及输入／标题数／Unicode 字段／转义响应预算。真实 HTTP 双客户端读取结果一致，重复查询参数被拒绝。
 - 完整 `check:full` 通过：59 个 TypeScript 测试文件、39 项浏览器检查、30 项 SDK 测试及 Clippy、740 Rust passed / 21 ignored、产品边界和 Clippy。证据位于 `tmp/acceptance/multi-client-m2e-backend/`。没有安装、推送、合并或发布。
 - **M2e 未完成**：现有 History／应用详情仍使用旧 SQL／TS 链。下一执行项是薄 Tauri command、严格前端 adapter 与已有视图接入；要处理旧 caption fallback、周视图读取量和刷新／缓存失效，不能把新 API 通过等同于页面已迁移。其后继续网页／图标、设置、并发 admission、契约生成和独立后端基础。
+
+
+### M2e Desktop 接入设计补充
+
+- History／应用详情改用严格精确历史 adapter，薄 command 经 SDK 访问既有 owner；不保留读取失败后的 SQL fallback。前端显示编译器显式区分后端确认事实与旧 replay 输入，名称 override、分类、排除和 live 边界以快照为准。
+- History 的周趋势已不在页面上，删除其整周会话／标题读取及无用汇总计算；页面只取所选日。原生重叠不在详情归一化时被裁掉；caption 不转为采样，同标题采样空档保留。时钟回退也不能截短应用详情已确认的闭合记录。
+- 将 Dashboard 已验证的请求协调器移到稳定 shared owner，History 和详情共同使用单请求／失效丢弃／停止保护。当前日轮询 owner 而非本地增长，历史日不持续轮询；读取失败会重试。History 缓存包含语言和失效代数，运行时等待初始化期间发生失效也不能重新填入旧缓存。
+- 精确历史迁移使生产端 `nativeSessionPrecedence` 不再有消费者；移至 tests 作为旧契约 oracle，移除过时手工 bundle 分块，并增加生产代码不能引用 tests 的架构门禁。保留 bundle 原预算，禁止旧优先级 chunk 回归。
+- 验证进行中，首轮前端 60 个测试文件／39 项浏览器检查通过；首次完整门禁停在已退出 chunk 的旧要求。最终门禁包含新增 History 失败恢复浏览器测试、真实 API 与 Desktop facade 对照，以及标题／重叠／失效缓存回归。后续状态以核验结果为准。
+
+
+### M2e Desktop 接入核验结果（2026-10-04）
+
+- History 和应用详情实际读取已切到 `cmd_get_exact_history` → 共享 SDK → 精确历史 owner；对应会话／标题 SQL 和生产端导入优先级计算已退出。范围／响应／标题预算、来源 ID、排序、健康和开放区间由 adapter 严格校验，无 SQL fallback。网页、图标与最早记录时间仍列为独立迁移，未宣称 Desktop 全部退出数据库读取。
+- 已确认分类、名称 override 和过滤结果不随较新的本地 mapper 改变；开放事实断连后不增长。caption 只作标签，缺少样本时标题详情为空；同标题样本之间的真实空档保留。应用详情保留原生重叠的各自时长及独立标题，不因客户端时钟回退剪短确认事实。旧无 confirmed 的 replay 分支尚保留，待后续移出生产编译器。
+- History／详情共用快照控制器；变更通知失效复用现存控制器，不随每次事件重建读取队列。浏览器刻意阻塞一次读取并连续发送三次 tracking 通知，证明只补读一次；停止前尚未执行的微任务也不产生新后端请求。当前日轮询、失败重试、旧响应丢弃和语言／代数缓存保护均已自动验证。
+- 完整 `check:full` 通过：60 个 TypeScript 文件、40 项浏览器检查、30 项 SDK 测试及 Clippy、740 Rust passed / 21 ignored、产品边界与 Clippy。随后仅前端刷新并发发生变化，最终 `npm run check` 再通过全部 60 个文件／41 项浏览器检查，生产构建及 bundle 原预算通过（总 JS gzip 364.54 KiB）；Rust 未变化，未重复其门禁。
+- 当前 History 表现层微基准以一个高量日的 700 条确认记录／2,800 个真实采样为输入，平均约 3.9 ms，保留原预算。该结果不代表后端查询、网络或整机性能。证据位于 `tmp/acceptance/multi-client-m2e-desktop/`，未安装、打包、推送、合并 main 或发布。
+- 基础阶段继续进行：网页活动／详情、图标／最早时间、普通设置同步与客户端本地偏好、读取 admission／超时统一、契约类型生成和后端独立构建／安装尚未完成。还应将旧 replay 分支移出生产、核对 History 日历／小时展示在 DST 日的范围，避免把可复用后端已正确的日边界再次剪坏。新 TUI／GPUI／Web UI 仍在讨论边界之外，本次未开发。

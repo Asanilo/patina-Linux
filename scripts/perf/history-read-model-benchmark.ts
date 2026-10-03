@@ -28,6 +28,8 @@ function makeSession(id: number, startTime: number, duration: number, exeName: s
     duration,
     continuityGroupStartTime: startTime,
     titleSampleDetails,
+    confirmed: {appKey: exeName.toLowerCase(), category: "development", displayNameOverride: null,
+      origin: "native", recordId: id + 1, isOpen: false, isLive: false},
   };
 }
 
@@ -36,7 +38,7 @@ function buildSyntheticSessions(): HistorySession[] {
   const executables = ["QQ.exe", "chrome.exe", "cursor.exe", "Code.exe", "WeChat.exe"];
   const baseStart = new Date(2026, 3, 18, 0, 0, 0, 0).getTime();
 
-  for (let day = 0; day < 7; day += 1) {
+  for (let day = 0; day < 1; day += 1) {
     const dayStart = baseStart - day * 24 * 60 * 60 * 1000;
     for (let index = 0; index < 700; index += 1) {
       const exeName = executables[index % executables.length];
@@ -69,7 +71,6 @@ const reference = measureBenchmark("compile-and-timeline-reference", iterations,
 const optimized = measureBenchmark("current-history-read-model", iterations, 170, () => {
   buildHistoryReadModel({
     daySessions: sessions,
-    weeklySessions: sessions,
     selectedDate,
     trackerHealth,
     nowMs,
@@ -87,8 +88,8 @@ printBenchmarkReport({
     selectedDate: selectedDate.toISOString(),
     comparisonNotes: [
       "compile-and-timeline-reference measures only the old hot subpath shape.",
-      "current-history-read-model measures the full current read model, including weekly summaries, chart data, app summary, timeline, and diagnostics.",
-      "The synthetic dataset includes four title samples per session to exercise the 1.1.0 title-detail path under a high-volume day.",
+      "current-history-read-model measures the full current read model, including hourly presentation, app summary, timeline, and diagnostics from confirmed facts.",
+      "The synthetic dataset includes four title samples per session to exercise title-detail presentation under a high-volume day; it does not measure backend query or transport performance.",
       "Treat these as budgeted reference measurements, not direct optimization deltas.",
     ],
     titleSampleCount: sessions.reduce((sum, session) => sum + (session.titleSampleDetails?.length ?? 0), 0),

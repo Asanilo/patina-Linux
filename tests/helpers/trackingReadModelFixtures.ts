@@ -29,7 +29,6 @@ export function makeShortTimelineSessions(): HistorySession[] {
 
 export function buildHistoryView(params: {
   daySessions: HistorySession[];
-  weeklySessions?: HistorySession[];
   trackerHealth?: ReturnType<typeof resolveTrackerHealth>;
   selectedDate?: Date;
   nowMs?: number;
@@ -38,7 +37,6 @@ export function buildHistoryView(params: {
 }) {
   const {
     daySessions,
-    weeklySessions = [],
     trackerHealth = makeHealthyTrackerHealth(),
     selectedDate = new Date(0),
     nowMs = 200_000,
@@ -48,7 +46,6 @@ export function buildHistoryView(params: {
 
   return buildHistoryReadModel({
     daySessions,
-    weeklySessions,
     selectedDate,
     trackerHealth,
     nowMs,

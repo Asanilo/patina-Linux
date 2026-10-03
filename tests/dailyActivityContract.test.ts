@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { resolveNativeSessionPrecedence, type OwnedTimeRange } from "../src/platform/persistence/nativeSessionPrecedence.ts";
+import { resolveNativeSessionPrecedence, type OwnedTimeRange } from "./helpers/legacyNativeSessionPrecedence.ts";
 import { shouldTrackProcess, resolveCanonicalExecutable } from "../src/shared/classification/processNormalization.ts";
 
 interface DailyFixture {

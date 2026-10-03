@@ -219,6 +219,8 @@ const ZH_CN_UI_TEXT = {
   },
   history: {
     title: "历史",
+    readUnavailable: "暂时无法读取历史数据，将自动重试。",
+    readStale: "刷新失败，当前显示上次读取的历史，将自动重试。",
     sessionCount: (count: number) => `${count} 段会话`,
     pastSevenDays: "近 7 天",
     dailyHourlyActivity: "当日活动",
@@ -1037,6 +1039,8 @@ const EN_US_UI_TEXT: UiText = {
   },
   history: {
     title: "History",
+    readUnavailable: "History data is unavailable. Retrying automatically.",
+    readStale: "Refresh failed. Showing the last history snapshot and retrying automatically.",
     sessionCount: (count: number) => `${count} sessions`,
     pastSevenDays: "Last 7 days",
     dailyHourlyActivity: "Daily Activity",

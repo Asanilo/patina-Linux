@@ -1,22 +1,15 @@
-import type { DailySummary, HistorySession } from "../../../shared/types/sessions.ts";
+import type { HistorySession } from "../../../shared/types/sessions.ts";
 import type { TrackerHealthSnapshot } from "../../../shared/types/tracking.ts";
 import type {
   WebActivitySegment,
   WebDomainOverride,
 } from "../../../shared/types/webActivity.ts";
-import {
-  getHistoryByDate,
-  getSessionsInRange,
-} from "../../../platform/persistence/sessionReadRepository.ts";
+import type { ExactHistoryRead } from "../../../platform/persistence/historyRepository.ts";
+import { getUiTextLanguage, type UiLanguage } from "../../../shared/copy/uiText.ts";
 import {
   getWebActivitySegmentsInRange,
   loadWebDomainOverrides,
 } from "../../../platform/persistence/webActivityRepository.ts";
-import {
-  buildChartAxis,
-  buildChartData,
-  type HistoryChartPoint,
-} from "./historyFormatting.ts";
 import {
   buildHourlyActivity,
   buildHourlyCategoryActivity,
@@ -25,11 +18,9 @@ import {
 } from "../../../shared/lib/hourlyActivityCompiler.ts";
 import {
   buildAppSummary,
-  buildDailySummaries,
   buildNormalizedAppStats,
   buildTimelineSessions,
   getDayRange,
-  getRollingDayRanges,
   type NormalizedAppSummaryItem,
   type TimelineSession,
 } from "../../../shared/lib/sessionReadCompiler.ts";
@@ -43,8 +34,10 @@ import {
 
 export interface HistorySnapshot {
   fetchedAtMs: number;
+  language: UiLanguage;
+  trackerHealth: TrackerHealthSnapshot;
+  liveCutoffMs: number;
   daySessions: HistorySession[];
-  weeklySessions: HistorySession[];
   dayWebSegments: WebActivitySegment[];
   webDomainOverrides: Record<string, WebDomainOverride>;
 }
@@ -53,24 +46,22 @@ export interface HistoryReadModel {
   compiledSessions: ReturnType<typeof compileForRange>;
   timelineSessions: TimelineSession[];
   appSummary: NormalizedAppSummaryItem[];
-  weekly: DailySummary[];
-  chartData: HistoryChartPoint[];
-  chartAxis: ReturnType<typeof buildChartAxis>;
   hourlyActivity: HourlyActivityPoint[];
   hourlyCategoryActivity: HourlyCategoryActivity;
   diagnostics: ReadModelDiagnostics;
 }
 
 interface HistorySnapshotDeps {
-  getHistoryByDate: typeof getHistoryByDate;
-  getSessionsInRange: typeof getSessionsInRange;
+  getExactHistory: (from: number, to: number, language: UiLanguage) => Promise<ExactHistoryRead>;
   getWebActivitySegmentsInRange: typeof getWebActivitySegmentsInRange;
   loadWebDomainOverrides: typeof loadWebDomainOverrides;
 }
 
 const DEFAULT_HISTORY_SNAPSHOT_DEPS: HistorySnapshotDeps = {
-  getHistoryByDate,
-  getSessionsInRange,
+  getExactHistory: async (from, to, language) => {
+    const { getExactHistorySnapshot } = await import("../../../platform/persistence/historyRepository.ts");
+    return getExactHistorySnapshot(from, to, undefined, language);
+  },
   getWebActivitySegmentsInRange,
   loadWebDomainOverrides,
 };
@@ -119,24 +110,22 @@ function filterTimelineSessionsForDisplay(
 
 export async function loadHistorySnapshot(
   date: Date,
-  rollingDayCount: number = 7,
   deps: HistorySnapshotDeps = DEFAULT_HISTORY_SNAPSHOT_DEPS,
 ): Promise<HistorySnapshot> {
-  const selectedDayRange = getDayRange(date);
-  const rollingRanges = getRollingDayRanges(rollingDayCount);
-  const weeklyRangeStart = rollingRanges[0]?.startMs ?? selectedDayRange.startMs;
-  const weeklyRangeEnd = rollingRanges[rollingRanges.length - 1]?.endMs ?? selectedDayRange.endMs;
-
-  const [daySessions, weeklySessions, webSnapshotPart] = await Promise.all([
-    deps.getHistoryByDate(date),
-    deps.getSessionsInRange(weeklyRangeStart, weeklyRangeEnd),
+  const selectedDayRange = getDayRange(date, Number.MAX_SAFE_INTEGER);
+  const language = getUiTextLanguage();
+  const [read, webSnapshotPart] = await Promise.all([
+    deps.getExactHistory(selectedDayRange.startMs, selectedDayRange.endMs, language),
     loadOptionalWebSnapshotPart(deps, selectedDayRange),
   ]);
-
+  if (language !== getUiTextLanguage()) throw new Error("History language changed during read");
   return {
-    fetchedAtMs: Date.now(),
-    daySessions,
-    weeklySessions,
+    fetchedAtMs: read.sampledAtMs,
+    language,
+    trackerHealth: { status: read.trackingHealth.status === "healthy" ? "healthy" : "stale",
+      lastHeartbeatMs: read.trackingHealth.lastHeartbeatMs, checkedAtMs: read.sampledAtMs, staleAfterMs: read.trackingHealth.staleAfterMs },
+    liveCutoffMs: read.trackingHealth.liveCutoffMs,
+    daySessions: read.sessions,
     dayWebSegments: webSnapshotPart.dayWebSegments,
     webDomainOverrides: webSnapshotPart.webDomainOverrides,
   };
@@ -144,7 +133,6 @@ export async function loadHistorySnapshot(
 
 export function buildHistoryReadModel(params: {
   daySessions: HistorySession[];
-  weeklySessions: HistorySession[];
   trackerHealth: TrackerHealthSnapshot;
   selectedDate: Date;
   nowMs: number;
@@ -153,7 +141,6 @@ export function buildHistoryReadModel(params: {
 }): HistoryReadModel {
   const {
     daySessions,
-    weeklySessions,
     trackerHealth,
     selectedDate,
     nowMs,
@@ -161,9 +148,7 @@ export function buildHistoryReadModel(params: {
     mergeThresholdSecs,
   } = params;
   const selectedDayRange = getDayRange(selectedDate, nowMs);
-  const rollingRanges = getRollingDayRanges(7, nowMs);
   const liveDaySessions = materializeLiveSessions(daySessions, trackerHealth, nowMs);
-  const liveWeeklySessions = materializeLiveSessions(weeklySessions, trackerHealth, nowMs);
   const compiledSessions = compileForRange(liveDaySessions, selectedDayRange, 0);
   const mergedTimelineSessions = buildTimelineSessions(compiledSessions, mergeThresholdSecs);
   const timelineSessions = filterTimelineSessionsForDisplay(
@@ -173,12 +158,6 @@ export function buildHistoryReadModel(params: {
   const appSummary = buildAppSummary(buildNormalizedAppStats(compiledSessions));
   const hourlyActivity = buildHourlyActivity(compiledSessions);
   const hourlyCategoryActivity = buildHourlyCategoryActivity(compiledSessions);
-  const weekly = buildDailySummaries(
-    liveWeeklySessions,
-    rollingRanges,
-    0,
-  );
-  const chartData = buildChartData(weekly);
   const diagnostics = buildReadModelDiagnostics(
     compiledSessions,
     trackerHealth,
@@ -191,9 +170,6 @@ export function buildHistoryReadModel(params: {
     compiledSessions,
     timelineSessions,
     appSummary,
-    weekly,
-    chartData,
-    chartAxis: buildChartAxis(chartData),
     hourlyActivity,
     hourlyCategoryActivity,
     diagnostics,

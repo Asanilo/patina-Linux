@@ -253,7 +253,7 @@ function clipTitleSampleDetails(
     }))
     .filter((sample) => sample.title.trim() && sample.endTime > sample.startTime);
 
-  if (details.length > 0) {
+  if (details.length > 0 || session.confirmed) {
     return details;
   }
 
@@ -298,7 +298,7 @@ function buildSegment(
     return null;
   }
 
-  const mapped = AppClassification.mapApp(session.appKey, { appName: session.displayName });
+  const category = session.confirmed?.category ?? AppClassification.mapApp(session.appKey, { appName: session.displayName }).category;
   const viewportDurationMs = Math.max(1, viewport.endMs - viewport.startMs);
   const startRatio = clampRatio((clippedStart - viewport.startMs) / viewportDurationMs);
   const endRatio = clampRatio((clippedEnd - viewport.startMs) / viewportDurationMs);
@@ -312,8 +312,8 @@ function buildSegment(
     exeName: session.exeName,
     displayName: session.displayName,
     displayTitle: session.displayTitle,
-    category: mapped.category,
-    categoryLabel: AppClassification.getCategoryLabel(mapped.category),
+    category,
+    categoryLabel: AppClassification.getCategoryLabel(category),
     startTime: clippedStart,
     endTime: clippedEnd,
     duration: clippedEnd - clippedStart,

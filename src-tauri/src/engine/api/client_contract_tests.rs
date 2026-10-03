@@ -226,6 +226,12 @@ async fn independent_and_desktop_clients_observe_the_same_committed_classificati
     assert_eq!(product.days[0].active_ms, 1000);
     let dashboard = native.dashboard(&from, "en-US").await.unwrap();
     let history = native.exact_history(1000, 2000, "en-US").await.unwrap();
+    let desktop_history = desktop.exact_history(1000, 2000, "en-US").await.unwrap();
+    assert_eq!(history.records, desktop_history.records);
+    assert_eq!(
+        history.configuration_revision,
+        desktop_history.configuration_revision
+    );
     assert_eq!(history.records.len(), 1);
     assert_eq!(history.records[0].start_ms, 1000);
     assert_eq!(history.records[0].end_ms, 2000);

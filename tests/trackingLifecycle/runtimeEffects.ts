@@ -533,7 +533,6 @@ export function runRuntimeEffectsTests() {
     ));
     const history = buildHistoryView({
       daySessions: afterCleanup,
-      weeklySessions: afterCleanup,
       trackerHealth,
       nowMs,
       minSessionSecs: 0,

@@ -71,6 +71,7 @@ interface DestinationDetailDayDependencies {
 }
 
 interface UnpositionedDetailRecord {
+  confirmedInterval?: boolean;
   id: string;
   activityId: string;
   sourceActivityIds: string[];
@@ -137,7 +138,7 @@ function canMergeDetailRecords(
     && previous.activityId === current.activityId
     && previous.secondaryText === current.secondaryText
     && previous.url === current.url
-    && current.startTime - previous.endTime <= ADJACENT_DETAIL_RECORD_GAP_MS;
+    && current.startTime - previous.endTime <= (previous.confirmedInterval || current.confirmedInterval ? 0 : ADJACENT_DETAIL_RECORD_GAP_MS);
 }
 
 function normalizeDetailRecords(
@@ -157,6 +158,12 @@ function normalizeDetailRecords(
   const nonOverlapping: UnpositionedDetailRecord[] = [];
 
   for (const record of sorted) {
+    // Confirmed native facts may overlap. A display compaction must not erase
+    // their recorded duration or discard an independently sampled title.
+    if (record.confirmedInterval) {
+      nonOverlapping.push({ ...record });
+      continue;
+    }
     const previous = nonOverlapping[nonOverlapping.length - 1];
     const startTime = previous
       ? Math.max(record.startTime, previous.endTime)
@@ -295,7 +302,10 @@ function buildAppDetailRecords(
     const sessionEnd = resolveMaterializedSessionEnd(session);
     const { activity, activityId, sourceActivityIds } = membership;
 
-    const samples = activity.titleSampleDetails
+    const sourceSamples = session.confirmed
+      ? compileSessions([session], {startMs: dayStartMs, endMs: clipEndMs, minSessionSecs: 0})[0]?.titleSampleDetails ?? []
+      : activity.titleSampleDetails;
+    const samples = sourceSamples
       .map((sample, index) => ({
         ...sample,
         index,
@@ -314,6 +324,7 @@ function buildAppDetailRecords(
     if (samples.length === 0) {
       records.push({
         id: `app:${session.id}`,
+        confirmedInterval: Boolean(session.confirmed),
         activityId,
         sourceActivityIds,
         startTime: session.startTime,
@@ -321,7 +332,7 @@ function buildAppDetailRecords(
         title: cleanOptionalText(activity.displayTitle),
         secondaryText: null,
         url: null,
-        current: session.endTime === null,
+        current: session.confirmed?.isLive ?? session.endTime === null,
       });
       continue;
     }
@@ -334,6 +345,7 @@ function buildAppDetailRecords(
       if (sample.startTime > cursor) {
         records.push({
           id: `app:${session.id}:gap:${cursor}`,
+          confirmedInterval: Boolean(session.confirmed),
           activityId,
           sourceActivityIds,
           startTime: cursor,
@@ -349,6 +361,7 @@ function buildAppDetailRecords(
       if (sample.endTime <= sampleStartTime) continue;
       records.push({
         id: `app:${session.id}:sample:${sample.index}`,
+        confirmedInterval: Boolean(session.confirmed),
         activityId,
         sourceActivityIds,
         startTime: sampleStartTime,
@@ -356,7 +369,7 @@ function buildAppDetailRecords(
         title: cleanOptionalText(sample.title),
         secondaryText: null,
         url: null,
-        current: session.endTime === null && sample.endTime >= sessionEnd,
+        current: (session.confirmed?.isLive ?? session.endTime === null) && sample.endTime >= sessionEnd,
       });
       cursor = Math.max(cursor, sample.endTime);
     }
@@ -364,6 +377,7 @@ function buildAppDetailRecords(
     if (cursor < sessionEnd) {
       records.push({
         id: `app:${session.id}:gap:${cursor}`,
+        confirmedInterval: Boolean(session.confirmed),
         activityId,
         sourceActivityIds,
         startTime: cursor,
@@ -371,7 +385,7 @@ function buildAppDetailRecords(
         title: fallbackTitle,
         secondaryText: null,
         url: null,
-        current: session.endTime === null,
+        current: session.confirmed?.isLive ?? session.endTime === null,
       });
     }
   }
@@ -386,6 +400,7 @@ function buildAppDetailRecords(
     Array.from(activityMemberships.values()).flatMap((membership) => (
       membership.activity.titleSampleDetails.map((sample, index) => ({
         id: `${membership.activityId}:title:${index}`,
+        confirmedInterval: Boolean(membership.activity.confirmed),
         activityId: membership.activityId,
         sourceActivityIds: membership.sourceActivityIds,
         startTime: sample.startTime,
@@ -402,6 +417,9 @@ function buildAppDetailRecords(
     dayEndMs,
   );
   const detailRecordsByActivityId = new Map<string, DestinationDetailRecord[]>();
+  for (const membership of activityMemberships.values()) {
+    if (membership.activity.confirmed) detailRecordsByActivityId.set(membership.activityId, []);
+  }
   for (const record of normalizedDetailRecords) {
     const current = detailRecordsByActivityId.get(record.activityId);
     if (current) {
@@ -497,7 +515,7 @@ function buildDayViewModel(
     activities,
     totalDuration: records.reduce((total, record) => total + record.duration, 0),
     firstStartTime: records[0]?.startTime ?? null,
-    lastEndTime: records[records.length - 1]?.endTime ?? null,
+    lastEndTime: records.length ? Math.max(...records.map(record => record.endTime)) : null,
   };
 }
 
@@ -532,7 +550,7 @@ export async function loadDestinationDetailDay(
       sessions,
       target,
       bounds.startMs,
-      bounds.endMs,
+      sessions.every(session => session.confirmed) ? bounds.requestedEndMs : bounds.endMs,
       bounds.requestedEndMs,
       mergeThresholdSecs,
     );

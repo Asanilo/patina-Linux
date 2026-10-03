@@ -150,9 +150,13 @@ function makeDashboardSnapshot(fetchedAtMs: number) {
 
 function makeHistorySnapshot(fetchedAtMs: number) {
   return {
+    language: "zh-CN" as const,
+    trackerHealth: {status: "stale" as const, lastHeartbeatMs: null, checkedAtMs: fetchedAtMs, staleAfterMs: 8000},
+    liveCutoffMs: 0,
+    dayWebSegments: [],
+    webDomainOverrides: {},
     daySessions: [],
     fetchedAtMs,
-    weeklySessions: [],
   };
 }
 
@@ -385,13 +389,12 @@ await runTest("history snapshot cache keeps a bounded LRU set", () => {
     setHistorySnapshotCache(
       makeHistorySnapshot(day),
       new Date(2026, 0, day),
-      7,
     );
   }
 
   assert.equal(getHistorySnapshotCacheSizeForTests(), 14);
-  assert.equal(getHistorySnapshotCache(new Date(2026, 0, 1), 7), null);
-  assert.equal(getHistorySnapshotCache(new Date(2026, 0, 15), 7)?.fetchedAtMs, 15);
+  assert.equal(getHistorySnapshotCache(new Date(2026, 0, 1)), null);
+  assert.equal(getHistorySnapshotCache(new Date(2026, 0, 15))?.fetchedAtMs, 15);
 });
 
 console.log(`Passed ${passed} startup warmup tests`);

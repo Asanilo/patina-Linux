@@ -38,7 +38,7 @@ export function materializeLiveSessions(
   const liveCutoffMs = resolveLiveCutoffMs(trackerHealth, nowMs);
 
   return sessions.map((session) => {
-    if (session.endTime !== null) {
+    if (session.confirmed || session.endTime !== null) {
       return session;
     }
 

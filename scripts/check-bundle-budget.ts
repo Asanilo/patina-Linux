@@ -15,7 +15,6 @@ const CHUNK_BUDGETS = [
   { label: "settings", pattern: /^Settings-.*\.js$/, gzipKiB: 24 },
   { label: "settings-scheduled-backup", pattern: /^SettingsScheduledBackupPanel-.*\.js$/, gzipKiB: 7 },
   { label: "settings-activity-import", pattern: /^SettingsActivityImportPanel-.*\.js$/, gzipKiB: 3 },
-  { label: "activity-precedence", pattern: /^activity-precedence-.*\.js$/, gzipKiB: 3 },
   { label: "destination-detail", pattern: /^DestinationDetailDialog-.*\.js$/, gzipKiB: 8 },
   { label: "ui-shared", pattern: /^ui-.*\.js$/, gzipKiB: 2 },
   { label: "data-destination", pattern: /^DataDestinationTrendPanel-.*\.js$/, gzipKiB: 7 },
@@ -53,6 +52,9 @@ function main() {
   });
 
   const violations: string[] = [];
+  if (measured.some(item => /^activity-precedence-.*\.js$/.test(item.file))) {
+    violations.push("retired client activity-precedence implementation must not be shipped");
+  }
 
   for (const budget of CHUNK_BUDGETS) {
     const asset = measured.find((item) => budget.pattern.test(item.file));

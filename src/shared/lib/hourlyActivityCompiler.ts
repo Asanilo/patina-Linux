@@ -2,6 +2,7 @@ import { AppClassification } from "../classification/appClassification.ts";
 import type { AppCategory } from "../classification/categoryTokens.ts";
 import { UI_TEXT } from "../copy/uiText.ts";
 import type { HistorySession } from "../types/sessions.ts";
+import { getSessionCategory } from "./sessionReadCompiler.ts";
 
 export interface HourlyActivityPoint {
   hour: string;
@@ -62,7 +63,7 @@ function forEachHourlySessionSegment(
   visit: (hourIndex: number, durationMs: number) => void,
 ) {
   const start = new Date(session.startTime);
-  const end = session.endTime ? new Date(session.endTime) : new Date();
+  const end = session.endTime !== null ? new Date(session.endTime) : new Date();
   let currentPtr = start.getTime();
 
   while (currentPtr < end.getTime()) {
@@ -129,17 +130,17 @@ export function buildHourlyCategoryActivity(
   const appCategoryCache = new Map<string, CategoryDescriptor>();
 
   for (const session of sessions) {
-    const cacheKey = `${session.exeName}\0${session.appName}`;
+    const cacheKey = JSON.stringify([session.exeName, session.appName, session.confirmed?.category ?? null]);
     let descriptor = appCategoryCache.get(cacheKey);
     if (!descriptor) {
-      const mapped = AppClassification.mapApp(session.exeName, { appName: session.appName });
+      const category = getSessionCategory(session);
       descriptor = {
-        category: mapped.category,
-        name: AppClassification.getCategoryLabel(mapped.category),
-        color: AppClassification.getCategoryColor(mapped.category),
+        category,
+        name: AppClassification.getCategoryLabel(category),
+        color: AppClassification.getCategoryColor(category),
       };
       appCategoryCache.set(cacheKey, descriptor);
-      categoryDescriptors.set(mapped.category, descriptor);
+      categoryDescriptors.set(category, descriptor);
     }
 
     forEachHourlySessionSegment(session, (hourIndex, durationMs) => {

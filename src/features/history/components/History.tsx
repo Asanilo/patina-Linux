@@ -16,6 +16,8 @@ import {
   buildHistoryReadModel,
   type HistorySnapshot,
 } from "../services/historyReadModel";
+import { SnapshotReadController } from "../../../shared/lib/snapshotReadController.ts";
+import { getSessionCategory } from "../../../shared/lib/sessionReadCompiler.ts";
 import type { TrackerHealthSnapshot } from "../../../shared/types/tracking";
 import { AppClassification } from "../../../shared/classification/appClassification.ts";
 import type { AppCategory } from "../../../shared/classification/categoryTokens.ts";
@@ -29,6 +31,8 @@ import type { HourlyActivityChartMode } from "../../../shared/settings/appSettin
 import {
   getHistorySnapshotCache,
   setHistorySnapshotCache,
+  getHistorySnapshotCacheGeneration,
+  clearHistorySnapshotCache,
 } from "../services/historySnapshotCache";
 import {
   buildHistoryTimelineViewModel,
@@ -68,7 +72,7 @@ interface Props {
   minSessionSecs: number;
   onMinSessionSecsChange?: (value: number) => void;
   trackerHealth: TrackerHealthSnapshot;
-  loadHistorySnapshot: (date: Date, rollingDayCount?: number) => Promise<HistorySnapshot>;
+  loadHistorySnapshot: (date: Date) => Promise<HistorySnapshot>;
   mappingVersion?: number;
   selectedDateRequest?: {
     dateKey: string;
@@ -311,9 +315,11 @@ export default function History({
   const [rawDaySessions, setRawDaySessions] = useState<HistorySession[]>(
     () => initialCachedSnapshot?.daySessions ?? [],
   );
-  const [rawWeeklySessions, setRawWeeklySessions] = useState<HistorySession[]>(
-    () => initialCachedSnapshot?.weeklySessions ?? [],
-  );
+  const [readHealth, setReadHealth] = useState<TrackerHealthSnapshot | null>(() => initialCachedSnapshot?.trackerHealth ?? null);
+  const [readError, setReadError] = useState<unknown | null>(null);
+  const readRevision = useRef({refreshKey, mappingVersion});
+  const historyController = useRef<SnapshotReadController<HistorySnapshot> | null>(null);
+  const uiLanguage = getUiLocale();
   const [rawDayWebSegments, setRawDayWebSegments] = useState<WebActivitySegment[]>(
     () => initialCachedSnapshot?.dayWebSegments ?? [],
   );
@@ -491,81 +497,62 @@ export default function History({
   }, [resetTimelineViewportForDate, selectedDate]);
 
   useEffect(() => {
-    if (!refreshEnabled) return undefined;
-
-    let cancelled = false;
-    const requestDate = new Date(selectedDate);
-    const cachedSnapshot = getHistorySnapshotCache(requestDate);
-    const requestDateKey = formatHistoryDateCacheKey(requestDate);
-
-    if (cachedSnapshot) {
-      setRawDaySessions(cachedSnapshot.daySessions);
-      setRawWeeklySessions(cachedSnapshot.weeklySessions);
-      setRawDayWebSegments(cachedSnapshot.dayWebSegments);
-      setWebDomainOverrides(cachedSnapshot.webDomainOverrides);
-      setNowMs(cachedSnapshot.fetchedAtMs);
-      setVisibleDateKey(requestDateKey);
-      setLoading(false);
-    } else if (visibleDateKey !== requestDateKey) {
-      setRawDaySessions([]);
-      setRawWeeklySessions([]);
-      setRawDayWebSegments([]);
-      setWebDomainOverrides({});
-      setVisibleDateKey(null);
+    if (readRevision.current.refreshKey !== refreshKey || readRevision.current.mappingVersion !== mappingVersion) {
+      clearHistorySnapshotCache();
+      historyController.current?.refresh(true);
     }
-
-    if (!cachedSnapshot) {
-      setLoading(!cachedSnapshot);
-    }
-
-    const load = async () => {
-      try {
-        const snapshot = await loadHistorySnapshot(requestDate);
-        if (cancelled) return;
-
-        setHistorySnapshotCache(snapshot, requestDate);
-
-        setRawDaySessions(snapshot.daySessions);
-        setRawWeeklySessions(snapshot.weeklySessions);
-        setRawDayWebSegments(snapshot.dayWebSegments);
-        setWebDomainOverrides(snapshot.webDomainOverrides);
-        setNowMs(snapshot.fetchedAtMs);
-        setVisibleDateKey(requestDateKey);
-        hasLoadedRef.current = true;
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    };
-
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [loadHistorySnapshot, refreshEnabled, refreshKey, selectedDate]);
+    readRevision.current = {refreshKey, mappingVersion};
+  }, [refreshKey, mappingVersion]);
 
   useEffect(() => {
-    const hasLiveWebSegment = webActivityEnabled
-      && rawDayWebSegments.some((segment) => segment.endTime === null);
-    const hasLiveSession = rawDaySessions.some((session) => session.endTime === null)
-      || rawWeeklySessions.some((session) => session.endTime === null)
-      || hasLiveWebSegment;
-
-    if (!refreshEnabled || !hasLiveSession || trackerHealth.status !== "healthy") {
-      return;
+    if (!refreshEnabled) return undefined;
+    const requestDate = new Date(selectedDate);
+    const requestDateKey = formatHistoryDateCacheKey(requestDate);
+    const cached = getHistorySnapshotCache(requestDate);
+    const displayed = visibleDateKey === requestDateKey && readHealth !== null;
+    let failed = false;
+    const apply = (snapshot: HistorySnapshot) => {
+      setRawDaySessions(snapshot.daySessions);
+      setRawDayWebSegments(snapshot.dayWebSegments);
+      setWebDomainOverrides(snapshot.webDomainOverrides);
+      setReadHealth(snapshot.trackerHealth);
+      setNowMs(snapshot.fetchedAtMs);
+      setVisibleDateKey(requestDateKey);
+      setLoading(false);
+    };
+    if (cached) apply(cached);
+    else if (!displayed) {
+      setRawDaySessions([]);
+      setRawDayWebSegments([]);
+      setWebDomainOverrides({});
+      setReadHealth(null);
+      setVisibleDateKey(null);
+      setLoading(true);
     }
-
-    // Keep live durations moving locally so the UI stays fresh without
-    // refetching the selected day and weekly range on every timer tick.
+    if (!displayed) setReadError(null);
+    const owner = new SnapshotReadController(() => loadHistorySnapshot(requestDate), snapshot => {
+      setHistorySnapshotCache(snapshot, requestDate);
+      apply(snapshot);
+      failed = false;
+      setReadError(null);
+      hasLoadedRef.current = true;
+    }, error => {
+      failed = true;
+      setLoading(false);
+      setReadError(error ?? new Error("History unavailable"));
+      console.warn("Failed to load History snapshot", error);
+    }, () => `${getHistorySnapshotCacheGeneration()}:${requestDateKey}:${getUiLocale()}`);
+    historyController.current = owner;
+    owner.refresh();
     const timer = window.setInterval(() => {
-      setNowMs(Date.now());
-    }, refreshIntervalSecs * 1000);
-
+      if (failed || requestDate.toDateString() === new Date().toDateString()) owner.refresh();
+    }, Math.max(1, refreshIntervalSecs) * 1000);
     return () => {
       window.clearInterval(timer);
+      owner.dispose();
+      if (historyController.current === owner) historyController.current = null;
     };
-  }, [rawDaySessions, rawWeeklySessions, rawDayWebSegments, refreshEnabled, refreshIntervalSecs, trackerHealth.status, webActivityEnabled]);
+  }, [loadHistorySnapshot, refreshEnabled, selectedDate, refreshIntervalSecs, uiLanguage]);
 
   const changeDate = (delta: number) => {
     const nextDate = new Date(selectedDate);
@@ -667,18 +654,17 @@ export default function History({
   }, [timelineDetailsPopover, updateTimelineDetailsPopoverPosition]);
 
   const isToday = selectedDate.toDateString() === today.toDateString();
-  const showQuietPlaceholder = loading;
+  const showQuietPlaceholder = loading || Boolean(readError && !readHealth);
   const historyView = useMemo(
     () => buildHistoryReadModel({
       daySessions: rawDaySessions,
-      weeklySessions: rawWeeklySessions,
       selectedDate,
       nowMs,
-      trackerHealth,
+      trackerHealth: readHealth ?? trackerHealth,
       minSessionSecs,
       mergeThresholdSecs,
     }),
-    [mappingVersion, mergeThresholdSecs, minSessionSecs, nowMs, rawDaySessions, rawWeeklySessions, selectedDate, trackerHealth],
+    [mappingVersion, mergeThresholdSecs, minSessionSecs, nowMs, rawDaySessions, selectedDate, trackerHealth, readHealth],
   );
   const {
     compiledSessions,
@@ -753,9 +739,11 @@ export default function History({
     })),
     [],
   );
+  const categoryByApp = useMemo(() => new Map(compiledSessions.map(session => [session.appKey, getSessionCategory(session)])), [compiledSessions]);
   const appDistributionItems = useMemo<DayDistributionItem[]>(
     () => appSummary.map((app) => {
-      const mapped = AppClassification.mapApp(app.exeName, { appName: app.appName });
+      const category = categoryByApp.get(app.exeName) ?? AppClassification.mapApp(app.exeName, { appName: app.appName }).category;
+      const mapped = { color: AppClassification.getCategoryColor(category), name: AppClassification.mapDefaultApp(app.exeName).name };
       const overrideColor = AppClassification.getUserOverride(app.exeName)?.color;
       const accentColor = overrideColor ?? iconThemeColors[app.exeName] ?? mapped.color;
       const appName = app.appName.trim() || mapped.name;
@@ -778,7 +766,7 @@ export default function History({
         }),
       };
     }),
-    [appSummary, iconThemeColors, icons],
+    [appSummary, categoryByApp, iconThemeColors, icons],
   );
   const categoryDistributionItems = useMemo<DayDistributionItem[]>(() => {
     const summaries = new Map<AppCategory, Omit<DayDistributionItem, "key" | "percentage">>();
@@ -788,8 +776,7 @@ export default function History({
       const duration = Math.max(0, session.duration ?? 0);
       if (duration <= 0) continue;
 
-      const mapped = AppClassification.mapApp(session.appKey, { appName: session.displayName });
-      const category = mapped.category;
+      const category = getSessionCategory(session);
       const current = summaries.get(category);
       totalDuration += duration;
 
@@ -1187,13 +1174,14 @@ export default function History({
     return (
       <div className={`history-timeline-list flex-1 overflow-y-auto custom-scrollbar space-y-2 pr-1 ${className}`.trim()}>
           {timelineSessions.map((session) => {
-            const mapped = AppClassification.mapApp(session.exeName, { appName: session.displayName });
+            const category = getSessionCategory(session);
+            const mapped = {category, color: AppClassification.getCategoryColor(category)};
             const overrideColor = AppClassification.getUserOverride(session.exeName)?.color;
             const accentColor = overrideColor ?? iconThemeColors[session.exeName] ?? mapped.color;
             const titleSamples = session.titleSamples.length > 0
               ? session.titleSamples
               : (session.displayTitle ? [session.displayTitle] : []);
-            const titleSampleDetails = session.titleSampleDetails.length > 0
+            const titleSampleDetails = session.titleSampleDetails.length > 0 || session.confirmed
               ? session.titleSampleDetails
               : titleSamples.map((title) => ({
                 title,
@@ -1413,7 +1401,9 @@ export default function History({
       </div>
     </>
   );
-  const renderDaySummary = () => (
+  const renderDaySummary = () => readError && !readHealth ? (
+    <div className="qp-panel p-5 text-sm text-[var(--qp-text-secondary)]">{UI_TEXT.history.readUnavailable}</div>
+  ) : (
     <div className="qp-panel p-5 history-day-summary-card">
       <h3 className="font-semibold text-[var(--qp-text-primary)] text-sm">{historyCopy.daySummary}</h3>
       <div className="history-day-summary-body">
@@ -1440,7 +1430,7 @@ export default function History({
       <QuietPageHeader
         icon={<Clock size={18} />}
         title={UI_TEXT.history.title}
-        subtitle={`${formatDateLabel(selectedDate)} · ${UI_TEXT.history.sessionCount(timelineSessions.length)}`}
+        subtitle={readError ? <span role="status">{formatDateLabel(selectedDate)} · {readHealth ? UI_TEXT.history.readStale : UI_TEXT.history.readUnavailable}</span> : `${formatDateLabel(selectedDate)} · ${UI_TEXT.history.sessionCount(timelineSessions.length)}`}
         rightSlot={(
           <div className="flex items-center gap-2 shrink-0">
             <button

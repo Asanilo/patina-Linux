@@ -152,7 +152,6 @@ export function runHistoryReadModelTests() {
     const sessions = makeShortTimelineSessions();
     const view = buildHistoryView({
       daySessions: sessions,
-      weeklySessions: sessions,
       trackerHealth: makeHealthyTrackerHealth(100_000),
       nowMs: 100_000,
       minSessionSecs: 30,
@@ -160,7 +159,6 @@ export function runHistoryReadModelTests() {
 
     assert.equal(view.timelineSessions.length, 0);
     assert.equal(view.appSummary.reduce((sum, item) => sum + item.duration, 0), 40_000);
-    assert.equal(view.weekly.reduce((sum, item) => sum + item.totalDuration, 0), 40_000);
   });
 
   runTest("history timeline applies min session threshold to live sessions", () => {

@@ -1,7 +1,7 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { buildDashboardReadModel, type DashboardReadModel, type DashboardSnapshot } from "../services/dashboardReadModel.ts";
 import { getDashboardSnapshotCache, getDashboardSnapshotCacheGeneration, clearDashboardSnapshotCache } from "../services/dashboardSnapshotCache.ts";
-import { DashboardRefresh } from "../services/dashboardRefresh.ts";
+import { SnapshotReadController } from "../../../shared/lib/snapshotReadController.ts";
 import { getUiTextLanguage } from "../../../shared/copy/uiText.ts";
 export interface UseStatsResult {
   dashboard: DashboardReadModel;
@@ -18,7 +18,7 @@ export function useDashboardStats(
 ): UseStatsResult {
   const [snapshot, setSnapshot] = useState(() => getDashboardSnapshotCache());
   const [readError, setReadError] = useState<unknown | null>(null);
-  const controller = useRef<DashboardRefresh<DashboardSnapshot> | null>(null);
+  const controller = useRef<SnapshotReadController<DashboardSnapshot> | null>(null);
   const hasRequestedInitialSnapshot = useRef(false);
   const lastInvalidation = useRef({ refreshKey, mappingVersion });
   const language = getUiTextLanguage();
@@ -26,7 +26,7 @@ export function useDashboardStats(
     if (!classificationReady) {
       return;
     }
-    const owner = new DashboardRefresh(() => loadDashboardSnapshot(new Date()), value => {
+    const owner = new SnapshotReadController(() => loadDashboardSnapshot(new Date()), value => {
       startTransition(() => { setSnapshot(value); setReadError(null); });
     }, error => { setReadError(error ?? new Error("Dashboard unavailable")); console.warn("Failed to load Dashboard snapshot", error); },
     () => `${getDashboardSnapshotCacheGeneration()}:${new Date().toDateString()}:${getUiTextLanguage()}`);

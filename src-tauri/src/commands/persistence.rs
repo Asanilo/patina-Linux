@@ -4,6 +4,33 @@ use crate::engine::tracking::runtime::emit_tracking_data_changed;
 use tauri::{AppHandle, Manager, Runtime};
 
 #[tauri::command]
+pub async fn cmd_get_exact_history<R: Runtime>(
+    from_ms: i64,
+    to_ms: i64,
+    language: String,
+    app: AppHandle<R>,
+) -> Result<patina_protocol::history::ExactHistorySnapshot, String> {
+    if !patina_protocol::history::valid_range(from_ms, to_ms) {
+        return Err("invalid exact history range".into());
+    }
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        return client
+            .exact_history(from_ms, to_ms, &language)
+            .await
+            .map_err(|error| error.to_string());
+    }
+    let pool = sqlite_pool::wait_for_sqlite_pool(&app).await?;
+    crate::data::repositories::exact_history::load_exact_history(
+        &pool,
+        from_ms,
+        to_ms,
+        crate::app::runtime::now_ms() as i64,
+        &language,
+    )
+    .await
+}
+
+#[tauri::command]
 pub async fn cmd_get_dashboard_product<R: Runtime>(
     date: String,
     language: String,

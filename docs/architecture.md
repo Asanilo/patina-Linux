@@ -331,7 +331,7 @@ src/
 
 `features/destination/*` 拥有应用与网站活动详情的共享只读领域模型和详情界面；`Data`、`History`、`Dashboard` 只能通过其公开 target/request 契约启动详情，不各自复制聚合与时间线规则。
 
-`features/data/*` 拥有长期趋势的页面状态与纯只读模型。`Data` 页面父级负责总趋势、热力图、应用趋势快照和首屏 bootstrap 持久化；feature-owned 目标趋势面板负责应用、分类、网页模式及其搜索、选择和图表交互，不能自行写入 bootstrap 或复制快照读取链路。应用趋势和分类趋势复用同一会话规范化、排除、别名合并、区间裁剪与本地日期边界；分类维度不能为方便展示而新建第二条数据库读取路径。网页趋势复用现有网页活动表、域名 override 与本地日期规则，但通过独立的域名级只读 adapter 只读取域名、图标和时间边界，不把 URL 或标题带入趋势模型；该 adapter 与快照仅在用户切换到网页趋势后加载。外部活动导入采用有明确 owner 的独立事实表，并在共享 persistence 读边界按“本机精确事实 > 外部精确事实 > 外部小时汇总”即时组合；它不引入持久化聚合 schema 或后台 worker。daemon client 模式下，Desktop 只负责文件选择和写入 profile 控制目录中的 owner-only 一次性暂存票据；API 不接受任意路径或 CSV 正文，`patinad` 必须重新校验大小、SHA-256 和 CSV 内容后再由 data owner 事务提交。小时汇总不得进入 History 或详情时间线，网页明细继续由 `features/destination/*` 统一读取和展示。
+`features/data/*` 拥有长期趋势的页面状态与纯只读模型。`Data` 页面父级负责总趋势、热力图、应用趋势快照和首屏 bootstrap 持久化；feature-owned 目标趋势面板负责应用、分类、网页模式及其搜索、选择和图表交互，不能自行写入 bootstrap 或复制快照读取链路。应用趋势和分类趋势复用后端产品每日快照中的最终分类、排除、规范应用身份、区间分配与日期边界；分类维度不能为方便展示而新建第二条数据库读取路径。网页趋势复用现有网页活动表、域名 override 与本地日期规则，但通过独立的域名级只读 adapter 只读取域名、图标和时间边界，不把 URL 或标题带入趋势模型；该 adapter 与快照仅在用户切换到网页趋势后加载。外部活动导入采用有明确 owner 的独立事实表，并由后端 data／domain owner 按“本机精确事实 > 外部精确事实 > 外部小时汇总”即时组合；它不引入持久化聚合 schema 或后台 worker。daemon client 模式下，Desktop 只负责文件选择和写入 profile 控制目录中的 owner-only 一次性暂存票据；API 不接受任意路径或 CSV 正文，`patinad` 必须重新校验大小、SHA-256 和 CSV 内容后再由 data owner 事务提交。小时汇总不得进入 History 或详情时间线，网页明细继续由 `features/destination/*` 统一读取和展示。
 
 多客户端分支中，Data 的应用／分类趋势使用 `daily-product`。`domain/product_classification` 决定手动分类、排除和删除分类回落，`data/repositories/daily_activity` 在同一事务读取配置与活动，共享协议返回最终分类、名称 override 与配置 revision。前端不能用另一个时刻的 mapper 重新分类或排除这些时长；名称本地化、颜色与图表格式仍属表现层。旧 daily-apps／Summary 的兼容语义保留，Dashboard、精确历史和网页读模型继续按执行单迁移。
 
@@ -339,9 +339,11 @@ src/
 
 Dashboard 后端读契约在同一事务内产生今天／昨天产品数量和逐小时分类，复用 `daily_activity`；Desktop 通过 `cmd_get_dashboard_product` 和共享 SDK 消费该快照。分区统计由 `domain/activity_read_model` 一次处理原生／导入优先级和桶容量，再分配整数余数，保证小时图和日总量守恒。`domain/activity_calendar` 负责实际本地日与 offset 转换边界，24 个显示小时不等于 24 小时实际日长。前端只格式化已确认数量，不能重新分类、按墙钟延长活动，或用独立小时查询／伪造 bucket 时间线拼装 Dashboard。
 
-Dashboard 的视图请求生命周期由 feature-owned `DashboardRefresh` 管理：普通轮询合并，数据失效时丢弃旧响应并补读，停止后不再发布；读取 scope 包含缓存代数、本地日期和语言。缓存预热及运行时协调也必须检查代数，避免失效后的旧请求重新填充缓存。失败保留最后一份快照并明确标记，首读失败不冒充空数据；图标暂用既有只读缓存，图标失败不阻塞活动读取。
+Dashboard、History 与应用详情复用 `shared/lib/snapshotReadController` 管理快照请求生命周期：普通轮询合并，数据失效时丢弃旧响应并补读，停止后不再发布；读取 scope 包含缓存代数、本地日期和语言。缓存预热及运行时协调也必须检查代数，避免失效后的旧请求重新填充缓存。失败保留最后一份快照并明确标记，首读失败不冒充空数据；图标暂用既有只读缓存，图标失败不阻塞活动读取。
 
-精确历史的产品读 owner 为 `data/repositories/exact_history`：配置、heartbeat、原生／精确导入事实和标题样本共享事务。复用领域优先级编译，小时汇总不能变成精确时间线；先读取紧凑候选，再批量加载贡献记录的有限元数据。返回源 ID／origin、规范应用分类和已裁剪区间，record caption 与真实标题样本分别表达。读取不修复数据库，超限不返回部分成功。当前已交付 API／SDK，Desktop History／详情适配仍在迁移中。
+精确历史的产品读 owner 为 `data/repositories/exact_history`：配置、heartbeat、原生／精确导入事实和标题样本共享事务。复用领域优先级编译，小时汇总不能变成精确时间线；先读取紧凑候选，再批量加载贡献记录的有限元数据。返回源 ID／origin、规范应用分类和已裁剪区间，record caption 与真实标题样本分别表达。读取不修复数据库，超限不返回部分成功。Desktop History／应用详情通过薄 `cmd_get_exact_history`、SDK 与严格前端 adapter 使用同一契约；失败不退回 SQL。生产会话带 `confirmed` 元数据，展示不得重新分类、排除、改名或按本地时钟延长。窗口 caption 仅为未定时标签；缺少真实样本时标题明细为空，同标题采样之间的空档不得填满。原生重叠事实保留各自时长，不能用时间线去重改变应用详情总量。History 只读所选日，不再读取已退出页面的周趋势。
+
+`sessionReadRepository` 暂保留日期适配与图标／最早记录时间两个 SQLite 读取例外；网页读取仍待迁移。前端旧导入优先级实现已移到 `tests/helpers/legacyNativeSessionPrecedence`，只作历史契约 oracle，生产代码不得依赖 tests。会话表现编译器中的无 `confirmed` 分支暂留供历史 replay 对照；所有生产精确会话 adapter 均必须提供后端确认元数据，不能把可选类型当作生产 fallback。
 
 前端终局结构中不再保留：
 
@@ -618,7 +620,7 @@ engine/tracking/
 
 自动备份遵循 `app / engine / domain / data` 的同一 owner 链：宿主中立的 `engine/scheduled_backup.rs` 负责任务执行、恢复对账与安全保留策略，`domain/backup_schedule.rs` 负责计划和时间槽语义，`data/repositories/scheduled_backup.rs` 只负责 SQLite 状态转换，归档编解码继续由 `data/backup.rs` 持有。`app/daemon/scheduled_backup.rs` 是 daemon-client 模式下唯一的调度 owner，持有运行锁、唤醒、事件和有序关闭；`app/scheduled_backup.rs` 仅作为 embedded 兼容 owner 保留。两者不得在同一 profile 同时运行，Tauri command 只映射 IPC 或转发 typed daemon client，不能承接调度流程或直接写库。
 
-活动导入同样遵循 owner-first：`engine/activity_import.rs` 负责格式解析与记录校验，`domain/activity_import.rs` 负责稳定名词、限制和指纹契约，`data/repositories/activity_import.rs` 负责独立事实表与事务，`app/activity_import.rs` 负责文件预览、提交复核和刷新事件，`commands/activity_import.rs` 只映射 IPC。前端设置页通过 feature-owned service 访问 platform gateway；跨来源统计优先级留在明确的只读模型边界，不能散落到组件。Rust 侧由 `domain/activity_read_model.rs` 持有优先级与小时桶容量规则，`data/repositories/activity_read_model.rs` 组装三类事实，HTTP / MCP handler 只消费其贡献结果；桌面端 TypeScript 读边界使用同一范围语义，并与 Rust 共同消费 `tests/fixtures/activity-read-model-cases.json` 契约 fixture，不能让各 API handler 或页面独立重写规则。Dashboard、Data 与 Classification 消费聚合记录，History 只消费可定位的精确会话；聚合记录必须保留原生活动会话的 live 元数据，以继续应用 tracker heartbeat 截止和异常诊断。
+活动导入同样遵循 owner-first：`engine/activity_import.rs` 负责格式解析与记录校验，`domain/activity_import.rs` 负责稳定名词、限制和指纹契约，`data/repositories/activity_import.rs` 负责独立事实表与事务，`app/activity_import.rs` 负责文件预览、提交复核和刷新事件，`commands/activity_import.rs` 只映射 IPC。前端设置页通过 feature-owned service 访问 platform gateway；跨来源统计优先级留在明确的只读模型边界，不能散落到组件。Rust 侧由 `domain/activity_read_model.rs` 持有优先级与小时桶容量规则，`data/repositories/activity_read_model.rs` 组装三类事实，HTTP / MCP handler 只消费其贡献结果；历史 TypeScript 优先级实现仅在 tests 中与 Rust 共同消费 `tests/fixtures/activity-read-model-cases.json` 契约 fixture，生产 Desktop 消费后端投影，不能让各 API handler 或页面独立重写规则。Dashboard、Data 与 Classification 消费各自的产品快照，History 只消费可定位的精确会话；产品快照保留后端采样时间与健康截止，客户端不得用墙钟延长其数量。
 
 它必须持续拦住这些细节回流到：
 

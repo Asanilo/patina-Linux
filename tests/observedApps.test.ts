@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { resolveNativeSessionPrecedence, type TimeRecordOrigin } from "../src/platform/persistence/nativeSessionPrecedence.ts";
+import { resolveNativeSessionPrecedence, type TimeRecordOrigin } from "./helpers/legacyNativeSessionPrecedence.ts";
 import { loadRecentObservedSessionStats, loadMigrationObservedSessionStats } from "../src/platform/persistence/observedAppsRepository.ts";
 
 const cases = JSON.parse(readFileSync(new URL("./fixtures/observed-apps.json", import.meta.url), "utf8"));

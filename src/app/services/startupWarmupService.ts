@@ -74,10 +74,10 @@ type StartupWarmupScheduler = (
 
 interface StartupWarmupDeps {
   getDashboardSnapshotCache: (date?: Date) => unknown | null;
-  getHistorySnapshotCache: (date?: Date, rollingDayCount?: number) => unknown | null;
+  getHistorySnapshotCache: (date?: Date) => unknown | null;
   loadDashboardRuntimeSnapshot: (date?: Date) => Promise<unknown>;
   loadDataTrendRuntimeSnapshot: typeof loadDataTrendRuntimeSnapshot;
-  loadHistoryRuntimeSnapshot: (date: Date, rollingDayCount?: number) => Promise<unknown>;
+  loadHistoryRuntimeSnapshot: (date: Date) => Promise<unknown>;
   loadPersistedDataBootstrapSnapshot: typeof loadPersistedDataBootstrapSnapshot;
   preloadLazyViewChunk: (view: PreloadableView) => Promise<unknown>;
   prewarmSettingsBootstrapCache: () => Promise<unknown>;
@@ -306,11 +306,11 @@ export function startStartupWarmup(
 
     await runTask("history-today-snapshot", async () => {
       const date = new Date();
-      if (resolvedDeps.getHistorySnapshotCache(date, 7)) {
+      if (resolvedDeps.getHistorySnapshotCache(date)) {
         return "skipped";
       }
 
-      await resolvedDeps.loadHistoryRuntimeSnapshot(date, 7);
+      await resolvedDeps.loadHistoryRuntimeSnapshot(date);
     });
 
     await runTask("tools-runtime-snapshot", async () => {
@@ -376,7 +376,7 @@ export function scheduleStartupWarmupRefresh(
     }
 
     if (options.includeHistory ?? true) {
-      tasks.push(deps.loadHistoryRuntimeSnapshot(new Date(), 7));
+      tasks.push(deps.loadHistoryRuntimeSnapshot(new Date()));
     }
 
     if (options.includeData) {

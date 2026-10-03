@@ -26,6 +26,72 @@ async function runTest(name: string, fn: () => Promise<void> | void) {
   console.log(`PASS ${name}`);
 }
 
+const HISTORY_FIXTURE_CODE = `
+      function smokeSessionTiming() {
+        const now = new Date();
+        const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime();
+        const latestEnd = Math.max(dayStart + 70 * 1000, now.getTime() - 60 * 1000);
+        const duration = Math.min(
+          40 * 60 * 1000,
+          Math.max(60 * 1000, latestEnd - dayStart - 1000),
+        );
+
+        return {
+          start: Math.max(dayStart, latestEnd - duration),
+          end: latestEnd,
+          duration,
+        };
+      }
+
+      function historySessionRows() {
+        const timing = smokeSessionTiming();
+        const earlierEnd = timing.start;
+        const earlierStart = Math.max(
+          new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate(), 0, 0, 0, 0).getTime(),
+          earlierEnd - 10 * 60 * 1000,
+        );
+        return [
+          {
+            id: 901,
+            app_name: "Extremely Long Research Workbench Application Name",
+            exe_name: "deep-research-workbench.exe",
+            window_title: "Extremely detailed project brief",
+            start_time: timing.start,
+            end_time: timing.end,
+            duration: timing.duration,
+            continuity_group_start_time: timing.start,
+          },
+          {
+            id: 902,
+            app_name: "Cursor",
+            exe_name: "cursor.exe",
+            window_title: "Implement chart mode",
+            start_time: earlierStart,
+            end_time: earlierEnd,
+            duration: Math.max(0, earlierEnd - earlierStart),
+            continuity_group_start_time: earlierStart,
+          },
+        ];
+      }
+
+      function historyTitleSampleRows() {
+        const timing = smokeSessionTiming();
+        const sampleDuration = Math.max(1, Math.floor(timing.duration / ${HISTORY_TITLE_DETAIL_COUNT}));
+        return Array.from({ length: ${HISTORY_TITLE_DETAIL_COUNT} }, (_, index) => {
+          const sampleStart = timing.start + index * sampleDuration;
+          return {
+            session_id: 901,
+            title: "Detailed document title " + (index + 1) + " for a very long research workflow",
+            start_time: sampleStart,
+            end_time: index === ${HISTORY_TITLE_DETAIL_COUNT} - 1
+              ? timing.end
+              : Math.min(timing.end, sampleStart + sampleDuration),
+          };
+        });
+      }
+
+`;
+
 function tauriStubFor(path: string) {
   if (path === "@tauri-apps/api/window") {
     return `
@@ -155,7 +221,31 @@ function tauriStubFor(path: string) {
         };
       }
 
+      ${HISTORY_FIXTURE_CODE}
+
       export async function invoke(command, payload = {}) {
+        if (command === "cmd_get_exact_history") {
+          globalThis.__PATINA_SMOKE_HISTORY_CALLS = (globalThis.__PATINA_SMOKE_HISTORY_CALLS ?? 0) + 1;
+          if (globalThis.__PATINA_SMOKE_HISTORY_ERROR) throw new Error(globalThis.__PATINA_SMOKE_HISTORY_ERROR);
+          if (globalThis.__PATINA_SMOKE_HISTORY_BLOCK) await new Promise(resolve => {
+            globalThis.__PATINA_SMOKE_HISTORY_RELEASE = resolve;
+          });
+          const settings = loadStoredSettings(), samples = historyTitleSampleRows();
+          const records = historySessionRows().flatMap(row => {
+            const start = Math.max(payload.fromMs, row.start_time), end = Math.min(payload.toMs, row.end_time);
+            if (end <= start) return [];
+            const override = JSON.parse(settings["__app_override::" + row.exe_name] ?? "{}");
+            if (override.enabled !== false && override.track === false) return [];
+            return [{origin: "native", record_id: row.id, app_key: row.exe_name, app_name: row.app_name, exe_name: row.exe_name,
+              category: override.enabled === false ? "other" : override.category ?? (row.id === 901 ? "office" : "development"),
+              display_name_override: override.enabled === false ? null : override.displayName ?? null,
+              window_title: row.window_title, start_ms: start, end_ms: end, continuity_start_ms: row.start_time, is_open: false,
+              title_samples: samples.filter(sample => sample.session_id === row.id).map(sample => ({title: sample.title,
+                start_ms: Math.max(start, sample.start_time), end_ms: Math.min(end, sample.end_time)})).filter(sample => sample.end_ms > sample.start_ms)}];
+          }).sort((a,b) => a.start_ms-b.start_ms || a.record_id-b.record_id || a.end_ms-b.end_ms);
+          return {from_ms: payload.fromMs, to_ms: payload.toMs, sampled_at_ms: Date.now(), configuration_revision: "0".repeat(64),
+            tracking_health: {status: "unavailable", last_heartbeat_ms: null, live_cutoff_ms: 0, stale_after_ms: 8000}, records};
+        }
         if (command === "cmd_get_dashboard_product") {
           globalThis.__PATINA_SMOKE_DASHBOARD_CALLS = (globalThis.__PATINA_SMOKE_DASHBOARD_CALLS ?? 0) + 1;
           if (globalThis.__PATINA_SMOKE_DASHBOARD_ERROR) throw new Error(globalThis.__PATINA_SMOKE_DASHBOARD_ERROR);
@@ -302,10 +392,16 @@ function tauriStubFor(path: string) {
 
   if (path === "@tauri-apps/api/event") {
     return `
-      export async function listen() {
-        return () => {};
+      const listeners = new Map();
+      export async function listen(name, handler) {
+        if (!listeners.has(name)) listeners.set(name, new Set());
+        listeners.get(name).add(handler);
+        return () => listeners.get(name)?.delete(handler);
       }
-      export async function emit() {}
+      export async function emit(name, payload) {
+        for (const handler of listeners.get(name) ?? []) handler({event:name, payload});
+      }
+      globalThis.__PATINA_SMOKE_EMIT = emit;
     `;
   }
 
@@ -341,68 +437,7 @@ function tauriStubFor(path: string) {
         }
       }
 
-      function smokeSessionTiming() {
-        const now = new Date();
-        const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime();
-        const latestEnd = Math.max(dayStart + 70 * 1000, now.getTime() - 60 * 1000);
-        const duration = Math.min(
-          40 * 60 * 1000,
-          Math.max(60 * 1000, latestEnd - dayStart - 1000),
-        );
-
-        return {
-          start: Math.max(dayStart, latestEnd - duration),
-          end: latestEnd,
-          duration,
-        };
-      }
-
-      function historySessionRows() {
-        const timing = smokeSessionTiming();
-        const earlierEnd = timing.start;
-        const earlierStart = Math.max(
-          new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate(), 0, 0, 0, 0).getTime(),
-          earlierEnd - 10 * 60 * 1000,
-        );
-        return [
-          {
-            id: 901,
-            app_name: "Extremely Long Research Workbench Application Name",
-            exe_name: "deep-research-workbench.exe",
-            window_title: "Extremely detailed project brief",
-            start_time: timing.start,
-            end_time: timing.end,
-            duration: timing.duration,
-            continuity_group_start_time: timing.start,
-          },
-          {
-            id: 902,
-            app_name: "Cursor",
-            exe_name: "cursor.exe",
-            window_title: "Implement chart mode",
-            start_time: earlierStart,
-            end_time: earlierEnd,
-            duration: Math.max(0, earlierEnd - earlierStart),
-            continuity_group_start_time: earlierStart,
-          },
-        ];
-      }
-
-      function historyTitleSampleRows() {
-        const timing = smokeSessionTiming();
-        const sampleDuration = Math.max(1, Math.floor(timing.duration / ${HISTORY_TITLE_DETAIL_COUNT}));
-        return Array.from({ length: ${HISTORY_TITLE_DETAIL_COUNT} }, (_, index) => {
-          const sampleStart = timing.start + index * sampleDuration;
-          return {
-            session_id: 901,
-            title: "Detailed document title " + (index + 1) + " for a very long research workflow",
-            start_time: sampleStart,
-            end_time: index === ${HISTORY_TITLE_DETAIL_COUNT} - 1
-              ? timing.end
-              : Math.min(timing.end, sampleStart + sampleDuration),
-          };
-        });
-      }
+      ${HISTORY_FIXTURE_CODE}
 
       function webActivityRows() {
         const timing = smokeSessionTiming();
@@ -1663,6 +1698,37 @@ try {
       await evaluate(client!, sessionId, `document.body.innerText.includes(${jsonString(HISTORY_LOADING_VIEW)})`),
       false,
     );
+  });
+
+  await runTest("History keeps confirmed data on read failure and recovers", async () => {
+    await waitForExpression(client!, sessionId, `document.querySelectorAll('.history-horizontal-timeline-segment').length > 0`);
+    await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_HISTORY_ERROR = 'synthetic history unavailable'`);
+    await waitForExpression(client!, sessionId, `document.querySelector('[role="status"]')?.textContent?.includes('上次读取的历史') === true`, 15000);
+    assert.equal(await evaluate(client!, sessionId, `document.querySelectorAll('.history-horizontal-timeline-segment').length > 0`), true);
+    await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_HISTORY_ERROR = null`);
+    await waitForExpression(client!, sessionId, `!document.querySelector('[role="status"]')?.textContent?.includes('上次读取的历史')`, 15000);
+  });
+
+  await runTest("History coalesces invalidations while an owner read is pending", async () => {
+    await evaluate(client!, sessionId, `(() => {
+      globalThis.__PATINA_SMOKE_HISTORY_BLOCK = true;
+      globalThis.__PATINA_SMOKE_EMIT('tracking-data-changed', {reason:'session-transition', changedAtMs:Date.now()});
+    })()`);
+    await waitForExpression(client!, sessionId, `typeof globalThis.__PATINA_SMOKE_HISTORY_RELEASE === 'function'`);
+    const started = await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_HISTORY_CALLS`);
+    for (let index = 0; index < 3; index++) {
+      await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_EMIT('tracking-data-changed', {reason:'session-transition', changedAtMs:Date.now()})`);
+      await delay(150);
+    }
+    assert.equal(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_HISTORY_CALLS`), started);
+    await evaluate(client!, sessionId, `(() => {
+      globalThis.__PATINA_SMOKE_HISTORY_BLOCK = false;
+      globalThis.__PATINA_SMOKE_HISTORY_RELEASE();
+      delete globalThis.__PATINA_SMOKE_HISTORY_RELEASE;
+    })()`);
+    await waitForExpression(client!, sessionId, `globalThis.__PATINA_SMOKE_HISTORY_CALLS > ${started}`);
+    await delay(300);
+    assert.equal(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_HISTORY_CALLS`), Number(started) + 1);
   });
 
   await runTest("short background return keeps Data active", async () => {

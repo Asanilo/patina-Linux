@@ -25,10 +25,6 @@ export default defineConfig({
             return "ui";
           }
 
-          if (id.includes("/src/platform/persistence/nativeSessionPrecedence.ts")) {
-            return "activity-precedence";
-          }
-
           if (
             id.includes("/src/platform/storage/")
             || id.includes("/src/features/settings/storageSettingsCopy.ts")

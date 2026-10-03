@@ -4,6 +4,17 @@ export interface TitleSampleDetail {
   endTime: number | null;
 }
 
+/** Owner-confirmed data. Legacy replay inputs omit this only during migration. */
+export interface ConfirmedHistoryMetadata {
+  appKey: string;
+  category: import("../classification/categoryTokens.ts").AppCategory;
+  displayNameOverride: string | null;
+  origin: "native" | "import_exact";
+  recordId: number;
+  isOpen: boolean;
+  isLive: boolean;
+}
+
 export interface HistorySession {
   id: number;
   appName: string;
@@ -14,6 +25,7 @@ export interface HistorySession {
   duration: number | null;
   continuityGroupStartTime: number | null;
   titleSampleDetails?: TitleSampleDetail[];
+  confirmed?: ConfirmedHistoryMetadata;
 }
 
 export interface DailySummary {

@@ -31,7 +31,7 @@ async function runTest(name: string, fn: () => Promise<void>) {
 
 await runTest("history snapshot keeps app sessions when optional web reads fail", async () => {
   const daySession = makeSession({ id: 1 });
-  const weeklySession = makeSession({ id: 2 });
+  let reads = 0;
   const originalWarn = console.warn;
   let warning = "";
   console.warn = (message?: unknown) => {
@@ -39,9 +39,15 @@ await runTest("history snapshot keeps app sessions when optional web reads fail"
   };
 
   try {
-    const snapshot = await loadHistorySnapshot(new Date(2026, 0, 2), 7, {
-      getHistoryByDate: async () => [daySession],
-      getSessionsInRange: async () => [weeklySession],
+    const snapshot = await loadHistorySnapshot(new Date(2026, 0, 2), {
+      getExactHistory: async (fromMs, toMs) => {
+        reads++;
+        assert.equal(fromMs, new Date(2026, 0, 2).getTime());
+        assert.equal(toMs, new Date(2026, 0, 3).getTime());
+        return {fromMs, toMs, sampledAtMs: toMs, configurationRevision: "a".repeat(64),
+          trackingHealth: {status: "healthy", lastHeartbeatMs: toMs, liveCutoffMs: toMs, staleAfterMs: 8000},
+          sessions: [daySession]};
+      },
       getWebActivitySegmentsInRange: async () => {
         throw new Error("no such table: web_activity_segments");
       },
@@ -53,7 +59,7 @@ await runTest("history snapshot keeps app sessions when optional web reads fail"
     });
 
     assert.deepEqual(snapshot.daySessions, [daySession]);
-    assert.deepEqual(snapshot.weeklySessions, [weeklySession]);
+    assert.equal(reads, 1);
     assert.deepEqual(snapshot.dayWebSegments, []);
     assert.deepEqual(snapshot.webDomainOverrides, {});
     assert.match(warning, /History web activity data is unavailable/);

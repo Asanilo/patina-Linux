@@ -3,7 +3,7 @@ import { mockIPC, clearMocks } from "@tauri-apps/api/mocks";
 import { getDashboardProduct } from "../src/platform/persistence/dashboardRepository.ts";
 import { buildDashboardReadModel } from "../src/features/dashboard/services/dashboardReadModel.ts";
 import { ProcessMapper } from "../src/shared/classification/processMapper.ts";
-import { DashboardRefresh } from "../src/features/dashboard/services/dashboardRefresh.ts";
+import { SnapshotReadController } from "../src/shared/lib/snapshotReadController.ts";
 import { dashboardWireFixture } from "./helpers/dashboardProductFixture.ts";
 import { buildDashboardReadModel as legacyDashboard } from "./helpers/legacyDashboardReadModel.ts";
 import { resolveTrackerHealth } from "../src/shared/types/tracking.ts";
@@ -50,7 +50,7 @@ const turn=()=>new Promise(resolve=>setTimeout(resolve,0));
 let reads=0, cache=0;
 const pending:Array<{resolve:(value:number)=>void;reject:(error:unknown)=>void}>=[];
 const output:number[]=[],errors:unknown[]=[];
-const owner=new DashboardRefresh(()=>{reads++;return new Promise<number>((resolve,reject)=>pending.push({resolve,reject}));},value=>output.push(value),error=>errors.push(error),()=>cache);
+const owner=new SnapshotReadController(()=>{reads++;return new Promise<number>((resolve,reject)=>pending.push({resolve,reject}));},value=>output.push(value),error=>errors.push(error),()=>cache);
 owner.refresh();await turn();owner.refresh();owner.refresh();assert.equal(reads,1);
 pending[0].resolve(1);await turn();assert.deepEqual(output,[1]);
 owner.refresh();await turn();owner.refresh(true);pending[1].resolve(2);await turn();
@@ -61,3 +61,8 @@ pending[4].reject(new Error("disconnected"));await turn();assert.equal(errors.le
 owner.refresh();await turn();pending[5].resolve(6);await turn();assert.deepEqual(output,[1,3,6]);
 owner.refresh();await turn();owner.dispose();pending[6].resolve(7);await turn();owner.refresh();assert.equal(reads,7);assert.deepEqual(output,[1,3,6]);
 console.log("Dashboard owner-only transport, presentation parity, snapshot validation and refresh lifecycle passed");
+
+let disposedReads = 0;
+const immediatelyDisposed = new SnapshotReadController(async () => ++disposedReads, () => assert.fail("disposed publication"), () => assert.fail("disposed error"), () => 0);
+immediatelyDisposed.refresh(); immediatelyDisposed.dispose(); await turn();
+assert.equal(disposedReads, 0, "disposal before the scheduled read must not enqueue a backend request");

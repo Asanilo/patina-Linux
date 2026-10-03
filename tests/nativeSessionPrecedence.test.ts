@@ -4,7 +4,7 @@ import {
   resolveNativeSessionPrecedence,
   type ActivityResolutionScope,
   type OwnedTimeRange,
-} from "../src/platform/persistence/nativeSessionPrecedence.ts";
+} from "./helpers/legacyNativeSessionPrecedence.ts";
 
 interface ActivityReadModelFixture {
   name: string;

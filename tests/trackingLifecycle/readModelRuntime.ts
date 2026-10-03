@@ -79,25 +79,24 @@ export function runReadModelRuntimeTests() {
     ]);
   });
 
-  runTest("history runtime snapshot keeps rolling range aligned across loader and cache", async () => {
+  runTest("history runtime snapshot keeps selected date aligned across loader and cache", async () => {
     const events: string[] = [];
     const date = new Date("2026-04-18T09:30:00.000Z");
     const snapshot = {
       fetchedAtMs: 456,
       daySessions: [],
-      weeklySessions: [],
     };
 
-    const result = await loadHistoryRuntimeSnapshotWithDeps(date, 14, {
+    const result = await loadHistoryRuntimeSnapshotWithDeps(date, {
       ensureProcessMapperRuntimeReady: async () => {
         events.push("ensure");
       },
-      loadHistorySnapshot: async (receivedDate, receivedRollingDayCount) => {
-        events.push(`load:${receivedDate.toISOString()}:${receivedRollingDayCount}`);
+      loadHistorySnapshot: async (receivedDate) => {
+        events.push(`load:${receivedDate.toISOString()}`);
         return snapshot;
       },
-      setHistorySnapshotCache: (receivedSnapshot, receivedDate, receivedRollingDayCount) => {
-        events.push(`cache:${receivedDate?.toISOString()}:${receivedRollingDayCount}`);
+      setHistorySnapshotCache: (receivedSnapshot, receivedDate) => {
+        events.push(`cache:${receivedDate?.toISOString()}`);
         assert.equal(receivedSnapshot, snapshot);
       },
     });
@@ -105,8 +104,8 @@ export function runReadModelRuntimeTests() {
     assert.equal(result, snapshot);
     assert.deepEqual(events, [
       "ensure",
-      `load:${date.toISOString()}:14`,
-      `cache:${date.toISOString()}:14`,
+      `load:${date.toISOString()}`,
+      `cache:${date.toISOString()}`,
     ]);
   });
 
@@ -171,22 +170,20 @@ export function runReadModelRuntimeTests() {
         assert.equal(snapshot.sessions, sessions);
       },
     });
-    const historySnapshot = await loadHistoryRuntimeSnapshotWithDeps(date, 7, {
+    const historySnapshot = await loadHistoryRuntimeSnapshotWithDeps(date, {
       ensureProcessMapperRuntimeReady: async () => {
         events.push("history:ensure");
       },
-      loadHistorySnapshot: async (receivedDate, receivedRollingDayCount) => {
-        events.push(`history:load:${receivedDate.toISOString()}:${receivedRollingDayCount}`);
+      loadHistorySnapshot: async (receivedDate) => {
+        events.push(`history:load:${receivedDate.toISOString()}`);
         return {
           fetchedAtMs: nowMs,
           daySessions: sessions,
-          weeklySessions: sessions,
         };
       },
-      setHistorySnapshotCache: (snapshot, receivedDate, receivedRollingDayCount) => {
-        events.push(`history:cache:${receivedDate?.toISOString()}:${receivedRollingDayCount}`);
+      setHistorySnapshotCache: (snapshot, receivedDate) => {
+        events.push(`history:cache:${receivedDate?.toISOString()}`);
         assert.equal(snapshot.daySessions, sessions);
-        assert.equal(snapshot.weeklySessions, sessions);
       },
     });
 
@@ -197,7 +194,6 @@ export function runReadModelRuntimeTests() {
     );
     const history = buildHistoryReadModel({
       daySessions: historySnapshot.daySessions,
-      weeklySessions: historySnapshot.weeklySessions,
       selectedDate: date,
       trackerHealth,
       nowMs,
@@ -214,8 +210,8 @@ export function runReadModelRuntimeTests() {
       `dashboard:load:${date.toISOString()}`,
       `dashboard:cache:${date.toISOString()}`,
       "history:ensure",
-      `history:load:${date.toISOString()}:7`,
-      `history:cache:${date.toISOString()}:7`,
+      `history:load:${date.toISOString()}`,
+      `history:cache:${date.toISOString()}`,
     ]);
   });
 
@@ -280,16 +276,14 @@ export function runReadModelRuntimeTests() {
         assert.equal(snapshot.sessions, restoredSessions);
       },
     });
-    const historySnapshot = await loadHistoryRuntimeSnapshotWithDeps(date, 7, {
+    const historySnapshot = await loadHistoryRuntimeSnapshotWithDeps(date, {
       ensureProcessMapperRuntimeReady: async () => {},
       loadHistorySnapshot: async () => ({
         fetchedAtMs: nowMs,
         daySessions: restoredSessions,
-        weeklySessions: restoredSessions,
       }),
       setHistorySnapshotCache: (snapshot) => {
         assert.equal(snapshot.daySessions, restoredSessions);
-        assert.equal(snapshot.weeklySessions, restoredSessions);
       },
     });
 
@@ -300,7 +294,6 @@ export function runReadModelRuntimeTests() {
     );
     const history = buildHistoryReadModel({
       daySessions: historySnapshot.daySessions,
-      weeklySessions: historySnapshot.weeklySessions,
       selectedDate: date,
       trackerHealth,
       nowMs,
@@ -367,12 +360,11 @@ export function runReadModelRuntimeTests() {
         assert.equal(snapshot.sessions, sessions);
       },
     });
-    const historySnapshot = await loadHistoryRuntimeSnapshotWithDeps(date, 7, {
+    const historySnapshot = await loadHistoryRuntimeSnapshotWithDeps(date, {
       ensureProcessMapperRuntimeReady: async () => {},
       loadHistorySnapshot: async () => ({
         fetchedAtMs: nowMs,
         daySessions: sessions,
-        weeklySessions: sessions,
       }),
       setHistorySnapshotCache: (snapshot) => {
         assert.equal(snapshot.daySessions, sessions);
@@ -386,7 +378,6 @@ export function runReadModelRuntimeTests() {
     );
     const history = buildHistoryReadModel({
       daySessions: historySnapshot.daySessions,
-      weeklySessions: historySnapshot.weeklySessions,
       selectedDate: date,
       trackerHealth,
       nowMs,
@@ -453,16 +444,14 @@ export function runReadModelRuntimeTests() {
         assert.equal(snapshot.sessions, sessions);
       },
     });
-    const historySnapshot = await loadHistoryRuntimeSnapshotWithDeps(date, 7, {
+    const historySnapshot = await loadHistoryRuntimeSnapshotWithDeps(date, {
       ensureProcessMapperRuntimeReady: async () => {},
       loadHistorySnapshot: async () => ({
         fetchedAtMs: nowMs,
         daySessions: sessions,
-        weeklySessions: sessions,
       }),
       setHistorySnapshotCache: (snapshot) => {
         assert.equal(snapshot.daySessions, sessions);
-        assert.equal(snapshot.weeklySessions, sessions);
       },
     });
 
@@ -473,7 +462,6 @@ export function runReadModelRuntimeTests() {
     );
     const history = buildHistoryReadModel({
       daySessions: historySnapshot.daySessions,
-      weeklySessions: historySnapshot.weeklySessions,
       selectedDate: date,
       trackerHealth,
       nowMs,
@@ -541,12 +529,11 @@ export function runReadModelRuntimeTests() {
         assert.equal(snapshot.sessions, sessions);
       },
     });
-    const historySnapshot = await loadHistoryRuntimeSnapshotWithDeps(date, 7, {
+    const historySnapshot = await loadHistoryRuntimeSnapshotWithDeps(date, {
       ensureProcessMapperRuntimeReady: async () => {},
       loadHistorySnapshot: async () => ({
         fetchedAtMs: nowMs,
         daySessions: sessions,
-        weeklySessions: sessions,
       }),
       setHistorySnapshotCache: (snapshot) => {
         assert.equal(snapshot.daySessions, sessions);
@@ -560,7 +547,6 @@ export function runReadModelRuntimeTests() {
     );
     const history = buildHistoryReadModel({
       daySessions: historySnapshot.daySessions,
-      weeklySessions: historySnapshot.weeklySessions,
       selectedDate: date,
       trackerHealth,
       nowMs,
@@ -627,16 +613,14 @@ export function runReadModelRuntimeTests() {
         assert.equal(snapshot.sessions, sessions);
       },
     });
-    const historySnapshot = await loadHistoryRuntimeSnapshotWithDeps(date, 7, {
+    const historySnapshot = await loadHistoryRuntimeSnapshotWithDeps(date, {
       ensureProcessMapperRuntimeReady: async () => {},
       loadHistorySnapshot: async () => ({
         fetchedAtMs: nowMs,
         daySessions: sessions,
-        weeklySessions: sessions,
       }),
       setHistorySnapshotCache: (snapshot) => {
         assert.equal(snapshot.daySessions, sessions);
-        assert.equal(snapshot.weeklySessions, sessions);
       },
     });
 
@@ -647,7 +631,6 @@ export function runReadModelRuntimeTests() {
     );
     const history = buildHistoryReadModel({
       daySessions: historySnapshot.daySessions,
-      weeklySessions: historySnapshot.weeklySessions,
       selectedDate: date,
       trackerHealth,
       nowMs,
@@ -728,16 +711,14 @@ export function runReadModelRuntimeTests() {
         assert.equal(snapshot.sessions, persistedSessions);
       },
     });
-    const historySnapshot = await loadHistoryRuntimeSnapshotWithDeps(date, 7, {
+    const historySnapshot = await loadHistoryRuntimeSnapshotWithDeps(date, {
       ensureProcessMapperRuntimeReady: async () => {},
       loadHistorySnapshot: async () => ({
         fetchedAtMs: nowMs,
         daySessions: persistedSessions,
-        weeklySessions: persistedSessions,
       }),
       setHistorySnapshotCache: (snapshot) => {
         assert.equal(snapshot.daySessions, persistedSessions);
-        assert.equal(snapshot.weeklySessions, persistedSessions);
       },
     });
 
@@ -748,7 +729,6 @@ export function runReadModelRuntimeTests() {
     );
     const history = buildHistoryReadModel({
       daySessions: historySnapshot.daySessions,
-      weeklySessions: historySnapshot.weeklySessions,
       selectedDate: date,
       trackerHealth,
       nowMs,
@@ -829,16 +809,14 @@ export function runReadModelRuntimeTests() {
         assert.equal(snapshot.sessions, sessions);
       },
     });
-    const historySnapshot = await loadHistoryRuntimeSnapshotWithDeps(date, 7, {
+    const historySnapshot = await loadHistoryRuntimeSnapshotWithDeps(date, {
       ensureProcessMapperRuntimeReady: async () => {},
       loadHistorySnapshot: async () => ({
         fetchedAtMs: nowMs,
         daySessions: sessions,
-        weeklySessions: sessions,
       }),
       setHistorySnapshotCache: (snapshot) => {
         assert.equal(snapshot.daySessions, sessions);
-        assert.equal(snapshot.weeklySessions, sessions);
       },
     });
 
@@ -849,7 +827,6 @@ export function runReadModelRuntimeTests() {
     );
     const history = buildHistoryReadModel({
       daySessions: historySnapshot.daySessions,
-      weeklySessions: historySnapshot.weeklySessions,
       selectedDate: date,
       trackerHealth,
       nowMs,
