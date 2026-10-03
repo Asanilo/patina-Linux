@@ -8,17 +8,20 @@ pub const MAX_ICON_PAGE_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_ICON_CATALOG_ENTRIES: usize = 4096;
 pub const MAX_ICON_CATALOG_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_ICON_CATALOG_PAGES: usize = 128;
+#[cfg_attr(feature = "typegen", derive(ts_rs::TS))]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CachedIcon {
     pub source_key: String,
     pub keys: Vec<String>,
     pub data_url: String,
 }
+#[cfg_attr(feature = "typegen", derive(ts_rs::TS))]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IconPage {
     pub entries: Vec<CachedIcon>,
     pub next_after: Option<String>,
 }
+#[cfg_attr(feature = "typegen", derive(ts_rs::TS))]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IconLookup {
     pub requested_key: String,

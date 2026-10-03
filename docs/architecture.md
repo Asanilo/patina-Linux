@@ -184,6 +184,8 @@ Raw DTO 只能停留在明确边界：
 - `src-tauri/**` 继续使用 Rust 与协议侧命名
 - 测试 raw payload fixture 必须让 raw 意图清楚，优先使用 `Raw` 前缀或直接验证 raw parser
 
+已接入的共享 wire 类型以 `patina-protocol` 的 Rust DTO 为来源，经显式 `typegen` feature 生成到 `src/platform/protocol/protocol.generated.ts`。`npm run generate:protocol` 更新产物，`npm run check:protocol` 只读核对并纳入完整门禁；生成器固定配置，不接受环境变量改变导出形状。普通 SDK／daemon 依赖图不得包含生成工具。当前范围为 product settings、classification 和 cached icons，不代表全部协议或 OpenAPI 已自动生成。adapter 必须继续从 unknown 验证并构造符合生成类型的对象，然后映射为前端模型；类型生成不能替代安全整数、大小、权限或业务约束校验。
+
 前端业务层默认不承载 raw DTO：
 
 - `src/app/**`、`src/features/*/components/**`、`src/features/*/hooks/**`、`src/features/*/services/*ViewModel.ts` 不应读取 IPC 或 SQLite raw 字段

@@ -7,7 +7,7 @@ const tree = execFileSync("cargo", [
   "--no-default-features", "--edges", "normal,build", "--prefix", "none",
   "--format", "{p}",
 ], { encoding: "utf8" });
-const forbidden = /^(?:tauri(?:-.*)?|gtk\d?(?:-.*)?|gdk\d?(?:-.*)?|webkit.*|wry|tao|rfd|glib(?:-.*)?|gio(?:-.*)?|pango(?:-.*)?|cairo(?:-.*)?)$/;
+const forbidden = /^(?:tauri(?:-.*)?|gtk\d?(?:-.*)?|gdk\d?(?:-.*)?|webkit.*|wry|tao|rfd|glib(?:-.*)?|gio(?:-.*)?|pango(?:-.*)?|cairo(?:-.*)?|ts-rs(?:-.*)?)$/;
 const found = [...new Set(tree.split(/\r?\n/).map((line) => line.split(" ")[0]))]
   .filter((name) => forbidden.test(name));
 if (found.length) {

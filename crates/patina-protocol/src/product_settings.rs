@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 pub const MAX_PRODUCT_SETTINGS_RESPONSE_BYTES: usize = 8192;
 
+#[cfg_attr(feature = "typegen", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ProductSettingsPatch {
@@ -17,6 +18,7 @@ pub struct ProductSettingsPatch {
     pub tracking_paused: Option<bool>,
 }
 
+#[cfg_attr(feature = "typegen", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProductSettingsCommitRequest {
@@ -24,6 +26,7 @@ pub struct ProductSettingsCommitRequest {
     pub patch: ProductSettingsPatch,
 }
 
+#[cfg_attr(feature = "typegen", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProductSettings {
     pub idle_timeout_secs: u64,
@@ -37,6 +40,7 @@ pub struct ProductSettings {
     pub web_activity_url_privacy: crate::web_history::WebActivityUrlPrivacyMode,
 }
 
+#[cfg_attr(feature = "typegen", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProductSettingsSnapshot {
     pub revision: String,

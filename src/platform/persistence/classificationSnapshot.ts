@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { ClassificationSnapshot as RawClassificationSnapshot } from "../protocol/protocol.generated.ts";
 
 export const CLASSIFICATION_PREFIXES = [
   "__app_override::", "__web_domain_override::", "__category_color_override::",
@@ -43,5 +44,8 @@ export async function loadClassificationSnapshot(
     if (bytes > 4 * 1024 * 1024) throw new Error("Classification snapshot exceeds its response budget");
     return result;
   });
-  return { revision: raw.revision, sampledAtMs: raw.sampled_at_ms as number, entries };
+  const validated: RawClassificationSnapshot = {
+    revision: raw.revision, sampled_at_ms: raw.sampled_at_ms as number, entries,
+  };
+  return { revision: validated.revision, sampledAtMs: validated.sampled_at_ms, entries: validated.entries };
 }

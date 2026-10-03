@@ -32,12 +32,14 @@ pub fn is_revision(value: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+#[cfg_attr(feature = "typegen", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClassificationEntry {
     pub key: String,
     pub value: String,
 }
 
+#[cfg_attr(feature = "typegen", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClassificationSnapshot {
     pub revision: String,
@@ -45,12 +47,14 @@ pub struct ClassificationSnapshot {
     pub entries: Vec<ClassificationEntry>,
 }
 
+#[cfg_attr(feature = "typegen", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClassificationMutationRequest {
     pub key: String,
     pub value: Option<String>,
 }
 
+#[cfg_attr(feature = "typegen", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClassificationMutationsRequest {
     pub mutations: Vec<ClassificationMutationRequest>,
@@ -58,6 +62,7 @@ pub struct ClassificationMutationsRequest {
     pub expected_revision: Option<String>,
 }
 
+#[cfg_attr(feature = "typegen", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClassificationCommitResult {
     pub ok: bool,

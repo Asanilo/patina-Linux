@@ -6,7 +6,7 @@ const tree = execFileSync("cargo", [
   "tree", "--locked", "--manifest-path", "crates/patina-client/Cargo.toml",
   "--edges", "normal,build", "--prefix", "none", "--format", "{p}",
 ], { encoding: "utf8" });
-const forbidden = /^(?:patina|tauri(?:-.*)?|gtk\d?(?:-.*)?|gdk\d?(?:-.*)?|webkit.*|sqlx(?:-.*)?|libsqlite3-sys|gpui(?:-.*)?|ratatui|crossterm)$/;
+const forbidden = /^(?:patina|tauri(?:-.*)?|gtk\d?(?:-.*)?|gdk\d?(?:-.*)?|webkit.*|sqlx(?:-.*)?|libsqlite3-sys|gpui(?:-.*)?|ratatui|crossterm|ts-rs(?:-.*)?)$/;
 const found = [...new Set(tree.split(/\r?\n/).map((line) => line.split(" ")[0]))]
   .filter((name) => forbidden.test(name));
 if (found.length) {

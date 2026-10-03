@@ -6,5 +6,13 @@ license = "MIT"
 description = "Shared wire contracts for the Patina daemon and clients"
 publish = false
 
+[features]
+typegen = ["dep:ts-rs"]
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
+ts-rs = { version = "12.0.1", optional = true }
+
+[[example]]
+name = "typescript"
+required-features = ["typegen"]

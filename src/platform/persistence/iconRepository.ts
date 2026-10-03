@@ -1,7 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-
-interface CachedIcon {source_key: string; keys: string[]; data_url: string}
-interface IconPage {entries: CachedIcon[]; next_after: string | null}
+import type { CachedIcon, IconPage } from "../protocol/protocol.generated.ts";
 const encoder = new TextEncoder();
 const keyBytes = (value: unknown): value is string => typeof value === "string" && encoder.encode(value).length <= 1024;
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);

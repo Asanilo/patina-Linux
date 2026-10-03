@@ -6,6 +6,30 @@ primary Linux product branch and includes the daemon separation developed on
 Daemon-specific procedures apply to this baseline and its selected candidates.
 The source merge does not change beta or AppImage release gates.
 
+## Shared Client Contracts
+
+On `feature/multi-client-platform`, product settings, classification and cached
+icon wire types are generated from `crates/patina-protocol` into
+`src/platform/protocol/protocol.generated.ts`. After editing these Rust DTOs:
+
+```bash
+npm run generate:protocol
+npm run check:protocol
+```
+
+Review and commit the generated diff alongside the Rust change. `check:protocol`
+compares without rewriting files and runs Clippy on the generator; `check:full`
+includes it. Ordinary frontend builds consume the checked-in types without
+invoking Cargo. The generator uses its own committed Cargo lockfile and explicit
+configuration, and only the `typegen` feature enables ts-rs. Normal SDK and daemon
+dependency checks reject the generator crates.
+
+These types describe JSON shape, including nullable and omitted fields. They do
+not validate incoming data or make 64-bit integers safe in JavaScript. Keep the
+adapter's size, safe-integer, revision and content checks before constructing a
+typed wire object, then map it to the frontend model. This initial export surface
+does not replace the remaining handwritten contracts or OpenAPI schema.
+
 ## Independent Daemon Build
 
 On `feature/multi-client-platform`, the same product crate can build `patinad`

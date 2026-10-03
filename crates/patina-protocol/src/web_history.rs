@@ -10,6 +10,7 @@ pub const MAX_WEB_HISTORY_URL_BYTES: usize = 65_536;
 pub const MAX_WEB_HISTORY_ICON_BYTES: usize = 32_768;
 pub const BROWSER_BRIDGE_STALE_AFTER_MS: i64 = 75_000;
 
+#[cfg_attr(feature = "typegen", derive(ts_rs::TS))]
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum WebActivityUrlPrivacyMode {

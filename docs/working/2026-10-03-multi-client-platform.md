@@ -379,3 +379,17 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - `check:full` 通过：64 个 TypeScript 文件、45 项浏览器检查、36 项 SDK 测试及 Clippy；Desktop 768 passed / 22 ignored、独立后端 610 passed / 11 ignored，以及边界／依赖图和 Clippy。随后只调整上述测试的恢复端点，相关 analytical 测试再次通过（6 passed / 1 ignored），没有重复未变化的前端门禁。初轮修正了 SQLx hook 名称为 before_acquire。证据为 `tmp/acceptance/m2m-full.log` 和 `m2m-analytical-final.log`。
 - 新 headless binary 经临时 Local profile 的双 SDK 同步、认证拒绝、正常关闭／重启、lease 重获、分类及 migration checksum 保留验收通过；实际数据库 journal mode 为 WAL。证据在 `tmp/acceptance/multi-client-m2m-read-isolation/`、`tmp/acceptance/m2m-independent-client.log` 和 `/tmp/patina-independent-client-889sov_t/`；二进制 SHA256 为 `af7806183ec1bfa7cb9b6a96ecb14505715dfd750e7a6a5bc72cb909856f7567`。
 - 没有操作生产 profile、安装、推送、合并或发布。本切片不宣称 embedded 或所有后台备份任务都已经使用独立读池，也不代表实际硬件追踪／整机性能验收。客户端偏好备份选择及网页两项产品问题仍待答复；运行资源并发保护、契约生成和其余已列出的基础阶段工作继续保留。
+
+### M2n 执行设计：从 Rust 生成客户端契约
+
+- 先覆盖已有 Desktop 消费者的 product settings／classification／cached icons，共享 Rust DTO 为事实来源。`patina-protocol` 用显式 `typegen` feature 启用 ts-rs，普通 SDK／daemon 构建不启用生成依赖；不解析 Rust 源码文本猜测类型，不生成 UI。
+- 生成结果放在 `src/platform/protocol`，仍由 persistence adapter 验证未知输入、构造符合生成类型的 wire 对象，再映射为前端模型。保留字节预算、安全整数、revision、枚举与游标校验；JSON 的 64 位整数映射为 number 不代表精度验证已经完成。
+- 固定生成配置与锁文件，提供显式写入命令和只读过期检查，纳入完整门禁。普通前端构建使用已提交产物，不额外要求 Rust。此批不宣称全部协议或手写 OpenAPI 已迁移；后续契约按实际消费者扩展。
+
+### M2n 核验结果
+
+- 已生成 13 项 wire 类型，设置／分类／图标三个现有 adapter 实际消费生成类型，保留原有 unknown 输入验证和前端模型。可选字段和 nullable 字段依照 serde 属性生成；JSON number 映射由生成器显式配置，环境变量不能改变输出。源码与生成结果、生成器及独立 Cargo 锁文件一同保存。
+- 新增 `generate:protocol`、只读 `check:protocol`，后者加入 `check:full`。正常 SDK／daemon 的已解析依赖图确认不包含 ts-rs，并设门禁防止后续误启用。该批没有改变 endpoint、serde 输出或数据库格式。
+- 故障注入验证：临时增加一个必填 wire 字段后，只读检查拒绝过期产物且不修改文件；TypeScript 同时指出真实设置 adapter 漏填该字段。恢复原始文件后，即使设置冲突的 TS_RS 环境变量，生成比较仍通过。证据为 `tmp/acceptance/m2n-contract-negative.log`，临时字段已移除。
+- 最终 `npm run check:full` 完整通过：64 个 TypeScript 文件、45 项浏览器检查、36 项 SDK 测试及 Clippy；Desktop 768 passed / 22 ignored，独立后端 610 passed / 11 ignored，以及生成器／边界／依赖图／Clippy 和原 bundle 预算。证据为 `tmp/acceptance/m2n-full.log`。本批未增加重复的运行时行为测试，也未重跑未变化的实机／打包验收。
+- 本切片仅本地开发与提交；未安装、推送、合并或发布。剩余协议的生成覆盖、运行资源并发保护、客户端偏好归属及网页迁移等仍在基础阶段范围；待答复的产品选择和新客户端 UI 讨论边界保持不变。

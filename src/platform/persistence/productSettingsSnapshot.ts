@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { AppSettings } from "../../shared/settings/appSettings.ts";
+import type { ProductSettingsSnapshot as RawProductSettingsSnapshot } from "../protocol/protocol.generated.ts";
 
 export interface ProductSettingsSnapshot {
   revision: string;
@@ -42,20 +43,37 @@ export function parseProductSettingsSnapshot(raw: unknown): ProductSettingsSnaps
   const enabled = boolean("web_activity_enabled");
   const tokenPresent = boolean("web_activity_token_present");
   if (enabled && !tokenPresent) throw fail();
-  return {
+  const validated: RawProductSettingsSnapshot = {
     revision: value.revision,
+    sampled_at_ms: value.sampled_at_ms as number,
     settings: {
-      idleTimeoutSecs: integer("idle_timeout_secs"),
-      timelineMergeGapSecs: integer("timeline_merge_gap_secs"),
-      minSessionSecs,
-      trackingPaused: boolean("tracking_paused"),
-      audioParticipationEnabled: boolean("audio_participation_enabled"),
-      webActivityEnabled: enabled,
-      webActivityPort: integer("web_activity_port", 1024, 65535),
-      webActivityUrlPrivacy: privacy,
+      idle_timeout_secs: integer("idle_timeout_secs"),
+      timeline_merge_gap_secs: integer("timeline_merge_gap_secs"),
+      min_session_secs: minSessionSecs,
+      tracking_paused: boolean("tracking_paused"),
+      audio_participation_enabled: boolean("audio_participation_enabled"),
+      web_activity_enabled: enabled,
+      web_activity_token_present: tokenPresent,
+      web_activity_port: integer("web_activity_port", 1024, 65535),
+      web_activity_url_privacy: privacy,
     },
-    lastHeartbeatMs: timestamp("last_heartbeat_ms"),
-    lastSuccessfulSampleMs: timestamp("last_successful_sample_ms"),
+    last_heartbeat_ms: timestamp("last_heartbeat_ms"),
+    last_successful_sample_ms: timestamp("last_successful_sample_ms"),
+  };
+  return {
+    revision: validated.revision,
+    settings: {
+      idleTimeoutSecs: validated.settings.idle_timeout_secs,
+      timelineMergeGapSecs: validated.settings.timeline_merge_gap_secs,
+      minSessionSecs: validated.settings.min_session_secs,
+      trackingPaused: validated.settings.tracking_paused,
+      audioParticipationEnabled: validated.settings.audio_participation_enabled,
+      webActivityEnabled: validated.settings.web_activity_enabled,
+      webActivityPort: validated.settings.web_activity_port,
+      webActivityUrlPrivacy: validated.settings.web_activity_url_privacy,
+    },
+    lastHeartbeatMs: validated.last_heartbeat_ms,
+    lastSuccessfulSampleMs: validated.last_successful_sample_ms,
   };
 }
 
