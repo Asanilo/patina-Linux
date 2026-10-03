@@ -393,3 +393,18 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 故障注入验证：临时增加一个必填 wire 字段后，只读检查拒绝过期产物且不修改文件；TypeScript 同时指出真实设置 adapter 漏填该字段。恢复原始文件后，即使设置冲突的 TS_RS 环境变量，生成比较仍通过。证据为 `tmp/acceptance/m2n-contract-negative.log`，临时字段已移除。
 - 最终 `npm run check:full` 完整通过：64 个 TypeScript 文件、45 项浏览器检查、36 项 SDK 测试及 Clippy；Desktop 768 passed / 22 ignored，独立后端 610 passed / 11 ignored，以及生成器／边界／依赖图／Clippy 和原 bundle 预算。证据为 `tmp/acceptance/m2n-full.log`。本批未增加重复的运行时行为测试，也未重跑未变化的实机／打包验收。
 - 本切片仅本地开发与提交；未安装、推送、合并或发布。剩余协议的生成覆盖、运行资源并发保护、客户端偏好归属及网页迁移等仍在基础阶段范围；待答复的产品选择和新客户端 UI 讨论边界保持不变。
+
+### M2o 执行设计：资源变更生命周期与浏览器停止事务
+
+- 当前资源变更直接受 HTTP future 生命周期影响；浏览器端口设置提交后仍会等待旧 listener 关闭，取消会留下已提交但尚未发布的资源状态。由 daemon 自己持有已接受的音频／浏览器配置／Local API 端口与凭据变更，一次只接受一项，忙时返回明确 conflict，不建立等待队列。调用方失联不终止已接受的变更，也不自动重试；daemon 关闭时先拒绝新资源变更并等待已接受操作完成，再关闭后台、listener 和 SQLite。
+- 浏览器 disabled 设置与活动网页段封口放入同一事务；封口失败保留原配置和 listener，不再出现“已关闭但封口失败”后又被下一次启用覆盖的中间状态。浏览器请求的策略读取及事实写入与配置事务共用 ingress transition，避免已读旧 enabled 的请求在关闭事务之后重新写入；等待结束后才取配置变更时间。
+- 本切片保护资源状态一致性与生命周期，不把串行化当成旧草稿 CAS。Desktop 当前浏览器完整配置提交及资源 revision／条件 patch 仍需继续收口；embedded 兼容路径也不在新的 daemon 操作 owner 内。新客户端 UI 与尚待答复的产品语义不变。
+
+### M2o 核验结果
+
+- 四类 daemon 资源变更已接入独立生命周期 owner；同一实例只接受一项在途操作，重叠或关闭状态返回 conflict。已接受操作由 daemon task 持有，调用方取消只丢弃等待结果；启动工厂将真实 control 交给 DaemonRuntime，关闭先 drain 再停止后台、listener 和数据库。测试验证取消后操作继续、并发拒绝、失败释放名额及关闭等待／拒绝新写入。
+- 浏览器关闭设置及 active segment 封口同事务完成，配置事务与 ingress 策略读取／事实写入共用 transition，锁在提交后释放而不跨 listener shutdown。原先的第二次封口事务已移除；时间由 owner 在取得 transition 后采样。事务失败不改 listener、不发布设置或网页事件。
+- 原生测试实际持有 SQLite 连接、提交后丢弃 caller future，再释放连接并 drain，确认存储配置与真实新 listener 均完成切换。SQL trigger 注入封口失败后，原设置、原 listener、未封口段及事件数保持原状；解除故障后关闭与封口一起成功。另验证配置提交期间 ingress 等待，随后读取已提交的 disabled 状态，不沿用旧策略。
+- 完整门禁各项通过：64 个 TypeScript 文件、45 项浏览器检查、36 项 SDK 测试；Desktop 773 passed / 22 ignored，独立后端 615 passed / 11 ignored，以及生成器、架构／依赖图、Clippy 与 bundle 预算。初轮发现测试 schema 未带网页表、测试读 SQL 越过 owner 边界及旧便利 helper 仅剩测试消费者，均已修正；helper 明确限定为测试，生产传入 owner 时间。前端／SDK 未变化，没有重复它们已通过的检查。证据为 `tmp/acceptance/m2o-full.log` 的前端／SDK部分、`m2o-rust.log` 的 Desktop 测试、`m2o-clippy-final.log`、`m2o-daemon.log` 和 `m2o-runtime.log`。
+- 新 headless 成品及两独立 SDK 进程通过临时 Local profile 验收：认证拒绝、共享分类事件、正常关闭、lease 重获、分类与 migration checksum 保留。成品 SHA256 为 `9cd5347062473b9b7801680463b18127163bfd5091d6b1a82bebfb207a911e26`，证据为 `tmp/acceptance/multi-client-m2o-resources/`、`tmp/acceptance/m2o-independent-client.log` 和 `/tmp/patina-independent-client-0st1vlou/`。未连接生产 profile 或实际桌面／音频采样环境。
+- 未安装、推送、合并或发布。资源条件 patch／revision、Desktop 浏览器全量配置与 SQL 读取退出仍需继续；此批没有宣称旧草稿防覆盖、跨端点全局事务、崩溃／断电恢复或 embedded 全路径已经完成。

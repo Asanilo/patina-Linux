@@ -9,7 +9,9 @@ use std::sync::Arc;
 
 const STORAGE_ERROR_PREFIX: &str = "storage:";
 
+#[derive(Clone)]
 pub(crate) struct DaemonApiRuntimeControl {
+    resources: Arc<super::resource_operations::ResourceOperations>,
     context: crate::engine::runtime_context::RuntimeContext,
     web_activity: DaemonWebActivityControl,
     event_sink: std::sync::Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
@@ -31,6 +33,7 @@ impl DaemonApiRuntimeControl {
         #[cfg(target_os = "linux")] audio_source: crate::platform::linux::audio::AudioSignalSource,
     ) -> Self {
         Self {
+            resources: Arc::new(super::resource_operations::ResourceOperations::default()),
             context,
             web_activity,
             event_sink,
@@ -42,6 +45,10 @@ impl DaemonApiRuntimeControl {
         }
     }
 
+    pub(super) async fn close_and_drain_resources(&self) {
+        self.resources.close_and_drain().await;
+    }
+
     fn emit_settings_changed(&self) {
         let _ = self.event_sink.emit(
             crate::engine::runtime_event::RuntimeEvent::TrackingDataChanged {
@@ -50,6 +57,50 @@ impl DaemonApiRuntimeControl {
                 changed_at_ms: self.context.now_ms().max(0) as u64,
             },
         );
+    }
+
+    async fn apply_browser_configuration(
+        &self,
+        mut configuration: BrowserActivityRuntimeConfiguration,
+    ) -> Result<BrowserActivityRuntimeConfiguration, RuntimeControlError> {
+        configuration.token = configuration.token.trim().to_string();
+        validate_browser_activity_configuration(&configuration)?;
+        let bridge_settings = crate::domain::settings::WebActivityBridgeSettings {
+            enabled: configuration.enabled,
+            port: configuration.port,
+            token: configuration.token.clone(),
+        };
+        let stored_settings = bridge_settings.clone();
+        let url_privacy = configuration.url_privacy;
+        let pool = self.context.pool().clone();
+        let mut sealed = false;
+        let mut changed_at_ms = 0;
+        self.web_activity
+            .apply_with_commit(bridge_settings, || async {
+                changed_at_ms = self.context.now_ms();
+                sealed =
+                    crate::data::repositories::app_settings::save_web_activity_runtime_settings_at(
+                        &pool,
+                        &stored_settings,
+                        url_privacy,
+                        changed_at_ms,
+                    )
+                    .await
+                    .map_err(|error| format!("{STORAGE_ERROR_PREFIX}{error}"))?;
+                Ok(())
+            })
+            .await
+            .map_err(map_browser_apply_error)?;
+        if sealed {
+            let _ = self.event_sink.emit(
+                crate::engine::runtime_event::RuntimeEvent::TrackingDataChanged {
+                    reason: crate::domain::web_activity::WEB_ACTIVITY_CHANGED_REASON.to_string(),
+                    changed_at_ms: changed_at_ms.max(0) as u64,
+                },
+            );
+        }
+        self.emit_settings_changed();
+        Ok(configuration)
     }
 
     async fn local_api_snapshot_value(
@@ -96,82 +147,43 @@ impl ApiRuntimeControl for DaemonApiRuntimeControl {
     }
 
     fn set_audio_participation_enabled(&self, enabled: bool) -> RuntimeControlFuture<'_, bool> {
+        let control = self.clone();
         Box::pin(async move {
-            #[cfg(not(target_os = "linux"))]
-            return Err(RuntimeControlError::InvalidInput(
-                "audio participation is only supported on Linux".to_string(),
-            ));
+            let resources = control.resources.clone();
+            resources
+                .run(async move {
+                    #[cfg(not(target_os = "linux"))]
+                    return Err(RuntimeControlError::InvalidInput(
+                        "audio participation is only supported on Linux".to_string(),
+                    ));
 
-            #[cfg(target_os = "linux")]
-            {
-                crate::data::repositories::app_settings::save_audio_participation_enabled(
-                    self.context.pool(),
-                    enabled,
-                )
+                    #[cfg(target_os = "linux")]
+                    {
+                        crate::data::repositories::app_settings::save_audio_participation_enabled(
+                            control.context.pool(),
+                            enabled,
+                        )
+                        .await
+                        .map_err(RuntimeControlError::Internal)?;
+                        control.audio_source.set_enabled(enabled);
+                        control.emit_settings_changed();
+                        Ok(enabled)
+                    }
+                })
                 .await
-                .map_err(RuntimeControlError::Internal)?;
-                self.audio_source.set_enabled(enabled);
-                self.emit_settings_changed();
-                Ok(enabled)
-            }
         })
     }
 
     fn configure_browser_activity(
         &self,
-        mut configuration: BrowserActivityRuntimeConfiguration,
+        configuration: BrowserActivityRuntimeConfiguration,
     ) -> RuntimeControlFuture<'_, BrowserActivityRuntimeConfiguration> {
+        let control = self.clone();
         Box::pin(async move {
-            configuration.token = configuration.token.trim().to_string();
-            validate_browser_activity_configuration(&configuration)?;
-            let bridge_settings = crate::domain::settings::WebActivityBridgeSettings {
-                enabled: configuration.enabled,
-                port: configuration.port,
-                token: configuration.token.clone(),
-            };
-            let stored_settings = bridge_settings.clone();
-            let url_privacy = configuration.url_privacy;
-            let pool = self.context.pool().clone();
-            self.web_activity
-                .apply_with_commit(bridge_settings, move || async move {
-                    crate::data::repositories::app_settings::save_web_activity_runtime_settings(
-                        &pool,
-                        &stored_settings,
-                        url_privacy,
-                    )
-                    .await
-                    .map_err(|error| format!("{STORAGE_ERROR_PREFIX}{error}"))
-                })
+            let resources = control.resources.clone();
+            resources
+                .run(async move { control.apply_browser_configuration(configuration).await })
                 .await
-                .map_err(map_browser_apply_error)?;
-
-            if !configuration.enabled {
-                let changed_at_ms = self.context.now_ms();
-                match crate::engine::web_activity::seal_active_segment(
-                    self.context.pool(),
-                    changed_at_ms,
-                )
-                .await
-                {
-                    Ok(true) => {
-                        let _ = self.event_sink.emit(
-                            crate::engine::runtime_event::RuntimeEvent::TrackingDataChanged {
-                                reason: crate::domain::web_activity::WEB_ACTIVITY_CHANGED_REASON
-                                    .to_string(),
-                                changed_at_ms: changed_at_ms.max(0) as u64,
-                            },
-                        );
-                    }
-                    Ok(false) => {}
-                    Err(error) => {
-                        return Err(RuntimeControlError::Internal(format!(
-                            "browser activity was disabled but the active segment could not be sealed: {error}"
-                        )))
-                    }
-                }
-            }
-            self.emit_settings_changed();
-            Ok(configuration)
         })
     }
 
@@ -184,46 +196,61 @@ impl ApiRuntimeControl for DaemonApiRuntimeControl {
         context: crate::engine::api::context::ApiRuntimeContext,
         port: u16,
     ) -> RuntimeControlFuture<'_, LocalApiPortApplyResult> {
+        let control = self.clone();
         Box::pin(async move {
-            let port = crate::domain::settings::parse_local_api_port(&port.to_string())
-                .ok_or_else(|| {
-                    RuntimeControlError::InvalidInput(
-                        "local API port must be between 1024 and 65535".to_string(),
-                    )
-                })?;
-            let previous_port = self.api_listener.confirmed_port().await.ok_or_else(|| {
-                RuntimeControlError::Internal("local API listener is not ready".into())
-            })?;
-            let pool = self.context.pool().clone();
-            self.api_listener
-                .apply_port_with_commit(port, context, move |confirmed_port| async move {
-                    crate::data::repositories::app_settings::save_local_api_port(
-                        &pool,
-                        confirmed_port,
-                    )
-                    .await
-                    .map_err(|error| format!("{STORAGE_ERROR_PREFIX}{error}"))
+            let resources = control.resources.clone();
+            resources
+                .run(async move {
+                    let port = crate::domain::settings::parse_local_api_port(&port.to_string())
+                        .ok_or_else(|| {
+                            RuntimeControlError::InvalidInput(
+                                "local API port must be between 1024 and 65535".to_string(),
+                            )
+                        })?;
+                    let previous_port =
+                        control.api_listener.confirmed_port().await.ok_or_else(|| {
+                            RuntimeControlError::Internal("local API listener is not ready".into())
+                        })?;
+                    let pool = control.context.pool().clone();
+                    control
+                        .api_listener
+                        .apply_port_with_commit(port, context, move |confirmed_port| async move {
+                            crate::data::repositories::app_settings::save_local_api_port(
+                                &pool,
+                                confirmed_port,
+                            )
+                            .await
+                            .map_err(|error| format!("{STORAGE_ERROR_PREFIX}{error}"))
+                        })
+                        .await
+                        .map_err(map_local_api_apply_error)?;
+                    let configuration = control.local_api_snapshot_value().await?;
+                    Ok(LocalApiPortApplyResult {
+                        reconnect_required: configuration.port != previous_port,
+                        previous_port,
+                        configuration,
+                    })
                 })
                 .await
-                .map_err(map_local_api_apply_error)?;
-            let configuration = self.local_api_snapshot_value().await?;
-            Ok(LocalApiPortApplyResult {
-                reconnect_required: configuration.port != previous_port,
-                previous_port,
-                configuration,
-            })
         })
     }
 
     fn rotate_local_api_token(&self) -> RuntimeControlFuture<'_, LocalApiTokenRotationResult> {
+        let control = self.clone();
         Box::pin(async move {
-            self.api_credentials
-                .rotate()
-                .map_err(RuntimeControlError::Internal)?;
-            Ok(LocalApiTokenRotationResult {
-                configuration: self.local_api_snapshot_value().await?,
-                reauthentication_required: true,
-            })
+            let resources = control.resources.clone();
+            resources
+                .run(async move {
+                    control
+                        .api_credentials
+                        .rotate()
+                        .map_err(RuntimeControlError::Internal)?;
+                    Ok(LocalApiTokenRotationResult {
+                        configuration: control.local_api_snapshot_value().await?,
+                        reauthentication_required: true,
+                    })
+                })
+                .await
         })
     }
 }
@@ -263,8 +290,18 @@ mod tests {
         Arc<crate::app::daemon::service_lifecycle::DaemonServiceLifecycleOwner>,
         std::path::PathBuf,
     ) {
-        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
         pool.execute(crate::data::schema::CURRENT_BASELINE_SCHEMA_SQL)
+            .await
+            .unwrap();
+        pool.execute(crate::data::schema::WEB_ACTIVITY_SCHEMA_SQL)
+            .await
+            .unwrap();
+        pool.execute(crate::data::schema::WEB_ACTIVITY_SESSION_SCHEMA_SQL)
             .await
             .unwrap();
         let context = crate::engine::runtime_context::RuntimeContext::system(pool.clone());
@@ -326,6 +363,137 @@ mod tests {
     fn available_port() -> u16 {
         let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
         listener.local_addr().unwrap().port()
+    }
+
+    #[tokio::test]
+    async fn abandoned_browser_change_finishes_before_resource_shutdown() {
+        let (pool, control, web_control, sink, _, api_listener, _, _, token_path) =
+            test_control().await;
+        let held_connection = pool.acquire().await.unwrap();
+        let port = available_port();
+        let mut change = control.configure_browser_activity(BrowserActivityRuntimeConfiguration {
+            enabled: true,
+            port,
+            token: "test-browser-token".into(),
+            url_privacy: crate::domain::settings::WebActivityUrlPrivacyMode::DomainOnly,
+        });
+        // Poll until the operation is submitted, then drop only its transport waiter.
+        std::future::poll_fn(|cx| {
+            assert!(change.as_mut().poll(cx).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        drop(change);
+        assert!(matches!(
+            control.set_audio_participation_enabled(false).await,
+            Err(RuntimeControlError::Conflict(_))
+        ));
+        drop(held_connection);
+        control.close_and_drain_resources().await;
+        let stored =
+            crate::data::repositories::app_settings::load_web_activity_bridge_settings(&pool)
+                .await
+                .unwrap();
+        assert!(stored.enabled);
+        assert_eq!(stored.port, port);
+        // Both the committed configuration and real listener survived caller cancellation.
+        let connection = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
+        drop(connection);
+        assert_eq!(sink.events().len(), 1);
+        assert!(matches!(
+            control.set_audio_participation_enabled(false).await,
+            Err(RuntimeControlError::Conflict(_))
+        ));
+        web_control.shutdown().await;
+        api_listener.shutdown().await;
+        pool.close().await;
+        let _ = std::fs::remove_file(token_path);
+    }
+
+    #[tokio::test]
+    async fn failed_browser_seal_preserves_settings_listener_and_events() {
+        let (pool, control, web_control, sink, _, api_listener, _, _, token_path) =
+            test_control().await;
+        let configuration = BrowserActivityRuntimeConfiguration {
+            enabled: true,
+            port: available_port(),
+            token: "browser-token".into(),
+            url_privacy: crate::domain::settings::WebActivityUrlPrivacyMode::Full,
+        };
+        control
+            .configure_browser_activity(configuration.clone())
+            .await
+            .unwrap();
+        pool.execute("INSERT INTO web_activity_segments
+            (browser_client_id, browser_kind, browser_exe_name, domain, normalized_domain,
+             start_time, source, created_at, updated_at)
+            VALUES ('test','chrome','chrome','example.org','example.org',1000,'browser-extension',1000,1000)")
+            .await.unwrap();
+        pool.execute(
+            "CREATE TRIGGER reject_browser_seal BEFORE UPDATE OF end_time ON web_activity_segments
+            BEGIN SELECT RAISE(ABORT, 'injected browser seal failure'); END",
+        )
+        .await
+        .unwrap();
+        let disabled = BrowserActivityRuntimeConfiguration {
+            enabled: false,
+            ..configuration.clone()
+        };
+        assert!(matches!(
+            control.configure_browser_activity(disabled.clone()).await,
+            Err(RuntimeControlError::Internal(_))
+        ));
+        let stored =
+            crate::data::repositories::app_settings::load_web_activity_bridge_settings(&pool)
+                .await
+                .unwrap();
+        assert!(stored.enabled);
+        assert_eq!(sink.events().len(), 1);
+        let connection = tokio::net::TcpStream::connect(("127.0.0.1", configuration.port))
+            .await
+            .unwrap();
+        drop(connection);
+        let records = crate::data::repositories::web_activity::query_segments(
+            &pool,
+            &Default::default(),
+            control.context.now_ms(),
+        )
+        .await
+        .unwrap();
+        let open = records.iter().filter(|row| row.end_time.is_none()).count();
+        assert_eq!(open, 1);
+        pool.execute("DROP TRIGGER reject_browser_seal")
+            .await
+            .unwrap();
+        control.configure_browser_activity(disabled).await.unwrap();
+        let records = crate::data::repositories::web_activity::query_segments(
+            &pool,
+            &Default::default(),
+            control.context.now_ms(),
+        )
+        .await
+        .unwrap();
+        let open = records.iter().filter(|row| row.end_time.is_none()).count();
+        assert_eq!(open, 0);
+        assert!(
+            !crate::data::repositories::app_settings::load_web_activity_bridge_settings(&pool)
+                .await
+                .unwrap()
+                .enabled
+        );
+        assert_eq!(sink.events().len(), 3);
+        assert!(
+            tokio::net::TcpStream::connect(("127.0.0.1", configuration.port))
+                .await
+                .is_err()
+        );
+        control.close_and_drain_resources().await;
+        web_control.shutdown().await;
+        api_listener.shutdown().await;
+        pool.close().await;
+        let _ = std::fs::remove_file(token_path);
     }
 
     #[test]

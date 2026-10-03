@@ -390,33 +390,58 @@ pub async fn load_runtime_activity_settings(
     })
 }
 
+// Fixture convenience; production must supply the runtime owner's timestamp.
+#[cfg(test)]
 pub async fn save_web_activity_runtime_settings(
     pool: &Pool<Sqlite>,
     settings: &WebActivityBridgeSettings,
     url_privacy: crate::domain::settings::WebActivityUrlPrivacyMode,
 ) -> Result<(), String> {
-    commit_app_setting_mutations(
-        pool,
-        &[
-            AppSettingMutation {
-                key: WEB_ACTIVITY_ENABLED_KEY.to_string(),
-                value: if settings.enabled { "1" } else { "0" }.to_string(),
-            },
-            AppSettingMutation {
-                key: WEB_ACTIVITY_PORT_KEY.to_string(),
-                value: settings.port.to_string(),
-            },
-            AppSettingMutation {
-                key: WEB_ACTIVITY_TOKEN_KEY.to_string(),
-                value: settings.token.clone(),
-            },
-            AppSettingMutation {
-                key: WEB_ACTIVITY_URL_PRIVACY_KEY.to_string(),
-                value: url_privacy.as_str().to_string(),
-            },
-        ],
-    )
-    .await
+    save_web_activity_runtime_settings_at(pool, settings, url_privacy, current_timestamp_ms())
+        .await
+        .map(|_| ())
+}
+
+/// Persist browser configuration and its stop boundary in the same transaction.
+pub async fn save_web_activity_runtime_settings_at(
+    pool: &Pool<Sqlite>,
+    settings: &WebActivityBridgeSettings,
+    url_privacy: crate::domain::settings::WebActivityUrlPrivacyMode,
+    timestamp_ms: i64,
+) -> Result<bool, String> {
+    let mutations = &[
+        AppSettingMutation {
+            key: WEB_ACTIVITY_ENABLED_KEY.to_string(),
+            value: if settings.enabled { "1" } else { "0" }.to_string(),
+        },
+        AppSettingMutation {
+            key: WEB_ACTIVITY_PORT_KEY.to_string(),
+            value: settings.port.to_string(),
+        },
+        AppSettingMutation {
+            key: WEB_ACTIVITY_TOKEN_KEY.to_string(),
+            value: settings.token.clone(),
+        },
+        AppSettingMutation {
+            key: WEB_ACTIVITY_URL_PRIVACY_KEY.to_string(),
+            value: url_privacy.as_str().to_string(),
+        },
+    ];
+    validate_app_setting_mutations(mutations)?;
+    let mut tx = pool
+        .begin_with("BEGIN IMMEDIATE")
+        .await
+        .map_err(|e| e.to_string())?;
+    apply_app_settings_tx(&mut tx, mutations, timestamp_ms).await?;
+    let sealed = if !settings.enabled {
+        super::web_activity::end_active_segment_tx(&mut tx, timestamp_ms)
+            .await
+            .map_err(|e| format!("failed to seal disabled browser activity: {e}"))?
+    } else {
+        false
+    };
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(sealed)
 }
 
 pub async fn load_web_activity_bridge_settings(
@@ -531,6 +556,12 @@ mod tests {
     async fn setup_test_db() -> SqlitePool {
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
         pool.execute(db_schema::CURRENT_BASELINE_SCHEMA_SQL)
+            .await
+            .unwrap();
+        pool.execute(crate::data::schema::WEB_ACTIVITY_SCHEMA_SQL)
+            .await
+            .unwrap();
+        pool.execute(crate::data::schema::WEB_ACTIVITY_SESSION_SCHEMA_SQL)
             .await
             .unwrap();
         pool

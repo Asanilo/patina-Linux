@@ -1911,6 +1911,15 @@ Schema:
 
 This endpoint is available on every API surface and reports persisted configuration. It deliberately exposes only `token_present`; the browser extension Token is never returned. Use diagnostics to distinguish configured state from whether a runtime owner is currently listening or connected.
 
+On the multi-client branch, the daemon owns accepted audio, browser configuration,
+Local API port and Token changes until they finish, even if the caller disconnects
+or its HTTP wait times out. Only one such operation is accepted at a time; overlap
+or shutdown returns `409`. A timeout leaves the outcome unknown to that client:
+reread configuration and diagnostics instead of automatically retrying the write.
+Daemon shutdown drains accepted resource changes before closing their listeners
+and storage. This serialization does not detect stale replacement payloads and is
+not a global transaction across different resource endpoints.
+
 ### `POST /api/v1/settings/runtime/audio-participation`
 
 Available only when `/api/v1/capabilities` advertises the `runtime-settings` write scope.
@@ -1935,7 +1944,7 @@ curl -s -X POST "$PATINA_API_BASE/api/v1/settings/runtime/browser-activity" \
   -d '{"enabled":true,"port":12345,"token":"replace-with-extension-token","url_privacy":"domain_only"}'
 ```
 
-`port` must be `1024..65535`; `url_privacy` is `full`, `strip_query`, or `domain_only`; enabling requires a non-empty Token. For a port change, the daemon first binds the requested port, then commits all browser settings in one transaction, and only then replaces the old listener. A bind conflict returns `409` without changing stored or live settings. Disabling also seals any active web segment at the current trusted boundary. The response reports `token_present` and never echoes the Token value.
+`port` must be `1024..65535`; `url_privacy` is `full`, `strip_query`, or `domain_only`; enabling requires a non-empty Token. For a port change, the daemon first binds the requested port, then commits all browser settings in one transaction, and only then replaces the old listener. A bind conflict returns `409` without changing stored or live settings. Disabling seals any active web segment in the same transaction as its settings; a seal failure preserves the old configuration and listener. Daemon browser ingestion and configuration commit share a transition boundary so an in-flight request cannot reuse an old enabled policy after that commit. The response reports `token_present` and never echoes the Token value.
 
 ### `GET /api/v1/settings/local-api`
 

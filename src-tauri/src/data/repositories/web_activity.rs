@@ -193,14 +193,21 @@ pub async fn end_active_segment(
     timestamp_ms: i64,
 ) -> Result<bool, sqlx::Error> {
     let mut tx = pool.begin().await?;
-    let active = load_active_segment_tx(&mut tx).await?;
+    let changed = end_active_segment_tx(&mut tx, timestamp_ms).await?;
+    tx.commit().await?;
+    Ok(changed)
+}
+
+pub(crate) async fn end_active_segment_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    timestamp_ms: i64,
+) -> Result<bool, sqlx::Error> {
+    let active = load_active_segment_tx(tx).await?;
     let Some(active) = active else {
-        tx.rollback().await?;
         return Ok(false);
     };
 
-    finish_segment_tx(&mut tx, active.id, active.start_time, timestamp_ms).await?;
-    tx.commit().await?;
+    finish_segment_tx(tx, active.id, active.start_time, timestamp_ms).await?;
     Ok(true)
 }
 

@@ -257,6 +257,10 @@ failed 或损坏的交接只能从本机 Tauri 专用入口显式重试，且必
 
 daemon 写侧按 capability 和真实 runtime owner 开放。默认 daemon surface 保持只读；只有 tracking owner surface 才能写 app mapping、classification、tracker settings、已迁移的 runtime settings、local API configuration 和 Tools。普通写入先进入 `data` owner 的校验与事务，再通过 `RuntimeEventSink` 发布刷新事件；Tools 写入统一经过宿主无关的 `ToolsRuntimeOwner` 并返回完整 snapshot。需要切换 listener 的配置由 runtime owner 先预留新资源、在提交持久化后切换旧资源。`/api/v1/capabilities` 同时返回服务版本、当前协议、支持的客户端协议上下限、tracking/browser/Tools ownership readiness 和 write operation scopes；客户端必须先协商，不能只根据端口可连接推断兼容或可写。
 
+daemon 的音频、浏览器配置、Local API 端口和 Token 变更由 `app/daemon/runtime/resource_operations` 持有已接受操作的生命周期；HTTP future 被取消不撤销该操作，客户端不得因超时自动重试写入。每个 daemon 同时只接受一项此类资源变更，重叠请求明确返回 conflict，不积累无界任务。关闭时先停止接收并等待已接受变更完成，再停止后台、listener 和存储。此约束不替代旧草稿的 revision 检查，也不宣称所有写接口或 embedded 兼容路径具有同样的取消语义。
+
+浏览器 disabled 设置和当前网页段封口在 data owner 的同一事务提交。daemon ingress 的策略读取与事实写入和配置提交共享 transition，防止旧 enabled 请求越过关闭边界；该锁不跨 listener 的优雅关闭等待，以免关闭等待在途请求、请求又等待配置锁。封口失败时保留旧设置与 listener，事件只在提交与资源切换成功后发布。
+
 需要重建运行资源的配置不属于普通 settings upsert：browser bridge 端口/Token/隐私、audio source 启停和 local API listener/Token 现已由 daemon runtime control 应用；listener 换端口统一使用“预绑定、事务提交、切换旧 listener”的顺序。local API Token 只原子写入 owner-only 文件，轮换后撤销旧 bearer 与已有 SSE 会话，响应不返回密钥。service restart 由 systemd lifecycle owner 先持久化 owner-only ticket 并返回 `202 pending`，再触发有序关闭；只有下一 systemd 实例把同一 ticket 标记为 `completed` 后，客户端才能确认成功。手工启动的 preview daemon 不提供该写 scope。
 
 Desktop 的后台版本诊断与确认式重新加载由 `app/daemon_service/upgrade` 编排，薄 command 只校验 Production、managed client、已完成交接与显式确认，并使用既有服务变更互斥。版本不同不代表协议不兼容，也不得触发自动重启。重新加载复用 typed HTTP client 和既有 service restart ticket，不另建 systemctl 重启路径；POST 不自动重试，有界等待同一 ticket、新实例、版本匹配和追踪就绪后才报告成功。该操作只加载磁盘上已安装的程序，不负责下载更新。

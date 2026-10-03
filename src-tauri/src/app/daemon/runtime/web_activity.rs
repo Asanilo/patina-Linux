@@ -14,6 +14,8 @@ pub(crate) struct DaemonWebActivityControl {
     state: Arc<crate::engine::web_activity::WebActivityRuntimeState>,
     event_sink: Arc<dyn crate::engine::runtime_event::RuntimeEventSink>,
     runtime: Arc<WebActivityBridgeRuntimeState>,
+    // Ingress reads policy and writes facts under the same boundary as config commit.
+    ingestion_transition: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl DaemonWebActivityControl {
@@ -31,6 +33,7 @@ impl DaemonWebActivityControl {
             state,
             event_sink,
             runtime: Arc::new(WebActivityBridgeRuntimeState::default()),
+            ingestion_transition: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -49,8 +52,17 @@ impl DaemonWebActivityControl {
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<(), String>>,
     {
+        let transition = self.ingestion_transition.clone();
         self.runtime
-            .update_with_commit(settings, self.handler(), self.readiness_handler(), commit)
+            .update_with_commit(
+                settings,
+                self.handler(),
+                self.readiness_handler(),
+                move || async move {
+                    let _guard = transition.lock().await;
+                    commit().await
+                },
+            )
             .await
     }
 
@@ -64,12 +76,15 @@ impl DaemonWebActivityControl {
         let state = self.state.clone();
         let tracking = self.tracking_snapshot.clone();
         let events = self.event_sink.clone();
+        let transition = self.ingestion_transition.clone();
         Arc::new(move |request| {
             let context = context.clone();
             let state = state.clone();
             let tracking = tracking.clone();
             let events = events.clone();
+            let transition = transition.clone();
             Box::pin(async move {
+                let _guard = transition.lock().await;
                 crate::engine::web_activity::handle_http_request(
                     &context,
                     state.as_ref(),
@@ -284,4 +299,95 @@ fn emit_web_activity_event(
             changed_at_ms: changed_at_ms.max(0) as u64,
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::Executor;
+
+    #[tokio::test]
+    async fn ingress_waits_for_config_commit_and_reads_the_committed_policy() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        pool.execute(crate::data::schema::CURRENT_BASELINE_SCHEMA_SQL)
+            .await
+            .unwrap();
+        pool.execute(crate::data::schema::WEB_ACTIVITY_SCHEMA_SQL)
+            .await
+            .unwrap();
+        pool.execute(crate::data::schema::WEB_ACTIVITY_SESSION_SCHEMA_SQL)
+            .await
+            .unwrap();
+        let settings = WebActivityBridgeSettings {
+            enabled: true,
+            port: 12345,
+            token: "test-token".into(),
+        };
+        crate::data::repositories::app_settings::save_web_activity_runtime_settings(
+            &pool,
+            &settings,
+            crate::domain::settings::WebActivityUrlPrivacyMode::Full,
+        )
+        .await
+        .unwrap();
+        let control = DaemonWebActivityControl::new(
+            crate::engine::runtime_context::RuntimeContext::system(pool.clone()),
+            Arc::new(
+                crate::engine::tracking::runtime_snapshot::TrackingRuntimeSnapshotState::default(),
+            ),
+            Arc::new(crate::engine::web_activity::WebActivityRuntimeState::default()),
+            Arc::new(crate::engine::runtime_event::MemoryRuntimeEventSink::default()),
+        );
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let change =
+            tokio::spawn({
+                let control = control.clone();
+                let pool = pool.clone();
+                let disabled = WebActivityBridgeSettings {
+                    enabled: false,
+                    ..settings
+                };
+                async move {
+                    control.apply_with_commit(disabled.clone(), || async move {
+                    started_tx.send(()).unwrap();
+                    release_rx.await.unwrap();
+                    crate::data::repositories::app_settings::save_web_activity_runtime_settings(
+                        &pool, &disabled, crate::domain::settings::WebActivityUrlPrivacyMode::Full,
+                    ).await
+                }).await
+                }
+            });
+        started_rx.await.unwrap();
+        let mut ingress = tokio::spawn((control.handler())(
+            crate::engine::web_activity::WebActivityBridgeHttpRequest {
+                method: "POST".into(),
+                path: "/web-activity".into(),
+                authorization: Some("Bearer test-token".into()),
+                body: b"{}".to_vec(),
+            },
+        ));
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(50), &mut ingress)
+                .await
+                .is_err()
+        );
+        release_tx.send(()).unwrap();
+        change.await.unwrap().unwrap();
+        let response = tokio::time::timeout(std::time::Duration::from_secs(2), ingress)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(response.status, 409);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&response.body).unwrap()["code"],
+            "web-recording-disabled"
+        );
+        control.shutdown().await;
+        pool.close().await;
+    }
 }

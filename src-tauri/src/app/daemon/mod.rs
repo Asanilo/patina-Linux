@@ -176,8 +176,8 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
         )
     });
     let api_runtime_control = match (web_activity_control.as_ref(), api_listener.as_ref()) {
-        (Some(web_activity), Some(api_listener)) => Some(Arc::new(
-            runtime::DaemonApiRuntimeControl::new(
+        (Some(web_activity), Some(api_listener)) => {
+            Some(Arc::new(runtime::DaemonApiRuntimeControl::new(
                 runtime_context.clone(),
                 web_activity.clone(),
                 event_sink.clone(),
@@ -189,9 +189,8 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
                     .as_ref()
                     .expect("tracking daemon audio source")
                     .clone(),
-            ),
-        )
-            as Arc<dyn crate::engine::api::runtime_control::ApiRuntimeControl>),
+            )))
+        }
         _ => None,
     };
     let activity_import_owner = options.track.then(|| {
@@ -230,7 +229,9 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
             web_activity_state.clone(),
             tools_ready.clone(),
             event_hub.clone(),
-            api_runtime_control,
+            api_runtime_control.as_ref().map(|control| {
+                control.clone() as Arc<dyn crate::engine::api::runtime_control::ApiRuntimeControl>
+            }),
             tools_owner.clone().map(Arc::new),
         )
         .with_analytical_reads(sqlite_runtime.analytical_reads.clone());
@@ -321,7 +322,8 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
         background_tasks,
         sqlite_runtime,
         runtime_lease,
-    );
+    )
+    .with_resource_control(api_runtime_control);
     runtime.block_on(async move {
         if options.serve_api {
             tokio::select! {

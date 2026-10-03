@@ -5,6 +5,7 @@ mod control;
 mod media;
 #[cfg(target_os = "linux")]
 mod power;
+mod resource_operations;
 mod restart;
 mod tools;
 mod tracking;
@@ -123,6 +124,7 @@ impl DaemonBackgroundTasks {
 }
 
 pub struct DaemonRuntime {
+    resource_control: Option<Arc<DaemonApiRuntimeControl>>,
     api_server: Option<Arc<LocalApiListenerOwner>>,
     event_hub: Option<Arc<RuntimeEventHub>>,
     background_tasks: Option<DaemonBackgroundTasks>,
@@ -139,6 +141,7 @@ impl DaemonRuntime {
         lease: RuntimeLease,
     ) -> Self {
         Self {
+            resource_control: None,
             api_server,
             event_hub: Some(event_hub),
             background_tasks,
@@ -147,7 +150,18 @@ impl DaemonRuntime {
         }
     }
 
+    pub(super) fn with_resource_control(
+        mut self,
+        control: Option<Arc<DaemonApiRuntimeControl>>,
+    ) -> Self {
+        self.resource_control = control;
+        self
+    }
+
     pub async fn shutdown(mut self) {
+        if let Some(control) = self.resource_control.take() {
+            control.close_and_drain_resources().await;
+        }
         if let Some(tasks) = self.background_tasks.take() {
             tasks.shutdown().await;
         }
