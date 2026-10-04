@@ -93,6 +93,26 @@ old-package migration and running/installed-version verification are still separ
 work in the active multi-client plan. This candidate is not a universal or static
 Linux binary and does not change the public DEB/AppImage release workflow.
 
+Stage an already verified, extracted candidate with a staging-capable daemon:
+
+```bash
+/absolute/path/patinad --stage-runtime /absolute/path/extracted/patinad \
+  --runtime-root /absolute/path/private-parent/runtime \
+  --manifest-sha256 <expected-manifest-sha256>
+# Append --allow-debug only for an explicitly local debug candidate.
+```
+
+Obtain the expected manifest digest from the verified candidate output; hashing an
+untrusted manifest by itself does not establish its origin. The root's parent must
+already exist. The root must be new, empty and private, or an existing recognized
+user-owned standalone runtime root. Staging validates the fixed payload inventory,
+hashes, sizes, modes and matching Cargo target, then publishes an immutable version
+directory named by the manifest digest. Repeating the command revalidates and reuses
+that version; damaged installed files are rejected without repair. The JSON receipt
+identifies the directory, build and binary digest. This command does not execute the
+candidate, select a current version, create a profile, or change a service. Activation
+and legacy DEB/AppImage ownership migration remain pending.
+
 ## Daemon Analytical Read Isolation
 
 The multi-client daemon prepares a separate two-connection analytical pool after

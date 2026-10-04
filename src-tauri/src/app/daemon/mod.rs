@@ -3,6 +3,7 @@ mod api_runtime;
 pub(crate) mod build_info;
 pub(crate) mod backup_restore;
 mod options;
+mod installation;
 mod remote_backup;
 mod runtime;
 pub(crate) mod scheduled_backup;
@@ -49,6 +50,10 @@ pub fn build_startup_status(
 }
 
 pub fn run(args: impl IntoIterator<Item = impl AsRef<str>>) -> Result<(), String> {
+    let args: Vec<String> = args.into_iter().map(|arg| arg.as_ref().to_owned()).collect();
+    if args.get(1).is_some_and(|arg| arg == "--stage-runtime") {
+        return installation::stage_from_args(&args);
+    }
     run_with_options(DaemonRunOptions::from_args(args)?)
 }
 

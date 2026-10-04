@@ -10,6 +10,7 @@ pub mod notifications;
 pub mod power;
 pub mod resource;
 pub mod systemd_user_service;
+pub(crate) mod standalone_runtime;
 #[cfg(feature = "desktop")]
 pub mod widget_window;
 #[cfg(feature = "desktop")]

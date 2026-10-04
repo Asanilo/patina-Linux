@@ -59,7 +59,7 @@ HTTP API 索引和源码以当前实现为准；索引中历史的 unreleased/st
 | M3 | 浏览器会话和适配层；共享 React 核心界面，复用 Quiet Pro | Tauri＋Web 并行读取／修改分类并同步，真实浏览器验收 | 待实施 |
 | M4 | Rust SDK typed 能力逐步补全，TUI 接入同一核心链路 | 实际交互式 TUI 可查看／筛选／修改分类，并参与同步；CLI 示例不算完成 | 待实施 |
 | M5 | GPUI 客户端，同一能力和同步契约，独立视图 | 可运行 GPUI 核心链路和四端同步验收；评估启动、资源和维护成本 | 待实施 |
-| M6 | 后端独立安装、兼容矩阵、异常恢复、发布集成 | 无 Desktop 后端运行、四端适用覆盖矩阵、可重复回归；范围冻结后再准备候选 | M6a 同源独立构建与隔离运行已验证；安装／发布集成待实施 |
+| M6 | 后端独立安装、兼容矩阵、异常恢复、发布集成 | 无 Desktop 后端运行、四端适用覆盖矩阵、可重复回归；范围冻结后再准备候选 | M6a 独立构建、M6b 构建身份／归档、M6c 版本化存放已验证；激活、旧包迁移、运行目标验证及发布集成待实施 |
 
 M1 的第二客户端示例用于证明独立依赖和真实连接，不能提前宣称 TUI 或 GPUI 已交付。M3 优先于完整 TUI／GPUI 开发，以先取得共享 UI 的直接收益。只有出现真实并行需要才增加工作分支。
 
@@ -545,3 +545,19 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 实际 debug 归档为 `tmp/acceptance/multi-client-m6b-bundle/archive/patinad-1.9.2-x86_64-unknown-linux-gnu-debug.tar.gz`，SHA256 `50dac967350028d3929888a58971c73b96e689d80143f7b248dfd89bc6c6d939`。全部成员经摘要／大小／模式核对后提取；二进制 SHA256 `45b8b0c3408062f3637f9ffdd60df18ac1096bb2cb24a63fe0372f9f09762b88`。源二进制及提取后执行文件的元数据查询均在临时 XDG 根下验证，不产生 profile／lease／数据库；错误参数也没有副作用。
 - 提取后的执行文件通过新 Local profile 的双 SDK 分类／Tools 事件、控制、认证拒绝、资源 CAS、History 数量、正常关闭／重启与数据保留。复用未改变的 SDK 探针；证据在 `tmp/acceptance/multi-client-m6b-bundle/`、`m6b-metadata-process.log`、`m6b-extracted-metadata.log`、`m6b-independent-client.log` 和 `/tmp/patina-independent-client-dfwjq11a/`。ELF 仍依赖 X11／XCB／Pulse 等宿主库，不是全发行版或静态分发承诺。
 - 这是 M6b 的构建与候选归档检查点，不是独立安装／升级完成。manifest 摘要不是发布者签名；实际安装身份、旧包迁移、服务冲突处理和独立版本重载验证仍按上述顺序继续。未改生产 profile、安装、合并、推送或公开发布，仍未开发新客户端 UI。
+
+### M6c 执行设计：独立 runtime 的版本化存放
+
+- 安装文件边界归 Linux platform owner，daemon CLI 只解析显式参数并返回结果。第一步接收已提取、外层来源已由调用方确认的候选目录及预期 manifest SHA256；不自动下载、运行候选或把摘要冒充签名。
+- 校验固定文件集合、manifest 格式／构建目标／debug 投影、所有内容摘要与长度，拒绝链接和非普通文件。复制到私有 staging 后再核验，以 manifest 内容摘要命名不可变版本目录；同一版本复用前重新检查已有内容，不覆盖损坏版本。
+- runtime 根必须是新／空目录或已有合法独立安装根，独占安装锁覆盖 staging 与发布；通过原子目录发布保留旧版本，失败只清理本次临时目录。返回可供后续诊断使用的版本身份。此步不选择 current、不修改 systemd unit、不启用／重启服务，也不接触 profile 数据；下一步再接显式激活、旧 owner 迁移和目标版本验证。
+- 用隔离目录验证损坏、路径／链接、并发安装、重复 staging 与失败不覆盖；真实候选经该边界存放后再做无副作用 metadata 和私有 profile 运行验收。
+
+### M6c 版本化存放检查点与阶段汇报
+
+- 已实现显式 `--stage-runtime` 入口，固定候选清单校验、私有安装根标识、独占锁、原子发布与已有版本重新校验。错误摘要、损坏内容、链接／额外文件、特权模式、错误构建投影／目标、无效协议／长度、无标识用户目录和忙锁均有回归；不执行候选或改动服务。打包脚本的 JSON 输出新增 manifest 摘要，归档格式不变。
+- 完整 `npm run check:full` 通过：68 个 TypeScript 文件、49 项浏览器检查、44 项 SDK 测试、Desktop 796 passed / 22 ignored、无桌面后端 637 passed / 11 ignored；类型生成、依赖／架构边界、Clippy 和 bundle 预算通过。证据：`tmp/acceptance/m6c-full.log`；新增 7 项文件存放测试与 1 项 CLI 参数测试。
+- 真实验收使用本批新构建作为存放控制程序（SHA256 `e0507c4fe1d24908f9e50df868d72ef5ca2f0ba370e84424484d96293d3358bd`），存放此前 M6b 已验证的候选（SHA256 `45b8b0c3408062f3637f9ffdd60df18ac1096bb2cb24a63fe0372f9f09762b88`）。两次操作返回相同身份，仅产生一个版本，无 current、服务或 profile 文件；随后对存放后的候选执行 metadata 与双 SDK 隔离运行验收，分类／Tools 同步、条件写入、认证、关闭／重启及数据保留通过。此处验证的是 M6c 存放能力，不能声称 M6b 载荷包含本批新 CLI。
+- 证据位于 `tmp/acceptance/multi-client-m6c-staging/`、`tmp/acceptance/m6c-independent-client.log`、`/tmp/patina-m6c-stage-qtxtiygj/` 与 `/tmp/patina-independent-client-mcffgxrc/`。候选是本地 debug 成品；manifest 摘要不是发布者签名，隔离运行不等于生产安装或 GNOME 实机验收。
+- 阶段状态：独立协议／SDK、核心应用读模型、设置／资源条件写入、Tools 共用契约与同步、防陈旧响应、无桌面后端构建均已有实现和自动／隔离证据。下一工作包应完成独立后端的激活、旧 DEB/AppImage owner 迁移、已安装与运行身份核对及失败恢复，再收口其余 Desktop 业务／契约例外。网页停用后的历史可见性、URL 隐私统一策略、客户端偏好恢复语义仍待产品选择；新增 Web／TUI／GPUI 界面继续留在讨论边界。
+- 本检查点只做本地开发、验收与提交；生产 1.9.2、main 和宿主服务保持原状，未合并、推送、安装或公开发布。按用户要求在此集中汇报，不提前启动下一批。

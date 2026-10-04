@@ -64,7 +64,9 @@ class DaemonPackageTests(unittest.TestCase):
             with tarfile.open(first["archive"], "r:gz") as archive:
                 self.assertEqual(sorted(archive.getnames()), ["patinad/LICENSE", "patinad/README.txt", "patinad/bin/patinad",
                     "patinad/manifest.json", "patinad/systemd/patinad.service.in"])
-                manifest = json.load(archive.extractfile("patinad/manifest.json"))
+                manifest_bytes = archive.extractfile("patinad/manifest.json").read()
+                self.assertEqual(hashlib.sha256(manifest_bytes).hexdigest(), first["manifest_sha256"])
+                manifest = json.loads(manifest_bytes)
                 self.assertEqual(manifest["build"], info())
                 self.assertEqual(manifest["distribution"], "standalone")
                 self.assertEqual(archive.extractfile("patinad/LICENSE").read(), (package.ROOT / "LICENSE").read_bytes())

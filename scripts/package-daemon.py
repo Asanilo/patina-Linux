@@ -104,7 +104,8 @@ def _assemble(binary, info, output, unit, allow_debug=False):
         except BaseException:
             destination.unlink(missing_ok=True)
             raise
-    return {"archive": str(destination), "sha256": digest(destination), "build": info}
+    return {"archive": str(destination), "sha256": digest(destination),
+            "manifest_sha256": hashlib.sha256(payloads["manifest.json"]).hexdigest(), "build": info}
 
 
 def main():
