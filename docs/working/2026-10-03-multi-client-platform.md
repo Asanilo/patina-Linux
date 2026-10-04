@@ -496,3 +496,20 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - `npm run check:full` 完整通过：67 个 TypeScript 文件、48 项浏览器检查、44 项 SDK 测试、Desktop 782 passed / 22 ignored、无桌面后端 623 passed / 11 ignored；生成器、架构／依赖边界、Clippy 及 bundle 门禁通过。前端仅改变类型来源，总 JS gzip 仍为 369.22 KiB。证据为 `tmp/acceptance/m2u-full.log`；专项记录为 `m2u-tools-sdk.log`、`m2u-tools-native.log`。
 - 新无桌面构建经临时 Local profile 和两个 SDK 探针进程验收：Tools 就绪后订阅，HTTP 执行计时控制，两个进程收到相同 Tools 事件序号，暂停快照／分段一致；认证拒绝、分类同步、资源 CAS、History 数量守恒、正常关闭／重启和数据保留也通过。该进程验收的写入由脚本经 HTTP 发起，类型化 SDK 写入由上述真实契约测试验证，不混称为新客户端 UI。二进制 SHA256 为 `78640cbac8de98535db3e6d185eb51cc849a9ce0ed98756a24e64428742afd8a`；证据为 `tmp/acceptance/multi-client-m2u-tools/`、`m2u-independent-client.log` 及 `/tmp/patina-independent-client-iarsfe7x/`。ELF 无 GTK／WebKit 直接依赖，保留现有 X11／Pulse 采样依赖。
 - 本切片仅本地开发与隔离验证，未安装、合并、推送或发布。新 TUI／GPUI／Web UI 未开发，Tools 界面投影与其余 backend／宿主契约仍应按实际缺口审计；网页语义与客户端偏好恢复选择仍待讨论，独立安装和整体基础阶段继续。
+
+### M2v 执行设计：Tools 并发状态与事务边界
+
+- 审计发现分段编号、计时暂停／恢复和番茄到期判断在事务外读取，多个调用可基于同一旧状态更新；reset 的状态修改与分段删除也未原子提交。先用并发分段、并发到期和注入删除失败复现。
+- `data/repositories/tools` 负责事务入口；写入从 `BEGIN IMMEDIATE` 起覆盖读取、判断、修改与结果，内部 SQL helper 使用同一连接，避免嵌套 pool checkout。完整 Tools 读取使用一个只读事务。现有存储／计时规则保持原 owner，不新增第二份业务实现。
+- `ToolsRuntimeOwner` clone 共用操作锁，覆盖控制、启动恢复、后台 tick 和快照发布；取得锁后才取时间，内部已持锁 helper 避免自锁。HTTP tracking owner 的快照经过该 owner，显式只读宿主仍使用 repository 快照。事务失败／取消不留下半次 reset；串行执行不冒充旧客户端草稿 CAS 或网络重试幂等性。
+- 完成并发与回滚证据后运行完整门禁、隔离 daemon 回归。不扩展到新 UI、宿主安装或发布。
+
+### M2v 核验结果
+
+- 修复前的三项独立回归均失败：16 次并发分段全部返回编号 1；16 次并发到期检查均返回完成；删除分段的 SQL trigger 失败后计时器已经被 reset。证据为 `tmp/acceptance/m2v-before.log`，不是仅凭代码推断竞态。
+- 19 项 Tools repository 写入口统一从 `BEGIN IMMEDIATE` 开始，原 SQL 移到仅接收同一连接的私有 `tools/state`；前置读取不再游离在事务外，已有提醒及番茄计数事务合入调用方事务，避免嵌套获取连接。完整快照在一个读事务内取得；恒定的默认 Tools 配置不再伪装成数据库加载器。业务阶段计算、数据格式与 schema 保持原语义。
+- daemon 的控制、恢复、tick 与快照／事件发布共用 owner 锁；锁后才取时间，内部持锁 helper 不再次加锁。embedded 包装原先每次创建 owner，现从受管状态复用 gate；没有复制运行时。HTTP 已有 Tools owner 时通过它读取，没有 owner 的只读宿主继续使用事务快照。
+- 并发分段现在得到连续的 1–16 且总时长守恒，到期只返回一次完成并只增加一个番茄计数；删除失败整体回滚，解除故障后 reset 成功。WAL 双连接测试在 reset 已提交后仍从旧读事务取得一致的旧计时器／分段，后续新读看到清理结果。owner 测试确认等待期间不发布快照，释放锁后使用新时钟，并按顺序返回写后读取。真实双 SDK HTTP 测试另加 8 次并发分段，各请求的确认数量依次为 2–9，最终编号无重复。
+- 完整门禁全部组成项通过：67 个 TypeScript 文件、48 项浏览器检查、44 项 SDK 测试、Desktop 787 passed / 22 ignored、无桌面后端 628 passed / 11 ignored，以及协议生成、边界、Clippy 与原 bundle 预算。首轮 `m2v-full.log` 在源码结构测试的旧私有方法名处停止，已按持锁 helper 更新；后续证据为 `tmp/acceptance/m2v-remaining-ts.log`、`m2v-build.log`、`m2v-client.log`、`m2v-rust.log`、`m2v-daemon.log`。未重跑已通过且未变化的浏览器等检查。
+- 新 headless 成品经独立临时 Local profile 验收，Tools／分类双进程事件、计时控制、认证拒绝、资源 CAS、History 数量、关闭／重启与数据保留通过。复用未变化的 M2u SDK 探针，daemon SHA256 为 `85dd34a2257710e5566e29343609b5266aee42e61dc81d67fd933fce108e31e3`；证据为 `tmp/acceptance/multi-client-m2v-tools-transactions/`、`m2v-independent-client.log` 和 `/tmp/patina-independent-client-2jruo3if/`。
+- 原子性限于单项数据库操作；串行 owner 不代表整次 tick 的全局事务、过期草稿 CAS、网络重试幂等或崩溃期间系统通知的恰好一次投递。未安装、合并、推送或发布，未开发新客户端 UI；其余基础阶段缺口及待讨论事项继续保留。

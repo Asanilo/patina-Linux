@@ -683,7 +683,7 @@ await runTest("tools runtime avoids per-second snapshot broadcasts without state
 
   assert.match(owner, /ToolsTickOutcome/);
   assert.match(refreshIfChanged, /if outcome\.state_changed/);
-  assert.match(refreshIfChanged, /self\.refresh_snapshot\(\)\.await/);
+  assert.match(refreshIfChanged, /self\.refresh_snapshot_locked\(\)\.await/);
   assert.match(getSnapshot, /load_snapshot\(app\)\.await/);
   assert.doesNotMatch(getSnapshot, /refresh_snapshot/);
   assert.doesNotMatch(loadSnapshot, /TOOLS_RUNTIME_CHANGED_EVENT/);

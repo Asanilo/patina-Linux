@@ -165,6 +165,45 @@ async fn independent_tools_clients_share_owner_state_and_do_not_replay_alerts() 
     assert_eq!(lapped.timer_laps.len(), 1);
     assert_eq!(lapped.timer_laps[0].duration_ms, 1500);
     assert_eq!(lapped, desktop.tools_snapshot().await.unwrap().into());
+    let mut concurrent = Vec::new();
+    for index in 0..8 {
+        let client = if index % 2 == 0 {
+            first.clone()
+        } else {
+            second.clone()
+        };
+        concurrent.push(tokio::spawn(async move {
+            client
+                .tools_action(ToolsAction::AddTimerLap)
+                .await
+                .unwrap()
+                .timer_laps
+                .len()
+        }));
+    }
+    let mut confirmed_counts = Vec::new();
+    for task in concurrent {
+        confirmed_counts.push(task.await.unwrap());
+    }
+    confirmed_counts.sort();
+    assert_eq!(confirmed_counts, (2..=9).collect::<Vec<_>>());
+    let concurrent_snapshot = first.tools_snapshot().await.unwrap();
+    assert_eq!(
+        concurrent_snapshot
+            .timer_laps
+            .iter()
+            .map(|lap| lap.lap_index)
+            .collect::<Vec<_>>(),
+        (1..=9).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        concurrent_snapshot
+            .timer_laps
+            .iter()
+            .map(|lap| lap.duration_ms)
+            .sum::<i64>(),
+        1500
+    );
     let paused: ToolsRuntimeSnapshot = desktop
         .tools_action(ToolsAction::PauseTimer)
         .await

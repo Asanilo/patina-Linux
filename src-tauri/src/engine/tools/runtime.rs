@@ -42,6 +42,7 @@ pub struct CreateSoftwareReminderRuleRequest {
 pub struct ToolsRuntimeOwner {
     context: RuntimeContext,
     sink: Arc<dyn ToolsRuntimeSink>,
+    transition: Arc<tokio::sync::Mutex<()>>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -57,21 +58,41 @@ impl ToolsTickOutcome {
 
 impl ToolsRuntimeOwner {
     pub fn new(context: RuntimeContext, sink: Arc<dyn ToolsRuntimeSink>) -> Self {
-        Self { context, sink }
+        Self::with_transition(context, sink, Arc::new(tokio::sync::Mutex::new(())))
+    }
+
+    // The embedded migration host creates wrappers per command, so it supplies
+    // one gate from its managed state. Daemon clones share the gate in `new`.
+    pub(super) fn with_transition(
+        context: RuntimeContext,
+        sink: Arc<dyn ToolsRuntimeSink>,
+        transition: Arc<tokio::sync::Mutex<()>>,
+    ) -> Self {
+        Self {
+            context,
+            sink,
+            transition,
+        }
     }
 
     pub async fn snapshot(&self) -> Result<ToolsRuntimeSnapshot, String> {
+        let _guard = self.transition.lock().await;
+        self.snapshot_locked().await
+    }
+
+    async fn snapshot_locked(&self) -> Result<ToolsRuntimeSnapshot, String> {
         let now_ms = self.context.now_ms();
         repositories::tools::fetch_tools_snapshot(self.context.pool(), now_ms, &date_key_at(now_ms))
             .await
     }
 
     pub async fn recover_after_startup(&self) -> Result<ToolsRuntimeSnapshot, String> {
+        let _guard = self.transition.lock().await;
         let now_ms = self.context.now_ms();
         repositories::tools::pause_running_stopwatch_after_restart(self.context.pool(), now_ms)
             .await?;
         self.tick_and_notify(now_ms).await?;
-        self.refresh_snapshot().await
+        self.refresh_snapshot_locked().await
     }
 
     pub async fn run_with_shutdown(
@@ -102,29 +123,32 @@ impl ToolsRuntimeOwner {
         label: String,
         scheduled_at: i64,
     ) -> Result<ToolsRuntimeSnapshot, String> {
+        let _guard = self.transition.lock().await;
         let now_ms = self.context.now_ms();
         if scheduled_at <= now_ms {
             return Err("reminder time must be in the future".to_string());
         }
         repositories::tools::create_reminder(self.context.pool(), &label, scheduled_at, now_ms)
             .await?;
-        self.refresh_snapshot().await
+        self.refresh_snapshot_locked().await
     }
 
     pub async fn cancel_reminder(&self, reminder_id: i64) -> Result<ToolsRuntimeSnapshot, String> {
+        let _guard = self.transition.lock().await;
         repositories::tools::cancel_reminder(
             self.context.pool(),
             reminder_id,
             self.context.now_ms(),
         )
         .await?;
-        self.refresh_snapshot().await
+        self.refresh_snapshot_locked().await
     }
 
     pub async fn create_software_reminder_rule(
         &self,
         request: CreateSoftwareReminderRuleRequest,
     ) -> Result<ToolsRuntimeSnapshot, String> {
+        let _guard = self.transition.lock().await;
         repositories::tools::create_software_reminder_rule(
             self.context.pool(),
             &request.app_name,
@@ -134,26 +158,28 @@ impl ToolsRuntimeOwner {
             self.context.now_ms(),
         )
         .await?;
-        self.refresh_snapshot().await
+        self.refresh_snapshot_locked().await
     }
 
     pub async fn disable_software_reminder_rule(
         &self,
         rule_id: i64,
     ) -> Result<ToolsRuntimeSnapshot, String> {
+        let _guard = self.transition.lock().await;
         repositories::tools::disable_software_reminder_rule(
             self.context.pool(),
             rule_id,
             self.context.now_ms(),
         )
         .await?;
-        self.refresh_snapshot().await
+        self.refresh_snapshot_locked().await
     }
 
     pub async fn start_timer(
         &self,
         request: StartTimerRequest,
     ) -> Result<ToolsRuntimeSnapshot, String> {
+        let _guard = self.transition.lock().await;
         repositories::tools::start_timer(
             self.context.pool(),
             request.mode,
@@ -162,33 +188,38 @@ impl ToolsRuntimeOwner {
             self.context.now_ms(),
         )
         .await?;
-        self.refresh_snapshot().await
+        self.refresh_snapshot_locked().await
     }
 
     pub async fn pause_timer(&self) -> Result<ToolsRuntimeSnapshot, String> {
+        let _guard = self.transition.lock().await;
         repositories::tools::pause_timer(self.context.pool(), self.context.now_ms()).await?;
-        self.refresh_snapshot().await
+        self.refresh_snapshot_locked().await
     }
 
     pub async fn resume_timer(&self) -> Result<ToolsRuntimeSnapshot, String> {
+        let _guard = self.transition.lock().await;
         repositories::tools::resume_timer(self.context.pool(), self.context.now_ms()).await?;
-        self.refresh_snapshot().await
+        self.refresh_snapshot_locked().await
     }
 
     pub async fn reset_timer(&self) -> Result<ToolsRuntimeSnapshot, String> {
+        let _guard = self.transition.lock().await;
         repositories::tools::reset_timer(self.context.pool(), self.context.now_ms()).await?;
-        self.refresh_snapshot().await
+        self.refresh_snapshot_locked().await
     }
 
     pub async fn add_timer_lap(&self) -> Result<ToolsRuntimeSnapshot, String> {
+        let _guard = self.transition.lock().await;
         repositories::tools::add_timer_lap(self.context.pool(), self.context.now_ms()).await?;
-        self.refresh_snapshot().await
+        self.refresh_snapshot_locked().await
     }
 
     pub async fn start_pomodoro(
         &self,
         request: StartPomodoroRequest,
     ) -> Result<ToolsRuntimeSnapshot, String> {
+        let _guard = self.transition.lock().await;
         repositories::tools::start_pomodoro(
             self.context.pool(),
             request.focus_ms,
@@ -198,35 +229,40 @@ impl ToolsRuntimeOwner {
             self.context.now_ms(),
         )
         .await?;
-        self.refresh_snapshot().await
+        self.refresh_snapshot_locked().await
     }
 
     pub async fn pause_pomodoro(&self) -> Result<ToolsRuntimeSnapshot, String> {
+        let _guard = self.transition.lock().await;
         repositories::tools::pause_pomodoro(self.context.pool(), self.context.now_ms()).await?;
-        self.refresh_snapshot().await
+        self.refresh_snapshot_locked().await
     }
 
     pub async fn resume_pomodoro(&self) -> Result<ToolsRuntimeSnapshot, String> {
+        let _guard = self.transition.lock().await;
         repositories::tools::resume_pomodoro(self.context.pool(), self.context.now_ms()).await?;
-        self.refresh_snapshot().await
+        self.refresh_snapshot_locked().await
     }
 
     pub async fn skip_pomodoro_phase(&self) -> Result<ToolsRuntimeSnapshot, String> {
+        let _guard = self.transition.lock().await;
         let now_ms = self.context.now_ms();
         repositories::tools::skip_pomodoro_phase(self.context.pool(), &date_key_at(now_ms), now_ms)
             .await?;
-        self.refresh_snapshot().await
+        self.refresh_snapshot_locked().await
     }
 
     pub async fn reset_pomodoro(&self) -> Result<ToolsRuntimeSnapshot, String> {
+        let _guard = self.transition.lock().await;
         repositories::tools::reset_pomodoro(self.context.pool(), self.context.now_ms()).await?;
-        self.refresh_snapshot().await
+        self.refresh_snapshot_locked().await
     }
 
     async fn tick_and_refresh_if_changed(&self) -> Result<(), String> {
+        let _guard = self.transition.lock().await;
         let outcome = self.tick_and_notify(self.context.now_ms()).await?;
         if outcome.state_changed {
-            self.refresh_snapshot().await?;
+            self.refresh_snapshot_locked().await?;
         }
         Ok(())
     }
@@ -329,8 +365,8 @@ impl ToolsRuntimeOwner {
         Ok(outcome)
     }
 
-    async fn refresh_snapshot(&self) -> Result<ToolsRuntimeSnapshot, String> {
-        let snapshot = self.snapshot().await?;
+    async fn refresh_snapshot_locked(&self) -> Result<ToolsRuntimeSnapshot, String> {
+        let snapshot = self.snapshot_locked().await?;
         self.sink.snapshot_changed(&snapshot);
         Ok(snapshot)
     }
@@ -396,6 +432,58 @@ mod tests {
         assert!(!outcome.state_changed);
         outcome.mark_changed();
         assert!(outcome.state_changed);
+    }
+
+    #[tokio::test]
+    async fn clones_wait_before_sampling_clock_and_publish_in_operation_order() {
+        use std::sync::atomic::{AtomicI64, Ordering};
+        struct MovingClock(AtomicI64);
+        impl crate::engine::runtime_context::RuntimeClock for MovingClock {
+            fn now_ms(&self) -> i64 {
+                self.0.load(Ordering::SeqCst)
+            }
+        }
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        for schema in [
+            crate::data::schema::CURRENT_BASELINE_SCHEMA_SQL,
+            crate::data::schema::TOOLS_TABLES_SCHEMA_SQL,
+            crate::data::schema::SOFTWARE_REMINDER_RULES_SCHEMA_SQL,
+        ] {
+            pool.execute(schema).await.unwrap();
+        }
+        let clock = Arc::new(MovingClock(AtomicI64::new(1000)));
+        let sink = Arc::new(MemoryToolsSink::default());
+        let owner = ToolsRuntimeOwner::new(RuntimeContext::new(pool, clock.clone()), sink.clone());
+        let clone = owner.clone();
+        let guard = owner.transition.lock().await;
+        let mut write = Box::pin(clone.start_timer(StartTimerRequest {
+            mode: TimerMode::Stopwatch,
+            duration_ms: None,
+            label: None,
+        }));
+        assert!(tokio::time::timeout(Duration::from_millis(20), &mut write)
+            .await
+            .is_err());
+        let mut read = Box::pin(owner.snapshot());
+        assert!(tokio::time::timeout(Duration::from_millis(20), &mut read)
+            .await
+            .is_err());
+        assert!(sink.snapshots.lock().unwrap().is_empty());
+        clock.0.store(2000, Ordering::SeqCst);
+        drop(guard);
+        let (written, read) = tokio::join!(write, read);
+        let written = written.unwrap();
+        assert_eq!(
+            written.current_timer.as_ref().unwrap().started_at,
+            Some(2000)
+        );
+        assert_eq!(written.sampled_at_ms, 2000);
+        assert_eq!(read.unwrap(), written);
+        assert_eq!(*sink.snapshots.lock().unwrap(), vec![written]);
     }
 
     #[test]

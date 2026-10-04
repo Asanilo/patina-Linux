@@ -16,7 +16,11 @@ const MAX_MESSAGE_CHARS: usize = 1_024;
 const MINUTE_MS: i64 = 60_000;
 
 pub async fn get_tools_snapshot(context: &ApiRuntimeContext) -> RouteResponse {
-    match crate::engine::tools::get_snapshot_from_pool(context.pool(), context.now_ms()).await {
+    let result = match context.tools_owner() {
+        Some(owner) => owner.snapshot().await,
+        None => crate::engine::tools::get_snapshot_from_pool(context.pool(), context.now_ms()).await,
+    };
+    match result {
         Ok(snapshot) => RouteResponse {
             status: 200,
             body: json!({ "data": ToolsRuntimeSnapshot::from(snapshot) }),

@@ -27,6 +27,8 @@ pub struct ToolsRuntimeState {
     inner: Mutex<ToolsRuntimeSnapshot>,
     alerts: Mutex<Vec<ToolAlert>>,
     ready: AtomicBool,
+    #[cfg(feature = "desktop")]
+    transition: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl ToolsRuntimeState {
@@ -113,7 +115,16 @@ async fn runtime_owner<R: Runtime + 'static>(
 ) -> Result<ToolsRuntimeOwner, String> {
     let pool = wait_for_sqlite_pool(app).await?;
     let sink: Arc<dyn ToolsRuntimeSink> = Arc::new(TauriToolsRuntimeSink { app: app.clone() });
-    Ok(ToolsRuntimeOwner::new(RuntimeContext::system(pool), sink))
+    let transition = app
+        .try_state::<ToolsRuntimeState>()
+        .ok_or("Tools runtime state is not initialized")?
+        .transition
+        .clone();
+    Ok(ToolsRuntimeOwner::with_transition(
+        RuntimeContext::system(pool),
+        sink,
+        transition,
+    ))
 }
 
 #[cfg(feature = "desktop")]
