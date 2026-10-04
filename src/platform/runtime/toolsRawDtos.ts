@@ -1,4 +1,13 @@
 import type {
+  ToolRuntimeSettings as RawToolRuntimeSettings,
+  ToolReminder as RawToolReminder,
+  ToolSoftwareReminderRule as RawToolSoftwareReminderRule,
+  ToolTimer as RawToolTimer,
+  ToolTimerLap as RawToolTimerLap,
+  ToolPomodoroRun as RawToolPomodoroRun,
+  ToolsRuntimeSnapshot as RawToolsRuntimeSnapshot,
+} from "../protocol/protocol.generated.ts";
+import type {
   PomodoroPhase,
   PomodoroStatus,
   ReminderStatus,
@@ -17,94 +26,12 @@ import type {
 
 type RawRecord = Record<string, unknown>;
 
-interface RawToolRuntimeSettings {
-  default_countdown_minutes: number;
-  pomodoro_focus_minutes: number;
-  pomodoro_short_break_minutes: number;
-  pomodoro_long_break_minutes: number;
-  pomodoro_long_break_every: number;
-}
-
-interface RawToolReminder {
-  id: number;
-  label: string;
-  scheduled_at: number;
-  created_at: number;
-  status: ReminderStatus;
-  fired_at: number | null;
-  cancelled_at: number | null;
-}
-
-interface RawToolSoftwareReminderRule {
-  id: number;
-  app_name: string;
-  exe_name: string | null;
-  limit_ms: number;
-  message: string;
-  created_at: number;
-  updated_at: number;
-  disabled_at: number | null;
-  last_fired_date_key: string | null;
-}
-
-interface RawToolTimer {
-  id: number;
-  mode: TimerMode;
-  label: string | null;
-  duration_ms: number | null;
-  accumulated_ms: number;
-  started_at: number | null;
-  paused_at: number | null;
-  completed_at: number | null;
-  status: TimerStatus;
-  created_at: number;
-  updated_at: number;
-}
-
-interface RawToolTimerLap {
-  id: number;
-  timer_id: number;
-  lap_index: number;
-  started_at: number;
-  ended_at: number;
-  duration_ms: number;
-}
-
-interface RawToolPomodoroRun {
-  id: number;
-  phase: PomodoroPhase;
-  status: PomodoroStatus;
-  cycle_index: number;
-  focus_ms: number;
-  short_break_ms: number;
-  long_break_ms: number;
-  long_break_every: number;
-  phase_started_at: number | null;
-  phase_paused_at: number | null;
-  phase_remaining_ms: number | null;
-  completed_focus_count: number;
-  created_at: number;
-  updated_at: number;
-}
-
 interface RawToolAlert {
   id: string;
   kind: ToolAlertKind;
   title: string;
   body: string;
   occurred_at: number;
-}
-
-interface RawToolsRuntimeSnapshot {
-  settings: RawToolRuntimeSettings;
-  reminders: RawToolReminder[];
-  software_reminder_rules: RawToolSoftwareReminderRule[];
-  current_timer: RawToolTimer | null;
-  timer_laps: RawToolTimerLap[];
-  current_pomodoro: RawToolPomodoroRun | null;
-  today_completed_pomodoros: number;
-  next_reminder_at: number | null;
-  sampled_at_ms: number;
 }
 
 const REMINDER_STATUSES = new Set(["scheduled", "fired", "cancelled"]);

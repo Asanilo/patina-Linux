@@ -2,6 +2,7 @@ use crate::domain::tools::{TimerMode, ToolAlert, ToolsRuntimeSnapshot};
 use crate::engine::tools::{
     self, CreateSoftwareReminderRuleRequest, StartPomodoroRequest, StartTimerRequest,
 };
+use patina_protocol::tools::ToolsAction;
 use serde::Deserialize;
 use tauri::AppHandle;
 
@@ -142,7 +143,7 @@ pub async fn cmd_start_timer(
     if let Some(client) = crate::app::daemon_client::command_client(&app)? {
         return client
             .start_timer(crate::engine::api::types::StartTimerRequest {
-                mode: input.mode,
+                mode: input.mode.into(),
                 duration_ms: input.duration_ms,
                 label: input.label,
             })
@@ -163,7 +164,7 @@ pub async fn cmd_start_timer(
 #[tauri::command]
 pub async fn cmd_pause_timer(app: AppHandle) -> Result<ToolsRuntimeSnapshot, String> {
     if let Some(client) = crate::app::daemon_client::command_client(&app)? {
-        return daemon_tools_action(&client, "/api/v1/tools/timer/pause", "timer pause").await;
+        return daemon_tools_action(&client, ToolsAction::PauseTimer).await;
     }
     tools::pause_timer(&app).await
 }
@@ -171,7 +172,7 @@ pub async fn cmd_pause_timer(app: AppHandle) -> Result<ToolsRuntimeSnapshot, Str
 #[tauri::command]
 pub async fn cmd_resume_timer(app: AppHandle) -> Result<ToolsRuntimeSnapshot, String> {
     if let Some(client) = crate::app::daemon_client::command_client(&app)? {
-        return daemon_tools_action(&client, "/api/v1/tools/timer/resume", "timer resume").await;
+        return daemon_tools_action(&client, ToolsAction::ResumeTimer).await;
     }
     tools::resume_timer(&app).await
 }
@@ -179,7 +180,7 @@ pub async fn cmd_resume_timer(app: AppHandle) -> Result<ToolsRuntimeSnapshot, St
 #[tauri::command]
 pub async fn cmd_reset_timer(app: AppHandle) -> Result<ToolsRuntimeSnapshot, String> {
     if let Some(client) = crate::app::daemon_client::command_client(&app)? {
-        return daemon_tools_action(&client, "/api/v1/tools/timer/reset", "timer reset").await;
+        return daemon_tools_action(&client, ToolsAction::ResetTimer).await;
     }
     tools::reset_timer(&app).await
 }
@@ -187,7 +188,7 @@ pub async fn cmd_reset_timer(app: AppHandle) -> Result<ToolsRuntimeSnapshot, Str
 #[tauri::command]
 pub async fn cmd_add_timer_lap(app: AppHandle) -> Result<ToolsRuntimeSnapshot, String> {
     if let Some(client) = crate::app::daemon_client::command_client(&app)? {
-        return daemon_tools_action(&client, "/api/v1/tools/timer/laps", "timer lap").await;
+        return daemon_tools_action(&client, ToolsAction::AddTimerLap).await;
     }
     tools::add_timer_lap(&app).await
 }
@@ -223,8 +224,7 @@ pub async fn cmd_start_pomodoro(
 #[tauri::command]
 pub async fn cmd_pause_pomodoro(app: AppHandle) -> Result<ToolsRuntimeSnapshot, String> {
     if let Some(client) = crate::app::daemon_client::command_client(&app)? {
-        return daemon_tools_action(&client, "/api/v1/tools/pomodoro/pause", "Pomodoro pause")
-            .await;
+        return daemon_tools_action(&client, ToolsAction::PausePomodoro).await;
     }
     tools::pause_pomodoro(&app).await
 }
@@ -232,8 +232,7 @@ pub async fn cmd_pause_pomodoro(app: AppHandle) -> Result<ToolsRuntimeSnapshot, 
 #[tauri::command]
 pub async fn cmd_resume_pomodoro(app: AppHandle) -> Result<ToolsRuntimeSnapshot, String> {
     if let Some(client) = crate::app::daemon_client::command_client(&app)? {
-        return daemon_tools_action(&client, "/api/v1/tools/pomodoro/resume", "Pomodoro resume")
-            .await;
+        return daemon_tools_action(&client, ToolsAction::ResumePomodoro).await;
     }
     tools::resume_pomodoro(&app).await
 }
@@ -241,12 +240,7 @@ pub async fn cmd_resume_pomodoro(app: AppHandle) -> Result<ToolsRuntimeSnapshot,
 #[tauri::command]
 pub async fn cmd_skip_pomodoro_phase(app: AppHandle) -> Result<ToolsRuntimeSnapshot, String> {
     if let Some(client) = crate::app::daemon_client::command_client(&app)? {
-        return daemon_tools_action(
-            &client,
-            "/api/v1/tools/pomodoro/skip",
-            "Pomodoro phase skip",
-        )
-        .await;
+        return daemon_tools_action(&client, ToolsAction::SkipPomodoroPhase).await;
     }
     tools::skip_pomodoro_phase(&app).await
 }
@@ -254,19 +248,17 @@ pub async fn cmd_skip_pomodoro_phase(app: AppHandle) -> Result<ToolsRuntimeSnaps
 #[tauri::command]
 pub async fn cmd_reset_pomodoro(app: AppHandle) -> Result<ToolsRuntimeSnapshot, String> {
     if let Some(client) = crate::app::daemon_client::command_client(&app)? {
-        return daemon_tools_action(&client, "/api/v1/tools/pomodoro/reset", "Pomodoro reset")
-            .await;
+        return daemon_tools_action(&client, ToolsAction::ResetPomodoro).await;
     }
     tools::reset_pomodoro(&app).await
 }
 
 async fn daemon_tools_action(
     client: &crate::platform::daemon_client::PatinadClient,
-    path: &str,
-    response_name: &str,
+    action: ToolsAction,
 ) -> Result<ToolsRuntimeSnapshot, String> {
     client
-        .tools_action(path, response_name)
+        .tools_action(action)
         .await
         .map_err(|error| error.to_string())
 }

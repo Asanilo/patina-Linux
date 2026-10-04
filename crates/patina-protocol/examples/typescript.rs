@@ -7,6 +7,7 @@ use patina_protocol::{
     icons::*,
     product_settings::*,
     resource_settings::*,
+    tools::*,
     web_history::WebActivityUrlPrivacyMode,
 };
 use ts_rs::{Config, TS};
@@ -20,6 +21,22 @@ fn main() {
         ($($ty:ty),+ $(,)?) => { $(println!("export {}\n", <$ty>::decl(&config));)+ };
     }
     export!(
+        ReminderStatus,
+        TimerMode,
+        TimerStatus,
+        PomodoroPhase,
+        PomodoroStatus,
+        ToolRuntimeSettings,
+        ToolReminder,
+        ToolSoftwareReminderRule,
+        ToolTimer,
+        ToolTimerLap,
+        ToolPomodoroRun,
+        ToolsRuntimeSnapshot,
+        CreateReminderRequest,
+        CreateSoftwareReminderRuleRequest,
+        StartTimerRequest,
+        StartPomodoroRequest,
         WebActivityUrlPrivacyMode,
         ActivityReadStatus,
         ActivityReadHealth,

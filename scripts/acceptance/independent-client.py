@@ -71,6 +71,19 @@ def main():
                 assert error.code == 401, "unauthenticated read was not rejected"
             else:
                 raise AssertionError("unauthenticated read succeeded")
+            token = token_file.read_text().strip()
+            def tools_request(path, payload=None):
+                request = urllib.request.Request(f"http://127.0.0.1:{port}/api/v1/{path}",
+                    data=None if payload is None else json.dumps(payload).encode(),
+                    headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+                    method="GET" if payload is None else "POST")
+                with opener.open(request, timeout=5) as response:
+                    return json.load(response)["data"]
+
+            until = time.monotonic() + 10
+            while not tools_request("capabilities")["tools"]["ready"]:
+                assert time.monotonic() < until, "isolated Tools owner never became ready"
+                time.sleep(.1)
             with selectors.DefaultSelector() as selector:
                 for index in range(2):
                     child = subprocess.Popen([str(probe), str(port), str(token_file), "--watch"],
@@ -97,16 +110,30 @@ def main():
                 with opener.open(request, timeout=5) as response:
                     assert response.status == 200
                 receive(b"event=tracking-data-changed cursor=")
+                started = tools_request("tools/timer/start", {"mode": "stopwatch", "label": "SDK sync fixture"})
+                assert started["current_timer"]["status"] == "running"
+                receive(b"event=tools-runtime-changed cursor=")
+                lapped = tools_request("tools/timer/laps", {})
+                assert len(lapped["timer_laps"]) == 1
+                paused = tools_request("tools/timer/pause", {})
+                observed = tools_request("tools/snapshot")
+                assert paused["current_timer"]["status"] == "paused"
+                assert observed["current_timer"] == paused["current_timer"]
+                assert observed["timer_laps"] == paused["timer_laps"]
+                tools_request("tools/timer/reset", {})
                 for index, value in enumerate(buffers):
                     assert token.encode() not in value
                     (root / f"client-{index}.log").write_bytes(value)
                 cursors = [re.findall(rb"event=tracking-data-changed cursor=(\d+)", value) for value in buffers]
                 assert set(cursors[0]).intersection(cursors[1]), "clients did not share a committed event"
+                tools_cursors = [re.findall(rb"event=tools-runtime-changed cursor=(\d+)", value) for value in buffers]
+                assert set(tools_cursors[0]).intersection(tools_cursors[1]), "clients did not share a Tools event"
                 result = {"passed": True, "daemon_binary": str(daemon),
                           "daemon_sha256": hashlib.sha256(daemon.read_bytes()).hexdigest(),
                           "sdk_probe_sha256": hashlib.sha256(probe.read_bytes()).hexdigest(),
                           "profile": "local", "production_state_used": False,
                           "two_independent_sdk_processes": True, "shared_classification_event": True,
+                          "shared_tools_event": True, "tools_http_actions_observed": True,
                           "unauthenticated_read_rejected": True,
                           "tracking_hardware_verified": False, "gui_or_tui_verified": False}
             def resource_request(payload=None):

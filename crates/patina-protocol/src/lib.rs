@@ -135,3 +135,5 @@ pub struct CapabilitiesResponse {
     pub daemon_service: OwnedRuntimeCapability,
     pub write_api: WriteApiCapability,
 }
+
+pub mod tools;

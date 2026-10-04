@@ -481,3 +481,18 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 完整门禁的全部组成项通过：67 个 TypeScript 测试文件、48 项浏览器检查、40 项 SDK 测试、Desktop 781 passed / 22 ignored、独立后端 622 passed / 11 ignored；协议生成比较、命名／架构／Rust／依赖边界及 Clippy 通过。`m2t-full.log` 保留首轮运行至浏览器定位失败的记录；修正后的浏览器、余下 4 个 TS 文件、构建及后端门禁分别在 `tmp/acceptance/m2t-browser.log`、`m2t-remaining-ts.log`、`m2t-build.log`、`m2t-client.log`、`m2t-rust.log`、`m2t-daemon.log`，没有重跑已通过且未变化的测试。
 - 构建初次触发入口预算：新快照／写入生命周期代码使入口 gzip 从 M2s 的 72.94 KiB 增至 73.59 KiB。显式记录并将该项上限从 73.25 调整为 73.75 KiB；没有通过人为拆 chunk 隐藏成本，也没有放宽 370 KiB 总预算，当前总量 369.22 KiB。最终门禁记录为 `tmp/acceptance/m2t-bundle-final.log`。本批未改 Rust 或安装路径，不重复 headless 成品、生产安装及已完成的发行验收。
 - 仍只在专用分支本地实现与提交；未安装、合并、推送或发布。基础阶段未完成：其余业务／契约迁移、独立安装以及等待产品选择的网页与客户端偏好边界继续保留；新增 TUI／GPUI／Web UI 仍需先讨论。
+
+### M2u 执行设计：Tools 独立客户端契约
+
+- 将现有 Tools HTTP 请求与快照 DTO 放入 `patina-protocol`，只承载数据；domain 继续拥有存储解析、计时和番茄阶段推进，API 边界显式转换。不把后端业务方法迁进客户端依赖，不改变现有 JSON 或到期语义。
+- 独立 SDK 暴露快照、提醒／软件提醒规则创建与取消、计时器／番茄开始及具名动作；写操作校验 daemon 的 Tools ownership 和 write capability，使用现有有界 transport，不重试。Desktop facade 改用 SDK，退出任意路径字符串的 Tools 动作入口。
+- 用真实隔离 HTTP＋SQLite owner 验证独立 SDK 与 Desktop 读取同一状态、写后通知与单次动作；协议反序列化／响应预算／能力缺失／失败不重试做自动回归。保留既有提醒实时订阅与重连规则，不因新客户端接入回放到期提醒。本切片不新增界面、安装或发布。
+
+### M2u 核验结果
+
+- 共享协议已包含 Tools 的请求、枚举与完整快照，类型生成从 27 项扩展至 43 项；Desktop 前端原始快照类型消费生成结果，保留既有 unknown 校验及 camelCase 显示模型。domain 的计时／存储／阶段推进实现没有迁入协议 crate；API 边界显式转换，旧 HTTP／IPC 的 JSON 表示保持一致。独立 SDK 暴露全部现有 Tools 操作，Desktop facade 已转发到同一实现；固定动作由 `ToolsAction` 选择。
+- SDK 写入检查兼容 daemon、Tools owned／ready 和 `tools` write scope；保留原有三秒／64 KiB 客户端响应限制，失败不重试或 fallback。四项新增 SDK 测试覆盖所有动作路径／请求、缺失能力与错误宿主、无效 ID、409 单次提交、未知枚举／必填结构／超限响应拒绝。它们不宣称旧接口已经获得并发草稿 CAS 或客户端重试幂等性。
+- 真实 HTTP＋SQLite 测试运行后台 Tools 循环，固定可推进时钟，两个独立 SDK 与 Desktop facade 对照计时、分段、暂停、提醒规则及番茄快照。验证 JSON 转换一致、写后变更事件、取消提醒不触发、到期提醒只触发一次、新实时订阅不重放旧提醒；使用测试 sink，不发送本机桌面通知。编译初轮修正了测试对私有 tick 的调用，改为运行真实生命周期入口，同时修正迁移后的请求枚举与测试闭包。
+- `npm run check:full` 完整通过：67 个 TypeScript 文件、48 项浏览器检查、44 项 SDK 测试、Desktop 782 passed / 22 ignored、无桌面后端 623 passed / 11 ignored；生成器、架构／依赖边界、Clippy 及 bundle 门禁通过。前端仅改变类型来源，总 JS gzip 仍为 369.22 KiB。证据为 `tmp/acceptance/m2u-full.log`；专项记录为 `m2u-tools-sdk.log`、`m2u-tools-native.log`。
+- 新无桌面构建经临时 Local profile 和两个 SDK 探针进程验收：Tools 就绪后订阅，HTTP 执行计时控制，两个进程收到相同 Tools 事件序号，暂停快照／分段一致；认证拒绝、分类同步、资源 CAS、History 数量守恒、正常关闭／重启和数据保留也通过。该进程验收的写入由脚本经 HTTP 发起，类型化 SDK 写入由上述真实契约测试验证，不混称为新客户端 UI。二进制 SHA256 为 `78640cbac8de98535db3e6d185eb51cc849a9ce0ed98756a24e64428742afd8a`；证据为 `tmp/acceptance/multi-client-m2u-tools/`、`m2u-independent-client.log` 及 `/tmp/patina-independent-client-iarsfe7x/`。ELF 无 GTK／WebKit 直接依赖，保留现有 X11／Pulse 采样依赖。
+- 本切片仅本地开发与隔离验证，未安装、合并、推送或发布。新 TUI／GPUI／Web UI 未开发，Tools 界面投影与其余 backend／宿主契约仍应按实际缺口审计；网页语义与客户端偏好恢复选择仍待讨论，独立安装和整体基础阶段继续。

@@ -17,3 +17,8 @@ pub mod types;
 
 #[cfg(test)]
 mod client_contract_tests;
+
+mod tools_contract;
+
+#[cfg(test)]
+mod tools_client_contract_tests;

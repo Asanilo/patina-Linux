@@ -120,34 +120,10 @@ pub struct ConfirmedActionRequest {
     pub confirmed: bool,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct CreateReminderRequest {
-    pub label: String,
-    pub scheduled_at: i64,
-}
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct CreateSoftwareReminderRuleRequest {
-    pub app_name: String,
-    pub exe_name: Option<String>,
-    pub limit_ms: i64,
-    pub message: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct StartTimerRequest {
-    pub mode: crate::domain::tools::TimerMode,
-    pub duration_ms: Option<i64>,
-    pub label: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct StartPomodoroRequest {
-    pub focus_ms: i64,
-    pub short_break_ms: i64,
-    pub long_break_ms: i64,
-    pub long_break_every: i64,
-}
+pub use patina_protocol::tools::{
+    CreateReminderRequest, CreateSoftwareReminderRuleRequest, StartPomodoroRequest, StartTimerRequest,
+};
 
 pub use patina_protocol::configuration::{
     ClassificationMutationRequest, ClassificationMutationsRequest,

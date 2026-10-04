@@ -4,8 +4,9 @@ Independent Rust loopback HTTP/SSE transport used by the existing Desktop facade
 and future native clients. It has no Tauri, GTK, SQLite or tracking dependency.
 The initial extraction shares capabilities, protocol version and error envelopes
 from the serde-only `patina-protocol` crate;
-runtime event and alert types also share that protocol source. The remaining
-domain-specific typed methods are still in the Desktop facade. This is a client
+runtime event and alert types also share that protocol source. Typed product
+reads, conditional settings writes and Tools now live here; some maintenance
+and host-specific methods remain in the Desktop facade. This is a client
 foundation, not a complete multi-client SDK or a TUI.
 
 `classification_snapshot()` reads a bounded configuration snapshot with a content
@@ -15,8 +16,8 @@ An old server cannot silently treat this as an unconditional write. Conflicts
 return HTTP 409 to the caller without automatic retry or rebase; a successful
 commit returns the new revision. Configuration reads expose only the documented
 classification namespaces, never arbitrary settings or credentials. These are
-configuration wire types; classification rules and activity read models still
-need further migration to the backend.
+configuration wire types; product activity responses below already apply backend
+classification rules. Remaining migrations are tracked in the active stage plan.
 
 `daily_product(from, to, language)` reads host-local daily totals with final
 product categories, transaction-consistent display-name overrides, and a
@@ -27,7 +28,7 @@ local classification or exclusion rules to these confirmed totals again.
 The snapshot also carries validated `tracking_health` and a backend live cutoff:
 stale owner heartbeats stop open-session growth, while closed facts retain their
 stored boundaries. Consumers must not extrapolate these totals with local clocks.
-Presentation labels/colors and exact History are separate concerns.
+Presentation labels and colors remain client concerns.
 
 `dashboard(date, language)` returns one selected/previous-day product snapshot and
 24 host-local display-hour quantities. It validates hourly totals against final
@@ -35,7 +36,7 @@ product categories. Missing/repeated DST hours retain accurate day totals, and
 imported bucket quantities must not be presented as exact observed intervals.
 The existing Desktop Dashboard command delegates to this method; its frontend
 formats confirmed quantities and refreshes from the owner instead of extrapolating
-with a local clock. Exact History and icon transport remain separate migrations.
+with a local clock. Exact History and cached icons have separate typed methods.
 
 `exact_history(from_ms, to_ms, language)` reads precise native/imported fragments
 with final classification and clipped title samples. It never includes hour
@@ -43,7 +44,25 @@ buckets, fabricates dated observations from record captions, or extends open row
 past owner liveness. Source IDs require their origin; imported facts can produce
 multiple fragments. The SDK validates the response within an 8 MiB budget and
 rejects unsupported endpoints instead of using legacy sessions or local SQLite.
-Desktop History/Details hookup is still pending at this backend checkpoint.
+Desktop History/Details consume these owner facts. `history_product` additionally
+supplies backend display-hour quantities for History.
+
+`tools_snapshot()` and the typed reminder, software-reminder, timer and Pomodoro
+methods use `protocol::tools` wire types. `tools_action(ToolsAction)` selects an
+explicit action rather than accepting an arbitrary path. Writes require a
+compatible tracking daemon advertising ready Tools ownership and the `tools`
+write scope. These methods preserve the existing three-second request and 64 KiB
+response limits; enum/required-field decoding errors and oversized responses are
+errors, never fallback triggers. An error can follow a committed action: refresh
+the snapshot before deciding what to do, and never blindly repeat a lap or start.
+
+Tools scheduling and phase transitions remain in the backend; wire DTOs contain
+no clock or storage algorithm. Subscribe before reading, refresh on
+`tools-runtime-changed`, and use the existing session coordinator for reconnect
+and gaps. New live subscriptions must not replay old alerts. Desktop uses these
+same SDK methods through a mechanical domain/wire conversion; the frontend keeps
+its runtime validators and consumes generated wire types. This does not deliver
+a new Tools UI or change the native notification owner.
 
 The host supplies the port and credential. Requests only target `127.0.0.1`, do
 not use environment proxies or follow redirects, have time and response-size

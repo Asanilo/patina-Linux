@@ -2191,6 +2191,7 @@ Current behavior:
 - This endpoint is read-only and available on all surfaces. Tools writes require a tracking-owner daemon whose capabilities include the `tools` scope.
 - Every successful Tools write returns this same complete snapshot envelope.
 - Live elapsed or remaining time must be interpreted relative to `sampled_at_ms` and the current object's timestamps.
+- The independent Rust SDK and Desktop use the shared `patina-protocol::tools` request/snapshot types. SDK writes require compatible daemon ownership, Tools readiness and the `tools` scope; `ToolsAction` selects the fixed no-argument operations. Reads and write responses retain the three-second/64 KiB client bounds. An error does not prove that a write was rolled back, so refresh state rather than automatically repeating an operation.
 
 The tracking daemon continues Tools ticks after the desktop window closes. It fires reminders, completes countdown/pomodoro boundaries, sends Linux desktop notifications, and publishes `tools-runtime-changed` or `tool-alert` through `/api/v1/events`.
 

@@ -4,7 +4,7 @@ use crate::engine::api::{
 };
 use serde_json::json;
 
-use crate::domain::tools::TimerMode;
+use patina_protocol::tools::{TimerMode, ToolsRuntimeSnapshot};
 use crate::engine::api::types::{
     CreateReminderRequest, CreateSoftwareReminderRuleRequest, StartPomodoroRequest,
     StartTimerRequest,
@@ -19,7 +19,7 @@ pub async fn get_tools_snapshot(context: &ApiRuntimeContext) -> RouteResponse {
     match crate::engine::tools::get_snapshot_from_pool(context.pool(), context.now_ms()).await {
         Ok(snapshot) => RouteResponse {
             status: 200,
-            body: json!({ "data": snapshot }),
+            body: json!({ "data": ToolsRuntimeSnapshot::from(snapshot) }),
         },
         Err(error) => RouteResponse {
             status: 500,
@@ -111,7 +111,7 @@ pub async fn handle_tools_action(
             }
             owner
                 .start_timer(crate::engine::tools::StartTimerRequest {
-                    mode: request.mode,
+                    mode: request.mode.into(),
                     duration_ms: request.duration_ms,
                     label: request.label,
                 })
@@ -167,7 +167,7 @@ pub async fn handle_tools_action(
     match result {
         Ok(snapshot) => RouteResponse {
             status: 200,
-            body: json!({ "data": snapshot }),
+            body: json!({ "data": ToolsRuntimeSnapshot::from(snapshot) }),
         },
         Err(error) => RouteResponse {
             status: 500,

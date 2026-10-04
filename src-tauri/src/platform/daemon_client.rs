@@ -455,74 +455,71 @@ impl PatinadClient {
     pub async fn tools_snapshot(
         &self,
     ) -> Result<crate::domain::tools::ToolsRuntimeSnapshot, PatinadClientError> {
-        self.get_json("/api/v1/tools/snapshot", "Tools snapshot")
-            .await
+        self.transport.tools_snapshot().await.map(Into::into)
     }
 
     pub async fn create_reminder(
         &self,
         request: CreateReminderRequest,
     ) -> Result<crate::domain::tools::ToolsRuntimeSnapshot, PatinadClientError> {
-        self.post_json("/api/v1/tools/reminders", &request, "reminder creation")
+        self.transport
+            .create_reminder(&request)
             .await
+            .map(Into::into)
     }
 
     pub async fn cancel_reminder(
         &self,
         reminder_id: i64,
     ) -> Result<crate::domain::tools::ToolsRuntimeSnapshot, PatinadClientError> {
-        self.post_empty_json(
-            &format!("/api/v1/tools/reminders/{reminder_id}/cancel"),
-            "reminder cancellation",
-        )
-        .await
+        self.transport
+            .cancel_reminder(reminder_id)
+            .await
+            .map(Into::into)
     }
 
     pub async fn create_software_reminder_rule(
         &self,
         request: CreateSoftwareReminderRuleRequest,
     ) -> Result<crate::domain::tools::ToolsRuntimeSnapshot, PatinadClientError> {
-        self.post_json(
-            "/api/v1/tools/software-reminder-rules",
-            &request,
-            "software reminder rule creation",
-        )
-        .await
+        self.transport
+            .create_software_reminder_rule(&request)
+            .await
+            .map(Into::into)
     }
 
     pub async fn disable_software_reminder_rule(
         &self,
         rule_id: i64,
     ) -> Result<crate::domain::tools::ToolsRuntimeSnapshot, PatinadClientError> {
-        self.post_empty_json(
-            &format!("/api/v1/tools/software-reminder-rules/{rule_id}/disable"),
-            "software reminder rule disable",
-        )
-        .await
+        self.transport
+            .disable_software_reminder_rule(rule_id)
+            .await
+            .map(Into::into)
     }
 
     pub async fn start_timer(
         &self,
         request: StartTimerRequest,
     ) -> Result<crate::domain::tools::ToolsRuntimeSnapshot, PatinadClientError> {
-        self.post_json("/api/v1/tools/timer/start", &request, "timer start")
-            .await
+        self.transport.start_timer(&request).await.map(Into::into)
     }
 
     pub async fn tools_action(
         &self,
-        path: &str,
-        response_name: &str,
+        action: patina_protocol::tools::ToolsAction,
     ) -> Result<crate::domain::tools::ToolsRuntimeSnapshot, PatinadClientError> {
-        self.post_empty_json(path, response_name).await
+        self.transport.tools_action(action).await.map(Into::into)
     }
 
     pub async fn start_pomodoro(
         &self,
         request: StartPomodoroRequest,
     ) -> Result<crate::domain::tools::ToolsRuntimeSnapshot, PatinadClientError> {
-        self.post_json("/api/v1/tools/pomodoro/start", &request, "Pomodoro start")
+        self.transport
+            .start_pomodoro(&request)
             .await
+            .map(Into::into)
     }
 
     #[cfg(test)]

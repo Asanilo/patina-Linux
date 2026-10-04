@@ -433,7 +433,7 @@ mod tests {
 
         let tools = client
             .start_timer(crate::engine::api::types::StartTimerRequest {
-                mode: crate::domain::tools::TimerMode::Stopwatch,
+                mode: patina_protocol::tools::TimerMode::Stopwatch,
                 duration_ms: None,
                 label: Some("Transport test".to_string()),
             })
