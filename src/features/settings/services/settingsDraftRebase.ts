@@ -1,7 +1,7 @@
 import type { AppSettings } from "../../../shared/settings/appSettings.ts";
-import { RESOURCE_SETTING_KEYS } from "../../../shared/settings/appSettings.ts";
+import { PRODUCT_POLICY_SETTING_KEYS, RESOURCE_SETTING_KEYS } from "../../../shared/settings/appSettings.ts";
 
-const POLICY_KEYS = ["idleTimeoutSecs", "timelineMergeGapSecs", "minSessionSecs", "trackingPaused"] as const;
+const POLICY_KEYS = PRODUCT_POLICY_SETTING_KEYS;
 
 export function hasSettingsDraftResourceEdits(saved: AppSettings | null, draft: AppSettings | null): boolean {
   return !!saved && !!draft && RESOURCE_SETTING_KEYS.some(key => draft[key] !== saved[key]);

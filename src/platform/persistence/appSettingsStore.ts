@@ -9,6 +9,7 @@ import { loadResourceSettingsSnapshot, parseResourceSettingsSnapshot } from "./r
 import {
   DEFAULT_SETTINGS,
   RESOURCE_SETTING_KEYS,
+  PRODUCT_POLICY_SETTING_KEYS,
   BACKGROUND_OPTIMIZATION_DELAY_RANGE,
   type AppLanguage,
   type AppSettings,
@@ -388,6 +389,9 @@ export async function saveAppSetting<K extends keyof AppSettings>(
 
 export async function saveAppSettingsPatch(patch: AppSettingsPatch, expectedProductRevision?: string, expectedResourceRevision?: string | null): Promise<AppSettingsConfirmation | void> {
   const mutations = buildAppSettingMutations(buildRawAppSettingsPatch(patch));
+  const changesPolicy = PRODUCT_POLICY_SETTING_KEYS.some(key => key in patch);
+  if (changesPolicy && !expectedProductRevision)
+    throw new Error("Product settings baseline is unavailable; reload before saving");
   if (RESOURCE_SETTING_KEYS.some(key => key in patch) && expectedResourceRevision === undefined)
     throw new Error("Resource settings baseline is unavailable; reload before saving");
   if (typeof expectedResourceRevision === "string" && RESOURCE_SETTING_KEYS.some(key => key in patch)) {
@@ -399,8 +403,7 @@ export async function saveAppSettingsPatch(patch: AppSettingsPatch, expectedProd
     const resources = parseResourceSettingsSnapshot(value.resources);
     return {...product, resourceRevision: resources.revision, settings: {...product.settings, ...resources.settings}};
   }
-  if (expectedProductRevision !== undefined && mutations.some(mutation =>
-    ["idle_timeout_secs", "timeline_merge_gap_secs", "min_session_secs", "tracking_paused"].includes(mutation.key))) {
+  if (expectedProductRevision !== undefined && changesPolicy) {
     return parseProductSettingsSnapshot(await invoke<unknown>("cmd_commit_settings_if_revision", {mutations, expectedRevision: expectedProductRevision}));
   }
   await commitAppSettingMutations(mutations);

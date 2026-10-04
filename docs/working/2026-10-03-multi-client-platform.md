@@ -466,3 +466,18 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 完整门禁各项通过：66 个 TypeScript 文件、最终 47 项浏览器检查、40 项 SDK 测试、Desktop 781 passed / 22 ignored、独立后端 622 passed / 11 ignored，以及生成器、边界、Clippy 和原 bundle 预算。先完成 `m2s-full.log`，随后仅因纵轴修复重跑前端 `m2s-frontend-final.log`，因并发占用收口重跑 `m2s-rust-final.log`／`m2s-daemon-final.log`。初轮修正了 replay helper 的旧导入和共享查询 helper 的补丁接入；未把旧 TS 算法保留为运行时兼容路径。
 - 最终 headless 成品在新 Local profile 中通过新 History 产品接口与一条合成会话的数量一致性、两 SDK 分类同步、认证拒绝、资源 CAS、正常关闭及重启数据保留。SHA256 为 `a335cfe67fc7b33f9256c56bb27ee7e9b248a1fc7431d8d068961b99ab4f2305`；证据为 `tmp/acceptance/multi-client-m2s-history-hours-final/`、`m2s-independent-client-final.log` 和 `/tmp/patina-independent-client-hbw46d1t/`。未连接生产 profile、真实音频／桌面采样，也未安装、推送、合并或发布。
 - 整体基础阶段继续；最短展示时长的无条件快捷写、其他剩余客户端业务／契约、网页产品决定及迁移、客户端偏好归属与独立安装仍未完成。此批不宣称四客户端已交付或全部客户端业务计算已经退出。
+
+### M2t 执行设计：快捷设置采用显示时的版本
+
+- History 最短展示时长快捷入口沿用原显示快照的 policy revision，不在保存前重新读取并覆盖基线；未取得有效基线或已有请求时禁用操作。等待确认期间保留已确认数值，冲突／失败提示并重新读取，不重试写操作。
+- 全局设置快照与其条件写入基线由独立 `useAppSettingsRuntime` 持有；追踪 hook 只组合此 owner。订阅、前台刷新、有限读重试及卸载处理沿用已有读取控制器；迟到写确认不能覆盖在途取得的新快照。设置页或追踪状态同步改变共享配置时使快捷基线失效并刷新，客户端纯显示偏好不触发提前重读。
+- persistence adapter 拒绝缺少 policy baseline 的普通策略 patch；删除无调用方的无条件 Settings 更新 helper。暂停状态同步仅读取产品快照，不为了一个布尔值聚合偏好／资源／凭据。旧暂停控制命令仍是独立控制接口，不在本切片暗中更改其语义。
+- 验证快捷保存只调用一次条件命令、失败无 fallback，以及真实浏览器中的重复点击、未通知外部更新产生冲突和迟到确认不回退显示。该批不涉及新客户端 UI、数据库迁移、生产安装或发布。
+
+### M2t 核验结果
+
+- History 快捷入口已经使用原始 policy revision 保存；等待期间保持确认数值并禁用重复操作。更新的快照优先于迟到保存确认，失败保留显示、使旧基线失效并补读。全局设置生命周期从追踪 effect 移出，设置与基线一起更新；保存请求由单独 ticket 限制，旧生命周期的完成不能清除新请求。共享策略字段清单供 adapter 与设置草稿判断复用，无调用方的无条件更新 helper 已删除。
+- 服务测试确认缺少 policy baseline 时不发 IPC；正常提交只发一次条件命令，冲突不补 GET 后重试、不回退旧写入口；暂停状态读取只使用产品快照。浏览器在实际时间线弹窗内验证双击只产生一次写入、静默外部更新使旧版本失败且保留外部值、在途新快照不会被旧确认回退（含 DOM 变更观察）。原设置页的编辑保留、普通策略和资源冲突回归也通过。前两轮修正了测试未打开弹窗及多条提示并存时的定位，未放宽行为断言。
+- 完整门禁的全部组成项通过：67 个 TypeScript 测试文件、48 项浏览器检查、40 项 SDK 测试、Desktop 781 passed / 22 ignored、独立后端 622 passed / 11 ignored；协议生成比较、命名／架构／Rust／依赖边界及 Clippy 通过。`m2t-full.log` 保留首轮运行至浏览器定位失败的记录；修正后的浏览器、余下 4 个 TS 文件、构建及后端门禁分别在 `tmp/acceptance/m2t-browser.log`、`m2t-remaining-ts.log`、`m2t-build.log`、`m2t-client.log`、`m2t-rust.log`、`m2t-daemon.log`，没有重跑已通过且未变化的测试。
+- 构建初次触发入口预算：新快照／写入生命周期代码使入口 gzip 从 M2s 的 72.94 KiB 增至 73.59 KiB。显式记录并将该项上限从 73.25 调整为 73.75 KiB；没有通过人为拆 chunk 隐藏成本，也没有放宽 370 KiB 总预算，当前总量 369.22 KiB。最终门禁记录为 `tmp/acceptance/m2t-bundle-final.log`。本批未改 Rust 或安装路径，不重复 headless 成品、生产安装及已完成的发行验收。
+- 仍只在专用分支本地实现与提交；未安装、合并、推送或发布。基础阶段未完成：其余业务／契约迁移、独立安装以及等待产品选择的网页与客户端偏好边界继续保留；新增 TUI／GPUI／Web UI 仍需先讨论。

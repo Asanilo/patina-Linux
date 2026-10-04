@@ -429,6 +429,12 @@ function tauriStubFor(path: string) {
           return [];
         }
         if (command === "cmd_commit_app_settings" || command === "cmd_commit_settings_if_revision" || command === "cmd_commit_settings_with_resources") {
+          if (command === "cmd_commit_settings_if_revision") {
+            globalThis.__PATINA_SMOKE_POLICY_WRITES = (globalThis.__PATINA_SMOKE_POLICY_WRITES || 0) + 1;
+            if (globalThis.__PATINA_SMOKE_BLOCK_POLICY_COMMIT) {
+              await new Promise(resolve => { globalThis.__PATINA_SMOKE_RELEASE_POLICY_COMMIT = resolve; });
+            }
+          }
           if (globalThis.__PATINA_SMOKE_FAIL_SETTINGS_SAVE) throw new Error("synthetic settings persistence failure");
           if (command === "cmd_commit_settings_if_revision" && payload.expectedRevision !== productSettingsSnapshot().revision) {
             globalThis.__PATINA_SMOKE_SETTINGS_CONFLICTS = (globalThis.__PATINA_SMOKE_SETTINGS_CONFLICTS || 0) + 1;
@@ -446,7 +452,13 @@ function tauriStubFor(path: string) {
             settings[mutation.key] = mutation.value;
           }
           localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-          if (command === "cmd_commit_settings_if_revision") return productSettingsSnapshot();
+          if (command === "cmd_commit_settings_if_revision") {
+            const confirmation = productSettingsSnapshot();
+            if (globalThis.__PATINA_SMOKE_BLOCK_POLICY_RESPONSE) {
+              await new Promise(resolve => { globalThis.__PATINA_SMOKE_RELEASE_POLICY_RESPONSE = resolve; });
+            }
+            return confirmation;
+          }
           if (command === "cmd_commit_settings_with_resources") return {product: productSettingsSnapshot(), resources: resourceSettingsSnapshot()};
         }
         return null;
@@ -1789,6 +1801,97 @@ try {
       await evaluate(client!, sessionId, `document.body.innerText.includes(${jsonString(HISTORY_LOADING_VIEW)})`),
       false,
     );
+  });
+
+  await runTest("History settings shortcut serializes writes, rejects stale edits and ignores late confirmations", async () => {
+    const plus = `document.querySelector('[aria-label=' + ${jsonString(JSON.stringify(COPY["zh-CN"].accessibility.history.increaseMinDuration))} + ']')`;
+    const minus = `document.querySelector('[aria-label=' + ${jsonString(JSON.stringify(COPY["zh-CN"].accessibility.history.decreaseMinDuration))} + ']')`;
+    const displayed = `${plus}?.parentElement.querySelector('span')?.textContent`;
+    const storage = `JSON.parse(localStorage.getItem('__time_tracker_smoke_settings') || '{}')`;
+    const setMinimum = async (seconds: number, emit = true) => evaluate(client!, sessionId, `(() => {
+      const stored = ${storage}; stored.min_session_secs = '${seconds}';
+      localStorage.setItem('__time_tracker_smoke_settings', JSON.stringify(stored));
+      ${emit ? "globalThis.__PATINA_SMOKE_EMIT('app-settings-changed', {});" : ""}
+    })()`);
+    const waitDisplay = async (minutes: number) => waitForExpression(client!, sessionId,
+      `${displayed} === ${jsonString(COPY["zh-CN"].settings.minuteValue(minutes))}`);
+    const original = await evaluate(client!, sessionId, `localStorage.getItem('__time_tracker_smoke_settings')`);
+    try {
+      await waitForExpression(client!, sessionId, `document.querySelector('.history-timeline-open') !== null`);
+      await evaluate(client!, sessionId, `document.querySelector('.history-timeline-open').click()`);
+      await setMinimum(300);
+      await waitDisplay(5);
+      await waitForExpression(client!, sessionId, `${plus}?.disabled === false`);
+      await evaluate(client!, sessionId, `(() => {
+        globalThis.__PATINA_SMOKE_POLICY_WRITES = 0;
+        globalThis.__PATINA_SMOKE_BLOCK_POLICY_COMMIT = true;
+        ${plus}.click(); ${plus}.click();
+      })()`);
+      await waitForExpression(client!, sessionId, `typeof globalThis.__PATINA_SMOKE_RELEASE_POLICY_COMMIT === 'function' && ${plus}.disabled`);
+      assert.equal(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_POLICY_WRITES`), 1);
+      assert.equal(await evaluate(client!, sessionId, displayed), COPY["zh-CN"].settings.minuteValue(5));
+      assert.equal(await evaluate(client!, sessionId, `${storage}.min_session_secs`), "300");
+      await evaluate(client!, sessionId, `(() => {
+        globalThis.__PATINA_SMOKE_BLOCK_POLICY_COMMIT = false;
+        globalThis.__PATINA_SMOKE_RELEASE_POLICY_COMMIT();
+        delete globalThis.__PATINA_SMOKE_RELEASE_POLICY_COMMIT;
+      })()`);
+      await waitDisplay(6);
+      await waitForExpression(client!, sessionId, `${plus}.disabled === false`);
+
+      // No event: the displayed version must be used, not replaced by a hidden GET.
+      await setMinimum(480, false);
+      await evaluate(client!, sessionId, `${plus}.click()`);
+      await waitForExpression(client!, sessionId, `globalThis.__PATINA_SMOKE_SETTINGS_CONFLICTS === 1`);
+      await waitDisplay(8);
+      assert.equal(await evaluate(client!, sessionId, `${storage}.min_session_secs`), "480");
+      assert.equal(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_POLICY_WRITES`), 2);
+      await waitForExpression(client!, sessionId, `Array.from(document.querySelectorAll('.qp-toast-warning')).some(node => node.textContent.includes(${jsonString(COPY["zh-CN"].settings.saveFailed)}))`);
+
+      await waitForExpression(client!, sessionId, `${plus}.disabled === false`);
+      await evaluate(client!, sessionId, `(() => {
+        globalThis.__PATINA_SMOKE_BLOCK_POLICY_RESPONSE = true;
+        ${plus}.click();
+      })()`);
+      await waitForExpression(client!, sessionId, `typeof globalThis.__PATINA_SMOKE_RELEASE_POLICY_RESPONSE === 'function'`);
+      assert.equal(await evaluate(client!, sessionId, `${storage}.min_session_secs`), "540");
+      await setMinimum(600);
+      await waitDisplay(10);
+      assert.equal(await evaluate(client!, sessionId, `${minus}.disabled`), true);
+      await evaluate(client!, sessionId, `(() => {
+        globalThis.__PATINA_SMOKE_MINIMUM_VALUES = [];
+        globalThis.__PATINA_SMOKE_MINIMUM_OBSERVER = new MutationObserver(records => {
+          for (const record of records) {
+            globalThis.__PATINA_SMOKE_MINIMUM_VALUES.push(record.oldValue);
+          }
+          globalThis.__PATINA_SMOKE_MINIMUM_VALUES.push(${displayed});
+        });
+        globalThis.__PATINA_SMOKE_MINIMUM_OBSERVER.observe(${plus}.parentElement.querySelector('span'),
+          {subtree:true, childList:true, characterData:true, characterDataOldValue:true});
+        globalThis.__PATINA_SMOKE_BLOCK_POLICY_RESPONSE = false;
+        globalThis.__PATINA_SMOKE_RELEASE_POLICY_RESPONSE();
+        delete globalThis.__PATINA_SMOKE_RELEASE_POLICY_RESPONSE;
+      })()`);
+      await waitForExpression(client!, sessionId, `${minus}.disabled === false`);
+      await waitDisplay(10);
+      assert.equal(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_MINIMUM_VALUES.includes(${jsonString(COPY["zh-CN"].settings.minuteValue(9))})`), false);
+      assert.equal(await evaluate(client!, sessionId, `${storage}.min_session_secs`), "600");
+      assert.equal(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_POLICY_WRITES`), 3);
+    } finally {
+      await evaluate(client!, sessionId, `(() => {
+        globalThis.__PATINA_SMOKE_BLOCK_POLICY_COMMIT = false;
+        globalThis.__PATINA_SMOKE_BLOCK_POLICY_RESPONSE = false;
+        globalThis.__PATINA_SMOKE_RELEASE_POLICY_COMMIT?.();
+        globalThis.__PATINA_SMOKE_RELEASE_POLICY_RESPONSE?.();
+        globalThis.__PATINA_SMOKE_MINIMUM_OBSERVER?.disconnect();
+        globalThis.__PATINA_SMOKE_SETTINGS_CONFLICTS = 0;
+        document.querySelector('.history-timeline-dialog-close')?.click();
+        const original = ${JSON.stringify(original)};
+        if (original === null) localStorage.removeItem('__time_tracker_smoke_settings');
+        else localStorage.setItem('__time_tracker_smoke_settings', original);
+        globalThis.__PATINA_SMOKE_EMIT('app-settings-changed', {});
+      })()`);
+    }
   });
 
   await runTest("History keeps confirmed data on read failure and recovers", async () => {

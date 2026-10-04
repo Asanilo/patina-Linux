@@ -2,12 +2,11 @@ import type { ProductSettingsSnapshot } from "../../../platform/persistence/prod
 import {
   clearSessionsBefore,
   saveAppSettingsPatch,
-  saveAppSetting,
   type AppSettings,
   type AppSettingsPatch,
   type AppSettingsConfirmation,
 } from "../../../platform/persistence/appSettingsStore.ts";
-import { RESOURCE_SETTING_KEYS } from "../../../shared/settings/appSettings.ts";
+import { PRODUCT_POLICY_SETTING_KEYS, RESOURCE_SETTING_KEYS } from "../../../shared/settings/appSettings.ts";
 import {
   exportBackup,
   pickBackupFile,
@@ -184,14 +183,6 @@ async function loadBackupRestorePreparation(
 }
 
 export class SettingsRuntimeAdapterService {
-  static async updateSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
-    await saveAppSetting(key, value);
-
-    if (key === "idleTimeoutSecs") {
-      await setAfkThreshold(value as number);
-    }
-  }
-
   static async clearSessionsByRange(range: CleanupRange, nowMs: number = Date.now()): Promise<void> {
     const cleanupPlan = buildSessionCleanupPlan(range, nowMs);
     await clearSessionsByRangeWithDeps(cleanupPlan.range, cleanupPlan.nowMs, {
@@ -250,7 +241,7 @@ export class SettingsRuntimeAdapterService {
   }
 
   static async commitSettingsPatch(patch: SettingsPatch, expectedProductRevision?: string, expectedResourceRevision?: string | null): Promise<SettingsCommitResult> {
-    if (["idleTimeoutSecs", "timelineMergeGapSecs", "minSessionSecs", "trackingPaused"].some(key => key in patch)
+    if (PRODUCT_POLICY_SETTING_KEYS.some(key => key in patch)
       && !expectedProductRevision) throw new Error("Product settings baseline is unavailable; reload before saving");
     if (RESOURCE_SETTING_KEYS.some(key => key in patch) && expectedResourceRevision === undefined)
       throw new Error("Resource settings baseline is unavailable; reload before saving");

@@ -71,6 +71,7 @@ interface Props {
   mergeThresholdSecs: number;
   minSessionSecs: number;
   onMinSessionSecsChange?: (value: number) => void;
+  minSessionChangeDisabled?: boolean;
   trackerHealth: TrackerHealthSnapshot;
   loadHistorySnapshot: (date: Date) => Promise<HistorySnapshot>;
   mappingVersion?: number;
@@ -292,6 +293,7 @@ export default function History({
   mergeThresholdSecs,
   minSessionSecs,
   onMinSessionSecsChange,
+  minSessionChangeDisabled = false,
   trackerHealth,
   loadHistorySnapshot,
   mappingVersion = 0,
@@ -932,9 +934,10 @@ export default function History({
     TIMELINE_MIN_SESSION_MINUTES_RANGE.min,
     TIMELINE_MIN_SESSION_MINUTES_RANGE.max,
   );
-  const canDecreaseMinSession = minSessionMinutes > TIMELINE_MIN_SESSION_MINUTES_RANGE.min;
-  const canIncreaseMinSession = minSessionMinutes < TIMELINE_MIN_SESSION_MINUTES_RANGE.max;
+  const canDecreaseMinSession = !minSessionChangeDisabled && minSessionMinutes > TIMELINE_MIN_SESSION_MINUTES_RANGE.min;
+  const canIncreaseMinSession = !minSessionChangeDisabled && minSessionMinutes < TIMELINE_MIN_SESSION_MINUTES_RANGE.max;
   const updateMinSessionMinutes = (nextMinutes: number) => {
+    if (minSessionChangeDisabled) return;
     const clampedMinutes = clampMinute(
       nextMinutes,
       TIMELINE_MIN_SESSION_MINUTES_RANGE.min,

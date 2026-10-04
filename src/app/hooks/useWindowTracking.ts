@@ -1,6 +1,5 @@
-import { SnapshotReadController, SNAPSHOT_READ_RETRY_DELAYS_MS } from "../../shared/lib/snapshotReadController.ts";
 import { useEffect, useState } from "react";
-import { DEFAULT_SETTINGS, type AppSettings } from "../../shared/settings/appSettings";
+import { useAppSettingsRuntime } from "./useAppSettingsRuntime.ts";
 import type {
   TrackerHealthSnapshot,
   TrackingRuntimeProbeStatus,
@@ -20,8 +19,6 @@ import {
 } from "../services/appRuntimeTrackingService";
 import {
   loadLatestTrackingPauseSetting,
-  loadCurrentAppSettings,
-  subscribeAppSettingsChanged,
 } from "../services/appSettingsRuntimeService.ts";
 import { clearDashboardSnapshotCache } from "../../features/dashboard/services/dashboardSnapshotCache.ts";
 import { clearDataBootstrapCache, clearDataHeavyCaches } from "../../features/data/services/dataCacheLifecycle.ts";
@@ -41,7 +38,7 @@ export function useWindowTracking(options: UseWindowTrackingOptions = {}) {
   const [activeWindow, setActiveWindow] = useState<TrackingWindowSnapshot | null>(null);
   const [trackingStatus, setTrackingStatus] = useState<TrackingStatusSnapshot>(DEFAULT_TRACKING_STATUS);
   const [trackingRuntimeProbeStatus, setTrackingRuntimeProbeStatus] = useState<TrackingRuntimeProbeStatus | null>(null);
-  const [appSettings, setAppSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const {appSettings,setAppSettings,refreshSettings,updateMinSessionSecs,minSessionUpdatePending,canUpdateMinSession} = useAppSettingsRuntime();
   const [syncTick, setSyncTick] = useState(0);
   const [classificationReady, setClassificationReady] = useState(false);
   const [trackerHealth, setTrackerHealth] = useState<TrackerHealthSnapshot>(() => (
@@ -53,24 +50,7 @@ export function useWindowTracking(options: UseWindowTrackingOptions = {}) {
     let cancelled = false;
     const unlisteners: Array<() => void> = [];
 
-    const settingsOwner = new SnapshotReadController(loadCurrentAppSettings, setAppSettings,
-      error => console.warn("Failed to reload app settings", error), () => 0,
-      {retryDelaysMs: SNAPSHOT_READ_RETRY_DELAYS_MS});
-    const refreshSettingsOnForeground = () => {
-      if (document.visibilityState !== "hidden") settingsOwner.refresh(true);
-    };
-    window.addEventListener("focus", refreshSettingsOnForeground);
-    document.addEventListener("visibilitychange", refreshSettingsOnForeground);
     const init = async () => {
-      try {
-        const settingsOff = await subscribeAppSettingsChanged(() => settingsOwner.refresh(true));
-        if (cancelled) { settingsOff(); return; }
-        unlisteners.push(settingsOff);
-      } catch (error) {
-        if (cancelled) return;
-        console.warn("Settings subscription failed", error);
-      }
-      settingsOwner.refresh();
       try {
         const bootstrap = await loadAppRuntimeBootstrapSnapshot();
         if (cancelled) return;
@@ -126,6 +106,7 @@ export function useWindowTracking(options: UseWindowTrackingOptions = {}) {
             setAppSettings: (updater) => {
               if (!cancelled) {
                 setAppSettings(updater);
+                refreshSettings();
               }
             },
             setActiveWindow: (nextWindow) => {
@@ -169,9 +150,6 @@ export function useWindowTracking(options: UseWindowTrackingOptions = {}) {
 
     return () => {
       cancelled = true;
-      settingsOwner.dispose();
-      window.removeEventListener("focus", refreshSettingsOnForeground);
-      document.removeEventListener("visibilitychange", refreshSettingsOnForeground);
       for (const off of unlisteners) {
         off();
       }
@@ -191,6 +169,7 @@ export function useWindowTracking(options: UseWindowTrackingOptions = {}) {
     trackingStatus,
     appSettings,
     setAppSettings,
+    updateMinSessionSecs, minSessionUpdatePending, canUpdateMinSession, refreshSettings,
     classificationReady,
     syncTick,
     trackerHealth,

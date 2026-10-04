@@ -45,12 +45,12 @@ function captureInvocations(handler?: (call: Invocation) => unknown): Invocation
 try {
   await runTest("app settings use one owner command for the whole patch", async () => {
     const calls = captureInvocations();
-    await saveAppSettingsPatch({ trackingPaused: true, themeMode: "dark" });
+    await saveAppSettingsPatch({ themeMode: "dark", language: "en-US" });
     assert.deepEqual(calls, [{
       command: "cmd_commit_app_settings",
       args: { mutations: [
-        { key: "tracking_paused", value: "1" },
         { key: "theme_mode", value: "dark" },
+        { key: "language", value: "en-US" },
       ] },
     }]);
   });
@@ -68,7 +68,7 @@ try {
           return undefined;
         });
         const save = command === "cmd_commit_app_settings"
-          ? saveAppSettingsPatch({ trackingPaused: true })
+          ? saveAppSettingsPatch({ themeMode: "dark" })
           : commitClassificationSettingMutations([{ key: "__deleted_category::music", value: "1" }]);
         await assert.rejects(save, (error: unknown) => error === failure);
         assert.deepEqual(calls.map((call) => call.command), [command]);

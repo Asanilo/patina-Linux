@@ -50,7 +50,6 @@ import { useAppShellUpdateEntry } from "./hooks/useAppShellUpdateEntry";
 import { useAppThemeMode } from "./hooks/useAppThemeMode.ts";
 import {
   saveHourlyActivityChartModeSetting,
-  saveMinSessionSecsSetting,
 } from "./services/appSettingsRuntimeService.ts";
 import {
   createPreloadableViewComponent,
@@ -145,6 +144,7 @@ function AppShellContent() {
     appSettings,
     classificationReady,
     setAppSettings,
+    updateMinSessionSecs, minSessionUpdatePending, canUpdateMinSession, refreshSettings,
     syncTick,
     trackerHealth,
   } = useWindowTracking({ trackerHealthPollingEnabled: isForegroundReady });
@@ -350,12 +350,8 @@ function AppShellContent() {
   }, [isForegroundReady, isWindowForegroundLike]);
 
   const handleMinSessionSecsChange = useCallback((nextValue: number) => {
-    setAppSettings((current) => ({
-      ...current,
-      minSessionSecs: nextValue,
-    }));
-    void saveMinSessionSecsSetting(nextValue).catch(console.warn);
-  }, [setAppSettings]);
+    void updateMinSessionSecs(nextValue).catch(() => pushToast(uiText.settings.saveFailed, "warning"));
+  }, [updateMinSessionSecs, pushToast, uiText.settings.saveFailed]);
 
   const handleHourlyActivityChartModeChange = useCallback((nextValue: HourlyActivityChartMode) => {
     setAppSettings((current) => ({
@@ -456,6 +452,7 @@ function AppShellContent() {
                   mergeThresholdSecs={appSettings.timelineMergeGapSecs}
                   minSessionSecs={appSettings.minSessionSecs}
                   onMinSessionSecsChange={handleMinSessionSecsChange}
+                  minSessionChangeDisabled={minSessionUpdatePending || !canUpdateMinSession}
                   trackerHealth={trackerHealth}
                   loadHistorySnapshot={loadHistoryRuntimeSnapshot}
                   mappingVersion={mappingVersion}
@@ -500,12 +497,14 @@ function AppShellContent() {
                       void clearDataBootstrapCache();
                     }
                     setAppSettings(nextSettings);
+                    refreshSettings();
                     setSettingsThemeModePreview(null);
                     setSettingsColorSchemePreview(null);
                     setSettingsLanguagePreview(null);
                   }}
                   onColorSchemeSaved={(nextSettings: AppSettings) => {
                     setAppSettings(nextSettings);
+                    refreshSettings();
                     setSettingsColorSchemePreview(null);
                   }}
                   onRegisterSaveHandler={registerSettingsSaveHandler}

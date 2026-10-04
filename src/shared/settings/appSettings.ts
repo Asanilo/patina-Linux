@@ -74,3 +74,4 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
 export const BACKGROUND_OPTIMIZATION_DELAY_RANGE = { min: 1, max: 60 } as const;
 export const RESOURCE_SETTING_KEYS = ["audioParticipationEnabled", "webActivityEnabled", "webActivityPort", "webActivityToken", "webActivityUrlPrivacy"] as const;
+export const PRODUCT_POLICY_SETTING_KEYS = ["idleTimeoutSecs", "timelineMergeGapSecs", "minSessionSecs", "trackingPaused"] as const;
