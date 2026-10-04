@@ -27,6 +27,38 @@ pub(crate) struct SelectionSnapshot {
     pub selected: Option<StagedRuntime>,
 }
 
+#[derive(Debug, Serialize)]
+pub(crate) struct ServicePlan {
+    pub selected: StagedRuntime,
+    pub unit_path: PathBuf,
+    pub unit_text: String,
+}
+
+pub(crate) fn service_plan(
+    root: &Path,
+    expected: &str,
+    config: &Path,
+    data: &Path,
+    allow_debug: bool,
+) -> Result<ServicePlan, String> {
+    let installed = Installation::open(root, false)?;
+    let selected = installed
+        .current(allow_debug)?
+        .ok_or_else(|| error("no standalone version is selected"))?;
+    if selected.manifest_sha256 != expected {
+        return Err(error(
+            "installed selection changed; inspect before preparing its service",
+        ));
+    }
+    let unit_text =
+        crate::platform::linux::patinad_service_unit::standalone(&installed.root, config, data)?;
+    Ok(ServicePlan {
+        selected,
+        unit_path: config.join("systemd/user/patinad.service"),
+        unit_text,
+    })
+}
+
 struct Installation {
     root: PathBuf,
     _lock: File,

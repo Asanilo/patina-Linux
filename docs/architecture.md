@@ -266,6 +266,8 @@ Tools HTTP 请求／快照类型由 `patina-protocol::tools` 定义，独立 SDK
 
 独立安装的期望版本由同一 owner 下的 `selection` 管理，以 `current -> versions/<manifest SHA256>` 为唯一选择记录；inspect 持有共享安装锁并完整校验当前载荷，select 持有独占安装锁，比较显式旧摘要／none 后原子替换链接。非预期 current 内容不得覆盖，较低 SemVer 选择被拒绝，同版本不同构建仍以摘要区分；选择不证明数据格式兼容或服务就绪。提交后的 IO 错误可能意味着选择已经改变，调用方应重读，不能自动切回旧二进制。已选目标与运行身份是两个事实；服务 owner 后续负责受控切换，文件选择入口不操作 profile、systemd 或开机启动偏好。
 
+Linux 固定 service unit 的路径转义与基础策略渲染归 `platform/linux/patinad_service_unit`，AppImage 与 standalone 仅选择各自固定入口和已知启动参数，不接受任意 shell 命令。独立 unit 预览在共享安装锁内核对当前摘要并绑定明确 config／data roots，返回可审阅文本，不读取或覆盖已有 unit，也不证明 manager 使用相同 roots 或允许接管服务。实际安装／激活必须另行验证服务归属、覆盖配置和 profile cutover；不得把预览成功当作激活授权或验收。
+
 运行映像测量归 `platform/linux/executable_identity`，daemon 启动时从 `/proc/self/exe` 打开的文件计算有界 SHA256，由宿主与 build-info 组合后随 lifecycle owner 缓存；不能按已被替换的启动路径或每次 HTTP 请求重新测量。协议 crate 拥有 service 快照／重启 DTO，独立 SDK 和 Desktop facade 共用读取及具名重启入口。身份缺失与测量失败必须明确，不因缺少身份停止追踪；升级目标验证不得把缺失视为匹配。运行身份不证明安装来源、发布签名或 readiness；服务重启写入仍须协商 owner／ready／scope，发送一次后由上层核对 ticket、新实例、目标和运行就绪。
 
 Tools 状态写入的事务入口归 `data/repositories/tools`，`tools/state` 只在传入连接上执行查询。每项写操作从 `BEGIN IMMEDIATE` 开始，前置状态判断、分段编号、阶段推进／计数和 reset 清理均在同一事务；完整读取也只使用一份数据库快照。`ToolsRuntimeOwner` 的控制、启动恢复、tick 与发布共用操作锁，取得锁后才采样时间，clone 不能各自建立锁；embedded 迁移包装从受管状态复用同一把锁。tracking daemon 的 HTTP 快照走该 owner，只读宿主保留 repository 读取。这里的原子性是单项数据库操作，不等同于整次 tick、多请求的事务、旧草稿 CAS 或系统通知的恰好一次投递。

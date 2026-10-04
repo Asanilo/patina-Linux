@@ -13,6 +13,39 @@ fn selected(root: &Path) -> StagedRuntime {
 }
 
 #[test]
+fn service_preview_requires_current_identity_and_preserves_existing_user_unit() {
+    let mut fixture = Fixture::new();
+    let manifest = staged(&mut fixture, "1.0.0");
+    let config = fixture.source.join("config");
+    let data = fixture.source.join("data");
+    assert!(service_plan(&fixture.root, &manifest, &config, &data, false).is_err());
+    select(&fixture.root, &manifest, &ExpectedCurrent::Absent, false).unwrap();
+    let plan = service_plan(&fixture.root, &manifest, &config, &data, false).unwrap();
+    assert!(!config.exists());
+    assert!(!data.exists());
+    assert_eq!(plan.selected.manifest_sha256, manifest);
+    assert_eq!(plan.unit_path, config.join("systemd/user/patinad.service"));
+    fs::create_dir_all(plan.unit_path.parent().unwrap()).unwrap();
+    fs::write(&plan.unit_path, b"custom unit").unwrap();
+    assert_eq!(
+        service_plan(&fixture.root, &manifest, &config, &data, false)
+            .unwrap()
+            .unit_text,
+        plan.unit_text
+    );
+    assert_eq!(fs::read(&plan.unit_path).unwrap(), b"custom unit");
+    assert!(service_plan(&fixture.root, &"f".repeat(64), &config, &data, false).is_err());
+    assert!(service_plan(
+        &fixture.root,
+        &manifest,
+        Path::new("relative"),
+        &data,
+        false
+    )
+    .is_err());
+}
+
+#[test]
 fn selection_exposes_verified_identity_and_repeating_same_baseline_is_idempotent() {
     let mut fixture = Fixture::new();
     let first = staged(&mut fixture, "1.0.0");

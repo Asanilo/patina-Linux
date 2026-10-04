@@ -10,7 +10,7 @@ use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsE
 use std::path::{Component, Path, PathBuf};
 
 mod selection;
-pub(crate) use selection::{inspect, select, ExpectedCurrent};
+pub(crate) use selection::{inspect, select, service_plan, ExpectedCurrent};
 
 const ROOT_MARKER: &str = ".patina-standalone-root";
 const ROOT_IDENTITY: &[u8] = b"Patina standalone runtime root v1\n";

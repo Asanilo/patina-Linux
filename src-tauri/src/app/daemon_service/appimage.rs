@@ -5,7 +5,9 @@ use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Runtime};
 
-const UNIT_HEADER: &str = "# Managed by Patina AppImage runtime v1\n";
+use crate::platform::linux::patinad_service_unit::appimage as unit_text;
+#[cfg(test)]
+use crate::platform::linux::patinad_service_unit::APPIMAGE_HEADER as UNIT_HEADER;
 
 pub(crate) async fn ensure_runtime<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     use crate::platform::{
@@ -120,43 +122,6 @@ fn should_install(path: &Path, packaged_unit: bool, expected: &str) -> Result<bo
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(!packaged_unit),
         Err(error) => Err(error.to_string()),
     }
-}
-
-fn unit_text(launcher: &Path, config: &Path, data: &Path) -> Result<String, String> {
-    let value = launcher.to_str().ok_or("runtime path must be UTF-8")?;
-    if !launcher.is_absolute() || value.chars().any(char::is_control) {
-        return Err("runtime path must be absolute and contain no control characters".into());
-    }
-    let quoted = value
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('%', "%%");
-    let base = include_str!("../../../../packaging/systemd/patinad.service");
-    let mut unit = format!(
-        "{UNIT_HEADER}{}",
-        base.replace(
-            "ExecStart=/usr/bin/patinad",
-            &format!("ExecStart=\"{quoted}\" --patinad")
-        )
-    );
-    let environment = |key: &str, path: &Path| -> Result<String, String> {
-        let value = path.to_str().ok_or("runtime environment must be UTF-8")?;
-        if !path.is_absolute() || value.chars().any(char::is_control) {
-            return Err("invalid runtime environment path".into());
-        }
-        let value = value
-            .replace('\\', "\\\\")
-            .replace('"', "\\\"")
-            .replace('%', "%%");
-        Ok(format!("Environment=\"{key}={value}\"\n"))
-    };
-    let roots = format!(
-        "{}{}",
-        environment("XDG_CONFIG_HOME", config)?,
-        environment("XDG_DATA_HOME", data)?
-    );
-    unit = unit.replace("[Service]\n", &format!("[Service]\n{roots}"));
-    Ok(unit)
 }
 
 fn install_unit(path: &Path, expected: &str) -> Result<(), String> {

@@ -593,3 +593,20 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 本批二进制 SHA256 `cc7ff6e9e0ff8be35196a52ba70cffcaa1bde99fe9bba8216e25c7694a4594bc`，manifest SHA256 `9a589e3b7a0172117a07804e56d96729d54de633128eee0b922442965f8fefbe`。随后选中的二进制通过双 SDK 隔离运行验收，报告的运行摘要与已选目标一致，启动路径替换、分类／Tools 同步、条件写入、关闭／重新打开和数据保留通过。复用未变化的 M6d SDK 探针。
 - 证据位于 `tmp/acceptance/multi-client-m6e-selection/`、`tmp/acceptance/m6e-independent-client.log`、`/tmp/patina-selection-qgxa9v2r/`、`/tmp/patina-independent-client-gfrffmsv/`。较低 SemVer 拒绝仅约束该安装根的已选版本，不代表已经处理旧 DEB/AppImage 数据兼容；同版本摘要切换也不证明数据库可降级。下一工作包必须接入服务激活和旧 owner 迁移，保留运行 lease／交接状态及用户自启动偏好，再替换现有精确版本重载检查。
 - 本检查点仅本地实现、隔离验收及提交；main／生产安装保持原状，未推送、合并、安装或发布，未开发新客户端 UI。整体后端基础阶段继续。
+
+### M6f 执行设计：独立服务接入与可恢复激活
+
+- `02c6f843` 干净基线已核对。服务激活不能只写 unit：旧 Desktop 依赖 profile control root 的 cutover reservation 决定 client／embedded 模式；必须保留该唯一决策机制及 RuntimeLease，不能另外建立可同时启动后台的分支。
+- 服务文件渲染和可信文件检查归 Linux platform，先从现有 AppImage 实现提取保持字节兼容的窄边界，供 standalone 固定 `current/bin/patinad` 入口复用。systemd manager 的 profile roots、实际 unit 来源及 drop-in 必须核对；自定义 unit／mask 保留，旧 DEB/AppImage 替换须走具名迁移而非按文件名覆盖。
+- 安装宿主负责激活顺序：锁定目标、预检候选和服务归属、持久记录激活意图、受控停旧服务、等 lease 释放、准备 unit 和 cutover、启动后用协议／ready／实际二进制摘要核对目标、最后确认迁移完成。重试复核意图与外部状态，不默认降级；用户的后台／Desktop 开机偏好保持原值。
+- 首次独立安装与已有 completed cutover 分别覆盖；进行中的其他迁移、数据目录维护和损坏状态不能被该流程擅自修复。失败必须留下可检查的状态，不能误报激活完成。先用隔离状态机与服务环境验证；不在本机生产服务执行新激活命令，不把生成 unit／mock 管理器测试当作实装验收。
+
+### M6f 服务准备前置检查点（激活流程仍在实施范围）
+
+- 已从 AppImage 宿主提取 `platform/linux/patinad_service_unit`，固定共享基础 unit 策略和路径转义；AppImage 继续使用 AppRun＋`--patinad`，standalone 使用已选 `current/bin/patinad`。新增 `--print-runtime-service <manifest>`，要求明确 config／data roots，在共享安装锁内重新核对选中载荷和摘要，返回绑定目标的可审阅 JSON；不会安装或操作已有 unit。
+- 运行锁与 cutover 审计确认：独立激活必须复用 `app/runtime_lease` 和 `app/runtime_owner_cutover`。只启动 systemd 服务而不建立对应 cutover 会使 Desktop 仍选择 embedded 启动路径；激活流程还需持久意图和恢复处理。本检查点没有引入第二份后台归属状态，也未实现实际服务启动／迁移。
+- 完整 `npm run check:full` 通过：68 个 TypeScript 文件、49 项浏览器检查、48 项 SDK 测试、Desktop 811 passed / 22 ignored、无桌面后端 652 passed / 11 ignored；类型生成、架构／依赖边界、Clippy 和 bundle 预算通过。新增 2 项渲染、1 项目标绑定／既有文件保留和 1 项 CLI 参数回归。证据为 `tmp/acceptance/m6f-unit-full.log`。
+- 直接编译 `02c6f843` 中旧 AppImage 渲染函数与新共享函数，在普通路径及含空格、百分号、美元符号、引号／反斜杠的 3 组路径上逐字节输出一致；证据为 `tmp/acceptance/m6f-appimage-unit-compat.json` 与 `/tmp/patina-unit-render-lcjri5wk/`。
+- 实际 headless 控制程序 SHA256 `b09a47d6925f6ffe2b6227c0fa46e2a7b46a0b82f69c801372d94cf9c4440f0c` 对 M6e 私有选中版本生成 unit 预览，目标身份相符、重复输出一致、既有自定义 unit 未改变，CLI 未创建默认或显式 profile 根；生成文件通过 `systemd-analyze --user verify`。首次验收发现解析器自身创建 XDG runtime 目录，因此将解析器与 CLI 的运行目录分开后复核；应用代码没有为此改动。
+- 原生证据在 `tmp/acceptance/multi-client-m6f-service-unit/`、`/tmp/patina-service-preview-fea6p_yy/`。unit 解析与字节对照不证明实际启动、旧包接管、DB 升级或 GNOME 生命周期；这些仍按 M6f 执行设计继续。此批未改变 runtime 业务代码，不重复上一检查点已通过的双 SDK 数据保留验收。
+- main／生产服务未变，仅本地实现、验证及提交，未推送、合并、安装或发布，整体目标仍未完成。

@@ -145,6 +145,23 @@ Use distinct real builds in nondecreasing version order; append `--allow-debug` 
 local debug candidates. It returns the selected binary path for the independent-client
 acceptance script and does not operate systemd.
 
+Preview a standalone systemd unit for an explicitly observed selected digest:
+
+```bash
+/absolute/path/patinad --print-runtime-service <selected-manifest-sha256> \
+  --runtime-root /absolute/path/private-parent/runtime \
+  --config-root /absolute/path/config --data-root /absolute/path/data
+# Append --allow-debug for a local debug candidate.
+```
+
+The JSON result contains the selected identity, proposed unit path and unit text.
+Rendering validates the current payload under the installation lock and uses the
+fixed `current/bin/patinad` production entry point with the supplied profile roots.
+It neither creates those roots nor reads/replaces an existing unit. This is a
+reviewable candidate only: it does not check manager environment, unit ownership,
+drop-ins, cutover state or running readiness. Do not install the preview over an
+existing service; controlled activation and legacy migration remain pending.
+
 ## Daemon Analytical Read Isolation
 
 The multi-client daemon prepares a separate two-connection analytical pool after

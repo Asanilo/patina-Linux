@@ -10,6 +10,7 @@ pub mod notifications;
 pub mod power;
 pub mod resource;
 pub mod systemd_user_service;
+pub(crate) mod patinad_service_unit;
 pub(crate) mod standalone_runtime;
 pub(crate) mod executable_identity;
 #[cfg(feature = "desktop")]
