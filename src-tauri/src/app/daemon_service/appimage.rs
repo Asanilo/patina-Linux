@@ -24,6 +24,14 @@ pub(crate) async fn ensure_runtime<R: Runtime>(app: &AppHandle<R>) -> Result<(),
         &roots,
         app_paths::AppProfile::Production,
     );
+    if crate::app::standalone_activation::uses_standalone_binding(&roots, &paths.control_root)? {
+        validate_manager_roots(&systemd_user_service::manager_environment().await?, &roots, true)?;
+        let definition = systemd_user_service::load_patinad_definition().await?.ok_or("standalone service is missing from systemd")?;
+        if Path::new(&definition.fragment_path) != roots.config.join("systemd/user/patinad.service") || !definition.drop_in_paths.is_empty() {
+            return Err("standalone service definition changed; inspect it before starting Desktop".into());
+        }
+        return Ok(());
+    }
     let unit_path = roots.config.join("systemd/user/patinad.service");
     let packaged_unit = [
         "/usr/lib/systemd/user/patinad.service",

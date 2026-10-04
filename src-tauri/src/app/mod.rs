@@ -28,8 +28,9 @@ mod native_window_tests;
 #[cfg(feature = "desktop")]
 pub mod runtime;
 pub mod runtime_lease;
-#[cfg(feature = "desktop")]
 pub mod runtime_owner_cutover;
+#[cfg(target_os = "linux")]
+pub(crate) mod standalone_activation;
 #[cfg(feature = "desktop")]
 pub mod runtime_tasks;
 #[cfg(feature = "desktop")]

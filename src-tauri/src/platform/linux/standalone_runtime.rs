@@ -10,7 +10,7 @@ use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsE
 use std::path::{Component, Path, PathBuf};
 
 mod selection;
-pub(crate) use selection::{inspect, select, service_plan, ExpectedCurrent};
+pub(crate) use selection::{hold_selected, inspect, select, service_plan, ExpectedCurrent};
 
 const ROOT_MARKER: &str = ".patina-standalone-root";
 const ROOT_IDENTITY: &[u8] = b"Patina standalone runtime root v1\n";
@@ -311,7 +311,20 @@ fn validate_root_path(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn installation_lock(root: &Path, create: bool, exclusive: bool) -> Result<File, String> {
+struct InstallationLock(File);
+impl Drop for InstallationLock {
+    fn drop(&mut self) {
+        // A spawned child may retain an inherited duplicate until exec. Closing
+        // only our fd would leave the shared open-file-description lock held.
+        let _ = FileExt::unlock(&self.0);
+    }
+}
+
+fn installation_lock(
+    root: &Path,
+    create: bool,
+    exclusive: bool,
+) -> Result<InstallationLock, String> {
     let mut options = OpenOptions::new();
     options
         .read(true)
@@ -335,7 +348,7 @@ fn installation_lock(root: &Path, create: bool, exclusive: bool) -> Result<File,
         FileExt::try_lock_shared(&lock)
     };
     result.map_err(|_| error("another runtime installation is in progress"))?;
-    Ok(lock)
+    Ok(InstallationLock(lock))
 }
 
 fn installed_version(

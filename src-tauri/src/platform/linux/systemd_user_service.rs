@@ -85,6 +85,9 @@ trait SystemdUserManager {
     #[zbus(name = "GetUnit")]
     fn get_unit(&self, name: &str) -> zbus::Result<OwnedObjectPath>;
 
+    #[zbus(name = "LoadUnit")]
+    fn load_unit(&self, name: &str) -> zbus::Result<OwnedObjectPath>;
+
     #[zbus(name = "EnableUnitFiles")]
     fn enable_unit_files(
         &self,
@@ -132,10 +135,56 @@ pub(crate) async fn manager_environment() -> Result<Vec<String>, String> {
 )]
 trait SystemdUserUnit {
     #[zbus(property)]
+    fn fragment_path(&self) -> zbus::Result<String>;
+
+    #[zbus(property)]
+    fn drop_in_paths(&self) -> zbus::Result<Vec<String>>;
+
+    #[zbus(property)]
     fn active_state(&self) -> zbus::Result<String>;
 
     #[zbus(property)]
     fn sub_state(&self) -> zbus::Result<String>;
+}
+
+#[derive(Debug)]
+pub(crate) struct ServiceDefinition {
+    pub fragment_path: String,
+    pub drop_in_paths: Vec<String>,
+}
+
+pub(crate) async fn load_patinad_definition() -> Result<Option<ServiceDefinition>, String> {
+    tokio::time::timeout(INSPECTION_TIMEOUT, async {
+        let connection = zbus::Connection::session()
+            .await
+            .map_err(|error| error.to_string())?;
+        let manager = SystemdUserManagerProxy::new(&connection)
+            .await
+            .map_err(|error| error.to_string())?;
+        let path = match manager.load_unit(PATINAD_SERVICE_NAME).await {
+            Ok(path) => path,
+            Err(error) if is_missing_unit_error(&error) => return Ok(None),
+            Err(error) => return Err(error.to_string()),
+        };
+        let unit = SystemdUserUnitProxy::builder(&connection)
+            .path(path)
+            .map_err(|error| error.to_string())?
+            .build()
+            .await
+            .map_err(|error| error.to_string())?;
+        Ok(Some(ServiceDefinition {
+            fragment_path: unit
+                .fragment_path()
+                .await
+                .map_err(|error| error.to_string())?,
+            drop_in_paths: unit
+                .drop_in_paths()
+                .await
+                .map_err(|error| error.to_string())?,
+        }))
+    })
+    .await
+    .map_err(|_| "systemd definition inspection timed out".to_string())?
 }
 
 pub async fn inspect_patinad_service() -> SystemdUserServiceSnapshot {

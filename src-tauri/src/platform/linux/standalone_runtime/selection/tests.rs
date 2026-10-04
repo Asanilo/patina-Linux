@@ -266,3 +266,29 @@ fn debug_selection_requires_explicit_opt_in_and_expected_identity_is_strict() {
     assert!(ExpectedCurrent::parse("NONE").is_err());
     assert!(ExpectedCurrent::parse("../version").is_err());
 }
+
+#[test]
+fn installation_guard_releases_ownership_even_if_a_duplicate_descriptor_survives() {
+    let mut fixture = Fixture::new();
+    staged(&mut fixture, "1.0.0");
+    let raw = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(fixture.root.join("install.lock"))
+        .unwrap();
+    raw.try_lock_exclusive().unwrap();
+    let duplicate = raw.try_clone().unwrap();
+    drop(raw);
+    assert!(
+        inspect(&fixture.root, false).is_err(),
+        "closing one duplicate alone retains flock ownership"
+    );
+    FileExt::unlock(&duplicate).unwrap();
+    drop(duplicate);
+    let guard = installation_lock(&fixture.root, false, true).unwrap();
+    let inherited = guard.0.try_clone().unwrap();
+    assert!(inspect(&fixture.root, false).is_err());
+    drop(guard);
+    assert!(inspect(&fixture.root, false).is_ok());
+    drop(inherited);
+}

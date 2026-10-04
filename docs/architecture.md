@@ -268,6 +268,10 @@ Tools HTTP 请求／快照类型由 `patina-protocol::tools` 定义，独立 SDK
 
 Linux 固定 service unit 的路径转义与基础策略渲染归 `platform/linux/patinad_service_unit`，AppImage 与 standalone 仅选择各自固定入口和已知启动参数，不接受任意 shell 命令。独立 unit 预览在共享安装锁内核对当前摘要并绑定明确 config／data roots，返回可审阅文本，不读取或覆盖已有 unit，也不证明 manager 使用相同 roots 或允许接管服务。实际安装／激活必须另行验证服务归属、覆盖配置和 profile cutover；不得把预览成功当作激活授权或验收。
 
+独立安装的激活宿主归 `app/standalone_activation`。安装根锁稳定已选目标，profile 级锁串行该 profile 的安装意图；`standalone-activation.json` 记录目标摘要、profile roots、cutover request ID、prepared／starting／completed 阶段和有界错误。新 cutover 的 ID 必须先持久化，再通过共享 `runtime_owner_cutover` 预约，保证两文件之间中断后可识别归属；该模块同时用于 headless 和 Desktop，不另造 embedded／client 判断规则。切换前停止受管服务并等待 RuntimeLease，持有 Maintenance lease 准备文件，启动前释放；服务就绪和实际映像匹配后才确认完成。已启动且核对成功的重试只完成状态确认，不再次重启；失败不自动选择旧版本或降级数据库。
+
+初版显式激活只接收新 profile／受认可 standalone unit，以及既有 completed 或本安装意图对应的 cutover；其他迁移、旧整包 unit、mask、drop-in 或配置冲突必须保留并拒绝接管。systemd manager 与安装进程的 profile roots 必须一致，登录启用状态应与持久偏好一致，激活不调用 enable／disable。managed daemon 启动后由自身 writer 将 activating／completed cutover 的后台登录偏好镜像到设置；AppImage Desktop 识别合法 standalone 绑定后复用该服务，不再发布自己的 runtime。旧 DEB/AppImage 接管、Desktop 旧重载入口以及真实登录验收仍按工作计划另行完成。
+
 运行映像测量归 `platform/linux/executable_identity`，daemon 启动时从 `/proc/self/exe` 打开的文件计算有界 SHA256，由宿主与 build-info 组合后随 lifecycle owner 缓存；不能按已被替换的启动路径或每次 HTTP 请求重新测量。协议 crate 拥有 service 快照／重启 DTO，独立 SDK 和 Desktop facade 共用读取及具名重启入口。身份缺失与测量失败必须明确，不因缺少身份停止追踪；升级目标验证不得把缺失视为匹配。运行身份不证明安装来源、发布签名或 readiness；服务重启写入仍须协商 owner／ready／scope，发送一次后由上层核对 ticket、新实例、目标和运行就绪。
 
 Tools 状态写入的事务入口归 `data/repositories/tools`，`tools/state` 只在传入连接上执行查询。每项写操作从 `BEGIN IMMEDIATE` 开始，前置状态判断、分段编号、阶段推进／计数和 reset 清理均在同一事务；完整读取也只使用一份数据库快照。`ToolsRuntimeOwner` 的控制、启动恢复、tick 与发布共用操作锁，取得锁后才采样时间，clone 不能各自建立锁；embedded 迁移包装从受管状态复用同一把锁。tracking daemon 的 HTTP 快照走该 owner，只读宿主保留 repository 读取。这里的原子性是单项数据库操作，不等同于整次 tick、多请求的事务、旧草稿 CAS 或系统通知的恰好一次投递。

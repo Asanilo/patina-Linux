@@ -226,6 +226,7 @@ fn unmanaged_roots_links_and_busy_installations_are_preserved() {
     assert!(stage(&fixture.source, &fixture.root, &expected, false)
         .unwrap_err()
         .contains("in progress"));
+    FileExt::unlock(&lock).unwrap();
     drop(lock);
     assert!(stage(&fixture.source, &fixture.root, &expected, false).is_ok());
 }

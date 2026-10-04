@@ -92,8 +92,8 @@ projection, and binds its metadata and SHA256 to a deterministic archive. Debug
 archives carry a `-debug` filename suffix. The manifest records file sizes and
 modes; these hashes are integrity evidence, not a publisher signature. Existing
 outputs are never replaced. The archive includes a systemd **template** only:
-it does not install, enable, restart or replace a service. Independent installation,
-old-package migration and running/installed-version verification are still separate
+it does not install, enable, restart or replace a service. Explicit activation tooling
+is described below; old-package migration and formal release integration remain
 work in the active multi-client plan. This candidate is not a universal or static
 Linux binary and does not change the public DEB/AppImage release workflow.
 
@@ -115,7 +115,7 @@ directory named by the manifest digest. Repeating the command revalidates and re
 that version; damaged installed files are rejected without repair. The JSON receipt
 identifies the directory, build and binary digest. This command does not execute the
 candidate, select a current version, create a profile, or change a service. Activation
-and legacy DEB/AppImage ownership migration remain pending.
+is an explicit operation described below; legacy DEB/AppImage ownership migration remains pending.
 
 Inspect or explicitly select a staged version:
 
@@ -160,7 +160,46 @@ fixed `current/bin/patinad` production entry point with the supplied profile roo
 It neither creates those roots nor reads/replaces an existing unit. This is a
 reviewable candidate only: it does not check manager environment, unit ownership,
 drop-ins, cutover state or running readiness. Do not install the preview over an
-existing service; controlled activation and legacy migration remain pending.
+existing service; use the explicit activation entry below only within its supported
+ownership boundary. Legacy service migration remains pending.
+
+### Explicit standalone activation (development branch)
+
+```bash
+/absolute/path/patinad --activate-runtime <selected-manifest-sha256> \
+  --runtime-root /absolute/path/private-parent/runtime
+# --api-port <configured-port> changes the verification address, not backend settings.
+# The default is 14840. Local debug candidates also require --allow-debug.
+```
+
+This command performs local installation: it can write a user unit and control the
+existing standalone service, and a first start creates the Production profile. It
+uses the current environment's profile roots and requires them to match the systemd
+user manager. Use persistent paths visible to the service, such as a runtime root
+under the user's data directory; the unit uses `PrivateTmp=true`, so host `/tmp` and
+`/var/tmp` paths are unsuitable for a real installation. It accepts a new profile or a compatible existing cutover, preserves
+login preferences, and does not enable or disable login startup. Existing embedded
+data without a cutover, legacy DEB/AppImage units, custom units, masks and drop-ins
+require separate migration and are refused. A discrepancy between saved login intent
+and the manager's enabled state is also refused without changing either setting.
+
+Activation persists intent in the profile control root's `standalone-activation.json`
+before changing the service. It waits for the existing runtime lease, prepares the
+unit under a maintenance lease, releases that lease, starts the service and checks
+protocol compatibility, readiness and the actual running executable digest. Readiness
+is bracketed by matching service instances so a restart cannot mix two responses.
+Only then are activation and owner cutover confirmed. Retry the same explicit command
+after inspecting an interrupted operation; an already ready matching runtime is not
+restarted. Errors retain pending state and never trigger an automatic binary rollback.
+
+For adapter acceptance, `scripts/acceptance/standalone-activation.py` takes the
+controller, extracted candidate and expected manifest digest, optionally a second
+candidate/digest, plus `--allow-debug` where needed. It starts a new private D-Bus
+bus with a simulated systemd manager, runs real daemon processes with synthetic data,
+and checks interrupted cutover recovery, repeated activation, optional binary switching,
+disabled login startup and data retention. It requires `dbus-run-session` and system
+Python with `dbus-python`/GLib. This is not actual systemd login or production installation
+acceptance; it never connects its manager fixture to the host user bus.
 
 ## Daemon Analytical Read Isolation
 

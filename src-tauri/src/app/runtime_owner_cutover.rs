@@ -146,9 +146,41 @@ pub fn prepare(
     if let Some(existing) = read_reservation(control_root, profile)? {
         return Ok(snapshot(&existing));
     }
+    prepare_reserved(
+        control_root,
+        profile,
+        &random_request_id()?,
+        background_tracking_at_login,
+        desktop_launch_at_login,
+        now_ms,
+    )
+}
+
+/// The installer persists this ID before preparing cutover, so a crash between
+/// the two files can resume without claiming another owner's reservation.
+pub(crate) fn prepare_reserved(
+    control_root: &Path,
+    profile: AppProfile,
+    request_id: &str,
+    background_tracking_at_login: bool,
+    desktop_launch_at_login: bool,
+    now_ms: u64,
+) -> Result<RuntimeOwnerCutoverSnapshot, String> {
+    if !valid_request_id(request_id) {
+        return Err("invalid reserved cutover request ID".into());
+    }
+    if let Some(existing) = read_reservation(control_root, profile)? {
+        if existing.request_id != request_id
+            || existing.background_tracking_at_login != background_tracking_at_login
+            || existing.desktop_launch_at_login != desktop_launch_at_login
+        {
+            return Err("another runtime owner cutover already exists".into());
+        }
+        return Ok(snapshot(&existing));
+    }
     let reservation = RuntimeOwnerCutoverReservation {
         version: CUTOVER_VERSION,
-        request_id: random_request_id()?,
+        request_id: request_id.to_string(),
         profile: profile.key().to_string(),
         status: RuntimeOwnerCutoverStatus::Prepared,
         requested_at_ms: now_ms,

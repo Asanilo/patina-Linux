@@ -61,7 +61,36 @@ pub(crate) fn service_plan(
 
 struct Installation {
     root: PathBuf,
-    _lock: File,
+    _lock: InstallationLock,
+}
+
+pub(crate) struct SelectedRuntimeGuard {
+    pub selected: StagedRuntime,
+    installation: Installation,
+}
+
+impl SelectedRuntimeGuard {
+    pub(crate) fn root(&self) -> &Path {
+        &self.installation.root
+    }
+}
+
+pub(crate) fn hold_selected(
+    root: &Path,
+    expected: &str,
+    allow_debug: bool,
+) -> Result<SelectedRuntimeGuard, String> {
+    let installation = Installation::open(root, true)?;
+    let selected = installation
+        .current(allow_debug)?
+        .ok_or_else(|| error("no standalone version is selected"))?;
+    if selected.manifest_sha256 != expected {
+        return Err(error("installed selection changed before activation"));
+    }
+    Ok(SelectedRuntimeGuard {
+        selected,
+        installation,
+    })
 }
 
 impl Installation {

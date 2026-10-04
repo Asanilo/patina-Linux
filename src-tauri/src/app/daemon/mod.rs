@@ -51,6 +51,9 @@ pub fn build_startup_status(
 
 pub fn run(args: impl IntoIterator<Item = impl AsRef<str>>) -> Result<(), String> {
     let args: Vec<String> = args.into_iter().map(|arg| arg.as_ref().to_owned()).collect();
+    if args.get(1).is_some_and(|arg| arg == "--activate-runtime") {
+        return installation::activate_from_args(&args);
+    }
     if args.get(1).is_some_and(|arg| matches!(arg.as_str(), "--stage-runtime" | "--select-runtime" | "--inspect-runtime" | "--print-runtime-service")) {
         return installation::run_from_args(&args);
     }
@@ -96,6 +99,14 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
             ),
             Ok(None) => {}
             Err(error) => eprintln!("[patinad] backup restore maintenance skipped: {error}"),
+        }
+        let cutover = crate::app::runtime_owner_cutover::diagnose(&storage_paths.control_root, options.profile);
+        if matches!(cutover.state.as_str(), "activating" | "completed") {
+            if let Some(enabled) = cutover.background_tracking_at_login {
+                runtime.block_on(crate::data::repositories::app_settings::save_background_tracking_login_preference(
+                    &sqlite_runtime.pool, enabled,
+                ))?;
+            }
         }
     }
     let service_lifecycle = Arc::new(

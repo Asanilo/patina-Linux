@@ -59,7 +59,7 @@ HTTP API 索引和源码以当前实现为准；索引中历史的 unreleased/st
 | M3 | 浏览器会话和适配层；共享 React 核心界面，复用 Quiet Pro | Tauri＋Web 并行读取／修改分类并同步，真实浏览器验收 | 待实施 |
 | M4 | Rust SDK typed 能力逐步补全，TUI 接入同一核心链路 | 实际交互式 TUI 可查看／筛选／修改分类，并参与同步；CLI 示例不算完成 | 待实施 |
 | M5 | GPUI 客户端，同一能力和同步契约，独立视图 | 可运行 GPUI 核心链路和四端同步验收；评估启动、资源和维护成本 | 待实施 |
-| M6 | 后端独立安装、兼容矩阵、异常恢复、发布集成 | 无 Desktop 后端运行、四端适用覆盖矩阵、可重复回归；范围冻结后再准备候选 | M6a–M6e 独立构建、归档、版本存放、运行身份及条件选择已验证；服务激活、旧包迁移、受控重载目标验证及发布集成待实施 |
+| M6 | 后端独立安装、兼容矩阵、异常恢复、发布集成 | 无 Desktop 后端运行、四端适用覆盖矩阵、可重复回归；范围冻结后再准备候选 | M6a–M6e 已验证；M6f 新／standalone 激活与恢复已有私有总线证据，旧包迁移、Desktop 重载目标接入、真实 systemd 登录及发布集成待完成 |
 
 M1 的第二客户端示例用于证明独立依赖和真实连接，不能提前宣称 TUI 或 GPUI 已交付。M3 优先于完整 TUI／GPUI 开发，以先取得共享 UI 的直接收益。只有出现真实并行需要才增加工作分支。
 
@@ -610,3 +610,14 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 实际 headless 控制程序 SHA256 `b09a47d6925f6ffe2b6227c0fa46e2a7b46a0b82f69c801372d94cf9c4440f0c` 对 M6e 私有选中版本生成 unit 预览，目标身份相符、重复输出一致、既有自定义 unit 未改变，CLI 未创建默认或显式 profile 根；生成文件通过 `systemd-analyze --user verify`。首次验收发现解析器自身创建 XDG runtime 目录，因此将解析器与 CLI 的运行目录分开后复核；应用代码没有为此改动。
 - 原生证据在 `tmp/acceptance/multi-client-m6f-service-unit/`、`/tmp/patina-service-preview-fea6p_yy/`。unit 解析与字节对照不证明实际启动、旧包接管、DB 升级或 GNOME 生命周期；这些仍按 M6f 执行设计继续。此批未改变 runtime 业务代码，不重复上一检查点已通过的双 SDK 数据保留验收。
 - main／生产服务未变，仅本地实现、验证及提交，未推送、合并、安装或发布，整体目标仍未完成。
+
+### M6f 首版受控激活与恢复检查点
+
+- 已实现 `--activate-runtime`：锁定已选载荷、核对实际 build-info、manager profile roots、unit 来源／drop-in 和登录偏好，再持久记录激活意图、停服务、等待 RuntimeLease、持有 Maintenance lease 安装 unit，释放 lease 后启动并验证协议、就绪状态和运行映像。读取能力前后核对同一实例，避免重启竞态把旧实例的 ready 与新实例身份拼接。当前支持新 profile 或受认可的 standalone 配置；旧 DEB/AppImage unit、已有 embedded 数据、其他未完成迁移及配置冲突仍拒绝接管。
+- `runtime_owner_cutover` 已成为 headless／Desktop 共用模块；安装器先保存将使用的 cutover ID，再预约并推进同一迁移状态。启动成功后中断的操作可直接核对并完成，不重复重启健康后端；失败保留 prepared／starting 和有界错误，不自动回退二进制。managed daemon 使用自身 writer 镜像已有 cutover 的登录偏好，激活不执行 enable／disable；AppImage Desktop 可识别并保留合法 standalone 绑定。
+- 状态机回归覆盖首次完成、停止／安装／启动／验证失败后的继续、启动后取消、健康重复执行、保留 completed cutover 偏好，以及拒绝其他迁移／损坏状态。HTTP 回归覆盖独立的后端版本、错误摘要／版本、未就绪、实例更换和身份缺失；文件回归验证 unit 原子发布、mask／自定义文件／硬链接保留。新建控制目录使用明确的 0700，不依赖调用环境的 umask。
+- 最终 Rust 复核曾暴露旧安装锁在操作返回后仍被占用。重复文件描述符回归证实仅关闭本 fd 不会结束共享文件描述符的 flock；安装根锁和新 profile 激活锁均改为 RAII 显式 unlock，测试夹具也显式释放自己的原始锁。源码由该回归与完整 Rust 门禁复核，不通过重复运行掩盖失败。
+- 完整门禁全部组成项通过：68 个 TypeScript 文件、49 项浏览器检查、48 项 SDK 测试、Desktop 823 passed / 22 ignored、无桌面后端 685 passed / 11 ignored；类型生成、架构／依赖边界、Clippy 和 bundle 预算通过。最初完整执行在 `tmp/acceptance/m6f-activation-full.log`；后续 Rust 修正的最终证据为 `m6f-activation-rust-final.log`、`m6f-activation-daemon-final.log`，未重复未变化的前端／SDK 门禁。
+- 可重复的原生适配器验收入口为 `scripts/acceptance/standalone-activation.py` 和 `standalone-systemd-mock.py`：新建私有 D-Bus 总线、明确拒绝宿主总线，使用模拟 manager 和真实 daemon。覆盖已准备但未完成的 cutover 恢复、重复激活不再重启、两份同版本不同构建的受控切换、历史保留与自启动关闭；实际发生两次 start、一次 stop、两次 reload，没有 enable／disable。
+- 最终控制程序及首次载荷 SHA256 `7c03e101888f59558311394682226ef475770b9242e2778b0fca6856ff481a03`，manifest SHA256 `54412d576afd7d4db349c0f94456e89ef1ad9d08d160515b121f3f7663458916`；第二次显式切换到已验证的 M6e 构建 `cc7ff6e9e0ff8be35196a52ba70cffcaa1bde99fe9bba8216e25c7694a4594bc`。证据在 `tmp/acceptance/multi-client-m6f-activation/`、`tmp/acceptance/m6f-private-activation-final.log`、`/tmp/patina-activate-private-9_c6dw72/`。这是本地 debug 候选及私有 Production profile 的模拟 manager 验收，不是真实 systemd 登录、PrivateTmp 命名空间或 GNOME 硬件验收，也不是生产安装／公开签名升级。
+- 下一工作包应在上述激活流程上完成旧 DEB/AppImage 的具名迁移，再使 Desktop 的重载诊断按已安装目标与协议兼容性验证；保留版本精确比较的旧入口尚未退出。还需真实 systemd／登录环境和正式交付验收，以及此前列出的业务契约与产品讨论项。main、生产服务及自启动配置保持原状；本批只本地实现、验收和提交，未推送、合并或发布。

@@ -1,5 +1,7 @@
 //! Explicit file installation commands; service activation is a separate operation.
 use std::path::PathBuf;
+mod activation;
+pub(super) fn activate_from_args(args: &[String]) -> Result<(), String> { activation::run(args) }
 
 enum Operation {
     Stage {
