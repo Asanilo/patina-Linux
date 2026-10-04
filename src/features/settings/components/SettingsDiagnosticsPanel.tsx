@@ -251,7 +251,8 @@ export default function SettingsDiagnosticsPanel({
 
   const handleReloadDaemon = async () => {
     const runningVersion = daemonServiceSnapshot?.version?.runningVersion;
-    if (daemonActionBusy || reloadInFlight.current || !canReload || !runningVersion) return;
+    const revision = daemonServiceSnapshot?.version?.reloadRevision;
+    if (daemonActionBusy || reloadInFlight.current || !canReload || !runningVersion || !revision) return;
     reloadInFlight.current = true;
     setDaemonServiceAction("reloading");
     try {
@@ -261,7 +262,7 @@ export default function SettingsDiagnosticsPanel({
         confirmLabel: UI_TEXT.settings.daemonReloadLabel,
       });
       if (!accepted) return;
-      await SettingsDiagnosticsService.reloadDaemon(runningVersion);
+      await SettingsDiagnosticsService.reloadDaemon(runningVersion, revision);
       onToast?.(UI_TEXT.settings.daemonReloadSucceeded, "success");
     } catch (error) {
       console.warn("daemon reload verification failed", error);

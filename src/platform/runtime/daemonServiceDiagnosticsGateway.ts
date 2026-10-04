@@ -86,6 +86,10 @@ export interface DaemonServiceDiagnosticsSnapshot {
 interface RawDaemonVersionDiagnostics {
   desktop_version: string;
   running_version: string | null;
+  target_version: string | null;
+  distribution: "standalone" | "bundled" | "unknown";
+  target_state: "current" | "pending" | "unverified";
+  reload_revision: string | null;
   restart_available: boolean;
   error: string | null;
 }
@@ -93,6 +97,10 @@ interface RawDaemonVersionDiagnostics {
 export interface DaemonVersionDiagnostics {
   desktopVersion: string;
   runningVersion: string | null;
+  targetVersion: string | null;
+  distribution: "standalone" | "bundled" | "unknown";
+  targetState: "current" | "pending" | "unverified";
+  reloadRevision: string | null;
   restartAvailable: boolean;
   error: string | null;
 }
@@ -173,6 +181,10 @@ function isDaemonVersionDiagnostics(value: unknown): value is RawDaemonVersionDi
   const record = value as Record<string, unknown>;
   return typeof record.desktop_version === "string"
     && isNullableString(record.running_version)
+    && isNullableString(record.target_version)
+    && typeof record.distribution === "string" && ["standalone", "bundled", "unknown"].includes(record.distribution)
+    && typeof record.target_state === "string" && ["current", "pending", "unverified"].includes(record.target_state)
+    && (record.reload_revision === null || (typeof record.reload_revision === "string" && /^[a-f0-9]{64}$/.test(record.reload_revision)))
     && typeof record.restart_available === "boolean"
     && isNullableString(record.error);
 }
@@ -184,6 +196,10 @@ function mapRawDaemonServiceDiagnostics(
     version: raw.version ? {
       desktopVersion: raw.version.desktop_version,
       runningVersion: raw.version.running_version,
+      targetVersion: raw.version.target_version,
+      distribution: raw.version.distribution,
+      targetState: raw.version.target_state,
+      reloadRevision: raw.version.reload_revision,
       restartAvailable: raw.version.restart_available,
       error: raw.version.error,
     } : null,
@@ -237,6 +253,6 @@ export async function rollbackRuntimeOwnerToEmbedded(): Promise<void> {
   await invoke(ROLLBACK_RUNTIME_OWNER_COMMAND, { confirmed: true });
 }
 
-export async function reloadDaemonVersion(expectedRunningVersion: string): Promise<void> {
-  await invoke("cmd_reload_daemon_version", { confirmed: true, expectedRunningVersion });
+export async function reloadDaemonVersion(expectedRunningVersion: string, expectedRevision: string): Promise<void> {
+  await invoke("cmd_reload_daemon_version", { confirmed: true, expectedRunningVersion, expectedRevision });
 }

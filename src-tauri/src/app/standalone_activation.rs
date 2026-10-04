@@ -131,8 +131,9 @@ async fn execute(
         cutover::RuntimeOwnerStartupDecision::Blocked { reason } => return Err(reason),
     };
     if let Some(record) = previous.as_ref().filter(|record| {
-        matches!(record.phase, Phase::Starting | Phase::Completed)
-            && record.manifest_sha256 == selected.manifest_sha256
+        record.phase == Phase::Completed
+            || (record.phase == Phase::Starting
+                && record.manifest_sha256 == selected.manifest_sha256)
     }) {
         if record.cutover_request_id != request_id {
             return Err("completed activation cutover identity changed".into());
@@ -146,6 +147,10 @@ async fn execute(
                 now(),
             )?;
             let mut completed = record.clone();
+            // A client may already have reloaded the explicitly selected target.
+            // Reconcile its verified identity without restarting that healthy owner.
+            completed.manifest_sha256 = selected.manifest_sha256.clone();
+            completed.binary_sha256 = selected.binary_sha256.clone();
             completed.phase = Phase::Completed;
             completed.last_error = None;
             store.write(&completed)?;
@@ -245,23 +250,62 @@ fn now() -> u64 {
 }
 
 #[cfg(feature = "desktop")]
-pub(crate) fn uses_standalone_binding(
+pub(crate) fn registered_runtime_root(
     roots: &AppPathRoots,
     control_root: &Path,
-) -> Result<bool, String> {
+) -> Result<Option<PathBuf>, String> {
     let Some(record) = journal::read_binding_at(control_root)? else {
-        return Ok(false);
+        return Ok(None);
     };
     if record.config_root != roots.config || record.data_root != roots.data {
         return Err("standalone service registration uses different profile roots".into());
     }
-    // The operator may have selected a newer target before restarting. Binding
-    // ownership follows the registered root, not equality with the running version.
-    standalone_runtime::inspect(&record.runtime_root, true)?
-        .selected
-        .ok_or("registered standalone runtime has no selected version")?;
+    Ok(Some(record.runtime_root))
+}
+
+#[cfg(feature = "desktop")]
+pub(crate) struct ClientReloadGuard {
+    _store: Store,
+}
+
+#[cfg(feature = "desktop")]
+pub(crate) fn require_completed_registration(control_root: &Path) -> Result<(), String> {
+    if !journal::activation_completed(control_root)? {
+        return Err(
+            "standalone activation is incomplete; finish installation before reloading".into(),
+        );
+    }
+    Ok(())
+}
+
+#[cfg(feature = "desktop")]
+pub(crate) fn hold_client_reload(
+    roots: &AppPathRoots,
+    control_root: &Path,
+    expected_root: Option<&Path>,
+) -> Result<ClientReloadGuard, String> {
+    let store = Store::open(control_root)?;
+    if registered_runtime_root(roots, control_root)?.as_deref() != expected_root {
+        return Err("standalone registration changed or activation is incomplete; finish installation before reloading".into());
+    }
+    if expected_root.is_some() {
+        require_completed_registration(control_root)?;
+    }
+    Ok(ClientReloadGuard { _store: store })
+}
+
+#[cfg(feature = "desktop")]
+pub(crate) fn uses_standalone_binding(
+    roots: &AppPathRoots,
+    control_root: &Path,
+) -> Result<bool, String> {
+    let Some(root) = registered_runtime_root(roots, control_root)? else {
+        return Ok(false);
+    };
+    // Recognize ownership independently of the selected payload. A healthy API
+    // connection must not depend on parsing/hashing the next installation target.
     let expected = crate::platform::linux::patinad_service_unit::standalone(
-        &record.runtime_root,
+        &root,
         &roots.config,
         &roots.data,
     )?;

@@ -15,7 +15,7 @@ export function canReloadDaemonVersion(snapshot: DaemonServiceDiagnosticsSnapsho
   const version = snapshot?.version;
   return Boolean(snapshot?.controlAvailable && snapshot.active && snapshot.cutover.state === "completed"
     && version?.restartAvailable && !version.error && version.runningVersion
-    && version.runningVersion !== version.desktopVersion);
+    && version.targetState === "pending" && version.reloadRevision);
 }
 const ROLLBACK_STATES = new Set<RuntimeOwnerCutoverState>([
   "completed",

@@ -59,7 +59,7 @@ HTTP API 索引和源码以当前实现为准；索引中历史的 unreleased/st
 | M3 | 浏览器会话和适配层；共享 React 核心界面，复用 Quiet Pro | Tauri＋Web 并行读取／修改分类并同步，真实浏览器验收 | 待实施 |
 | M4 | Rust SDK typed 能力逐步补全，TUI 接入同一核心链路 | 实际交互式 TUI 可查看／筛选／修改分类，并参与同步；CLI 示例不算完成 | 待实施 |
 | M5 | GPUI 客户端，同一能力和同步契约，独立视图 | 可运行 GPUI 核心链路和四端同步验收；评估启动、资源和维护成本 | 待实施 |
-| M6 | 后端独立安装、兼容矩阵、异常恢复、发布集成 | 无 Desktop 后端运行、四端适用覆盖矩阵、可重复回归；范围冻结后再准备候选 | M6a–M6g 已有分层验证；新／standalone 激活和已知旧服务迁移已有私有总线证据，Desktop 重载目标接入、旧包卸载／分包归属、真实 systemd 登录及发布集成待完成 |
+| M6 | 后端独立安装、兼容矩阵、异常恢复、发布集成 | 无 Desktop 后端运行、四端适用覆盖矩阵、可重复回归；范围冻结后再准备候选 | M6a–M6h 已有分层验证；激活、已知旧服务迁移和 Desktop 独立目标重载已有私有总线证据，独立版本／正式分包、旧包卸载归属、真实 systemd 登录及发布集成待完成 |
 
 M1 的第二客户端示例用于证明独立依赖和真实连接，不能提前宣称 TUI 或 GPUI 已交付。M3 优先于完整 TUI／GPUI 开发，以先取得共享 UI 的直接收益。只有出现真实并行需要才增加工作分支。
 
@@ -641,3 +641,22 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 额外的系统包迁移后再次切换已验证 M6f 同版本不同构建通过（`migration-then-switch.log`、`/tmp/patina-activate-private-oolluun_/`），不隐式重做源迁移。AppImage 停服期间的外部 unit 编辑被保留并中止发布；只有测试夹具显式恢复原内容后才能继续（`appimage-external-edit.log`、`/tmp/patina-activate-private-0ruhx1za/`）。首轮恢复验收错误地预期向已停止服务再次发送 StopUnit，已按既有幂等控制行为修正断言并重验；应用没有为迎合断言新增停止操作。
 - 离线 `systemctl --root=<temporary> --global is-enabled` 验证用户层等价覆盖加入前后、夹具中移除原系统 unit 后均为 enabled，原链接未改；证据 `/tmp/patina-unit-enable-offline-stqbcylz/result.json`。这是离线查找语义，连同模拟 manager 的启用状态均不能替代真实 systemd 登录验收。AppImage 使用合成 AppDir，不宣称真实 AppImage／FUSE 分发通过。
 - 下一项处理 Desktop 的重载／版本诊断：独立后端按已安装目标身份和协议就绪检查，不再要求版本等于 Desktop；旧整包兼容路径保留必要验证。还需核对安装元数据和客户端连接的边界，避免安装器内部状态扩展意外阻止兼容客户端连接。旧包卸载／分包、真实 systemd 登录及正式交付仍未完成；本批不安装、不合并、不推送、不发布，不进入新客户端 UI。
+
+### M6h 执行设计：Desktop 重载核对独立后端目标
+
+- 重载编排继续归 `app/daemon_service/upgrade`，安装来源适配读取稳定绑定和已选目标；独立目标使用版本＋实际构建身份／二进制摘要，旧整包路径暂保留 Desktop 版本保护。诊断返回来源、已安装版本和 current／pending／unverified 状态，现有设置卡不再自行以 Desktop 版本差异判断独立后端异常。
+- 用户确认绑定观察到的运行实例、版本及目标身份；执行前重新核对，持有独立安装根锁和 profile 激活锁直至完成，防止另一轮 select／activate 改变目标。API 仍只发送一次 restart，完成须有匹配 ticket、新实例、目标身份、协议兼容和追踪就绪；失败不重试写入、不回滚。
+- AppImage 对已登记独立服务的识别不再完整遍历安装载荷，保留已知绑定、profile 和服务配置检查；安装载荷校验仅用于明确的重载／安装操作，不让候选内容或其 manifest 解析成为健康客户端连接的前置条件。现有客户端 UI 只调整诊断和确认数据，不进入新 Web／TUI／GPUI 设计。
+- 回归覆盖独立版本与 Desktop 不同但目标已运行、同版本不同构建待重载、确认后目标／实例改变、错误目标和协议、单次重载失败，以及现有 UI 的确认和忙状态。继续隔离测试，不操作本机生产服务。
+- 设置诊断每 30 秒刷新，因此周期观察仅核对有界 manifest／文件属性；完整内容摘要和实际 `--build-info` 放在确认后的持锁预检。旧整包重载也取得同一 profile 锁，避免与首次 standalone 迁移交错；预检子进程清除 AppImage 挂载／动态加载覆盖，保持原生后端依赖边界。
+
+### M6h 独立目标重载检查点（2026-10-05）
+
+- Desktop 重载诊断已按来源返回 target version、current／pending／unverified 和确认 revision。standalone 比较构建身份与摘要，版本不同于 Desktop 可为 current，同版本不同构建仍可为 pending；旧整包保留配套版本保护。现有设置卡改用后端状态，确认传回原始 revision，不自行推断版本关系；没有新增客户端或视觉系统。
+- 重载前重新核对实例和目标，在安装根锁及 profile 锁内验证全部载荷、实际 build-info、磁盘和已加载 unit。profile 锁也覆盖旧整包重载与首次迁移的互斥。共用命令／环境校验和候选预检供安装宿主及 Desktop 调用；写请求只发送一次，完成核对 ticket、新实例、目标、协议和 tracking ready，旧响应和错误目标不能被拼成成功。
+- 周期查询只读有界 manifest 和文件属性。回归明确证明同大小二进制损坏不会被该元数据观察认证，真正持锁重载仍拒绝；manifest 损坏立即拒绝。AppImage 已知 standalone 绑定识别不再扫描载荷，未知安装器审计／阶段字段不影响绑定读取；未完成或未知安装阶段仍不能执行重载。
+- HTTP 回归覆盖独立 2.0.0 后端与 Desktop 版本不同的 current 状态、同版本不同构建、错误摘要／版本／协议、确认后实例／目标变化、安装忙、验证中实例更换、延迟 ready 和单次失败。真实浏览器复用现有确认／忙状态场景，使用版本均为 2.0.0 但目标状态 pending 的后端，验证确认 revision、取消、重复点击抑制及成功后不再因 Desktop 1.9.2 而告警。不同产品版本的证据来自契约夹具，实际成品切换仍是两个 1.9.2 debug 构建。
+- 完整门禁全部组成项通过：68 个 TypeScript 文件、49 项浏览器检查、48 项 SDK 测试、Desktop 837 passed / 23 ignored、无桌面后端 694 passed / 11 ignored；类型生成、依赖／架构边界、Clippy 和 bundle 预算通过。完整运行在 `tmp/acceptance/m6h-full.log`，最终锁／预检／记录收敛修改的 Rust 证据为 `m6h-rust-adoption.log` 和 `m6h-daemon-adoption.log`，未重复未变化的前端和 SDK 门禁。
+- 最终原生宿主验收使用私有 D-Bus＋真实 daemon，从 M6g 构建 `4e9c6e6ecf03f7f35d36ff4800680cfe1cd5241445773a26db9fbe0b73b730b2` 切换到本批 `c46655359ccfa418f79a9a1154b7cb784c2bef4e259a2328f027561642b30b85`；目标 manifest `cb24d078ab5ec8a35cd09d354ec1e211c226039f69cf89eedbbf4d9840757e84`。明确运行默认忽略的 `native_reload_selected_backend`，一次通过；证据 `tmp/acceptance/multi-client-m6h-reload/final/`、`/tmp/patina-activate-private-859mv80k/`。
+- 原生验收确认目标选择和 profile 激活均被锁住，单次 API restart 让旧进程以 75 退出、模拟 manager 启动新目标，API 核对实际摘要、实例和就绪。重载后再调用 CLI 激活，安装器更新目标记录而不重复停启；全过程包括首次启动共一次 StartUnit、一次 Reload、零次 StopUnit、一次受控进程重启，历史与登录偏好保留。它不等于真实 systemd 登录、完整 Tauri 窗口或正式安装升级验收。
+- 下一批继续独立后端自身版本与正式交付边界、旧整包文件归属及剩余业务契约清单。现有构建仍共享产品版本来源，不能把诊断允许不同版本视为独立发布流程已经完成；M2 网页／偏好边界和 M3–M5 新客户端讨论也仍保留。本批只在功能分支本地实现和验收，main、生产安装和远端保持原状。

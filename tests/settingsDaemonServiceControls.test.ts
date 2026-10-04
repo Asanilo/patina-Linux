@@ -105,12 +105,12 @@ runTest("pending and unavailable states expose no mutation", () => {
   });
 });
 
-runTest("version reload requires a confirmed owner and a known version difference", () => {
+runTest("version reload requires a confirmed owner and a target revision, including same-version builds", () => {
   const value = snapshot("completed");
-  value.version = { desktopVersion: "1.9.0-beta.8", runningVersion: "1.9.0-beta.7", restartAvailable: true, error: null };
+  value.version = { desktopVersion: "1.9.2", runningVersion: "2.0.0", targetVersion: "2.0.0", distribution: "standalone", targetState: "pending", reloadRevision: "a".repeat(64), restartAvailable: true, error: null };
   assert.equal(canReloadDaemonVersion(value), true);
   for (const update of [
-    { runningVersion: value.version.desktopVersion }, { runningVersion: null },
+    { targetState: "current" as const }, { runningVersion: null }, { reloadRevision: null },
     { restartAvailable: false }, { error: "offline" },
   ]) {
     assert.equal(canReloadDaemonVersion({ ...value, version: { ...value.version, ...update } }), false);
@@ -121,20 +121,20 @@ runTest("version reload requires a confirmed owner and a known version differenc
   assert.equal(canReloadDaemonVersion(null), false);
 });
 
-runTest("managed service version mismatch is a warning with both versions", () => {
+runTest("target state, rather than Desktop version equality, controls diagnostics", () => {
   const value = snapshot("completed");
-  value.version = { desktopVersion: "1.9.0-beta.8", runningVersion: "1.9.0-beta.7", restartAvailable: true, error: null };
+  value.version = { desktopVersion: "1.9.2", runningVersion: "2.0.0", targetVersion: "2.0.0", distribution: "standalone", targetState: "pending", reloadRevision: "a".repeat(64), restartAvailable: true, error: null };
   const input = {
     trackerHealth: { status: "healthy" as const, lastHeartbeatMs: 100, checkedAtMs: 100, staleAfterMs: 8000 },
     webActivityEnabled: false, webActivityPort: 12345, webActivityToken: "", webActivityBridge: null,
     daemonService: value,
   };
   const row = buildSettingsDiagnosticsViewModel(input).find(row => row.id === "daemon-service")!;
-  assert.equal(row.value, "版本不一致");
+  assert.equal(row.value, "后台待重载");
   assert.equal(row.tone, "warning");
-  assert.ok(row.metadata?.some(entry => entry.value === "1.9.0-beta.7"));
-  assert.ok(row.metadata?.some(entry => entry.value === "1.9.0-beta.8"));
-  value.version.runningVersion = value.version.desktopVersion;
+  assert.ok(row.metadata?.some(entry => entry.value === "2.0.0"));
+  assert.ok(row.metadata?.some(entry => entry.value === "1.9.2"));
+  value.version.targetState = "current";
   assert.equal(buildSettingsDiagnosticsViewModel(input).find(row => row.id === "daemon-service")?.tone, "ok");
   value.version.error = "offline";
   assert.equal(buildSettingsDiagnosticsViewModel(input).find(row => row.id === "daemon-service")?.tone, "warning");

@@ -9,8 +9,12 @@ use std::io::{Read, Write};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
 
+mod probe;
 mod selection;
+pub(crate) use probe::verify_executable_metadata;
 pub(crate) use selection::{hold_selected, inspect, select, service_plan, ExpectedCurrent};
+#[cfg(feature = "desktop")]
+pub(crate) use selection::{inspect_declared, SelectedRuntimeGuard};
 
 const ROOT_MARKER: &str = ".patina-standalone-root";
 const ROOT_IDENTITY: &[u8] = b"Patina standalone runtime root v1\n";
@@ -155,15 +159,36 @@ impl Write for HashWriter<'_> {
 }
 
 fn verify(source: &Path, expected: &str, allow_debug: bool) -> Result<(Manifest, Vec<u8>), String> {
-    if !is_digest(expected) {
-        return Err(error("expected manifest SHA256 is invalid"));
-    }
+    let (manifest, bytes) = read_manifest(source, expected, allow_debug)?;
     entries(
         source,
         &["manifest.json", "bin", "systemd", "README.txt", "LICENSE"],
     )?;
     entries(&source.join("bin"), &["patinad"])?;
     entries(&source.join("systemd"), &["patinad.service.in"])?;
+    for (name, identity) in &manifest.files {
+        if file_digest(&source.join(name), identity)? != identity.sha256 {
+            return Err(error(format!("invalid payload identity for {name}")));
+        }
+    }
+    let mut magic = [0u8; 4];
+    open_regular(&source.join("bin/patinad"), PAYLOADS[0].2)?
+        .read_exact(&mut magic)
+        .map_err(error)?;
+    if magic != *b"\x7fELF" {
+        return Err(error("daemon payload is not an ELF executable"));
+    }
+    Ok((manifest, bytes))
+}
+
+fn read_manifest(
+    source: &Path,
+    expected: &str,
+    allow_debug: bool,
+) -> Result<(Manifest, Vec<u8>), String> {
+    if !is_digest(expected) {
+        return Err(error("expected manifest SHA256 is invalid"));
+    }
     let bytes = read_regular(&source.join("manifest.json"), MANIFEST_LIMIT)?;
     if digest(&bytes) != expected {
         return Err(error("manifest SHA256 mismatch"));
@@ -197,17 +222,9 @@ fn verify(source: &Path, expected: &str, allow_debug: bool) -> Result<(Manifest,
             || identity.size == 0
             || identity.size > maximum
             || !is_digest(&identity.sha256)
-            || file_digest(&source.join(name), identity)? != identity.sha256
         {
             return Err(error(format!("invalid payload identity for {name}")));
         }
-    }
-    let mut magic = [0u8; 4];
-    open_regular(&source.join("bin/patinad"), PAYLOADS[0].2)?
-        .read_exact(&mut magic)
-        .map_err(error)?;
-    if magic != *b"\x7fELF" {
-        return Err(error("daemon payload is not an ELF executable"));
     }
     Ok((manifest, bytes))
 }

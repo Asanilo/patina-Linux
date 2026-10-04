@@ -22,6 +22,7 @@ mod tests {
 pub async fn cmd_reload_daemon_version(
     confirmed: bool,
     expected_running_version: String,
+    expected_revision: String,
     app: AppHandle,
 ) -> Result<(), String> {
     if !confirmed {
@@ -50,7 +51,7 @@ pub async fn cmd_reload_daemon_version(
     }
     let client = crate::app::daemon_client::command_client(&app)?
         .ok_or_else(|| "daemon client unavailable".to_string())?;
-    crate::app::daemon_service::upgrade::restart_and_verify(&client, &expected_running_version)
+    crate::app::daemon_service::upgrade::restart_and_verify(&client, &expected_running_version, &expected_revision, &control)
         .await
 }
 

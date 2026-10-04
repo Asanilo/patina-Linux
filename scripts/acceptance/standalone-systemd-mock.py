@@ -18,6 +18,8 @@ assert os.environ.get("DBUS_SESSION_BUS_ADDRESS") == fixture["private_bus"]
 assert fixture["private_bus"] != os.environ.get("PATINA_ACCEPTANCE_PARENT_BUS", "")
 root = fixture_path.parent
 counts = {"start": 0, "stop": 0, "reload": 0}
+if fixture.get("restart_on_exit"):
+    counts["controlled_restart"] = 0
 child = None
 loaded_source = fixture.get("source")
 log = (root / "daemon.log").open("w")
@@ -143,6 +145,15 @@ class Unit(Properties):
 manager = Manager(bus, "/org/freedesktop/systemd1")
 unit = Unit(bus, UNIT_PATH)
 loop = GLib.MainLoop()
+def restart_exited_child():
+    if child is not None and child.poll() == 75:
+        start_child()
+        counts["controlled_restart"] += 1
+        save()
+    return True
+
+if fixture.get("restart_on_exit"):
+    GLib.timeout_add(100, restart_exited_child)
 signal.signal(signal.SIGTERM, lambda *_: loop.quit())
 signal.signal(signal.SIGINT, lambda *_: loop.quit())
 if loaded_source:

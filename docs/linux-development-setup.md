@@ -240,6 +240,34 @@ replace real systemd login, package uninstall, or desktop session acceptance.
 `--change-unit-after-stop` with AppImage mode verifies that an external unit edit
 during shutdown is preserved; only explicit fixture repair permits the retry.
 
+### Desktop reload of an independent backend
+
+The existing diagnostics card distinguishes the running backend from its reload
+target. For a registered standalone installation, readiness and protocol compatibility
+permit a different product version from Desktop. A different build with the same
+version can still require reload. Legacy bundled installations retain their Desktop
+version expectation until formal delivery separation is complete.
+
+Periodic diagnostics read bounded manifest metadata and payload attributes, not all
+binary contents. A reload confirmation binds the observed instance and target. Before
+the one restart request, the host holds the selected runtime and profile activation
+locks, fully verifies the payload, checks the actual executable's build metadata and
+the loaded service definition. The profile lock also excludes first migration while
+reloading a bundled backend. Completion requires the matching restart ticket, a new
+instance, expected target identity, compatible protocol and tracking readiness. There
+is no automatic write retry or rollback.
+
+For native adapter acceptance, pass two known same-version/different-build candidates
+to `standalone-activation.py` and add `--reload-test-binary <desktop-test-executable>`.
+Build that Rust test executable with `--features desktop-tests`; the helper runs only
+the ignored `app::daemon_service::upgrade::tests::native_reload_selected_backend`
+test in its private environment. The simulated manager restarts the real daemon on
+controlled exit code 75. This validates the Desktop host's installation locks and API
+restart path, not a real systemd session or rendered Tauri window. Do not invoke this
+ignored test against a host profile; it requires the helper's private fixture variables.
+The helper also invokes explicit activation after client reload: the installer must
+reconcile its receipt to the verified running target without another stop/start.
+
 ## Daemon Analytical Read Isolation
 
 The multi-client daemon prepares a separate two-connection analytical pool after

@@ -38,10 +38,12 @@ def main():
     parser.add_argument("--fail-first-reload", action="store_true")
     parser.add_argument("--login-enabled", action="store_true")
     parser.add_argument("--change-unit-after-stop", action="store_true")
+    parser.add_argument("--reload-test-binary", type=Path)
     options = parser.parse_args(args)
     assert len(options.second) in (0, 2)
     assert not options.fail_first_reload or options.migrate_from
     assert not options.change_unit_after_stop or options.migrate_from == "appimage"
+    assert not options.reload_test_binary or (len(options.second) == 2 and not options.migrate_from)
     private_bus = os.environ.get("DBUS_SESSION_BUS_ADDRESS")
     assert private_bus and private_bus != os.environ.get("PATINA_ACCEPTANCE_PARENT_BUS", "")
     controller, source, manifest = options.controller, options.candidate, options.manifest
@@ -143,6 +145,7 @@ def main():
                    unit_path=str(unit_path), unit_text=plan["unit_text"], source=source_definition,
                    enabled=options.login_enabled, fail_first_reload=options.fail_first_reload,
                    change_unit_after_stop=options.change_unit_after_stop)
+    fixture["restart_on_exit"] = bool(options.reload_test_binary)
     fixture_path = root / "fixture.json"
     fixture_path.write_text(json.dumps(fixture))
     manager_log = (root / "manager.log").open("w")
@@ -199,6 +202,8 @@ def main():
         assert json.loads((root / "manager-counts.json").read_text()) == counts
         # Recovery does not send another StopUnit for an already inactive source.
         expected_counts = dict(start=1, stop=int(bool(options.migrate_from)), reload=1 + int(options.fail_first_reload))
+        if options.reload_test_binary:
+            expected_counts["controlled_restart"] = 0
         assert counts == expected_counts, counts
         if options.migrate_from:
             assert first["migration"]["original_unit"] == original_unit
@@ -210,10 +215,26 @@ def main():
             staged_b = command("--stage-runtime", str(Path(source_b).resolve(strict=True)), "--manifest-sha256", manifest_b)
             assert staged_b["binary_sha256"] != selected["binary_sha256"]
             command("--select-runtime", manifest_b, "--expected-current", manifest)
-            updated = command("--activate-runtime", manifest_b, "--api-port", str(port))
-            assert updated["phase"] == "completed" and updated["binary_sha256"] == staged_b["binary_sha256"]
+            if options.reload_test_binary:
+                reload_env = dict(env, PATINA_RELOAD_ACCEPTANCE_ROOT=str(root), PATINA_RELOAD_ACCEPTANCE_PORT=str(port))
+                with (root / "reload-test.log").open("w") as log:
+                    result = subprocess.run([str(options.reload_test_binary.resolve(strict=True)), "--ignored", "--exact", "app::daemon_service::upgrade::tests::native_reload_selected_backend", "--nocapture"], env=reload_env, stdout=log, stderr=subprocess.STDOUT, timeout=100)
+                assert result.returncode == 0, (root / "reload-test.log").read_text()
+                result = json.loads((root / "reload-result.json").read_text())
+                assert result["passed"] and result["binary_sha256"] == staged_b["binary_sha256"]
+                # API reload owns its lifecycle ticket; the installer reconciles
+                # its previous receipt from the verified running target, without
+                # sending another stop/start or rewriting the unit.
+                updated = command("--activate-runtime", manifest_b, "--api-port", str(port))
+                assert updated["manifest_sha256"] == manifest_b and updated["binary_sha256"] == staged_b["binary_sha256"]
+            else:
+                updated = command("--activate-runtime", manifest_b, "--api-port", str(port))
+                assert updated["phase"] == "completed" and updated["binary_sha256"] == staged_b["binary_sha256"]
             counts = json.loads((root / "manager-counts.json").read_text())
-            assert counts == {key: value + 1 for key, value in expected_counts.items()}
+            if options.reload_test_binary:
+                assert counts == dict(start=1, stop=0, reload=1, controlled_restart=1)
+            else:
+                assert counts == {key: value + 1 for key, value in expected_counts.items()}
             switched = True
         cutover_after = json.loads((control / "runtime-owner-cutover.json").read_text())
         assert cutover_after["status"] == "completed" and cutover_after["request_id"] == cutover_id
@@ -228,6 +249,8 @@ def main():
                       migration_source=options.migrate_from, synthetic_appimage_layout=options.migrate_from == "appimage",
                       resumed_after_unit_replacement=options.fail_first_reload,
                       post_stop_external_edit_preserved=options.change_unit_after_stop,
+                      desktop_native_reload=bool(options.reload_test_binary),
+                      activation_adopted_reloaded_target=bool(options.reload_test_binary),
                       history_preserved=True, controlled_binary_switch=switched, counts=counts)
         (root / "result.json").write_text(json.dumps(result, indent=2) + "\n")
         print(json.dumps(result))

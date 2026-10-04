@@ -155,6 +155,42 @@ pub(crate) fn standalone(root: &Path, config: &Path, data: &Path) -> Result<Stri
     )
 }
 
+pub(crate) fn validate_standalone_launch(
+    root: &Path,
+    config: &Path,
+    data: &Path,
+    launch: &super::systemd_user_service::ServiceLaunch,
+) -> Result<(), String> {
+    let launcher = root.join("current/bin/patinad");
+    let executable = launcher
+        .to_str()
+        .ok_or("standalone launcher must be UTF-8")?;
+    let arguments = [
+        executable,
+        "--profile",
+        "production",
+        "--serve-api",
+        "--track",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    let mut environment = vec![
+        "PATINA_SYSTEMD_SERVICE=patinad.service".to_string(),
+        format!("XDG_CONFIG_HOME={}", config.display()),
+        format!("XDG_DATA_HOME={}", data.display()),
+    ];
+    let mut actual = launch.environment.clone();
+    actual.sort();
+    environment.sort();
+    if launch.commands != vec![(executable.to_owned(), arguments, false)]
+        || actual != environment
+        || !launch.environment_files.is_empty()
+    {
+        return Err("loaded standalone command or environment differs from its binding".into());
+    }
+    Ok(())
+}
+
 fn quoted_path(path: &Path) -> Result<String, String> {
     let value = path.to_str().ok_or("runtime path must be UTF-8")?;
     if !path.is_absolute() || value.chars().any(char::is_control) {

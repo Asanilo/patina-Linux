@@ -260,9 +260,9 @@ daemon 写侧按 capability 和真实 runtime owner 开放。默认 daemon surfa
 
 Tools HTTP 请求／快照类型由 `patina-protocol::tools` 定义，独立 SDK 和 Desktop facade 共用类型化读取与写入；无参数动作使用 `ToolsAction`，不接受任意路径。domain 继续拥有存储解析、计时和阶段推进方法，`engine/api/tools_contract` 仅做显式字段／枚举转换，不执行业务规则；HTTP 与现有 IPC 的字段表示保持一致。前端原始快照类型由 Rust 生成，运行时 unknown 校验仍保留。SDK 写入须验证 Tools ownership、ready 与 write scope，保持有界响应及失败不重试；新接口不改变原有通知归属、重连或提醒重放规则。
 
-独立交付的目标是后端拥有自己的安装／升级周期，Desktop 按协议范围与具体 capability 连接，而不是要求两个产品版本字符串相等。构建身份归 daemon 宿主，`patinad --build-info` 只输出编译版本、目标、投影及协议范围，不初始化 profile 或 runtime；候选归档将该身份与实际二进制及文件摘要绑定。构建身份不等于运行就绪、安装来源或发布者签名。当前旧整包的服务 owner 与精确版本重载保护，在独立安装身份和目标验证接入前仍保留，不能通过删除检查提前宣称解耦完成。
+独立交付的目标是后端拥有自己的安装／升级周期，Desktop 按协议范围与具体 capability 连接，而不是要求两个产品版本字符串相等。构建身份归 daemon 宿主，`patinad --build-info` 只输出编译版本、目标、投影及协议范围，不初始化 profile 或 runtime；候选归档将该身份与实际二进制及文件摘要绑定。构建身份不等于运行就绪、安装来源或发布者签名。旧整包仍保留既有服务归属和配套版本保护，已登记独立安装使用下述目标身份核对；不能仅删除检查来宣称解耦完成。
 
-独立 runtime 的文件存放归 `platform/linux/standalone_runtime`，CLI 只解析显式候选目录、runtime 根和预期 manifest 摘要。固定文件清单、大小、模式、内容摘要、构建目标与投影通过校验后，在用户私有且有身份标记的根中持有独占安装锁，原子发布到 `versions/<manifest SHA256>`；复用已有版本必须重新校验，损坏时拒绝而非静默覆盖。暂存不执行候选、不选择 current、不操作 systemd 或 profile；调用方仍负责确认归档来源，摘要不是签名。服务激活、旧包迁移与运行目标身份验证是后续独立边界。
+独立 runtime 的文件存放归 `platform/linux/standalone_runtime`，CLI 只解析显式候选目录、runtime 根和预期 manifest 摘要。固定文件清单、大小、模式、内容摘要、构建目标与投影通过校验后，在用户私有且有身份标记的根中持有独占安装锁，原子发布到 `versions/<manifest SHA256>`；复用已有版本必须重新校验，损坏时拒绝而非静默覆盖。暂存不执行候选、不选择 current、不操作 systemd 或 profile；调用方仍负责确认归档来源，摘要不是签名。服务激活、旧包迁移与运行目标身份验证由下述宿主负责，不归暂存入口承担。
 
 独立安装的期望版本由同一 owner 下的 `selection` 管理，以 `current -> versions/<manifest SHA256>` 为唯一选择记录；inspect 持有共享安装锁并完整校验当前载荷，select 持有独占安装锁，比较显式旧摘要／none 后原子替换链接。非预期 current 内容不得覆盖，较低 SemVer 选择被拒绝，同版本不同构建仍以摘要区分；选择不证明数据格式兼容或服务就绪。提交后的 IO 错误可能意味着选择已经改变，调用方应重读，不能自动切回旧二进制。已选目标与运行身份是两个事实；服务 owner 后续负责受控切换，文件选择入口不操作 profile、systemd 或开机启动偏好。
 
@@ -270,9 +270,15 @@ Linux 固定 service unit 的路径转义与基础策略渲染归 `platform/linu
 
 独立安装的激活宿主归 `app/standalone_activation`。安装根锁稳定已选目标，profile 级锁串行该 profile 的安装意图；`standalone-activation.json` 记录目标摘要、profile roots、cutover request ID、prepared／starting／completed 阶段和有界错误。新 cutover 的 ID 必须先持久化，再通过共享 `runtime_owner_cutover` 预约，保证两文件之间中断后可识别归属；该模块同时用于 headless 和 Desktop，不另造 embedded／client 判断规则。切换前停止受管服务并等待 RuntimeLease，持有 Maintenance lease 准备文件，启动前释放；服务就绪和实际映像匹配后才确认完成。已启动且核对成功的重试只完成状态确认，不再次重启；失败不自动选择旧版本或降级数据库。
 
-显式激活接收新 profile／受认可 standalone unit，以及既有 completed 或本安装意图对应的 cutover；已知旧系统包／AppImage 服务必须额外确认源类别、unit 摘要和源版本。迁移宿主核对实际加载的 argv／环境、源版本及活跃服务 PID 对应的 profile lease，目标不低于确认的源版本；其他迁移、mask、drop-in 或配置冲突必须保留并拒绝接管。systemd manager 与安装进程的 profile roots 必须一致，登录启用状态应与持久偏好一致，激活不调用 enable／disable。managed daemon 启动后由自身 writer 将 activating／completed cutover 的后台登录偏好镜像到设置；AppImage Desktop 识别合法 standalone 绑定后复用该服务，不再发布自己的 runtime。Desktop 旧重载入口、旧包卸载／分包归属以及真实登录验收仍按工作计划另行完成。
+显式激活接收新 profile／受认可 standalone unit，以及既有 completed 或本安装意图对应的 cutover；已知旧系统包／AppImage 服务必须额外确认源类别、unit 摘要和源版本。迁移宿主核对实际加载的 argv／环境、源版本及活跃服务 PID 对应的 profile lease，目标不低于确认的源版本；其他迁移、mask、drop-in 或配置冲突必须保留并拒绝接管。systemd manager 与安装进程的 profile roots 必须一致，登录启用状态应与持久偏好一致，激活不调用 enable／disable。managed daemon 启动后由自身 writer 将 activating／completed cutover 的后台登录偏好镜像到设置；AppImage Desktop 识别合法 standalone 绑定后复用该服务，不再发布自己的 runtime。旧包卸载／分包归属以及真实登录验收仍按工作计划另行完成。
 
 旧服务迁移复用同一激活 journal，先持久化源证据及原 unit 文本，再在停止服务和取得 Maintenance lease 后安装用户覆盖项或条件替换已知 AppImage unit。系统包文件只读保留；AppImage 旧 runtime 的安装锁与新目标锁一起持有。替换后、reload 前中断可凭未完成记录继续，不能用已完成历史隐式接管后来出现的服务。客户端仅消费稳定绑定字段，不依赖安装器完整审计 schema；源文件摘要和旧 AppImage marker 不构成发行者签名认证。
+
+Desktop 的显式后台重载由 `app/daemon_service/upgrade` 核对来源和目标。standalone 以已选 manifest 的构建身份及二进制摘要为目标，产品版本不要求等于 Desktop；旧整包路径暂保留配套 Desktop 版本核对。诊断向界面返回目标状态与确认 revision，界面不自行用版本字符串差异推断是否需要重载；revision 绑定观察到的实例、运行身份和目标，确认后变化须重新核对。独立安装锁与 profile 激活锁贯穿重载；旧整包重载同样持有 profile 锁，避免与首次独立迁移重叠。API restart 只发送一次，完成须有匹配 ticket、新实例、目标身份、兼容协议与 tracking ready，不自动降级回滚。
+
+周期诊断只读取有界 manifest 和文件属性，表示“运行身份是否符合已选声明”，不认证全部磁盘内容。真正重载前在锁内进行完整载荷校验，并复用 `platform/linux/standalone_runtime/probe` 核对实际 `--build-info`；该子进程有输出／时间预算，并清除 AppImage 的原挂载和动态加载覆盖。AppImage 识别已登记 standalone 归属时不遍历载荷，仍保留 profile／unit／manager 检查；未知安装器审计字段或下一候选内容不应成为健康 API 客户端连接的前置条件。
+
+API 重载拥有生命周期 ticket，安装 journal 记录安装器最后完成的显式激活；已选目标与实际运行身份分别由 runtime selection 和 service API 报告。客户端重载或受管服务自行启动新目标后，再次显式激活该目标应先验证运行身份，并更新同一 cutover 的安装记录，不为修正记录再次重启健康 owner。
 
 运行映像测量归 `platform/linux/executable_identity`，daemon 启动时从 `/proc/self/exe` 打开的文件计算有界 SHA256，由宿主与 build-info 组合后随 lifecycle owner 缓存；不能按已被替换的启动路径或每次 HTTP 请求重新测量。协议 crate 拥有 service 快照／重启 DTO，独立 SDK 和 Desktop facade 共用读取及具名重启入口。身份缺失与测量失败必须明确，不因缺少身份停止追踪；升级目标验证不得把缺失视为匹配。运行身份不证明安装来源、发布签名或 readiness；服务重启写入仍须协商 owner／ready／scope，发送一次后由上层核对 ticket、新实例、目标和运行就绪。
 

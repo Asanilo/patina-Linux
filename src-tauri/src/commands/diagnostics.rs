@@ -185,7 +185,7 @@ pub async fn cmd_get_daemon_service_diagnostics(
             && snapshot.control_available
             && snapshot.cutover.state == "completed";
         snapshot.version =
-            Some(crate::app::daemon_service::upgrade::inspect(&client, managed).await);
+            Some(crate::app::daemon_service::upgrade::inspect(&client, managed, &control_root).await);
     }
     Ok(snapshot)
 }

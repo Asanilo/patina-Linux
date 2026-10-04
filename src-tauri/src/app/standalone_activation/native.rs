@@ -1,8 +1,7 @@
 use super::*;
 use crate::platform::linux::{patinad_service_unit as unit, systemd_user_service as systemd};
-use patina_protocol::{build_info::DaemonBuildInfo, service::DaemonExecutableIdentity};
-use std::{fs, process::Stdio};
-use tokio::io::AsyncReadExt;
+use patina_protocol::service::DaemonExecutableIdentity;
+use std::fs;
 
 pub(super) struct NativeHost {
     roots: AppPathRoots,
@@ -14,7 +13,7 @@ pub(super) struct NativeHost {
     control_root: PathBuf,
     port: u16,
     migration: Option<super::migration::LegacySource>,
-    stable_launcher: PathBuf,
+    runtime_root: PathBuf,
 }
 
 impl NativeHost {
@@ -66,7 +65,7 @@ impl NativeHost {
             control_root: paths.control_root.clone(),
             port,
             migration,
-            stable_launcher: runtime_root.join("current/bin/patinad"),
+            runtime_root: runtime_root.to_path_buf(),
         })
     }
 
@@ -90,81 +89,12 @@ impl NativeHost {
 
     async fn verify_target_launch(&self) -> Result<(), String> {
         let launch = systemd::inspect_patinad_launch().await?;
-        let executable = self
-            .stable_launcher
-            .to_str()
-            .ok_or("standalone launcher must be UTF-8")?;
-        let arguments = [
-            executable,
-            "--profile",
-            "production",
-            "--serve-api",
-            "--track",
-        ]
-        .map(str::to_owned)
-        .to_vec();
-        let mut environment = vec![
-            "PATINA_SYSTEMD_SERVICE=patinad.service".to_string(),
-            format!("XDG_CONFIG_HOME={}", self.roots.config.display()),
-            format!("XDG_DATA_HOME={}", self.roots.data.display()),
-        ];
-        let mut actual = launch.environment;
-        actual.sort();
-        environment.sort();
-        if launch.commands != vec![(executable.to_owned(), arguments, false)]
-            || actual != environment
-            || !launch.environment_files.is_empty()
-        {
-            return Err("loaded standalone command or environment differs from its binding".into());
-        }
-        Ok(())
-    }
-
-    async fn verify_build(&self) -> Result<(), String> {
-        let mut child = tokio::process::Command::new(&self.executable)
-            .arg("--build-info")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|error| error.to_string())?;
-        let mut output = child
-            .stdout
-            .take()
-            .ok_or("missing metadata stdout")?
-            .take(16 * 1024 + 1);
-        let mut errors = child
-            .stderr
-            .take()
-            .ok_or("missing metadata stderr")?
-            .take(16 * 1024 + 1);
-        let mut bytes = Vec::new();
-        let mut stderr = Vec::new();
-        let info: DaemonBuildInfo = tokio::time::timeout(Duration::from_secs(5), async {
-            tokio::try_join!(
-                output.read_to_end(&mut bytes),
-                errors.read_to_end(&mut stderr)
-            )
-            .map_err(|error| error.to_string())?;
-            if bytes.len() > 16 * 1024
-                || !stderr.is_empty()
-                || !child
-                    .wait()
-                    .await
-                    .map_err(|error| error.to_string())?
-                    .success()
-            {
-                return Err("candidate metadata preflight failed".to_string());
-            }
-            serde_json::from_slice(&bytes).map_err(|error| error.to_string())
-        })
-        .await
-        .map_err(|_| "candidate metadata preflight timed out".to_string())??;
-        if info != self.identity.build {
-            return Err("candidate executable metadata differs from its installed manifest".into());
-        }
-        Ok(())
+        unit::validate_standalone_launch(
+            &self.runtime_root,
+            &self.roots.config,
+            &self.roots.data,
+            &launch,
+        )
     }
 }
 
@@ -243,7 +173,7 @@ impl ActivationHost for NativeHost {
             return Err("cannot verify service login preference".into());
         }
         validate_login_intent(&self.control_root, state.enabled)?;
-        self.verify_build().await
+        standalone_runtime::verify_executable_metadata(&self.executable, &self.identity.build).await
     }
     async fn stop(&self) -> Result<(), String> {
         let state = systemd::inspect_patinad_service().await;

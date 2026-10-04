@@ -102,7 +102,7 @@ impl Installation {
         Ok(Self { root, _lock: lock })
     }
 
-    fn current(&self, allow_debug: bool) -> Result<Option<StagedRuntime>, String> {
+    fn current_digest(&self) -> Result<Option<String>, String> {
         let path = self.root.join("current");
         let metadata = match fs::symlink_metadata(&path) {
             Ok(metadata) => metadata,
@@ -122,8 +122,68 @@ impl Installation {
             .strip_prefix("versions/")
             .filter(|digest| is_digest(digest))
             .ok_or_else(|| error("current must refer to versions/<manifest SHA256>"))?;
-        installed_version(&self.root, expected, allow_debug).map(Some)
+        Ok(Some(expected.to_owned()))
     }
+
+    fn current(&self, allow_debug: bool) -> Result<Option<StagedRuntime>, String> {
+        self.current_digest()?
+            .map(|expected| installed_version(&self.root, &expected, allow_debug))
+            .transpose()
+    }
+}
+
+#[cfg(feature = "desktop")]
+pub(crate) struct DeclaredRuntime {
+    pub manifest_sha256: String,
+    pub executable: patina_protocol::service::DaemonExecutableIdentity,
+}
+
+/// Bounded metadata for periodic diagnostics. Does not certify file contents;
+/// hold_selected must perform full integrity verification before any restart.
+#[cfg(feature = "desktop")]
+pub(crate) fn inspect_declared(
+    root: &Path,
+    allow_debug: bool,
+) -> Result<Option<DeclaredRuntime>, String> {
+    let installed = Installation::open(root, false)?;
+    let Some(expected) = installed.current_digest()? else {
+        return Ok(None);
+    };
+    let destination = installed.root.join("versions").join(&expected);
+    for path in [
+        installed.root.join("versions"),
+        destination.clone(),
+        destination.join("bin"),
+        destination.join("systemd"),
+    ] {
+        directory(&path, true)?;
+    }
+    let (manifest, _) = read_manifest(&destination, &expected, allow_debug)?;
+    for (name, identity) in &manifest.files {
+        let metadata = open_regular(&destination.join(name), identity.size)?
+            .metadata()
+            .map_err(error)?;
+        if metadata.uid() != uid()
+            || metadata.len() != identity.size
+            || metadata.mode() & 0o7777 != identity.mode
+        {
+            return Err(error("installed payload metadata differs from manifest"));
+        }
+    }
+    if fs::symlink_metadata(destination.join("manifest.json"))
+        .map_err(error)?
+        .uid()
+        != uid()
+    {
+        return Err(error("installed manifest must be user-owned"));
+    }
+    Ok(Some(DeclaredRuntime {
+        manifest_sha256: expected,
+        executable: patina_protocol::service::DaemonExecutableIdentity {
+            binary_sha256: manifest.files["bin/patinad"].sha256.clone(),
+            build: manifest.build,
+        },
+    }))
 }
 
 pub(crate) fn inspect(root: &Path, allow_debug: bool) -> Result<SelectionSnapshot, String> {

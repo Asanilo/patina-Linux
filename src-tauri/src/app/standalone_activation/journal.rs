@@ -145,6 +145,20 @@ pub(super) struct Binding {
 }
 
 #[cfg(feature = "desktop")]
+pub(super) fn activation_completed(root: &Path) -> Result<bool, String> {
+    #[derive(Deserialize)]
+    struct PhaseProjection {
+        phase: String,
+    }
+    let Some(bytes) = read_bytes(root)? else {
+        return Ok(false);
+    };
+    let value: PhaseProjection =
+        serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+    Ok(value.phase == "completed")
+}
+
+#[cfg(feature = "desktop")]
 pub(super) fn read_binding_at(root: &Path) -> Result<Option<Binding>, String> {
     let Some(bytes) = read_bytes(root)? else {
         return Ok(None);

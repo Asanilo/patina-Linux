@@ -61,6 +61,77 @@ impl Drop for Fixture {
     }
 }
 
+#[cfg(feature = "desktop")]
+#[tokio::test]
+async fn client_binding_does_not_require_payload_and_reload_excludes_activation() {
+    use std::os::unix::fs::PermissionsExt;
+    let fixture = Fixture::new();
+    let host = fixture.host();
+    let store = Store::open(&fixture.paths.control_root).unwrap();
+    let root = fixture.root.join("runtime");
+    execute(
+        &store,
+        &fixture.paths,
+        &fixture.roots,
+        &root,
+        &fixture.selected,
+        &host,
+    )
+    .await
+    .unwrap();
+    drop(store);
+    let unit = crate::platform::linux::patinad_service_unit::standalone(
+        &root,
+        &fixture.roots.config,
+        &fixture.roots.data,
+    )
+    .unwrap();
+    crate::platform::linux::patinad_service_unit::install_identical_or_new(
+        &fixture.roots.config,
+        &unit,
+    )
+    .unwrap();
+    let path = fixture
+        .paths
+        .control_root
+        .join("standalone-activation.json");
+    let mut record: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    record["future_audit_field"] = serde_json::json!({"format":2});
+    fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(!root.exists());
+    assert!(uses_standalone_binding(&fixture.roots, &fixture.paths.control_root).unwrap());
+    let guard =
+        hold_client_reload(&fixture.roots, &fixture.paths.control_root, Some(&root)).unwrap();
+    assert!(Store::open(&fixture.paths.control_root).is_err());
+    drop(guard);
+    assert!(Store::open(&fixture.paths.control_root).is_ok());
+    record["phase"] = "starting".into();
+    fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+    assert!(uses_standalone_binding(&fixture.roots, &fixture.paths.control_root).unwrap());
+    assert!(hold_client_reload(&fixture.roots, &fixture.paths.control_root, Some(&root)).is_err());
+    // Unknown installer state remains independent of client binding recognition.
+    record["phase"] = serde_json::json!({"new_phase_format":1});
+    fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+    assert!(uses_standalone_binding(&fixture.roots, &fixture.paths.control_root).unwrap());
+    assert!(hold_client_reload(&fixture.roots, &fixture.paths.control_root, Some(&root)).is_err());
+}
+
+#[cfg(feature = "desktop")]
+#[test]
+fn bundled_reload_excludes_a_concurrent_first_standalone_migration() {
+    let fixture = Fixture::new();
+    let guard = hold_client_reload(&fixture.roots, &fixture.paths.control_root, None).unwrap();
+    assert!(Store::open(&fixture.paths.control_root).is_err());
+    assert!(!fixture
+        .paths
+        .control_root
+        .join("standalone-activation.json")
+        .exists());
+    drop(guard);
+    assert!(Store::open(&fixture.paths.control_root).is_ok());
+}
+
 struct Host {
     control: PathBuf,
     effects: Mutex<Vec<&'static str>>,
@@ -181,6 +252,47 @@ async fn fresh_activation_records_intent_excludes_writers_and_finishes_in_client
         *host.effects.lock().unwrap(),
         vec!["preflight", "verify"],
         "healthy repeat must not restart"
+    );
+}
+
+#[tokio::test]
+async fn activation_adopts_an_already_verified_selected_target_without_another_restart() {
+    let mut fixture = Fixture::new();
+    let host = fixture.host();
+    let store = Store::open(&fixture.paths.control_root).unwrap();
+    let root = fixture.root.join("runtime");
+    let first = execute(
+        &store,
+        &fixture.paths,
+        &fixture.roots,
+        &root,
+        &fixture.selected,
+        &host,
+    )
+    .await
+    .unwrap();
+    fixture.selected.manifest_sha256 = "c".repeat(64);
+    fixture.selected.binary_sha256 = "d".repeat(64);
+    // This host's matches_target/verify contract now represents the selected
+    // target already running after an explicit client reload.
+    host.effects.lock().unwrap().clear();
+    let adopted = execute(
+        &store,
+        &fixture.paths,
+        &fixture.roots,
+        &root,
+        &fixture.selected,
+        &host,
+    )
+    .await
+    .unwrap();
+    assert_eq!(adopted.cutover_request_id, first.cutover_request_id);
+    assert_eq!(adopted.manifest_sha256, fixture.selected.manifest_sha256);
+    assert_eq!(adopted.binary_sha256, fixture.selected.binary_sha256);
+    assert_eq!(*host.effects.lock().unwrap(), vec!["preflight", "verify"]);
+    assert_eq!(
+        store.read().unwrap().unwrap().manifest_sha256,
+        fixture.selected.manifest_sha256
     );
 }
 

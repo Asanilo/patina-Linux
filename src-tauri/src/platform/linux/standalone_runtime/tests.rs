@@ -78,6 +78,32 @@ fn staging_binds_identity_reuses_verified_versions_and_does_not_activate() {
     );
 }
 
+#[cfg(feature = "desktop")]
+#[test]
+fn declared_selection_is_metadata_only_and_restart_still_checks_payload_integrity() {
+    let fixture = Fixture::new();
+    let manifest = fixture.save_manifest();
+    let staged = stage(&fixture.source, &fixture.root, &manifest, false).unwrap();
+    select(&fixture.root, &manifest, &ExpectedCurrent::Absent, false).unwrap();
+    let original = inspect_declared(&fixture.root, false).unwrap().unwrap();
+    assert_eq!(original.executable.binary_sha256, staged.binary_sha256);
+    let path = staged.directory.join("bin/patinad");
+    let mut bytes = fs::read(&path).unwrap();
+    *bytes.last_mut().unwrap() ^= 1;
+    fs::write(&path, bytes).unwrap();
+    assert_eq!(
+        inspect_declared(&fixture.root, false)
+            .unwrap()
+            .unwrap()
+            .executable
+            .binary_sha256,
+        staged.binary_sha256
+    );
+    assert!(hold_selected(&fixture.root, &manifest, false).is_err());
+    fs::write(staged.directory.join("manifest.json"), b"changed").unwrap();
+    assert!(inspect_declared(&fixture.root, false).is_err());
+}
+
 #[test]
 fn invalid_source_never_initializes_the_installation_root() {
     let fixture = Fixture::new();

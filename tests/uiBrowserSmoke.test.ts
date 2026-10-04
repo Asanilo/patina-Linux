@@ -428,7 +428,9 @@ function tauriStubFor(path: string) {
           globalThis.__PATINA_SMOKE_RELOAD_PAYLOAD = payload;
           return new Promise((resolve) => {
             globalThis.__PATINA_SMOKE_FINISH_RELOAD = () => {
-              globalThis.__PATINA_SMOKE_DAEMON.version.running_version = globalThis.__PATINA_SMOKE_DAEMON.version.desktop_version;
+              globalThis.__PATINA_SMOKE_DAEMON.version.running_version = globalThis.__PATINA_SMOKE_DAEMON.version.target_version;
+              globalThis.__PATINA_SMOKE_DAEMON.version.target_state = "current";
+              globalThis.__PATINA_SMOKE_DAEMON.version.reload_revision = null;
               globalThis.__PATINA_SMOKE_DAEMON.version.restart_available = false;
               resolve();
             };
@@ -2304,15 +2306,15 @@ try {
         unit_file_state: "enabled", enabled: true, active_state: "active", sub_state: "running", active: true,
         migration_state: "managed", migration_reason: "test", control_available: true, error: null,
         cutover: {state: "completed", request_id: "test", updated_at_ms: 1, failure_code: null, failure_message: null, background_tracking_at_login: true},
-        version: {desktop_version: "1.9.0-beta.8", running_version: "1.9.0-beta.7", restart_available: true, error: null},
+        version: {desktop_version: "1.9.2", running_version: "2.0.0", target_version: "2.0.0", distribution: "standalone", target_state: "pending", reload_revision: "a".repeat(64), restart_available: true, error: null},
       };
       document.querySelector('[aria-label="关于"]').click();
     `);
     await waitForExpression(client!, sessionId, `!document.body.innerText.includes(${jsonString(SETTINGS_MARKER)})`);
     await evaluate(client!, sessionId, `document.querySelector('[aria-label="设置"]').click()`);
-    await waitForExpression(client!, sessionId, `document.body.innerText.includes("版本不一致")`);
+    await waitForExpression(client!, sessionId, `document.body.innerText.includes("后台待重载")`);
     assert.equal(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_RELOAD_CALLS ?? 0`), 0);
-    assert.equal(await evaluate(client!, sessionId, `Array.from(document.querySelectorAll('.qp-status-warning')).some(node => node.textContent === "版本不一致")`), true);
+    assert.equal(await evaluate(client!, sessionId, `Array.from(document.querySelectorAll('.qp-status-warning')).some(node => node.textContent === "后台待重载")`), true);
     const reload = `Array.from(document.querySelectorAll('button')).find(node => node.textContent.trim() === "重新加载后台")`;
     for (const width of [1280, 620]) {
       await client!.command("Emulation.setDeviceMetricsOverride", {width, height: 900, deviceScaleFactor: 1, mobile: false}, sessionId);
@@ -2332,13 +2334,13 @@ try {
     await waitForExpression(client!, sessionId, `document.body.innerText.includes("重新加载已安装的后台程序？")`);
     await evaluate(client!, sessionId, `document.querySelectorAll('.qp-dialog-action')[1].click()`);
     await waitForExpression(client!, sessionId, `globalThis.__PATINA_SMOKE_RELOAD_CALLS === 1`);
-    assert.deepEqual(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_RELOAD_PAYLOAD`), {confirmed: true, expectedRunningVersion: "1.9.0-beta.7"});
+    assert.deepEqual(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_RELOAD_PAYLOAD`), {confirmed: true, expectedRunningVersion: "2.0.0", expectedRevision: "a".repeat(64)});
     assert.equal(await evaluate(client!, sessionId, `${reload}.disabled`), true);
     await evaluate(client!, sessionId, `${reload}.click()`);
     assert.equal(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_RELOAD_CALLS`), 1);
     assert.equal(await evaluate(client!, sessionId, `document.body.innerText.includes("后台已重新加载，版本核对通过。")`), false);
     await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_FINISH_RELOAD()`);
-    await waitForExpression(client!, sessionId, `!document.body.innerText.includes("版本不一致") && !${reload}`);
+    await waitForExpression(client!, sessionId, `!document.body.innerText.includes("后台待重载") && !${reload}`);
     await client!.command("Emulation.setDeviceMetricsOverride", {width:1280, height:800, deviceScaleFactor:1, mobile:false}, sessionId);
   });
 
