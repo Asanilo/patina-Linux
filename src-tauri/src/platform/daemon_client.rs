@@ -538,20 +538,14 @@ impl PatinadClient {
         &self,
     ) -> Result<crate::engine::api::runtime_control::DaemonServiceRuntimeSnapshot, PatinadClientError>
     {
-        self.get_json("/api/v1/system/service", "daemon service")
-            .await
+        self.transport.service_snapshot().await
     }
 
     pub async fn restart_service(
         &self,
     ) -> Result<crate::engine::api::runtime_control::DaemonServiceRestartResult, PatinadClientError>
     {
-        self.post_json(
-            "/api/v1/system/service/restart",
-            &serde_json::json!({"confirmed": true}),
-            "daemon restart",
-        )
-        .await
+        self.transport.restart_service().await
     }
 
     async fn get_json<T>(&self, path: &str, response_name: &str) -> Result<T, PatinadClientError>

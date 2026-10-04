@@ -13,6 +13,7 @@ mod history_product;
 mod icons;
 mod maintenance;
 mod tools;
+mod service;
 mod web_history;
 pub mod state;
 pub mod sync;

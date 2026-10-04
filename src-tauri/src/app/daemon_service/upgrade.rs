@@ -209,6 +209,8 @@ mod tests {
     #[test]
     fn completion_requires_matching_ticket_and_new_instance() {
         let mut service = DaemonServiceRuntimeSnapshot {
+            executable: None,
+            executable_error: None,
             service_name: "patinad.service".to_string(),
             managed_by_systemd: true,
             instance_id: "new".to_string(),

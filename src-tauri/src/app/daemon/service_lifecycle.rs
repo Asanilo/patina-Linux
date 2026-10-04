@@ -2,6 +2,7 @@ use crate::engine::api::runtime_control::{
     DaemonServiceRestartResult, DaemonServiceRestartSnapshot, DaemonServiceRuntimeSnapshot,
     RuntimeControlError,
 };
+use patina_protocol::service::DaemonExecutableIdentity;
 use serde::{Deserialize, Serialize};
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -42,11 +43,36 @@ pub struct DaemonServiceLifecycleOwner {
     marker_path: PathBuf,
     marker: Mutex<Option<RestartMarker>>,
     restart_tx: watch::Sender<Option<String>>,
+    executable: Option<DaemonExecutableIdentity>,
+    executable_error: Option<String>,
 }
 
 impl DaemonServiceLifecycleOwner {
     pub fn from_environment(control_root: &Path, now_ms: i64) -> Result<Self, String> {
-        Self::new(control_root, managed_by_systemd_environment(), now_ms)
+        let mut owner = Self::new(control_root, managed_by_systemd_environment(), now_ms)?;
+        #[cfg(target_os = "linux")]
+        let measured = crate::platform::linux::executable_identity::running_sha256();
+        #[cfg(not(target_os = "linux"))]
+        let measured: Result<String, String> =
+            Err("running executable identity is currently available on Linux only".into());
+        owner.record_executable(measured);
+        Ok(owner)
+    }
+
+    fn record_executable(&mut self, measured: Result<String, String>) {
+        match measured {
+            Ok(binary_sha256) => {
+                self.executable = Some(DaemonExecutableIdentity {
+                    build: super::build_info::current(),
+                    binary_sha256,
+                });
+                self.executable_error = None;
+            }
+            Err(error) => {
+                self.executable = None;
+                self.executable_error = Some(error);
+            }
+        }
     }
 
     pub(crate) fn new(
@@ -82,6 +108,8 @@ impl DaemonServiceLifecycleOwner {
             marker_path,
             marker: Mutex::new(marker),
             restart_tx,
+            executable: None,
+            executable_error: None,
         })
     }
 
@@ -99,6 +127,8 @@ impl DaemonServiceLifecycleOwner {
             managed_by_systemd: self.managed_by_systemd,
             instance_id: self.instance_id.clone(),
             restart: marker.map(marker_snapshot),
+            executable: self.executable.clone(),
+            executable_error: self.executable_error.clone(),
         }
     }
 
@@ -297,6 +327,28 @@ mod tests {
             std::process::id(),
             TEST_COUNTER.fetch_add(1, Ordering::Relaxed)
         ))
+    }
+
+    #[test]
+    fn executable_measurement_is_cached_and_failure_never_reuses_a_previous_identity() {
+        let root = root("identity");
+        let mut owner = DaemonServiceLifecycleOwner::new(&root, false, 1_000).unwrap();
+        owner.record_executable(Ok("a".repeat(64)));
+        let first = owner.snapshot();
+        let second = owner.snapshot();
+        assert_eq!(first, second);
+        assert_eq!(
+            first.executable.unwrap().build,
+            super::super::build_info::current()
+        );
+        assert!(first.executable_error.is_none());
+        owner.record_executable(Err("measurement unavailable".into()));
+        assert!(owner.snapshot().executable.is_none());
+        assert_eq!(
+            owner.snapshot().executable_error.as_deref(),
+            Some("measurement unavailable")
+        );
+        assert!(!root.exists());
     }
 
     #[test]

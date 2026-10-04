@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 pub const BUILD_INFO_FORMAT_VERSION: u32 = 1;
 
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct DaemonBuildInfo {
     pub format_version: u32,
     pub package_version: String,

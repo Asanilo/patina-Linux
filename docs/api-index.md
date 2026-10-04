@@ -2108,6 +2108,16 @@ curl -s "$PATINA_API_BASE/api/v1/system/service" \
 
 `restart` is `null` before the first request. Instance and request IDs are opaque identifiers, not credentials.
 
+The multi-client development branch additionally returns optional `executable`
+with `{ "build": <the --build-info object>, "binary_sha256": "<64 lowercase hex>" }`.
+On Linux the daemon measures `/proc/self/exe` once at startup and caches the result
+for this instance. Replacing or unlinking the launch pathname does not change the
+reported running image. Measurement failure omits `executable` and reports
+`executable_error`; older daemons can omit both. Clients must treat absent identity
+as unavailable, not as an upgrade target match. No local executable path is exposed.
+This identifies the running file, not an installed selection, publisher signature,
+or readiness. The independent Rust SDK and Desktop facade share this contract.
+
 ### `POST /api/v1/system/service/restart`
 
 This is a lifecycle operation. Call it only after explicit user confirmation and only when capabilities include `service-lifecycle`.

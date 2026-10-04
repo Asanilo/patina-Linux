@@ -11,6 +11,7 @@ pub mod power;
 pub mod resource;
 pub mod systemd_user_service;
 pub(crate) mod standalone_runtime;
+pub(crate) mod executable_identity;
 #[cfg(feature = "desktop")]
 pub mod widget_window;
 #[cfg(feature = "desktop")]

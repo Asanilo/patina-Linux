@@ -561,3 +561,18 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 证据位于 `tmp/acceptance/multi-client-m6c-staging/`、`tmp/acceptance/m6c-independent-client.log`、`/tmp/patina-m6c-stage-qtxtiygj/` 与 `/tmp/patina-independent-client-mcffgxrc/`。候选是本地 debug 成品；manifest 摘要不是发布者签名，隔离运行不等于生产安装或 GNOME 实机验收。
 - 阶段状态：独立协议／SDK、核心应用读模型、设置／资源条件写入、Tools 共用契约与同步、防陈旧响应、无桌面后端构建均已有实现和自动／隔离证据。下一工作包应完成独立后端的激活、旧 DEB/AppImage owner 迁移、已安装与运行身份核对及失败恢复，再收口其余 Desktop 业务／契约例外。网页停用后的历史可见性、URL 隐私统一策略、客户端偏好恢复语义仍待产品选择；新增 Web／TUI／GPUI 界面继续留在讨论边界。
 - 本检查点只做本地开发、验收与提交；生产 1.9.2、main 和宿主服务保持原状，未合并、推送、安装或公开发布。按用户要求在此集中汇报，不提前启动下一批。
+
+### M6d 执行设计：运行实例的二进制身份与独立诊断契约
+
+- 已核对 `bde592f3` 的干净分支；上轮检查未留下代码修改。激活设计需要先消除一个实际缺口：当前 service snapshot 只有实例和重启 ticket，版本字符串无法区分同版本不同成品，也不能证明启动路径被替换后实际运行的是哪份文件。
+- Linux platform 在 daemon 启动时通过 `/proc/self/exe` 打开运行映像并计算有大小上限的 SHA256；不重新解析安装路径、不执行其他二进制。宿主将静态 build-info 与该摘要绑定并随 lifecycle owner 缓存，HTTP 读取不反复读大文件。测量失败明确返回身份不可用及错误，不伪造摘要或使追踪本身不可用。
+- service 快照／重启 DTO 归独立协议 crate，SDK 提供类型化诊断和已存在的重启操作，Desktop facade 转发同一 SDK。身份字段可选，旧 daemon 响应仍能读取；新升级验证必须显式要求可用身份，不把旧响应当作已证明目标。
+- 本批验证独立客户端读取与 Desktop 契约一致、能力缺失时拒绝重启、失败写入不重试，以及真实运行过程中替换启动路径后仍返回原映像摘要。现有精确版本重载保护保留；安装身份选择、服务迁移及协议兼容重载继续接在该证据之上。
+
+### M6d 运行身份与独立服务诊断检查点
+
+- 已实现运行映像的有界测量与实例内缓存，service API 增加可选 `executable`（build-info＋SHA256）和 `executable_error`。Linux 读取内核的 `/proc/self/exe`，启动路径被替换／删除不把新路径内容误报为正在运行；不暴露本地执行路径。非 Linux 或测量失败明确返回不可用，追踪不因身份测量失败而停止。
+- 服务快照与重启 DTO 已迁到 `patina-protocol::service`，SDK 拥有类型化读取、响应边界校验和单次重启 POST；Desktop 原 facade 改为转发。旧响应缺少身份仍可读；畸形摘要、格式／协议区间、矛盾的成功与失败字段及超限响应被拒绝。重启前要求 daemon owner、ready、write scope 和协议兼容；原重载 ticket／新实例／精确版本验证保留，尚未宣称独立升级可用。OpenAPI 与人读文档同步更新。
+- 完整 `npm run check:full` 通过：68 个 TypeScript 文件、49 项浏览器检查、48 项 SDK 测试、Desktop 799 passed / 22 ignored、无桌面后端 640 passed / 11 ignored；生成类型、架构／依赖边界、Clippy、bundle 预算通过。新增 4 组 SDK 回归与 3 项原生回归；初次专项在限制环境中无法绑定回环端口，后续完整门禁在允许隔离网络的环境执行通过。证据为 `tmp/acceptance/m6d-full.log`。
+- 本批真实 debug 候选 SHA256 `bd5b1d11c1156d1076fdc9ce4aa89a919c52ae4145b902ad29de449f086339b4`，SDK 探针 SHA256 `c4483109ae525659732f7668545b1ffd619b2ae45c68edd0318e899ab9aada4f`。metadata 无副作用检查通过；临时 Local profile 从候选的私有副本启动，运行时将该启动路径替换成不同内容，HTTP 快照及两个独立 SDK 均继续报告原候选摘要，实例未改变。分类／Tools 同步、条件资源写入、认证拒绝、正常关闭、重新打开及数据保留也通过。
+- 证据为 `tmp/acceptance/multi-client-m6d-executable-identity/`、`tmp/acceptance/m6d-independent-client.log` 和 `/tmp/patina-independent-client-2ku2didl/`。此批没有增加 systemd 激活操作；下一批仍须完成安装选择与激活状态、旧 DEB/AppImage owner 迁移，再用已安装身份与本批运行身份验证目标。未安装、合并、推送或发布；未开发新客户端 UI，整体基础阶段继续。

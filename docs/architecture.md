@@ -264,6 +264,8 @@ Tools HTTP 请求／快照类型由 `patina-protocol::tools` 定义，独立 SDK
 
 独立 runtime 的文件存放归 `platform/linux/standalone_runtime`，CLI 只解析显式候选目录、runtime 根和预期 manifest 摘要。固定文件清单、大小、模式、内容摘要、构建目标与投影通过校验后，在用户私有且有身份标记的根中持有独占安装锁，原子发布到 `versions/<manifest SHA256>`；复用已有版本必须重新校验，损坏时拒绝而非静默覆盖。暂存不执行候选、不选择 current、不操作 systemd 或 profile；调用方仍负责确认归档来源，摘要不是签名。服务激活、旧包迁移与运行目标身份验证是后续独立边界。
 
+运行映像测量归 `platform/linux/executable_identity`，daemon 启动时从 `/proc/self/exe` 打开的文件计算有界 SHA256，由宿主与 build-info 组合后随 lifecycle owner 缓存；不能按已被替换的启动路径或每次 HTTP 请求重新测量。协议 crate 拥有 service 快照／重启 DTO，独立 SDK 和 Desktop facade 共用读取及具名重启入口。身份缺失与测量失败必须明确，不因缺少身份停止追踪；升级目标验证不得把缺失视为匹配。运行身份不证明安装来源、发布签名或 readiness；服务重启写入仍须协商 owner／ready／scope，发送一次后由上层核对 ticket、新实例、目标和运行就绪。
+
 Tools 状态写入的事务入口归 `data/repositories/tools`，`tools/state` 只在传入连接上执行查询。每项写操作从 `BEGIN IMMEDIATE` 开始，前置状态判断、分段编号、阶段推进／计数和 reset 清理均在同一事务；完整读取也只使用一份数据库快照。`ToolsRuntimeOwner` 的控制、启动恢复、tick 与发布共用操作锁，取得锁后才采样时间，clone 不能各自建立锁；embedded 迁移包装从受管状态复用同一把锁。tracking daemon 的 HTTP 快照走该 owner，只读宿主保留 repository 读取。这里的原子性是单项数据库操作，不等同于整次 tick、多请求的事务、旧草稿 CAS 或系统通知的恰好一次投递。
 
 现有 Desktop Tools 页面与侧栏共用 `features/tools/services/toolsRuntimeSnapshotStore`。该 owner 先订阅再读取，合并在途读，并用本地失效序号区分事件与请求；`sampledAtMs` 是墙钟采样时间，不能当作可排序版本。页面动作通过 store 执行，同一客户端只接受一个在途动作；较新的事件到达后，旧读取／操作返回不能回退展示。失败或无法确认响应顺序时补读事实，不重试动作。预热／在途工作结束且没有订阅者时拆除监听，旧监听回调或晚到的清理不能干扰新订阅。计时显示格式与计时业务 owner 的边界保持独立。

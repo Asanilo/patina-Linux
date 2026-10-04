@@ -170,6 +170,8 @@ mod tests {
                 Ok(BackupRestoreScheduleResult {
                     restore: Self::restore_snapshot("pending_restart"),
                     service: DaemonServiceRuntimeSnapshot {
+                        executable: None,
+                        executable_error: None,
                         service_name: "patinad.service".to_string(),
                         managed_by_systemd: true,
                         instance_id: "instance_test".to_string(),

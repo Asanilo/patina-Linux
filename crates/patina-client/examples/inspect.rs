@@ -72,6 +72,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "server={} protocol={} tracking_ready={}",
         negotiated.server_version, negotiated.protocol_version, negotiated.tracking_ready
     );
+    let service = client.service_snapshot().await?;
+    println!(
+        "service_instance={} executable_sha256={}",
+        service.instance_id,
+        service
+            .executable
+            .as_ref()
+            .map(|identity| identity.binary_sha256.as_str())
+            .unwrap_or("unavailable")
+    );
     if args.len() == 3 {
         let state = ClientState::default();
         state.install(client);

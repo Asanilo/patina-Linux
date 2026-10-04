@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod configuration;
 pub mod build_info;
+pub mod service;
 pub mod product_settings;
 pub mod resource_settings;
 pub mod read_budget;
@@ -104,7 +105,7 @@ pub struct AvailabilityCapability {
     pub available: bool,
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ProtocolCapability {
     pub current: u32,
     pub min_supported_client: u32,

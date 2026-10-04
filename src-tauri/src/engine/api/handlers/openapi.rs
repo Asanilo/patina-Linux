@@ -1557,13 +1557,33 @@ fn schemas() -> Value {
         ]),
     );
     schemas.insert(
-        "DaemonService".to_string(),
+        "DaemonBuildInfo".to_string(),
         object_schema(vec![
+            ("format_version", json!({"type":"integer","const":1})),
+            ("package_version", string_schema()),
+            ("protocol", schema_ref("ProtocolCapability")),
+            ("target", string_schema()),
+            ("desktop_feature", bool_schema()),
+            ("debug_assertions", bool_schema()),
+        ]),
+    );
+    schemas.insert(
+        "DaemonExecutableIdentity".to_string(),
+        object_schema(vec![
+            ("build", schema_ref("DaemonBuildInfo")),
+            ("binary_sha256", json!({"type":"string","pattern":"^[0-9a-f]{64}$"})),
+        ]),
+    );
+    schemas.insert(
+        "DaemonService".to_string(),
+        object_schema_with_required(vec![
             ("service_name", string_schema()),
             ("managed_by_systemd", bool_schema()),
             ("instance_id", string_schema()),
             ("restart", nullable_ref_schema("DaemonServiceRestart")),
-        ]),
+            ("executable", nullable_ref_schema("DaemonExecutableIdentity")),
+            ("executable_error", nullable_string_schema()),
+        ], vec!["service_name", "managed_by_systemd", "instance_id", "restart"]),
     );
     schemas.insert(
         "DaemonServiceResponse".to_string(),

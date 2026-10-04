@@ -65,7 +65,11 @@ two SDK event subscriptions, graceful shutdown, lease reacquisition and persiste
 classification/schema metadata. It also checks conditional resource patches,
 credential rotation invalidating stale revisions, resource-generation retention,
 and precise History / hourly totals from one seeded synthetic session across restart,
-while leaving browser/audio collection disabled. It does not install
+while leaving browser/audio collection disabled. It launches a private copy of the
+daemon, compares its service-reported executable SHA256 with the candidate, and
+replaces that private launch pathname while the process runs. Both SDK probes must
+still read the original running-image identity. Use a current branch daemon and SDK
+probe for these checks; old candidates can omit executable identity. It does not install
 a service or validate real GNOME tracking. If sharing `CARGO_TARGET_DIR` across configurations, preserve the
 selected binary before another build replaces `debug/patinad`.
 

@@ -336,6 +336,8 @@ mod tests {
         restart_status: Option<&str>,
     ) -> crate::engine::api::runtime_control::DaemonServiceRuntimeSnapshot {
         crate::engine::api::runtime_control::DaemonServiceRuntimeSnapshot {
+            executable: None,
+            executable_error: None,
             service_name: "patinad.service".to_string(),
             managed_by_systemd: true,
             instance_id: "instance_test".to_string(),

@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import selectors
+import shutil
 import signal
 import sqlite3
 import subprocess
@@ -39,6 +40,10 @@ def main():
                PULSE_SERVER=f"unix:{root}/no-pulse", XDG_SESSION_TYPE="unspecified",
                XDG_CURRENT_DESKTOP="")
     children = []
+    # Launch a private copy so path replacement cannot touch the user's build.
+    running_binary = root / "patinad"
+    shutil.copy2(daemon, running_binary)
+    expected_binary_sha256 = hashlib.sha256(daemon.read_bytes()).hexdigest()
     with (root / "daemon.log").open("x") as log:
         # Prepare only the new Local profile, with no tracking or listener.
         subprocess.run([str(daemon), "--profile", "local"], env=env, stdout=log,
@@ -49,7 +54,7 @@ def main():
             connection.executemany("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
                                    [("web_activity_enabled", "0"), ("audio_participation_enabled", "0")])
             connection.execute("INSERT INTO sessions(app_name,exe_name,window_title,start_time,end_time,duration) VALUES('Fixture','fixture-app','synthetic',1000,2000,1000)")
-        owner = subprocess.Popen([str(daemon), "--profile", "local", "--serve-api", "--track", "--port", "0"],
+        owner = subprocess.Popen([str(running_binary), "--profile", "local", "--serve-api", "--track", "--port", "0"],
                                  env=env, stdout=log, stderr=subprocess.STDOUT)
         children.append(owner)
         try:
@@ -84,6 +89,16 @@ def main():
             while not tools_request("capabilities")["tools"]["ready"]:
                 assert time.monotonic() < until, "isolated Tools owner never became ready"
                 time.sleep(.1)
+            service_before = tools_request("system/service")
+            assert service_before["executable"]["binary_sha256"] == expected_binary_sha256
+            assert service_before["executable"]["build"]["desktop_feature"] is False
+            assert not service_before.get("executable_error")
+            # Replacing the launch path must not report the replacement as running.
+            replacement = root / "replacement"
+            replacement.write_bytes(b"not the running image\n")
+            replacement.replace(running_binary)
+            service_after = tools_request("system/service")
+            assert service_after == service_before
             with selectors.DefaultSelector() as selector:
                 for index in range(2):
                     child = subprocess.Popen([str(probe), str(port), str(token_file), "--watch"],
@@ -103,6 +118,7 @@ def main():
                             assert len(buffers[key.data]) < 16384
                     raise AssertionError("SDK clients did not observe expected state")
                 receive(b"subscribed\n")
+                assert all(("executable_sha256=" + expected_binary_sha256).encode() in value for value in buffers)
                 token = token_file.read_text().strip()
                 request = urllib.request.Request(f"http://127.0.0.1:{port}/api/v1/apps/fixture-app/classify",
                     data=json.dumps({"category": "research"}).encode(),
@@ -136,6 +152,9 @@ def main():
                           "shared_tools_event": True, "tools_http_actions_observed": True,
                           "unauthenticated_read_rejected": True,
                           "tracking_hardware_verified": False, "gui_or_tui_verified": False}
+                result.update(running_executable_sha256=expected_binary_sha256,
+                              replaced_launch_path_preserves_running_identity=True,
+                              sdk_clients_read_running_identity=True)
             def resource_request(payload=None):
                 path = "/api/v1/settings/resources" + ("/conditional" if payload is not None else "")
                 request = urllib.request.Request(
