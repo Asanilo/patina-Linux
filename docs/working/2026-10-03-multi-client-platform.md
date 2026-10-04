@@ -59,7 +59,7 @@ HTTP API 索引和源码以当前实现为准；索引中历史的 unreleased/st
 | M3 | 浏览器会话和适配层；共享 React 核心界面，复用 Quiet Pro | Tauri＋Web 并行读取／修改分类并同步，真实浏览器验收 | 待实施 |
 | M4 | Rust SDK typed 能力逐步补全，TUI 接入同一核心链路 | 实际交互式 TUI 可查看／筛选／修改分类，并参与同步；CLI 示例不算完成 | 待实施 |
 | M5 | GPUI 客户端，同一能力和同步契约，独立视图 | 可运行 GPUI 核心链路和四端同步验收；评估启动、资源和维护成本 | 待实施 |
-| M6 | 后端独立安装、兼容矩阵、异常恢复、发布集成 | 无 Desktop 后端运行、四端适用覆盖矩阵、可重复回归；范围冻结后再准备候选 | M6a 独立构建、M6b 构建身份／归档、M6c 版本化存放已验证；激活、旧包迁移、运行目标验证及发布集成待实施 |
+| M6 | 后端独立安装、兼容矩阵、异常恢复、发布集成 | 无 Desktop 后端运行、四端适用覆盖矩阵、可重复回归；范围冻结后再准备候选 | M6a–M6e 独立构建、归档、版本存放、运行身份及条件选择已验证；服务激活、旧包迁移、受控重载目标验证及发布集成待实施 |
 
 M1 的第二客户端示例用于证明独立依赖和真实连接，不能提前宣称 TUI 或 GPUI 已交付。M3 优先于完整 TUI／GPUI 开发，以先取得共享 UI 的直接收益。只有出现真实并行需要才增加工作分支。
 
@@ -576,3 +576,20 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 完整 `npm run check:full` 通过：68 个 TypeScript 文件、49 项浏览器检查、48 项 SDK 测试、Desktop 799 passed / 22 ignored、无桌面后端 640 passed / 11 ignored；生成类型、架构／依赖边界、Clippy、bundle 预算通过。新增 4 组 SDK 回归与 3 项原生回归；初次专项在限制环境中无法绑定回环端口，后续完整门禁在允许隔离网络的环境执行通过。证据为 `tmp/acceptance/m6d-full.log`。
 - 本批真实 debug 候选 SHA256 `bd5b1d11c1156d1076fdc9ce4aa89a919c52ae4145b902ad29de449f086339b4`，SDK 探针 SHA256 `c4483109ae525659732f7668545b1ffd619b2ae45c68edd0318e899ab9aada4f`。metadata 无副作用检查通过；临时 Local profile 从候选的私有副本启动，运行时将该启动路径替换成不同内容，HTTP 快照及两个独立 SDK 均继续报告原候选摘要，实例未改变。分类／Tools 同步、条件资源写入、认证拒绝、正常关闭、重新打开及数据保留也通过。
 - 证据为 `tmp/acceptance/multi-client-m6d-executable-identity/`、`tmp/acceptance/m6d-independent-client.log` 和 `/tmp/patina-independent-client-2ku2didl/`。此批没有增加 systemd 激活操作；下一批仍须完成安装选择与激活状态、旧 DEB/AppImage owner 迁移，再用已安装身份与本批运行身份验证目标。未安装、合并、推送或发布；未开发新客户端 UI，整体基础阶段继续。
+
+### M6e 执行设计：可核对的已选安装版本
+
+- `bdd3382c` 分支已核对。运行身份已经能回答“实际运行哪份二进制”，安装侧仍缺少唯一的期望目标；staged 目录存在不能等同于已选版本。先建立该状态，再由服务 owner 将运行状态收敛到它，避免以 Desktop 版本推断目标。
+- Linux standalone owner 复用同一安装锁与完整载荷校验，增加显式 inspect／select。唯一选择记录为 `current -> versions/<manifest SHA256>`，原子更换该相对链接；其他文件、外部路径和异常链接一律拒绝，不能顺手覆盖自定义内容。已有版本目录保持不可变，读取也重新校验其身份与内容。
+- select 必须携带操作者观察到的旧 manifest 摘要，首次选择明确传 none；锁内比较后才提交。拒绝从较高 SemVer 选择较低版本；同版本不同成品以摘要区分。当前选择内容损坏时拒绝静默修复；服务就绪不从 current 指针推断。
+- CLI 在初始化 profile 前分派，显式选择只改变下一次服务启动应使用的目标，不停止／启动／启用服务，不改数据库。随后服务激活将使用该稳定入口并处理旧 DEB/AppImage owner；本切片不能作为完整安装升级验收。测试覆盖并发旧基线、忙锁、篡改、非法 current、失败保留和真实候选选择后身份相符。
+
+### M6e 安装目标选择检查点
+
+- 已实现 `--inspect-runtime` 和携带 `--expected-current` 的 `--select-runtime`。同一 installation owner 复用原有 staging 校验和锁，inspect 使用共享锁，stage／select 使用独占锁；读取不创建安装根，选择不执行载荷。已选身份、静态构建信息和二进制摘要可直接与 M6d 运行身份核对。
+- 7 项新增原生选择回归覆盖并发只允许一个旧基线成功、重复选择不更换链接、较低版本拒绝、同版本不同构建、异常 current 内容保留、目标／当前载荷损坏、缺失目录、忙锁及 debug 明确允许；1 项新增 CLI 回归拒绝缺少基线和混用命令。首次编译修正了测试模块相对导入层级；最终安装模块专项 14 passed。
+- 完整 `npm run check:full` 通过：68 个 TypeScript 文件、49 项浏览器检查、48 项 SDK 测试、Desktop 807 passed / 22 ignored、无桌面后端 648 passed / 11 ignored；生成类型、架构／依赖边界、Clippy、bundle 预算通过。证据为 `tmp/acceptance/m6e-full.log`、`m6e-selection-unit.log`。
+- 真实验收将 M6d 与本批两份 `1.9.2` debug 构建分别归档、提取并存放到私有根，验证从无选择到旧构建、再到本批构建；重复选择复用原链接，过期基线被拒绝，metadata 与内容摘要相符，不创建 profile 或服务。可重复入口为 `scripts/acceptance/standalone-selection.py`，输入两个已确认来源的候选及其 manifest 摘要；不能把脚本的内容校验当作签名认证。
+- 本批二进制 SHA256 `cc7ff6e9e0ff8be35196a52ba70cffcaa1bde99fe9bba8216e25c7694a4594bc`，manifest SHA256 `9a589e3b7a0172117a07804e56d96729d54de633128eee0b922442965f8fefbe`。随后选中的二进制通过双 SDK 隔离运行验收，报告的运行摘要与已选目标一致，启动路径替换、分类／Tools 同步、条件写入、关闭／重新打开和数据保留通过。复用未变化的 M6d SDK 探针。
+- 证据位于 `tmp/acceptance/multi-client-m6e-selection/`、`tmp/acceptance/m6e-independent-client.log`、`/tmp/patina-selection-qgxa9v2r/`、`/tmp/patina-independent-client-gfrffmsv/`。较低 SemVer 拒绝仅约束该安装根的已选版本，不代表已经处理旧 DEB/AppImage 数据兼容；同版本摘要切换也不证明数据库可降级。下一工作包必须接入服务激活和旧 owner 迁移，保留运行 lease／交接状态及用户自启动偏好，再替换现有精确版本重载检查。
+- 本检查点仅本地实现、隔离验收及提交；main／生产安装保持原状，未推送、合并、安装或发布，未开发新客户端 UI。整体后端基础阶段继续。

@@ -117,6 +117,34 @@ identifies the directory, build and binary digest. This command does not execute
 candidate, select a current version, create a profile, or change a service. Activation
 and legacy DEB/AppImage ownership migration remain pending.
 
+Inspect or explicitly select a staged version:
+
+```bash
+/absolute/path/patinad --inspect-runtime --runtime-root /absolute/path/private-parent/runtime
+/absolute/path/patinad --select-runtime <target-manifest-sha256> \
+  --runtime-root /absolute/path/private-parent/runtime --expected-current none
+# For later changes, replace none with the manifest digest observed by inspect.
+# Append --allow-debug to each command when working with local debug candidates.
+```
+
+Inspection returns `{ "selected": null }` before the first selection, otherwise a
+verified installed identity. It does not initialize a missing root. Selection uses
+the same installation lock as staging and atomically updates the relative `current`
+link. A stale baseline, modified payload or unexpected current entry fails without
+silently replacing it; lower SemVer selections are refused. Same-version candidates
+remain distinguishable by manifest and binary digests. If a command fails after the
+atomic replacement, inspect before proceeding: it may have committed. Selection does
+not start, stop, enable or reload a service, or guarantee database compatibility.
+Do not treat this command as completed systemd activation or old-package migration.
+
+`scripts/acceptance/standalone-selection.py` accepts a controller binary and two
+extracted local candidate directories with their expected manifest digests. It stages
+both in a private temporary root, selects each in order, checks stale selection
+refusal and idempotence, and compares the selected executable's metadata and digest.
+Use distinct real builds in nondecreasing version order; append `--allow-debug` for
+local debug candidates. It returns the selected binary path for the independent-client
+acceptance script and does not operate systemd.
+
 ## Daemon Analytical Read Isolation
 
 The multi-client daemon prepares a separate two-connection analytical pool after

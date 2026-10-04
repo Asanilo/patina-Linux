@@ -1,4 +1,4 @@
-//! Versioned standalone payload storage. No service selection, process execution or profile IO.
+//! Versioned standalone files and selected target. No service control, execution or profile IO.
 use fs2::FileExt;
 use patina_protocol::build_info::{DaemonBuildInfo, BUILD_INFO_FORMAT_VERSION};
 use serde::{Deserialize, Serialize};
@@ -8,6 +8,9 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
+
+mod selection;
+pub(crate) use selection::{inspect, select, ExpectedCurrent};
 
 const ROOT_MARKER: &str = ".patina-standalone-root";
 const ROOT_IDENTITY: &[u8] = b"Patina standalone runtime root v1\n";
@@ -292,12 +295,7 @@ fn initialize_root(root: &Path) -> Result<(), String> {
     validate_root(root)
 }
 
-pub(crate) fn stage(
-    source: &Path,
-    root: &Path,
-    expected: &str,
-    allow_debug: bool,
-) -> Result<StagedRuntime, String> {
+fn validate_root_path(root: &Path) -> Result<(), String> {
     if !root.is_absolute()
         || root
             .components()
@@ -310,18 +308,19 @@ pub(crate) fn stage(
             "runtime root must be an absolute UTF-8 path without traversal or control characters",
         ));
     }
-    let (manifest, bytes) = verify(source, expected, allow_debug)?;
-    initialize_root(root)?;
-    let root = root.canonicalize().map_err(error)?;
-    let lock = OpenOptions::new()
+    Ok(())
+}
+
+fn installation_lock(root: &Path, create: bool, exclusive: bool) -> Result<File, String> {
+    let mut options = OpenOptions::new();
+    options
         .read(true)
-        .write(true)
-        .create(true)
+        .write(exclusive)
+        .create(create)
         .truncate(false)
         .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(root.join("install.lock"))
-        .map_err(error)?;
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    let lock = options.open(root.join("install.lock")).map_err(error)?;
     let metadata = lock.metadata().map_err(error)?;
     if !metadata.is_file()
         || metadata.nlink() != 1
@@ -330,36 +329,73 @@ pub(crate) fn stage(
     {
         return Err(error("invalid installation lock"));
     }
-    lock.try_lock_exclusive()
-        .map_err(|_| error("another runtime installation is in progress"))?;
+    let result = if exclusive {
+        FileExt::try_lock_exclusive(&lock)
+    } else {
+        FileExt::try_lock_shared(&lock)
+    };
+    result.map_err(|_| error("another runtime installation is in progress"))?;
+    Ok(lock)
+}
+
+fn installed_version(
+    root: &Path,
+    expected: &str,
+    allow_debug: bool,
+) -> Result<StagedRuntime, String> {
+    if !is_digest(expected) {
+        return Err(error("invalid installed manifest identity"));
+    }
+    let destination = root.join("versions").join(expected);
+    for path in [
+        root.join("versions"),
+        destination.clone(),
+        destination.join("bin"),
+        destination.join("systemd"),
+    ] {
+        directory(&path, true)?;
+    }
+    let (manifest, _) = verify(&destination, expected, allow_debug)?;
+    for name in [
+        "manifest.json",
+        "bin/patinad",
+        "systemd/patinad.service.in",
+        "README.txt",
+        "LICENSE",
+    ] {
+        if fs::symlink_metadata(destination.join(name))
+            .map_err(error)?
+            .uid()
+            != uid()
+        {
+            return Err(error("installed payload must be owned by the current user"));
+        }
+    }
+    Ok(StagedRuntime {
+        manifest_sha256: expected.to_owned(),
+        binary_sha256: manifest.files["bin/patinad"].sha256.clone(),
+        directory: destination,
+        build: manifest.build,
+    })
+}
+
+pub(crate) fn stage(
+    source: &Path,
+    root: &Path,
+    expected: &str,
+    allow_debug: bool,
+) -> Result<StagedRuntime, String> {
+    validate_root_path(root)?;
+    let (manifest, bytes) = verify(source, expected, allow_debug)?;
+    initialize_root(root)?;
+    let root = root.canonicalize().map_err(error)?;
+    let _lock = installation_lock(&root, true, true)?;
     let versions = root.join("versions");
     private_directory(&versions)?;
     let destination = versions.join(expected);
     match fs::symlink_metadata(&destination) {
         Ok(_) => {
-            for path in [
-                &destination,
-                &destination.join("bin"),
-                &destination.join("systemd"),
-            ] {
-                directory(path, true)?;
-            }
-            verify(&destination, expected, allow_debug)?;
-            for name in [
-                "manifest.json",
-                "bin/patinad",
-                "systemd/patinad.service.in",
-                "README.txt",
-                "LICENSE",
-            ] {
-                if fs::symlink_metadata(destination.join(name))
-                    .map_err(error)?
-                    .uid()
-                    != uid()
-                {
-                    return Err(error("installed payload must be owned by the current user"));
-                }
-            }
+            return installed_version(&root, expected, allow_debug);
         }
         Err(failure) if failure.kind() == std::io::ErrorKind::NotFound => {
             let mut temporary = TemporaryDirectory::create(&root, "stage")?;

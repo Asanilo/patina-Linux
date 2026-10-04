@@ -1,15 +1,15 @@
 use super::*;
 use std::os::unix::fs::symlink;
 
-struct Fixture {
+pub(super) struct Fixture {
     _temporary: TemporaryDirectory,
-    source: PathBuf,
-    root: PathBuf,
-    manifest: serde_json::Value,
+    pub(super) source: PathBuf,
+    pub(super) root: PathBuf,
+    pub(super) manifest: serde_json::Value,
 }
 
 impl Fixture {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let temporary =
             TemporaryDirectory::create(&std::env::temp_dir(), "patina-stage-test").unwrap();
         let source = temporary.path().join("source");
@@ -42,7 +42,7 @@ impl Fixture {
             manifest,
         }
     }
-    fn save_manifest(&self) -> String {
+    pub(super) fn save_manifest(&self) -> String {
         let bytes = serde_json::to_vec_pretty(&self.manifest).unwrap();
         fs::write(self.source.join("manifest.json"), &bytes).unwrap();
         digest(&bytes)
