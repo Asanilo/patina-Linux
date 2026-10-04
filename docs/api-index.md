@@ -69,7 +69,8 @@ Current caveats:
 | `/api/v1/assets/icons` | `GET` | Development branch | Bounded cached icon pages and owner-provided executable aliases |
 | `/api/v1/assets/icon` | `GET` | Development branch | Bounded single cached icon lookup; no file access |
 | `/api/v1/activity/web-history` | `GET` | Development branch | Bounded browser facts with classification, recording state, privacy and trusted live boundaries; Desktop migration pending |
-| `/api/v1/activity/history` | `GET` | Development branch | Bounded precise native/imported records and stored titles; shared by Desktop History and app details |
+| `/api/v1/activity/history` | `GET` | Development branch | Bounded precise native/imported records and stored titles; retained for app details and existing clients |
+| `/api/v1/activity/history-product` | `GET` | Development branch | The same precise snapshot plus backend hourly category quantities; used by Desktop History |
 | `/api/v1/classification/observed-apps` | `GET` | Unreleased source | Bounded raw executable statistics for classification candidates |
 | `/api/v1/web-activity` | `GET` | Implemented | Browser activity segment query |
 | `/api/v1/ai/activity-context` | `GET` | Implemented | Aggregated diagnostics, active session, summaries, and recent web activity for external AI analysis |
@@ -785,6 +786,35 @@ success. The SDK `web_history(from_ms,to_ms,language)` checks scope, ordering,
 source overlap, metadata, privacy and live boundaries. A thin Tauri command is
 available; existing Desktop web pages still use their previous adapters pending
 the recorded product decisions and subsequent migration.
+
+### `GET /api/v1/activity/history-product`
+
+Uses the same required `from_ms` / `to_ms` and optional `language` parameters as
+precise History below. All three API surfaces expose this authenticated read.
+`data.history` contains that complete precise snapshot, while `data.hours` contains
+24 entries `{hour, active_ms, categories:[{category, active_ms}]}`.
+
+The server derives hours from the returned records and their final categories,
+using the same host-local calendar partitioner as Dashboard. Repeated clock hours
+combine and missing hours remain zero. Offset changes within an hour are handled
+at their actual timestamp. Totals conserve every record's milliseconds; imported
+hourly quantities are excluded because they are not precise History facts.
+No second settings query or client clock extends the snapshot.
+
+The complete envelope remains bounded to 8 MiB, with the existing 32-day / record /
+title limits plus at most 4,096 categories and one million record-partition steps.
+It uses the shared analytical read admission and 30/32/35-second query/HTTP/SDK
+budgets. Projection work is separately bounded by steps; async timeouts are not
+claimed to preempt arbitrary synchronous CPU work. Errors never publish a partial
+hour projection. The independent SDK and Desktop validate that hourly category
+quantities sum to the precise records before presenting them.
+
+Desktop History uses `cmd_get_history_product`; application details retain the
+precise-record adapter. Missing product endpoints or malformed quantities fail
+explicitly; clients do not fall back to local hour calculations. UI minute rounding,
+labels and colors remain presentation concerns. Hourly charts keep a 60-minute
+baseline but expand their axis when confirmed quantities exceed it, so repeated
+hours or retained native overlaps are not visually clipped.
 
 ### `GET /api/v1/activity/history`
 

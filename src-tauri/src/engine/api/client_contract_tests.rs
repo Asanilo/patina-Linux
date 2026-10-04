@@ -240,6 +240,12 @@ async fn independent_and_desktop_clients_observe_the_same_committed_classificati
         desktop_history.configuration_revision
     );
     assert_eq!(history.records.len(), 1);
+    let history_product = native.history_product(1000,2000,"en-US").await.unwrap();
+    let desktop_history_product = desktop.history_product(1000,2000,"en-US").await.unwrap();
+    assert_eq!(history_product.history.records,history.records);
+    assert_eq!(history_product.history.configuration_revision,history.configuration_revision);
+    assert_eq!(history_product.hours,desktop_history_product.hours);
+    assert_eq!(history_product.hours.iter().map(|hour|hour.active_ms).sum::<i64>(),1000);
     assert_eq!(history.records[0].start_ms, 1000);
     assert_eq!(history.records[0].end_ms, 2000);
     assert_eq!(history.records[0].window_title, "synthetic");

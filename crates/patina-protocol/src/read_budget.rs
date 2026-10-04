@@ -24,7 +24,7 @@ pub fn for_endpoint(path: &str, legacy_migration_scope: bool) -> Option<ReadBudg
     match path {
         "/api/v1/heatmap" | "/api/v1/trend" | "/api/v1/activity/daily-apps"
         | "/api/v1/activity/daily-product" | "/api/v1/activity/dashboard"
-        | "/api/v1/activity/history" => Some(ANALYTICS),
+        | "/api/v1/activity/history" | "/api/v1/activity/history-product" => Some(ANALYTICS),
         "/api/v1/classification/observed-apps" => Some(if legacy_migration_scope { ANALYTICS } else { OBSERVED_APPS }),
         "/api/v1/activity/web-history" => Some(WEB_HISTORY),
         _ => None,

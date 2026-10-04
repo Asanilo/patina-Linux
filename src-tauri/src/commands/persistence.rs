@@ -4,6 +4,19 @@ use crate::engine::tracking::runtime::emit_tracking_data_changed;
 use tauri::{AppHandle, Manager, Runtime};
 
 #[tauri::command]
+pub async fn cmd_get_history_product<R: Runtime>(
+    app: AppHandle<R>, from_ms: i64, to_ms: i64, language: Option<String>,
+) -> Result<patina_protocol::history_product::HistoryProductSnapshot, String> {
+    let language = language.unwrap_or_else(|| "en-US".into());
+    if let Some(client) = crate::app::daemon_client::command_client(&app)? {
+        return client.history_product(from_ms, to_ms, &language).await.map_err(|e|e.to_string());
+    }
+    let pool = crate::data::sqlite_pool::wait_for_sqlite_pool(&app).await?;
+    crate::data::repositories::exact_history::product::load_history_product(&pool,from_ms,to_ms,
+        crate::engine::runtime_context::now_ms().min(i64::MAX as u64) as i64,&language).await
+}
+
+#[tauri::command]
 pub async fn cmd_get_exact_history<R: Runtime>(
     from_ms: i64,
     to_ms: i64,

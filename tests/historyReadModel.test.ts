@@ -40,12 +40,13 @@ await runTest("history snapshot keeps app sessions when optional web reads fail"
 
   try {
     const snapshot = await loadHistorySnapshot(new Date(2026, 0, 2), {
-      getExactHistory: async (fromMs, toMs) => {
+      getHistoryProduct: async (fromMs, toMs) => {
         reads++;
         assert.equal(fromMs, new Date(2026, 0, 2).getTime());
         assert.equal(toMs, new Date(2026, 0, 3).getTime());
         return {fromMs, toMs, sampledAtMs: toMs, configurationRevision: "a".repeat(64),
           trackingHealth: {status: "healthy", lastHeartbeatMs: toMs, liveCutoffMs: toMs, staleAfterMs: 8000},
+          hours: Array.from({length:24},(_,hour)=>({hour,duration:hour===9?3600000:0,categories:hour===9?[{category:"development",duration:3600000}]:[]})),
           sessions: [daySession]};
       },
       getWebActivitySegmentsInRange: async () => {

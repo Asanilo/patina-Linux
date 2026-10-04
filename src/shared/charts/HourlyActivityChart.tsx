@@ -10,6 +10,7 @@ import type {
 } from "../lib/hourlyActivityCompiler.ts";
 import {
   getHourlyCategorySlotDataKey,
+  getHourlyActivityAxisMaximum,
   limitHourlyCategoryActivity,
 } from "../lib/hourlyActivityCompiler.ts";
 import QuietChartTooltip from "../components/QuietChartTooltip";
@@ -90,6 +91,7 @@ export default function HourlyActivityChart({
     [hourlyCategoryActivity, visibleCategoryLimit],
   );
   const chartData = categoryMode ? visibleHourlyCategoryActivity.points : hourlyActivity;
+  const axisMaximum = getHourlyActivityAxisMaximum(chartData);
   const stackedDataKeyCount = visibleHourlyCategoryActivity.points.reduce(
     (maxCount, point) => Math.max(maxCount, Object.keys(point.segmentDetails).length),
     0,
@@ -140,7 +142,7 @@ export default function HourlyActivityChart({
   }, [chartData, margin.bottom]);
 
   return (
-    <div ref={chartRef} className="h-full w-full" data-hourly-activity-chart-mode={mode}>
+    <div ref={chartRef} className="h-full w-full" data-hourly-activity-chart-mode={mode} data-hourly-axis-maximum={axisMaximum}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={chartData} margin={margin}>
         <XAxis
@@ -153,7 +155,7 @@ export default function HourlyActivityChart({
           interval={5}
           padding={padding}
         />
-        <YAxis hide domain={[0, 60]} allowDataOverflow />
+        <YAxis hide domain={[0, axisMaximum]} allowDataOverflow />
         <QuietChartTooltip
           cursor={{ fill: "var(--qp-chart-cursor)" }}
           filterZeroValues

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { getInitialDestinationDetailTimelineViewport } from "../src/features/destination/services/destinationDetailTimelineViewport.ts";
 import { getDayRange, type CompiledSession } from "../src/shared/lib/sessionReadCompiler.ts";
 import { buildHistoryTimelineViewModel, normalizeHistoryTimelineViewport,
   normalizeHistoryTimelineViewportAroundFocus, snapHistoryTimelineFocusToNearestHalfHour,
@@ -45,6 +46,9 @@ try {
       `${zone}: retain the last half hour and exclude tomorrow`);
     assert.equal(view.axisTicks.at(-1)?.label,"24:00");
     assert.equal(view.segments.at(-1)?.endRatio,1);
+    const detail = getInitialDestinationDetailTimelineViewport({dateKey:"fixture",dayStartMs:expected.startMs,
+      dayEndMs:expected.endMs,records:[],activities:[],totalDuration:0,firstStartTime:null,lastEndTime:null},expected.endMs-10*60_000);
+    assert.deepEqual([detail.startMs,detail.endMs],[expected.startMs,expected.endMs],`${zone}: detail full day`);
   }
 } finally {
   if (previousZone === undefined) delete process.env.TZ; else process.env.TZ=previousZone;

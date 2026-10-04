@@ -14,6 +14,7 @@ use std::{
 use tokio::sync::Semaphore;
 
 mod metadata;
+pub mod product;
 #[cfg(test)]
 mod tests;
 static HISTORY_QUERY: Semaphore = Semaphore::const_new(1);
@@ -33,16 +34,28 @@ pub async fn load_exact_history(
     sampled_at_ms: i64,
     language: &str,
 ) -> Result<ExactHistorySnapshot, String> {
+    load_with_projection(pool, from_ms, to_ms, sampled_at_ms, language, Ok).await
+}
+
+async fn load_with_projection<T>(
+    pool: &SqlitePool,
+    from_ms: i64,
+    to_ms: i64,
+    sampled_at_ms: i64,
+    language: &str,
+    project: impl FnOnce(ExactHistorySnapshot) -> Result<T, String>,
+) -> Result<T, String> {
     if !valid_range(from_ms, to_ms) || !matches!(language, "en-US" | "zh-CN") {
         return Err("invalid exact history range or language".into());
     }
     let _permit = HISTORY_QUERY
         .try_acquire()
         .map_err(|_| "exact history query is busy")?;
-    tokio::time::timeout(
-        patina_protocol::read_budget::ANALYTICS.query,
-        read_snapshot(pool, from_ms, to_ms, sampled_at_ms, language),
-    )
+    tokio::time::timeout(patina_protocol::read_budget::ANALYTICS.query, async {
+        let snapshot = read_snapshot(pool, from_ms, to_ms, sampled_at_ms, language).await?;
+        // Keep the family's admission until the bounded projection is complete.
+        project(snapshot)
+    })
     .await
     .map_err(|_| "exact history query exceeded its time budget".to_string())?
 }

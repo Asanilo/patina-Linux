@@ -184,7 +184,7 @@ Raw DTO 只能停留在明确边界：
 - `src-tauri/**` 继续使用 Rust 与协议侧命名
 - 测试 raw payload fixture 必须让 raw 意图清楚，优先使用 `Raw` 前缀或直接验证 raw parser
 
-已接入的共享 wire 类型以 `patina-protocol` 的 Rust DTO 为来源，经显式 `typegen` feature 生成到 `src/platform/protocol/protocol.generated.ts`。`npm run generate:protocol` 更新产物，`npm run check:protocol` 只读核对并纳入完整门禁；生成器固定配置，不接受环境变量改变导出形状。普通 SDK／daemon 依赖图不得包含生成工具。当前范围为 product settings、resource settings、classification 和 cached icons，不代表全部协议或 OpenAPI 已自动生成。adapter 必须继续从 unknown 验证并构造符合生成类型的对象，然后映射为前端模型；类型生成不能替代安全整数、大小、权限或业务约束校验。
+已接入的共享 wire 类型以 `patina-protocol` 的 Rust DTO 为来源，经显式 `typegen` feature 生成到 `src/platform/protocol/protocol.generated.ts`。`npm run generate:protocol` 更新产物，`npm run check:protocol` 只读核对并纳入完整门禁；生成器固定配置，不接受环境变量改变导出形状。普通 SDK／daemon 依赖图不得包含生成工具。当前范围为 product settings、resource settings、classification、cached icons、精确 History 与小时数量，不代表全部协议或 OpenAPI 已自动生成。adapter 必须继续从 unknown 验证并构造符合生成类型的对象，然后映射为前端模型；类型生成不能替代安全整数、大小、权限或业务约束校验。
 
 前端业务层默认不承载 raw DTO：
 
@@ -358,7 +358,7 @@ Dashboard 后端读契约在同一事务内产生今天／昨天产品数量和�
 
 Dashboard、History 与应用详情复用 `shared/lib/snapshotReadController` 管理快照请求生命周期：普通轮询合并，数据失效时丢弃旧响应并补读，停止后不再发布；读取 scope 包含缓存代数、本地日期和语言。缓存预热及运行时协调也必须检查代数，避免失效后的旧请求重新填充缓存。失败保留最后一份快照并明确标记，首读失败不冒充空数据；应用共享图标由 app 层独立读取后端缓存，不属于 Dashboard 活动快照；图标慢读或失败均不能阻塞活动数据。
 
-精确历史的产品读 owner 为 `data/repositories/exact_history`：配置、heartbeat、原生／精确导入事实和标题样本共享事务。复用领域优先级编译，小时汇总不能变成精确时间线；先读取紧凑候选，再批量加载贡献记录的有限元数据。返回源 ID／origin、规范应用分类和已裁剪区间，record caption 与真实标题样本分别表达。读取不修复数据库，超限不返回部分成功。Desktop History／应用详情通过薄 `cmd_get_exact_history`、SDK 与严格前端 adapter 使用同一契约；失败不退回 SQL。生产会话带 `confirmed` 元数据，展示不得重新分类、排除、改名或按本地时钟延长。窗口 caption 仅为未定时标签；缺少真实样本时标题明细为空，同标题采样之间的空档不得填满。原生重叠事实保留各自时长，不能用时间线去重改变应用详情总量。History 只读所选日，不再读取已退出页面的周趋势。
+精确历史的产品读 owner 为 `data/repositories/exact_history`：配置、heartbeat、原生／精确导入事实和标题样本共享事务。复用领域优先级编译，小时汇总不能变成精确时间线；先读取紧凑候选，再批量加载贡献记录的有限元数据。返回源 ID／origin、规范应用分类和已裁剪区间，record caption 与真实标题样本分别表达。读取不修复数据库，超限不返回部分成功。应用详情继续通过薄 `cmd_get_exact_history` 使用精确契约；Desktop History 通过 `cmd_get_history_product` 取得相同记录与同批记录派生的小时分类量。后端复用 `activity_calendar` 处理真实时区边界，SDK／adapter 检查数量守恒，前端不再按 setHours 分段；失败不退回 SQL 或旧 TS 统计。`ActivityHour` 是共享协议数量类型，Dashboard 旧 Rust 类型名仅保留 re-export；两处前端共用校验器和纯显示格式化。旧小时计算只保留在 tests/helpers 的 replay 对照中，生产模块不能引用它。生产会话带 `confirmed` 元数据，展示不得重新分类、排除、改名或按本地时钟延长。窗口 caption 仅为未定时标签；缺少真实样本时标题明细为空，同标题采样之间的空档不得填满。原生重叠事实保留各自时长，不能用时间线去重改变应用详情总量。History 只读所选日，不再读取已退出页面的周趋势。
 
 `sessionReadRepository` 仅保留精确历史的日期／范围适配，不再执行 SQL。最早记录时间随既有 heatmap 快照返回，未使用的旧 SQL getter 已删除；网页读取仍待迁移；分类清理的名称枚举和别名匹配已经随写操作归入后端事务。前端旧导入优先级实现已移到 `tests/helpers/legacyNativeSessionPrecedence`，只作历史契约 oracle，生产代码不得依赖 tests。会话表现编译器中的无 `confirmed` 分支暂留供历史 replay 对照；所有生产精确会话 adapter 均必须提供后端确认元数据，不能把可选类型当作生产 fallback。
 

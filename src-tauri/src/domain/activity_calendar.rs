@@ -6,8 +6,31 @@ pub fn hour_boundaries<T: TimeZone>(
     start_ms: i64,
     end_ms: i64,
 ) -> Result<Vec<i64>, String> {
-    if !matches!(end_ms.checked_sub(start_ms), Some(width) if width > 0 && width <= 48 * 3_600_000)
-    {
+    bounded_hour_partitions(timezone, start_ms, end_ms, 48 * 3_600_000, 96)
+}
+
+pub fn history_hour_boundaries<T: TimeZone>(
+    timezone: &T,
+    start_ms: i64,
+    end_ms: i64,
+) -> Result<Vec<i64>, String> {
+    bounded_hour_partitions(
+        timezone,
+        start_ms,
+        end_ms,
+        patina_protocol::history::MAX_HISTORY_RANGE_MS,
+        32 * 96,
+    )
+}
+
+fn bounded_hour_partitions<T: TimeZone>(
+    timezone: &T,
+    start_ms: i64,
+    end_ms: i64,
+    max_width: i64,
+    max_boundaries: usize,
+) -> Result<Vec<i64>, String> {
+    if !matches!(end_ms.checked_sub(start_ms), Some(width) if width > 0 && width <= max_width) {
         return Err("invalid activity day boundaries".into());
     }
     let at = |ms| {
@@ -20,7 +43,7 @@ pub fn hour_boundaries<T: TimeZone>(
     let mut boundaries = vec![start_ms];
     let mut cursor = start_ms;
     while cursor < end_ms {
-        if boundaries.len() > 96 {
+        if boundaries.len() > max_boundaries {
             return Err("activity day has too many clock transitions".into());
         }
         let local = at(cursor)?;

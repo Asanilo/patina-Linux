@@ -153,6 +153,7 @@ function makeHistorySnapshot(fetchedAtMs: number) {
     language: "zh-CN" as const,
     trackerHealth: {status: "stale" as const, lastHeartbeatMs: null, checkedAtMs: fetchedAtMs, staleAfterMs: 8000},
     liveCutoffMs: 0,
+    hours: Array.from({length:24},(_,hour)=>({hour,duration:0,categories:[]})),
     dayWebSegments: [],
     webDomainOverrides: {},
     daySessions: [],

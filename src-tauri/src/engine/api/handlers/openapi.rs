@@ -288,6 +288,10 @@ fn paths(surface: ApiSurface) -> Value {
         "Bounded precise browser history with final domain metadata, recording state and URL privacy. Native parent, browser observation and owner heartbeat bound open rows. Deduplicates overlapping same-source/domain facts; independent browser sources remain separate. One read transaction, 32-day range, 20000 facts, 8 MiB UTF-8/JSON response, 12-second read deadline. Classification revision is not a combined privacy revision. No partial success or read-side repair.",
         "WebHistoryResponse", vec![required_query_param("from_ms","integer","Inclusive epoch milliseconds."),required_query_param("to_ms","integer","Exclusive epoch milliseconds."),query_param("language","string","en-US (default) or zh-CN.")]
     )}));
+    object.insert("/api/v1/activity/history-product".into(), json!({"get": get_operation_with_parameters(
+        "Precise History records and their conserved host-local hourly category projection at one configuration/health read point. Imported hourly quantities are excluded. Same 32-day, record and 8 MiB budgets as exact History; at most 4096 categories and one million projection steps. No client clock inference or legacy fallback.",
+        "HistoryProductResponse",vec![required_query_param("from_ms","integer","Inclusive epoch milliseconds."),required_query_param("to_ms","integer","Exclusive epoch milliseconds."),query_param("language","string","en-US (default) or zh-CN.")]
+    )}));
     object.insert("/api/v1/activity/history".into(), json!({"get": get_operation_with_parameters(
         "Precise native/imported history, clipped to an explicit epoch-millisecond range. No hour buckets. Includes stored captions and dated title samples for authenticated local clients. One configuration/heartbeat/fact transaction, 32-day range, 20000 input facts, 40000 records, 50000 samples, 8 MiB response, 30-second read budget; errors return no partial data.",
         "ExactHistoryResponse", vec![required_query_param("from_ms","integer","Inclusive epoch milliseconds."),required_query_param("to_ms","integer","Exclusive epoch milliseconds."),query_param("language","string","en-US (default) or zh-CN.")]
@@ -1306,6 +1310,10 @@ fn schemas() -> Value {
             ),
         ])),
     );
+    schemas.insert("HistoryProductResponse".into(), envelope(object_schema(vec![
+        ("history", schemas["ExactHistoryResponse"]["properties"]["data"].clone()),
+        ("hours", schemas["DashboardProductResponse"]["properties"]["data"]["properties"]["hours"].clone()),
+    ])));
     schemas.insert(
         "HeatmapData".to_string(),
         object_schema(vec![

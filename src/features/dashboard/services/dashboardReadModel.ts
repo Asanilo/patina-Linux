@@ -1,7 +1,7 @@
 import type { DashboardProductRead } from "../../../platform/persistence/dashboardRepository.ts";
 import { AppClassification } from "../../../shared/classification/appClassification.ts";
 import type { AppCategory } from "../../../shared/classification/categoryTokens.ts";
-import { buildHourlyCategoryPresentation, type HourlyActivityPoint, type HourlyCategoryActivity } from "../../../shared/lib/hourlyActivityCompiler.ts";
+import { buildHourlyProjectionPresentation, type HourlyActivityPoint, type HourlyCategoryActivity } from "../../../shared/lib/hourlyActivityCompiler.ts";
 import type { CategoryDistItem, TopApplicationItem } from "./dashboardFormatting.ts";
 export interface DashboardSnapshot {
   fetchedAtMs: number;
@@ -40,11 +40,10 @@ export function buildDashboardReadModel(product: DashboardProductRead | null): D
   const categoryDist = [...categoryTotals].map(([category, value]) => ({ category, value,
     name: AppClassification.getCategoryLabel(category), color: AppClassification.getCategoryColor(category),
   })).sort((a, b) => b.value - a.value);
-  const hours = product?.hours ?? Array.from({ length: 24 }, (_, hour) => ({ hour, duration: 0, categories: [] }));
+  const projection = buildHourlyProjectionPresentation(product?.hours ?? null);
   return {
     totalTrackedTime, yesterdayTrackedTime, dayDeltaTrackedTime: totalTrackedTime - yesterdayTrackedTime,
     topApplications, categoryDist, trackingHealth: product?.trackingHealth ?? null,
-    hourlyActivity: hours.map(hour => ({ hour: `${String(hour.hour).padStart(2, "0")}:00`, minutes: hour.duration < 60000 ? 0 : Math.round(hour.duration / 60000) })),
-    hourlyCategoryActivity: buildHourlyCategoryPresentation(hours.map(hour => new Map(hour.categories.map(category => [category.category, category.duration / 60000])))),
+    ...projection,
   };
 }

@@ -59,6 +59,7 @@ function getDestinationDetailZoomDurationMs(
 ) {
   const dayDurationMs = getDayDurationMs(dayStartMs, dayEndMs);
   const safeHours = Number.isFinite(zoomHours) ? zoomHours : DAY_HOURS;
+  if (safeHours >= DAY_HOURS) return dayDurationMs;
   return clampNumber(
     safeHours * HOUR_MS,
     Math.min(MIN_VIEWPORT_HOURS * HOUR_MS, dayDurationMs),

@@ -12,6 +12,7 @@ pub struct ApiEndpoint {
 }
 
 const DESKTOP_ENDPOINTS: &[ApiEndpoint] = &[
+    ApiEndpoint { method: "GET", path: "/api/v1/activity/history-product" },
     ApiEndpoint {
         method: "GET",
         path: "/api/v1/settings/resources",
@@ -167,6 +168,7 @@ const DESKTOP_ENDPOINTS: &[ApiEndpoint] = &[
 ];
 
 const DAEMON_READ_ONLY_ENDPOINTS: &[ApiEndpoint] = &[
+    ApiEndpoint { method: "GET", path: "/api/v1/activity/history-product" },
     ApiEndpoint {
         method: "GET",
         path: "/api/v1/settings/resources",
@@ -294,6 +296,7 @@ const DAEMON_READ_ONLY_ENDPOINTS: &[ApiEndpoint] = &[
 ];
 
 const DAEMON_TRACKING_ENDPOINTS: &[ApiEndpoint] = &[
+    ApiEndpoint { method: "GET", path: "/api/v1/activity/history-product" },
     ApiEndpoint {
         method: "GET",
         path: "/api/v1/settings/resources",
@@ -712,7 +715,7 @@ mod tests {
 
     #[test]
     fn desktop_surface_keeps_shared_client_method_and_path_set() {
-        assert_eq!(ApiSurface::Desktop.endpoints().len(), 38);
+        assert_eq!(ApiSurface::Desktop.endpoints().len(), 39);
         assert!(ApiSurface::Desktop.allows("GET", "/api/v1/settings/resources"));
         assert!(!ApiSurface::Desktop.allows("POST", "/api/v1/settings/resources/conditional"));
         assert!(

@@ -9,6 +9,7 @@ mod dashboard;
 mod error;
 pub mod events;
 mod history;
+mod history_product;
 mod icons;
 mod maintenance;
 mod web_history;

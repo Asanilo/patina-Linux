@@ -1,6 +1,21 @@
 //! Product activity projections; clients do not classify or exclude these totals again.
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "typegen", derive(ts_rs::TS))]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActivityHour {
+    pub hour: u8,
+    pub active_ms: i64,
+    pub categories: Vec<ActivityCategoryTotal>,
+}
+
+#[cfg_attr(feature = "typegen", derive(ts_rs::TS))]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActivityCategoryTotal {
+    pub category: String,
+    pub active_ms: i64,
+}
+
 pub fn is_product_category(value: &str) -> bool {
     value.len() <= 1024
         && (matches!(
@@ -29,6 +44,7 @@ pub struct DailyProductSnapshot {
     pub applications: Vec<ProductAppIdentity>,
 }
 
+#[cfg_attr(feature = "typegen", derive(ts_rs::TS))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ActivityReadStatus {
@@ -37,6 +53,7 @@ pub enum ActivityReadStatus {
     Unavailable,
 }
 
+#[cfg_attr(feature = "typegen", derive(ts_rs::TS))]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActivityReadHealth {
     pub status: ActivityReadStatus,

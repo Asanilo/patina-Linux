@@ -18,7 +18,7 @@ import {
   resolveLiveCutoffMs,
 } from "../../src/shared/lib/readModelCore.ts";
 import { buildDashboardReadModel } from "../helpers/legacyDashboardReadModel.ts";
-import { buildHistoryReadModel } from "../../src/features/history/services/historyReadModel.ts";
+import { buildLegacyHistoryReadModel as buildHistoryReadModel } from "../helpers/legacyHourlyActivityCompiler.ts";
 import type { HistorySession } from "../../src/shared/types/sessions.ts";
 import {
   resolveTrackerHealth,

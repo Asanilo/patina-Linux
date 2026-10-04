@@ -14,7 +14,7 @@ import {
   buildHourlyCategoryActivity,
   type HourlyActivityPoint,
   type HourlyCategoryActivity,
-} from "../../src/shared/lib/hourlyActivityCompiler.ts";
+} from "./legacyHourlyActivityCompiler.ts";
 import {
   buildNormalizedAppStats,
   getDayRange,

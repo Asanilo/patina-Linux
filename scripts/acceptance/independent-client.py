@@ -48,6 +48,7 @@ def main():
         with sqlite3.connect(db) as connection:
             connection.executemany("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
                                    [("web_activity_enabled", "0"), ("audio_participation_enabled", "0")])
+            connection.execute("INSERT INTO sessions(app_name,exe_name,window_title,start_time,end_time,duration) VALUES('Fixture','fixture-app','synthetic',1000,2000,1000)")
         owner = subprocess.Popen([str(daemon), "--profile", "local", "--serve-api", "--track", "--port", "0"],
                                  env=env, stdout=log, stderr=subprocess.STDOUT)
         children.append(owner)
@@ -140,6 +141,17 @@ def main():
             result.update(resource_patch_preserves_omitted_fields=True,
                           credential_rotation_invalidates_revision=True,
                           stale_resource_write_rejected=True)
+            history_request = urllib.request.Request(
+                f"http://127.0.0.1:{port}/api/v1/activity/history-product?from_ms=1000&to_ms=2000&language=en-US",
+                headers={"Authorization": "Bearer " + token})
+            with opener.open(history_request, timeout=10) as response:
+                product = json.load(response)["data"]
+            assert len(product["history"]["records"]) == 1
+            assert product["history"]["records"][0]["origin"] == "native"
+            assert len(product["hours"]) == 24
+            assert sum(hour["active_ms"] for hour in product["hours"]) == 1000
+            assert sum(category["active_ms"] for hour in product["hours"] for category in hour["categories"]) == 1000
+            result["history_product_totals_agree"] = True
             owner.send_signal(signal.SIGINT)
             assert owner.wait(timeout=10) == 0, "daemon did not shut down cleanly"
             with sqlite3.connect(db) as connection:
@@ -159,6 +171,7 @@ def main():
             with sqlite3.connect(db) as connection:
                 assert connection.execute(classification_query).fetchone() == before
                 assert connection.execute(generation_query).fetchone() == generation
+                assert connection.execute("SELECT duration FROM sessions WHERE exe_name='fixture-app' AND start_time=1000").fetchone() == (1000,)
                 assert connection.execute(
                     "SELECT version, description, checksum FROM _sqlx_migrations ORDER BY version"
                 ).fetchall() == migrations
@@ -166,6 +179,7 @@ def main():
             result.update(graceful_shutdown=True, lease_reacquired=True,
                           classification_survives_restart=True, migration_checksums_preserved=True,
                           resource_generation_survives_restart=True)
+            result["fixture_history_survives_restart"] = True
             (root / "result.json").write_text(json.dumps(result, indent=2) + "\n")
             print(json.dumps({"passed": True, "evidence": str(root), "clients": 2}))
         finally:

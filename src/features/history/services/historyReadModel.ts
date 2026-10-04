@@ -4,15 +4,15 @@ import type {
   WebActivitySegment,
   WebDomainOverride,
 } from "../../../shared/types/webActivity.ts";
-import type { ExactHistoryRead } from "../../../platform/persistence/historyRepository.ts";
+import type { HistoryProductRead } from "../../../platform/persistence/historyProductRepository.ts";
+import type { ActivityHour } from "../../../shared/types/activityHours.ts";
 import { getUiTextLanguage, type UiLanguage } from "../../../shared/copy/uiText.ts";
 import {
   getWebActivitySegmentsInRange,
   loadWebDomainOverrides,
 } from "../../../platform/persistence/webActivityRepository.ts";
 import {
-  buildHourlyActivity,
-  buildHourlyCategoryActivity,
+  buildHourlyProjectionPresentation,
   type HourlyActivityPoint,
   type HourlyCategoryActivity,
 } from "../../../shared/lib/hourlyActivityCompiler.ts";
@@ -38,6 +38,7 @@ export interface HistorySnapshot {
   trackerHealth: TrackerHealthSnapshot;
   liveCutoffMs: number;
   daySessions: HistorySession[];
+  hours: ActivityHour[];
   dayWebSegments: WebActivitySegment[];
   webDomainOverrides: Record<string, WebDomainOverride>;
 }
@@ -52,15 +53,15 @@ export interface HistoryReadModel {
 }
 
 interface HistorySnapshotDeps {
-  getExactHistory: (from: number, to: number, language: UiLanguage) => Promise<ExactHistoryRead>;
+  getHistoryProduct: (from: number, to: number, language: UiLanguage) => Promise<HistoryProductRead>;
   getWebActivitySegmentsInRange: typeof getWebActivitySegmentsInRange;
   loadWebDomainOverrides: typeof loadWebDomainOverrides;
 }
 
 const DEFAULT_HISTORY_SNAPSHOT_DEPS: HistorySnapshotDeps = {
-  getExactHistory: async (from, to, language) => {
-    const { getExactHistorySnapshot } = await import("../../../platform/persistence/historyRepository.ts");
-    return getExactHistorySnapshot(from, to, undefined, language);
+  getHistoryProduct: async (from, to, language) => {
+    const { getHistoryProductSnapshot } = await import("../../../platform/persistence/historyProductRepository.ts");
+    return getHistoryProductSnapshot(from, to, undefined, language);
   },
   getWebActivitySegmentsInRange,
   loadWebDomainOverrides,
@@ -115,7 +116,7 @@ export async function loadHistorySnapshot(
   const selectedDayRange = getDayRange(date, Number.MAX_SAFE_INTEGER);
   const language = getUiTextLanguage();
   const [read, webSnapshotPart] = await Promise.all([
-    deps.getExactHistory(selectedDayRange.startMs, selectedDayRange.endMs, language),
+    deps.getHistoryProduct(selectedDayRange.startMs, selectedDayRange.endMs, language),
     loadOptionalWebSnapshotPart(deps, selectedDayRange),
   ]);
   if (language !== getUiTextLanguage()) throw new Error("History language changed during read");
@@ -126,6 +127,7 @@ export async function loadHistorySnapshot(
       lastHeartbeatMs: read.trackingHealth.lastHeartbeatMs, checkedAtMs: read.sampledAtMs, staleAfterMs: read.trackingHealth.staleAfterMs },
     liveCutoffMs: read.trackingHealth.liveCutoffMs,
     daySessions: read.sessions,
+    hours: read.hours,
     dayWebSegments: webSnapshotPart.dayWebSegments,
     webDomainOverrides: webSnapshotPart.webDomainOverrides,
   };
@@ -133,6 +135,7 @@ export async function loadHistorySnapshot(
 
 export function buildHistoryReadModel(params: {
   daySessions: HistorySession[];
+  hours: ActivityHour[] | null;
   trackerHealth: TrackerHealthSnapshot;
   selectedDate: Date;
   nowMs: number;
@@ -156,8 +159,7 @@ export function buildHistoryReadModel(params: {
     minSessionSecs,
   ).slice().reverse();
   const appSummary = buildAppSummary(buildNormalizedAppStats(compiledSessions));
-  const hourlyActivity = buildHourlyActivity(compiledSessions);
-  const hourlyCategoryActivity = buildHourlyCategoryActivity(compiledSessions);
+  const {hourlyActivity, hourlyCategoryActivity} = buildHourlyProjectionPresentation(params.hours);
   const diagnostics = buildReadModelDiagnostics(
     compiledSessions,
     trackerHealth,

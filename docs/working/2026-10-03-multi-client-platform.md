@@ -450,3 +450,19 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - History 时间线与页面使用同一真实本地日界，全天不再固定为 24 小时。十个时区／日期夹具通过，覆盖 22／23／23.5／24／24.5／25／26 小时日长，确认最后半小时显示完整、次日记录排除、末端缩放／focus 可到达真正午夜及轴末标签不变。旧实现首先在 New York 春季切换日失败，多出了一个小时，证据为 `tmp/acceptance/m2r-before.log`；修正后 `m2r-calendar.log` 通过。
 - `npm run check` 通过：66 个 TypeScript 文件、46 项浏览器检查、类型／架构、构建及原 bundle 预算，证据 `tmp/acceptance/m2r-frontend.log`。没有 Rust／协议变化，未重复 Rust 或实装验收。没有安装、打包、推送、合并或发布。
 - 独立 Node 子进程以 `TZ=Antarctica/Troll` 复核旧小时投影：2026-10-25 实际 26 小时；按真实分钟参考，01 和 02 点应各 120 分钟，现实现分别给出 60 和 180 分钟。此剩余差异明确保留，下一项应让 History 消费后端统一的小时投影，并同时核对详情读模型的相同调用方。最短展示时长快捷写入口与其他已列基础范围仍未完成。
+
+### M2s 执行设计：History 小时投影归后端
+
+- 保留旧精确历史协议，新增产品快照将同一批确认后的 precise records 与 24 个本地钟点的分类时长一起返回。小时投影只来自精确记录，不把小时导入量伪造成记录或混入 History；复用 `domain/activity_calendar` 的实际偏移边界，不在 TS 复制日历分段算法。
+- 延续已有 32 天／事实／响应预算，小时分段另有步骤与分类数量上限；从记录的相同 revision／可信 cutoff 派生，不再补查配置或用客户端 now 延伸会话。SDK／Desktop 验证小时分类量与精确记录总量守恒，不能靠客户端重算时钟位置掩盖后端问题。
+- History 的小时图消费新快照，只保留颜色、标签和分钟舍入；旧 TS 小时统计退出生产调用链，历史 replay 对照仅留在测试范围。查询错误或旧服务端缺少新接口时沿用已确认快照／重试状态，不回退旧统计。另核对详情的全天 viewport 是否也把 24 小时误作实际日长。
+
+### M2s 核验结果
+
+- 已实现 `/activity/history-product`、共享 DTO／独立 SDK、薄 Desktop command 与 History 接入。记录、配置和健康仍是一次精确读取，小时量由该批 records 派生；旧精确接口与详情读取继续保留。复用同一 `activity_calendar` 边界实现，保留 32 天／8 MiB 等限制，新增 4096 分类／100 万分段步骤限制。最终 History family admission 保持到投影和响应预算检查完成，不能在 SQL 结束后提前释放。异步 timeout 不宣称能抢占任意同步 CPU。
+- 小时协议数量归为 `ActivityHour`／`ActivityCategoryTotal`，Dashboard 原 Rust 名称仅 re-export；TS 生成面扩展至 27 项类型。Dashboard 与 History 共用严格小时数量校验及纯显示格式化；History 不再在 TS 用 setHours 分段。旧统计仅保留为 tests/helpers 的历史 replay 对照，已确认 src 下无引用。未知服务能力、非法小时分配及数量不守恒均不 fallback。
+- 详情默认全天 viewport 同样改用真实日长；十组前端日历夹具覆盖它与 History。共享小时图原先固定 60 分钟纵轴，会裁剪正确的重复小时数量，现保留 60 分钟基线并按确认最大量扩展。新增真实浏览器场景用 130 分钟确认量验证柱形在绘图区内，恢复普通数据后刻度回到 60；视觉 tokens、切换与布局未扩展为新设计。
+- 后端测试覆盖部分小时／跨日守恒、分类和工作步骤上限，以及小时导入量不进入精确投影。六个独立 TZ 测试进程（New York、Lord Howe、Troll、Chatham、Kathmandu、Singapore）用实际分钟参考验证偏移边界；Troll 回拨日的 01／02 点均为 120 分钟。真实 HTTP 验证独立 SDK 与 Desktop facade 记录／revision／小时量一致，分析容量用尽时新端点同样拒绝而不挤占配置写。证据为 `tmp/acceptance/m2s-hourly-tests.log`、`m2s-timezones.log` 与完整门禁内的契约测试。
+- 完整门禁各项通过：66 个 TypeScript 文件、最终 47 项浏览器检查、40 项 SDK 测试、Desktop 781 passed / 22 ignored、独立后端 622 passed / 11 ignored，以及生成器、边界、Clippy 和原 bundle 预算。先完成 `m2s-full.log`，随后仅因纵轴修复重跑前端 `m2s-frontend-final.log`，因并发占用收口重跑 `m2s-rust-final.log`／`m2s-daemon-final.log`。初轮修正了 replay helper 的旧导入和共享查询 helper 的补丁接入；未把旧 TS 算法保留为运行时兼容路径。
+- 最终 headless 成品在新 Local profile 中通过新 History 产品接口与一条合成会话的数量一致性、两 SDK 分类同步、认证拒绝、资源 CAS、正常关闭及重启数据保留。SHA256 为 `a335cfe67fc7b33f9256c56bb27ee7e9b248a1fc7431d8d068961b99ab4f2305`；证据为 `tmp/acceptance/multi-client-m2s-history-hours-final/`、`m2s-independent-client-final.log` 和 `/tmp/patina-independent-client-hbw46d1t/`。未连接生产 profile、真实音频／桌面采样，也未安装、推送、合并或发布。
+- 整体基础阶段继续；最短展示时长的无条件快捷写、其他剩余客户端业务／契约、网页产品决定及迁移、客户端偏好归属与独立安装仍未完成。此批不宣称四客户端已交付或全部客户端业务计算已经退出。

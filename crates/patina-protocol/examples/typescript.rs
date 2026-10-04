@@ -1,6 +1,12 @@
 //! Explicit export surface; no file writes, runtime startup or environment config.
 use patina_protocol::{
-    configuration::*, icons::*, product_settings::*, resource_settings::*,
+    activity::{ActivityCategoryTotal, ActivityHour, ActivityReadHealth, ActivityReadStatus},
+    configuration::*,
+    history::*,
+    history_product::*,
+    icons::*,
+    product_settings::*,
+    resource_settings::*,
     web_history::WebActivityUrlPrivacyMode,
 };
 use ts_rs::{Config, TS};
@@ -15,6 +21,15 @@ fn main() {
     }
     export!(
         WebActivityUrlPrivacyMode,
+        ActivityReadStatus,
+        ActivityReadHealth,
+        ExactActivityOrigin,
+        ExactTitleSample,
+        ExactActivityRecord,
+        ExactHistorySnapshot,
+        ActivityCategoryTotal,
+        ActivityHour,
+        HistoryProductSnapshot,
         ProductSettings,
         ProductSettingsSnapshot,
         ProductSettingsPatch,

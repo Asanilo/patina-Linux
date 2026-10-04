@@ -1,5 +1,5 @@
 import { buildDashboardReadModel } from "./legacyDashboardReadModel.ts";
-import { buildHistoryReadModel } from "../../src/features/history/services/historyReadModel.ts";
+import { buildLegacyHistoryReadModel as buildHistoryReadModel } from "./legacyHourlyActivityCompiler.ts";
 import { resolveTrackerHealth } from "../../src/shared/types/tracking.ts";
 import type { HistorySession } from "../../src/shared/types/sessions.ts";
 import { makeSession } from "./trackingTestHarness.ts";

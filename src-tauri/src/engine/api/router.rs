@@ -25,6 +25,9 @@ pub(crate) async fn route_request(
         };
     }
     match (method, path) {
+        ("GET", "/api/v1/activity/history-product") => {
+            handlers::exact_history::get_history_product(context, query).await
+        }
         ("GET", "/api/v1/settings/resources") => {
             handlers::runtime_settings::get_resource_settings(context).await
         }

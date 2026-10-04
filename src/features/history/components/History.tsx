@@ -315,6 +315,7 @@ export default function History({
   const [rawDaySessions, setRawDaySessions] = useState<HistorySession[]>(
     () => initialCachedSnapshot?.daySessions ?? [],
   );
+  const [rawDayHours, setRawDayHours] = useState<HistorySnapshot["hours"] | null>(()=>initialCachedSnapshot?.hours ?? null);
   const [readHealth, setReadHealth] = useState<TrackerHealthSnapshot | null>(() => initialCachedSnapshot?.trackerHealth ?? null);
   const [readError, setReadError] = useState<unknown | null>(null);
   const readRevision = useRef({refreshKey, mappingVersion});
@@ -513,6 +514,7 @@ export default function History({
     let failed = false;
     const apply = (snapshot: HistorySnapshot) => {
       setRawDaySessions(snapshot.daySessions);
+      setRawDayHours(snapshot.hours);
       setRawDayWebSegments(snapshot.dayWebSegments);
       setWebDomainOverrides(snapshot.webDomainOverrides);
       setReadHealth(snapshot.trackerHealth);
@@ -658,13 +660,14 @@ export default function History({
   const historyView = useMemo(
     () => buildHistoryReadModel({
       daySessions: rawDaySessions,
+      hours: rawDayHours,
       selectedDate,
       nowMs,
       trackerHealth: readHealth ?? trackerHealth,
       minSessionSecs,
       mergeThresholdSecs,
     }),
-    [mappingVersion, mergeThresholdSecs, minSessionSecs, nowMs, rawDaySessions, selectedDate, trackerHealth, readHealth],
+    [mappingVersion, mergeThresholdSecs, minSessionSecs, nowMs, rawDaySessions, rawDayHours, selectedDate, trackerHealth, readHealth],
   );
   const {
     compiledSessions,

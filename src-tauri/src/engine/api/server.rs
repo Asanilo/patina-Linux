@@ -749,6 +749,7 @@ mod tests {
         let task = tokio::spawn(server.run());
         for path in [
             "/api/v1/activity/history?from_ms=0&to_ms=1000",
+            "/api/v1/activity/history-product?from_ms=0&to_ms=1000",
             "/api/v1/activity/web-history?from_ms=0&to_ms=1000",
             "/api/v1/heatmap?from=2026-01-01&to=2026-01-02",
             "/api/v1/apps",

@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import {
   buildDashboardReadModel,
 } from "./helpers/legacyDashboardReadModel.ts";
-import { buildHistoryReadModel } from "../src/features/history/services/historyReadModel.ts";
+import { buildLegacyHistoryReadModel as buildHistoryReadModel } from "./helpers/legacyHourlyActivityCompiler.ts";
 import { buildTopApplications } from "./helpers/legacyDashboardFormatting.ts";
 import {
   buildHourlyActivity,
   buildHourlyCategoryActivity,
   limitHourlyCategoryActivity,
-} from "../src/shared/lib/hourlyActivityCompiler.ts";
+} from "./helpers/legacyHourlyActivityCompiler.ts";
 import { ProcessMapper } from "../src/shared/classification/processMapper.ts";
 import { resolveTrackerHealth } from "../src/shared/types/tracking.ts";
 import {

@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { getHourlyActivityAxisMaximum } from "../src/shared/lib/hourlyActivityCompiler.ts";
 import { mockIPC, clearMocks } from "@tauri-apps/api/mocks";
+import { getHistoryProductSnapshot } from "../src/platform/persistence/historyProductRepository.ts";
 import { getExactHistorySnapshot } from "../src/platform/persistence/historyRepository.ts";
 import { getHistoryByDate } from "../src/platform/persistence/sessionReadRepository.ts";
 import { compileSessions, getSessionCategory } from "../src/shared/lib/sessionReadCompiler.ts";
 import { materializeLiveSessions } from "../src/shared/lib/readModelCore.ts";
-import { buildHourlyActivity } from "../src/shared/lib/hourlyActivityCompiler.ts";
+import { buildHourlyActivity } from "./helpers/legacyHourlyActivityCompiler.ts";
 import { buildHistoryReadModel } from "../src/features/history/services/historyReadModel.ts";
 import { buildHistoryTimelineViewModel } from "../src/features/history/services/historyTimelineViewModel.ts";
 import { loadDestinationDetailDay, getDestinationDetailTitleRecords } from "../src/features/destination/services/destinationDetailReadModel.ts";
@@ -12,6 +14,9 @@ import { ProcessMapper } from "../src/shared/classification/processMapper.ts";
 import { getHistorySnapshotCache, setHistorySnapshotCache, clearHistorySnapshotCache } from "../src/features/history/services/historySnapshotCache.ts";
 import { loadHistoryRuntimeSnapshotWithDeps } from "../src/app/services/readModelRuntimeService.ts";
 import { setUiTextLanguage } from "../src/shared/copy/uiText.ts";
+assert.equal(getHourlyActivityAxisMaximum([{minutes:30}]),60);
+assert.equal(getHourlyActivityAxisMaximum([{minutes:120}]),120);
+assert.equal(getHourlyActivityAxisMaximum([{minutes:130}]),180);
 const date = new Date(2026, 3, 18);
 const from = date.getTime(), to = new Date(2026, 3, 19).getTime();
 const start = from + 3600000, end = start + 120000, sampled = end + 10000;
@@ -23,9 +28,20 @@ const source = { origin: "native", record_id: 1, app_key: "editor", app_name: "E
 const wire = { from_ms: from, to_ms: to, sampled_at_ms: sampled, configuration_revision: "a".repeat(64),
     tracking_health: { status: "healthy", last_heartbeat_ms: sampled, live_cutoff_ms: sampled, stale_after_ms: 8000 },
     records: [source] };
-const read = await getExactHistorySnapshot(from, to, async () => wire);
+const productWire = {history:wire,hours:Array.from({length:24},(_,hour)=>({hour,active_ms:hour===1?120000:0,categories:hour===1?[{category:"development",active_ms:120000}]:[]}))};
+const read = await getHistoryProductSnapshot(from, to, async () => productWire);
+for (const invalid of [
+    wire,
+    {...productWire,hours:[]},
+    {...productWire,hours:productWire.hours.map((hour,index)=>index===1?{...hour,active_ms:120001}:hour)},
+    {...productWire,hours:productWire.hours.map((hour,index)=>index===1?{...hour,categories:[{category:"office",active_ms:120000}]}:hour)},
+    {...productWire,hours:productWire.hours.map((hour,index)=>index===1?{...hour,active_ms:240000,categories:[...hour.categories,...hour.categories]}:hour)},
+]) await assert.rejects(getHistoryProductSnapshot(from,to,async()=>invalid));
+let productCalls=0;
+await assert.rejects(getHistoryProductSnapshot(from,to,async()=>{productCalls++;throw new Error("unsupported History product");}),/unsupported History product/);
+assert.equal(productCalls,1);
 const health = { status: "healthy" as const, lastHeartbeatMs: sampled, checkedAtMs: sampled, staleAfterMs: 8000 };
-const build = () => buildHistoryReadModel({ daySessions: read.sessions, trackerHealth: health,
+const build = () => buildHistoryReadModel({ hours:read.hours, daySessions: read.sessions, trackerHealth: health,
     selectedDate: date, nowMs: sampled, minSessionSecs: 0, mergeThresholdSecs: 180 });
 const before = build();
 ProcessMapper.setUserOverrides({ editor: { category: "music", displayName: "New local name", track: false } });
@@ -121,7 +137,7 @@ finally {
 clearHistorySnapshotCache();
 setUiTextLanguage("zh-CN");
 const snapshot = { language: "zh-CN" as const, fetchedAtMs: sampled, liveCutoffMs: sampled, trackerHealth: health,
-    daySessions: read.sessions, dayWebSegments: [], webDomainOverrides: {} };
+    daySessions: read.sessions, hours:read.hours, dayWebSegments: [], webDomainOverrides: {} };
 setHistorySnapshotCache(snapshot, date);
 assert.equal(getHistorySnapshotCache(date), snapshot);
 setUiTextLanguage("en-US");

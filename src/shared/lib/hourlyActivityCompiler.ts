@@ -1,8 +1,7 @@
 import { AppClassification } from "../classification/appClassification.ts";
 import type { AppCategory } from "../classification/categoryTokens.ts";
 import { UI_TEXT } from "../copy/uiText.ts";
-import type { HistorySession } from "../types/sessions.ts";
-import { getSessionCategory } from "./sessionReadCompiler.ts";
+import type { ActivityHour } from "../types/activityHours.ts";
 
 export interface HourlyActivityPoint {
   hour: string;
@@ -58,41 +57,6 @@ function formatHourlyDisplayMinutes(minutes: number) {
   return Math.round(minutes);
 }
 
-function forEachHourlySessionSegment(
-  session: HistorySession,
-  visit: (hourIndex: number, durationMs: number) => void,
-) {
-  const start = new Date(session.startTime);
-  const end = session.endTime !== null ? new Date(session.endTime) : new Date();
-  let currentPtr = start.getTime();
-
-  while (currentPtr < end.getTime()) {
-    const currentDate = new Date(currentPtr);
-    const hourIndex = currentDate.getHours();
-    const nextHour = new Date(currentPtr);
-    nextHour.setHours(hourIndex + 1, 0, 0, 0);
-
-    const segmentEnd = Math.min(end.getTime(), nextHour.getTime());
-    visit(hourIndex, segmentEnd - currentPtr);
-    currentPtr = segmentEnd;
-  }
-}
-
-export function buildHourlyActivity(sessions: HistorySession[]): HourlyActivityPoint[] {
-  const hoursCount = new Array<number>(24).fill(0);
-
-  for (const session of sessions) {
-    forEachHourlySessionSegment(session, (hourIndex, durationMs) => {
-      hoursCount[hourIndex] += durationMs / 60000;
-    });
-  }
-
-  return hoursCount.map((minutes, hourIndex) => ({
-    hour: `${hourIndex.toString().padStart(2, "0")}:00`,
-    minutes: formatHourlyDisplayMinutes(minutes),
-  }));
-}
-
 function incrementCategoryMinutes(
   bucket: Map<AppCategory, number>,
   category: AppCategory,
@@ -119,38 +83,6 @@ function buildVisibleSeries(
       isRemainder: false,
     };
   });
-}
-
-export function buildHourlyCategoryActivity(
-  sessions: HistorySession[],
-): HourlyCategoryActivity {
-  const hourlyCategoryMinutes = Array.from({ length: 24 }, () => new Map<AppCategory, number>());
-  const categoryTotals = new Map<AppCategory, number>();
-  const categoryDescriptors = new Map<AppCategory, CategoryDescriptor>();
-  const appCategoryCache = new Map<string, CategoryDescriptor>();
-
-  for (const session of sessions) {
-    const cacheKey = JSON.stringify([session.exeName, session.appName, session.confirmed?.category ?? null]);
-    let descriptor = appCategoryCache.get(cacheKey);
-    if (!descriptor) {
-      const category = getSessionCategory(session);
-      descriptor = {
-        category,
-        name: AppClassification.getCategoryLabel(category),
-        color: AppClassification.getCategoryColor(category),
-      };
-      appCategoryCache.set(cacheKey, descriptor);
-      categoryDescriptors.set(category, descriptor);
-    }
-
-    forEachHourlySessionSegment(session, (hourIndex, durationMs) => {
-      const minutes = durationMs / 60000;
-      incrementCategoryMinutes(hourlyCategoryMinutes[hourIndex], descriptor.category, minutes);
-      incrementCategoryMinutes(categoryTotals, descriptor.category, minutes);
-    });
-  }
-
-  return buildHourlyCategoryPresentation(hourlyCategoryMinutes, categoryDescriptors, categoryTotals);
 }
 
 export function buildHourlyCategoryPresentation(
@@ -247,4 +179,19 @@ export function limitHourlyCategoryActivity(
   });
 
   return { points, series: activity.series };
+}
+
+/** Pure display formatting for confirmed backend quantities. Null is the empty loading view. */
+export function buildHourlyProjectionPresentation(hours: readonly ActivityHour[] | null) {
+  const confirmed = hours ?? Array.from({length:24},(_,hour)=>({hour,duration:0,categories:[]}));
+  return {
+    hourlyActivity: confirmed.map(hour=>({hour:`${String(hour.hour).padStart(2,"0")}:00`,minutes:formatHourlyDisplayMinutes(hour.duration/60000)})),
+    hourlyCategoryActivity: buildHourlyCategoryPresentation(confirmed.map(hour=>new Map(hour.categories.map(category=>[category.category,category.duration/60000])))),
+  };
+}
+
+/** A repeated civil hour (or retained native overlap) can exceed 60 minutes. */
+export function getHourlyActivityAxisMaximum(points: ReadonlyArray<{minutes: number}>): number {
+  const maximum = points.reduce((max, point) => Number.isFinite(point.minutes) ? Math.max(max, point.minutes) : max, 60);
+  return Math.ceil(maximum / 60) * 60;
 }

@@ -17,6 +17,7 @@ pub fn valid_range(from_ms: i64, to_ms: i64) -> bool {
         && matches!(to_ms.checked_sub(from_ms), Some(span) if span > 0 && span <= MAX_HISTORY_RANGE_MS)
 }
 
+#[cfg_attr(feature = "typegen", derive(ts_rs::TS))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExactActivityOrigin {
@@ -24,6 +25,7 @@ pub enum ExactActivityOrigin {
     ImportExact,
 }
 
+#[cfg_attr(feature = "typegen", derive(ts_rs::TS))]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExactHistorySnapshot {
     pub from_ms: i64,
@@ -34,6 +36,7 @@ pub struct ExactHistorySnapshot {
     pub records: Vec<ExactActivityRecord>,
 }
 
+#[cfg_attr(feature = "typegen", derive(ts_rs::TS))]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExactActivityRecord {
     pub origin: ExactActivityOrigin,
@@ -51,6 +54,7 @@ pub struct ExactActivityRecord {
     pub title_samples: Vec<ExactTitleSample>,
 }
 
+#[cfg_attr(feature = "typegen", derive(ts_rs::TS))]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExactTitleSample {
     pub title: String,

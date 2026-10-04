@@ -13,15 +13,5 @@ pub struct DashboardProductSnapshot {
     pub hours: Vec<DashboardHour>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DashboardHour {
-    pub hour: u8,
-    pub active_ms: i64,
-    pub categories: Vec<CategoryTotal>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CategoryTotal {
-    pub category: String,
-    pub active_ms: i64,
-}
+// Preserve the existing Rust names; the wire representation is unchanged.
+pub use crate::activity::{ActivityHour as DashboardHour, ActivityCategoryTotal as CategoryTotal};

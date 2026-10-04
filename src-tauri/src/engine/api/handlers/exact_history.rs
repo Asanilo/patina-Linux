@@ -4,6 +4,21 @@ use crate::engine::api::{
 };
 
 pub async fn get_history(context: &ApiRuntimeContext, query: Option<&str>) -> RouteResponse {
+    get_snapshot(context, query, false).await
+}
+
+pub async fn get_history_product(
+    context: &ApiRuntimeContext,
+    query: Option<&str>,
+) -> RouteResponse {
+    get_snapshot(context, query, true).await
+}
+
+async fn get_snapshot(
+    context: &ApiRuntimeContext,
+    query: Option<&str>,
+    product: bool,
+) -> RouteResponse {
     let (from, to, language) = match parameters(query) {
         Ok(value) => value,
         Err(message) => return error_response(400, &message),
@@ -12,15 +27,28 @@ pub async fn get_history(context: &ApiRuntimeContext, query: Option<&str>) -> Ro
         Ok(read) => read,
         Err(response) => return response,
     };
-    match crate::data::repositories::exact_history::load_exact_history(
-        analytical.pool(),
-        from,
-        to,
-        context.now_ms(),
-        &language,
-    )
-    .await
-    {
+    let result = if product {
+        crate::data::repositories::exact_history::product::load_history_product(
+            analytical.pool(),
+            from,
+            to,
+            context.now_ms(),
+            &language,
+        )
+        .await
+        .and_then(|value| serde_json::to_value(value).map_err(|e| e.to_string()))
+    } else {
+        crate::data::repositories::exact_history::load_exact_history(
+            analytical.pool(),
+            from,
+            to,
+            context.now_ms(),
+            &language,
+        )
+        .await
+        .and_then(|value| serde_json::to_value(value).map_err(|e| e.to_string()))
+    };
+    match result {
         Ok(data) => RouteResponse {
             status: 200,
             body: serde_json::to_value(ApiResponse { data }).unwrap_or_default(),

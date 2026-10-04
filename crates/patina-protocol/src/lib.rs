@@ -8,6 +8,7 @@ pub mod read_budget;
 pub mod activity;
 pub mod dashboard;
 pub mod history;
+pub mod history_product;
 pub mod icons;
 pub mod maintenance;
 pub mod web_history;

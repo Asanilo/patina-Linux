@@ -33,7 +33,7 @@ impl Client {
     }
 }
 
-fn validate(snapshot: &ExactHistorySnapshot, from_ms: i64, to_ms: i64) -> Result<(), ClientError> {
+pub(crate) fn validate(snapshot: &ExactHistorySnapshot, from_ms: i64, to_ms: i64) -> Result<(), ClientError> {
     let error = || ClientError::InvalidResponse("invalid exact history snapshot".into());
     if snapshot.from_ms != from_ms
         || snapshot.to_ms != to_ms

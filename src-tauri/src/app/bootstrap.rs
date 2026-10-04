@@ -187,6 +187,7 @@ fn register_invoke_handlers(builder: tauri::Builder<tauri::Wry>) -> tauri::Build
         commands::persistence::cmd_get_daily_apps,
         commands::persistence::cmd_get_dashboard_product,
         commands::persistence::cmd_get_exact_history,
+        commands::persistence::cmd_get_history_product,
         commands::web_activity::cmd_get_web_history,
         commands::persistence::cmd_get_observed_apps,
         commands::persistence::cmd_get_migration_observed_apps,

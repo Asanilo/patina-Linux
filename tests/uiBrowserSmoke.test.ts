@@ -256,7 +256,7 @@ function tauriStubFor(path: string) {
           if (globalThis.__PATINA_SMOKE_ICON_BLOCK) await new Promise(resolve=>{globalThis.__PATINA_SMOKE_ICON_RELEASE=resolve;});
           return {entries:[],next_after:null};
         }
-        if (command === "cmd_get_exact_history") {
+        if (command === "cmd_get_exact_history" || command === "cmd_get_history_product") {
           globalThis.__PATINA_SMOKE_HISTORY_CALLS = (globalThis.__PATINA_SMOKE_HISTORY_CALLS ?? 0) + 1;
           if (globalThis.__PATINA_SMOKE_HISTORY_ERROR) throw new Error(globalThis.__PATINA_SMOKE_HISTORY_ERROR);
           if (globalThis.__PATINA_SMOKE_HISTORY_BLOCK) await new Promise(resolve => {
@@ -275,8 +275,22 @@ function tauriStubFor(path: string) {
               title_samples: samples.filter(sample => sample.session_id === row.id).map(sample => ({title: sample.title,
                 start_ms: Math.max(start, sample.start_time), end_ms: Math.min(end, sample.end_time)})).filter(sample => sample.end_ms > sample.start_ms)}];
           }).sort((a,b) => a.start_ms-b.start_ms || a.record_id-b.record_id || a.end_ms-b.end_ms);
-          return {from_ms: payload.fromMs, to_ms: payload.toMs, sampled_at_ms: Date.now(), configuration_revision: "0".repeat(64),
+          const history = {from_ms: payload.fromMs, to_ms: payload.toMs, sampled_at_ms: Date.now(), configuration_revision: "0".repeat(64),
             tracking_health: {status: "unavailable", last_heartbeat_ms: null, live_cutoff_ms: 0, stale_after_ms: 8000}, records};
+          if (command === "cmd_get_exact_history") return history;
+          const quantities = Array.from({length:24},()=>new Map());
+          for (const record of records) {
+            let cursor = record.start_ms;
+            while (cursor < record.end_ms) {
+              const next = Math.min(record.end_ms, (Math.floor(cursor/60000)+1)*60000);
+              const bucket = quantities[new Date(cursor).getHours()];
+              bucket.set(record.category,(bucket.get(record.category)??0)+next-cursor);
+              cursor = next;
+            }
+          }
+          return {history,hours:quantities.map((values,hour)=>({hour,
+            active_ms:[...values.values()].reduce((a,b)=>a+b,0),
+            categories:[...values].map(([category,active_ms])=>({category,active_ms}))}))};
         }
         if (command === "cmd_get_dashboard_product") {
           globalThis.__PATINA_SMOKE_DASHBOARD_CALLS = (globalThis.__PATINA_SMOKE_DASHBOARD_CALLS ?? 0) + 1;
@@ -287,7 +301,7 @@ function tauriStubFor(path: string) {
           const end = new Date(date); end.setDate(end.getDate()+1);
           const settings = loadStoredSettings();
           const specifications = [
-            ["deep-research-workbench.exe","Extremely Long Research Workbench Application Name","office",2400000],
+            ["deep-research-workbench.exe","Extremely Long Research Workbench Application Name","office",globalThis.__PATINA_SMOKE_LARGE_HOUR ? 7200000 : 2400000],
             ["cursor.exe","Cursor","development",600000],
           ];
           const applications = [], apps = [], categories = new Map();
@@ -945,6 +959,22 @@ try {
         `dashboard marker ${marker}`,
       );
     }
+  });
+
+  await runTest("hourly charts fit confirmed quantities above sixty minutes", async () => {
+    await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_LARGE_HOUR = true;
+      globalThis.__PATINA_SMOKE_EMIT('tracking-data-changed', {reason:'session-transition', changedAtMs:Date.now()});`);
+    await waitForExpression(client!, sessionId, `document.querySelector('[data-hourly-axis-maximum="180"]') !== null`);
+    await waitForExpression(client!, sessionId, `(() => {
+      const chart=document.querySelector('[data-hourly-axis-maximum="180"]');
+      if (!chart) return false;
+      const bounds=chart.getBoundingClientRect();
+      const bars=[...chart.querySelectorAll('.recharts-rectangle')].map(node=>node.getBoundingClientRect()).filter(rect=>rect.height>0);
+      return bars.length>0 && bars.every(rect=>rect.top>=bounds.top-1 && rect.bottom<=bounds.bottom+1);
+    })()`);
+    await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_LARGE_HOUR = false;
+      globalThis.__PATINA_SMOKE_EMIT('tracking-data-changed', {reason:'session-transition', changedAtMs:Date.now()});`);
+    await waitForExpression(client!, sessionId, `document.querySelector('[data-hourly-axis-maximum="60"]') !== null`);
   });
 
   await runTest("slow icon reads do not delay confirmed activity", async () => {
