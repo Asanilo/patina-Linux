@@ -69,6 +69,30 @@ while leaving browser/audio collection disabled. It does not install
 a service or validate real GNOME tracking. If sharing `CARGO_TARGET_DIR` across configurations, preserve the
 selected binary before another build replaces `debug/patinad`.
 
+For standalone delivery development, `patinad --build-info` prints static JSON
+with the executable version, Cargo target, protocol compatibility range, and
+desktop/debug build flags. It does not acquire a runtime lease, open a database,
+or create a profile. `--version` keeps its existing plain-text output. Do not
+combine metadata options with runtime flags.
+
+Create a candidate archive from that exact executable:
+
+```bash
+python3 scripts/package-daemon.py --binary /absolute/path/patinad --output /absolute/path/candidate-dir
+# For an explicitly local debug candidate, append --allow-debug.
+python3 scripts/acceptance/daemon-build-info.py /absolute/path/patinad
+```
+
+The builder first copies and probes the binary, requires the no-desktop Linux
+projection, and binds its metadata and SHA256 to a deterministic archive. Debug
+archives carry a `-debug` filename suffix. The manifest records file sizes and
+modes; these hashes are integrity evidence, not a publisher signature. Existing
+outputs are never replaced. The archive includes a systemd **template** only:
+it does not install, enable, restart or replace a service. Independent installation,
+old-package migration and running/installed-version verification are still separate
+work in the active multi-client plan. This candidate is not a universal or static
+Linux binary and does not change the public DEB/AppImage release workflow.
+
 ## Daemon Analytical Read Isolation
 
 The multi-client daemon prepares a separate two-connection analytical pool after

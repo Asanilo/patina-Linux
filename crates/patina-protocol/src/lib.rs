@@ -2,6 +2,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod configuration;
+pub mod build_info;
 pub mod product_settings;
 pub mod resource_settings;
 pub mod read_budget;

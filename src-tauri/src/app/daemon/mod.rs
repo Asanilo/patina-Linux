@@ -1,5 +1,6 @@
 pub(crate) mod activity_import;
 mod api_runtime;
+pub(crate) mod build_info;
 pub(crate) mod backup_restore;
 mod options;
 mod remote_backup;

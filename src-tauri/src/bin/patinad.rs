@@ -1,5 +1,15 @@
 fn main() {
     if std::env::args_os().len() == 2
+        && std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--build-info"))
+    {
+        println!(
+            "{}",
+            serde_json::to_string(&patina_lib::daemon_build_info())
+                .expect("static build metadata must serialize")
+        );
+        return;
+    }
+    if std::env::args_os().len() == 2
         && std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--version"))
     {
         println!("patinad {}", env!("CARGO_PKG_VERSION"));

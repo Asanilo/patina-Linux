@@ -17,6 +17,10 @@ pub fn run_daemon(args: impl IntoIterator<Item = impl AsRef<str>>) -> Result<(),
     app::daemon::run(args)
 }
 
+pub fn daemon_build_info() -> patina_protocol::build_info::DaemonBuildInfo {
+    app::daemon::build_info::current()
+}
+
 pub fn is_controlled_daemon_restart(error: &str) -> bool {
     app::daemon::is_controlled_restart_error(error)
 }

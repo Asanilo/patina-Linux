@@ -528,3 +528,20 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 完整门禁全部组成项通过：67 个 TypeScript 文件、49 项浏览器检查、44 项 SDK 测试、Desktop 787 passed / 22 ignored、无桌面后端 628 passed / 11 ignored，以及生成器、边界与 Clippy。证据为 `tmp/acceptance/m2w-full.log` 的首轮记录、`m2w-browser.log`、`m2w-remaining-ts.log`、`m2w-tools-final.log`、`m2w-build.log`、`m2w-client.log`、`m2w-rust.log`、`m2w-daemon.log`。本批没有 Rust／协议运行时变更，不重复构建或实装 M2v 已通过的 daemon。
 - 新的 store 协调使入口 gzip 从 73.59 增至 73.87 KiB，超过原 73.75 上限；记录成本后将入口上限调至 74 KiB。总 JS 为 369.53 KiB，仍沿用原 370 KiB 总预算，没有人为拆 chunk 隐藏增长。最终记录为 `tmp/acceptance/m2w-bundle-final.log`。
 - 仅本地实现与提交，未安装、合并、推送或发布。此批保证已收到的新快照不被旧响应覆盖，不宣称已经解决断连期间的全部计时显示／新鲜度语义；网页与客户端偏好选择、独立安装及其余基础缺口仍需继续，新客户端 UI 仍待讨论。
+
+### M6b 决策与执行设计：独立安装及版本身份
+
+- 用户已选择“后端独立安装和升级；Desktop 按协议兼容连接”。该决定授权实现方向，不授权本机安装或公开发布；不再以 Desktop 与 daemon 版本字符串相等作为长期兼容性标准。
+- 安装审计：当前 `tauri.conf.json` 的 DEB 同时拥有 `/usr/bin/patinad` 和 systemd unit，AppImage 在用户目录维护另一种已验证的版本化 runtime；自定义 user unit 会被保留并拒绝自动覆盖。`app/daemon_service/upgrade.rs` 的重载检查目前仍要求新后端版本等于 Desktop。这些边界必须以可验证的独立安装身份替代，不能只删除比较或给同一路径再造一个包。
+- 先建立无副作用的 `patinad --build-info`，输出版本、协议兼容范围、构建目标及 desktop/debug 投影信息；不创建 runtime、读取 profile、获取 lease、打开数据库或启动 listener。安装候选可以据此检查真实二进制，再把二进制摘要与安装来源记录在安装 manifest 中，不用 Desktop 版本猜测目标。
+- 后续按顺序完成独立安装布局／身份、旧整包迁移和服务 owner 兼容、运行／已安装版本诊断及重载目标验证、无 Desktop 环境的安装升级与数据保留验收。正式 DEB/AppImage 发布流程的变更和公开资产仍在发布授权边界内；现有精确版本保护在替代证据接入前保留。
+
+### M6b 构建身份与候选归档检查点
+
+- 已实现 `patinad --build-info` 的格式 1 JSON，包含 Cargo 产品版本、真实编译目标、服务端协议兼容范围及 desktop/debug feature 信息。实现归 daemon 宿主，入口在准备 runtime 前返回；`--version` 原输出不变，混用 runtime 参数会拒绝。它没有运行实例、凭据或 profile 路径，也不代表运行就绪。
+- `scripts/package-daemon.py` 先复制并探测同一候选 ELF，拒绝 desktop 构建、非 Linux 目标、无效元数据／协议范围及未明确允许的 debug 构建。归档固定文件路径、模式、owner 与时间，包含二进制、manifest、systemd 模板、说明和原项目 LICENSE；manifest 绑定各文件 SHA256／长度／模式。旧输出不覆盖，debug 归档有明确后缀。没有添加安装行为或把未完成模板当作已安装服务。
+- 三组 Python 回归已纳入默认 TypeScript 门禁，覆盖多种非法元数据、同一 payload 的归档可复现性、内容与权限绑定、许可文件保留、覆盖拒绝和错误 unit 模板。初轮发现本机 Python 3.10 没有 `hashlib.file_digest`，已改为有界分块摘要计算。最终专项证据为 `tmp/acceptance/m6b-package-tests-final.log`。
+- `npm run check:full` 通过：68 个 TypeScript 文件、49 项浏览器检查、44 项 SDK 测试、Desktop 788 passed / 22 ignored、无桌面后端 629 passed / 11 ignored，以及生成器、依赖／架构边界、Clippy 与原 bundle 预算。随后补入 LICENSE，仅重跑归档专项；长期发布文档明确独立升级方向后，release-policy 专项也通过。证据为 `tmp/acceptance/m6b-full.log`、`m6b-release-policy.log`。
+- 实际 debug 归档为 `tmp/acceptance/multi-client-m6b-bundle/archive/patinad-1.9.2-x86_64-unknown-linux-gnu-debug.tar.gz`，SHA256 `50dac967350028d3929888a58971c73b96e689d80143f7b248dfd89bc6c6d939`。全部成员经摘要／大小／模式核对后提取；二进制 SHA256 `45b8b0c3408062f3637f9ffdd60df18ac1096bb2cb24a63fe0372f9f09762b88`。源二进制及提取后执行文件的元数据查询均在临时 XDG 根下验证，不产生 profile／lease／数据库；错误参数也没有副作用。
+- 提取后的执行文件通过新 Local profile 的双 SDK 分类／Tools 事件、控制、认证拒绝、资源 CAS、History 数量、正常关闭／重启与数据保留。复用未改变的 SDK 探针；证据在 `tmp/acceptance/multi-client-m6b-bundle/`、`m6b-metadata-process.log`、`m6b-extracted-metadata.log`、`m6b-independent-client.log` 和 `/tmp/patina-independent-client-dfwjq11a/`。ELF 仍依赖 X11／XCB／Pulse 等宿主库，不是全发行版或静态分发承诺。
+- 这是 M6b 的构建与候选归档检查点，不是独立安装／升级完成。manifest 摘要不是发布者签名；实际安装身份、旧包迁移、服务冲突处理和独立版本重载验证仍按上述顺序继续。未改生产 profile、安装、合并、推送或公开发布，仍未开发新客户端 UI。

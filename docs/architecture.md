@@ -260,6 +260,8 @@ daemon 写侧按 capability 和真实 runtime owner 开放。默认 daemon surfa
 
 Tools HTTP 请求／快照类型由 `patina-protocol::tools` 定义，独立 SDK 和 Desktop facade 共用类型化读取与写入；无参数动作使用 `ToolsAction`，不接受任意路径。domain 继续拥有存储解析、计时和阶段推进方法，`engine/api/tools_contract` 仅做显式字段／枚举转换，不执行业务规则；HTTP 与现有 IPC 的字段表示保持一致。前端原始快照类型由 Rust 生成，运行时 unknown 校验仍保留。SDK 写入须验证 Tools ownership、ready 与 write scope，保持有界响应及失败不重试；新接口不改变原有通知归属、重连或提醒重放规则。
 
+独立交付的目标是后端拥有自己的安装／升级周期，Desktop 按协议范围与具体 capability 连接，而不是要求两个产品版本字符串相等。构建身份归 daemon 宿主，`patinad --build-info` 只输出编译版本、目标、投影及协议范围，不初始化 profile 或 runtime；候选归档将该身份与实际二进制及文件摘要绑定。构建身份不等于运行就绪、安装来源或发布者签名。当前旧整包的服务 owner 与精确版本重载保护，在独立安装身份和目标验证接入前仍保留，不能通过删除检查提前宣称解耦完成。
+
 Tools 状态写入的事务入口归 `data/repositories/tools`，`tools/state` 只在传入连接上执行查询。每项写操作从 `BEGIN IMMEDIATE` 开始，前置状态判断、分段编号、阶段推进／计数和 reset 清理均在同一事务；完整读取也只使用一份数据库快照。`ToolsRuntimeOwner` 的控制、启动恢复、tick 与发布共用操作锁，取得锁后才采样时间，clone 不能各自建立锁；embedded 迁移包装从受管状态复用同一把锁。tracking daemon 的 HTTP 快照走该 owner，只读宿主保留 repository 读取。这里的原子性是单项数据库操作，不等同于整次 tick、多请求的事务、旧草稿 CAS 或系统通知的恰好一次投递。
 
 现有 Desktop Tools 页面与侧栏共用 `features/tools/services/toolsRuntimeSnapshotStore`。该 owner 先订阅再读取，合并在途读，并用本地失效序号区分事件与请求；`sampledAtMs` 是墙钟采样时间，不能当作可排序版本。页面动作通过 store 执行，同一客户端只接受一个在途动作；较新的事件到达后，旧读取／操作返回不能回退展示。失败或无法确认响应顺序时补读事实，不重试动作。预热／在途工作结束且没有订阅者时拆除监听，旧监听回调或晚到的清理不能干扰新订阅。计时显示格式与计时业务 owner 的边界保持独立。
