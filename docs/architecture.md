@@ -262,6 +262,8 @@ Tools HTTP 请求／快照类型由 `patina-protocol::tools` 定义，独立 SDK
 
 Tools 状态写入的事务入口归 `data/repositories/tools`，`tools/state` 只在传入连接上执行查询。每项写操作从 `BEGIN IMMEDIATE` 开始，前置状态判断、分段编号、阶段推进／计数和 reset 清理均在同一事务；完整读取也只使用一份数据库快照。`ToolsRuntimeOwner` 的控制、启动恢复、tick 与发布共用操作锁，取得锁后才采样时间，clone 不能各自建立锁；embedded 迁移包装从受管状态复用同一把锁。tracking daemon 的 HTTP 快照走该 owner，只读宿主保留 repository 读取。这里的原子性是单项数据库操作，不等同于整次 tick、多请求的事务、旧草稿 CAS 或系统通知的恰好一次投递。
 
+现有 Desktop Tools 页面与侧栏共用 `features/tools/services/toolsRuntimeSnapshotStore`。该 owner 先订阅再读取，合并在途读，并用本地失效序号区分事件与请求；`sampledAtMs` 是墙钟采样时间，不能当作可排序版本。页面动作通过 store 执行，同一客户端只接受一个在途动作；较新的事件到达后，旧读取／操作返回不能回退展示。失败或无法确认响应顺序时补读事实，不重试动作。预热／在途工作结束且没有订阅者时拆除监听，旧监听回调或晚到的清理不能干扰新订阅。计时显示格式与计时业务 owner 的边界保持独立。
+
 daemon 的音频、浏览器配置、Local API 端口和 Token 变更由 `app/daemon/runtime/resource_operations` 持有已接受操作的生命周期；HTTP future 被取消不撤销该操作，客户端不得因超时自动重试写入。每个 daemon 同时只接受一项此类资源变更，重叠请求明确返回 conflict，不积累无界任务。关闭时先停止接收并等待已接受变更完成，再停止后台、listener 和存储。此约束不替代旧草稿的 revision 检查，也不宣称所有写接口或 embedded 兼容路径具有同样的取消语义。
 
 音频与浏览器配置的新客户端契约使用 `/settings/resources` snapshot 和 `runtime-settings-conditional` patch。局部字段由 daemon 合并，省略 token 表示保留而不是清空；客户端不必为写入聚合完整凭据配置。`data/repositories/resource_settings` 在 writer transaction 内复查原始 revision，并与配置、必要封口一同提交。资源 revision 只覆盖该组资源及其持久化 generation，不绑定普通策略、心跳或客户端偏好；经 app settings owner 的资源写入统一在同一事务推进 generation，包括旧接口与仅凭据轮换，不对外返回凭据或凭据哈希。空 patch 只验证版本。listener 预留早于事务，运行资源发布晚于事务；新 SDK 缺少 capability 或遇到冲突不回退旧写接口。现有 Desktop 设置页已携带资源 baseline，经 `app/settings_commit/resources` 提交稀疏 patch；同字段冲突保留原版本与草稿，取消或资源草稿恢复当前值后采用最新版本。preflight 拒绝过期资源版本时不写普通策略和偏好；随后普通策略、资源、偏好分步执行，后段失败仍须如实报告并重读，不能宣称跨请求原子事务。daemon 读取错误或缺失 baseline 不回退；仅由 host 明确返回 null 的 embedded 迁移模式保留旧路径。凭据显示／复制的本机读取例外保留，新资源保存不再从 Desktop SQL 聚合完整浏览器配置。旧完整替换接口不获得条件写语义。

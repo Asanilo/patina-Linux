@@ -513,3 +513,18 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 完整门禁全部组成项通过：67 个 TypeScript 文件、48 项浏览器检查、44 项 SDK 测试、Desktop 787 passed / 22 ignored、无桌面后端 628 passed / 11 ignored，以及协议生成、边界、Clippy 与原 bundle 预算。首轮 `m2v-full.log` 在源码结构测试的旧私有方法名处停止，已按持锁 helper 更新；后续证据为 `tmp/acceptance/m2v-remaining-ts.log`、`m2v-build.log`、`m2v-client.log`、`m2v-rust.log`、`m2v-daemon.log`。未重跑已通过且未变化的浏览器等检查。
 - 新 headless 成品经独立临时 Local profile 验收，Tools／分类双进程事件、计时控制、认证拒绝、资源 CAS、History 数量、关闭／重启与数据保留通过。复用未变化的 M2u SDK 探针，daemon SHA256 为 `85dd34a2257710e5566e29343609b5266aee42e61dc81d67fd933fce108e31e3`；证据为 `tmp/acceptance/multi-client-m2v-tools-transactions/`、`m2v-independent-client.log` 和 `/tmp/patina-independent-client-2jruo3if/`。
 - 原子性限于单项数据库操作；串行 owner 不代表整次 tick 的全局事务、过期草稿 CAS、网络重试幂等或崩溃期间系统通知的恰好一次投递。未安装、合并、推送或发布，未开发新客户端 UI；其余基础阶段缺口及待讨论事项继续保留。
+
+### M2w 执行设计：Tools 客户端快照时序
+
+- 现有 store 的在途读取可覆盖较新的 runtime 事件，页面也会直接发布迟到操作响应。store 将拥有订阅前置、读请求合并、事件失效序号及单个在途写操作；墙钟时间不作为可排序 revision，事件到达后旧读取／旧写确认不能回退显示。
+- 写入期间使早先读取失效；无法确认响应顺序或保存失败时重新读取事实，不自动重试动作。读取和预热也先建立共享订阅；订阅拆除后的旧回调无效，临时预热／在途操作完成后释放未使用订阅。
+- 现有 Tools hook 改用 store 的动作入口，并用同步 ref 防止同一轮双击及卸载后的错误提示。不新增客户端、视觉或操作语义；用可控异步回归和真实浏览器验证旧响应、事件交错与重复点击，再完成规定门禁。
+
+### M2w 核验结果
+
+- 修复前，延迟读取把后来收到的事件快照覆盖掉：回归刻意让新事件采样时间为 1000、旧响应为 2000，原实现错误返回 2000（`tmp/acceptance/m2w-before.log`）。store 现在使用本地发布／失效序号，而非墙钟排序；新事件使旧读失效，写入开始使更早的读失效，无法确认操作响应顺序时补读。
+- 页面不再直接发布操作返回值，统一通过 store 的单在途动作入口；等待操作时不额外读取中间状态。响应丢失后的重读可发现服务端已经提交，操作本身只执行一次。hook 使用同步 ref 阻止同一轮连续点击，并避免卸载后更新 busy 状态或显示错误提示。预热先订阅后读，无使用者时释放监听；订阅 token 使已拆除回调及晚到注册／清理失效。
+- Tools 专项最终 27 项通过，新增覆盖读／事件交错、时钟回拨、预热订阅顺序、临时监听释放、重复动作、旧写确认、响应丢失后重读、晚到订阅与新订阅并存。真实浏览器新增连续点击与“暂停事件早于开始确认”的场景，检查只发一次开始命令、补读发生且 DOM 不短暂回到运行中；共 49 项浏览器检查通过。浏览器 mock 现提供有效 Tools 快照，首轮修正了测试文案路径；旧源码结构检查也从直接 publish 更新为 store 动作入口，没有放宽行为断言。
+- 完整门禁全部组成项通过：67 个 TypeScript 文件、49 项浏览器检查、44 项 SDK 测试、Desktop 787 passed / 22 ignored、无桌面后端 628 passed / 11 ignored，以及生成器、边界与 Clippy。证据为 `tmp/acceptance/m2w-full.log` 的首轮记录、`m2w-browser.log`、`m2w-remaining-ts.log`、`m2w-tools-final.log`、`m2w-build.log`、`m2w-client.log`、`m2w-rust.log`、`m2w-daemon.log`。本批没有 Rust／协议运行时变更，不重复构建或实装 M2v 已通过的 daemon。
+- 新的 store 协调使入口 gzip 从 73.59 增至 73.87 KiB，超过原 73.75 上限；记录成本后将入口上限调至 74 KiB。总 JS 为 369.53 KiB，仍沿用原 370 KiB 总预算，没有人为拆 chunk 隐藏增长。最终记录为 `tmp/acceptance/m2w-bundle-final.log`。
+- 仅本地实现与提交，未安装、合并、推送或发布。此批保证已收到的新快照不被旧响应覆盖，不宣称已经解决断连期间的全部计时显示／新鲜度语义；网页与客户端偏好选择、独立安装及其余基础缺口仍需继续，新客户端 UI 仍待讨论。

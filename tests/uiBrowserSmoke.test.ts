@@ -250,7 +250,35 @@ function tauriStubFor(path: string) {
 
       ${HISTORY_FIXTURE_CODE}
 
+      function toolsSnapshot() {
+        return globalThis.__PATINA_SMOKE_TOOLS_STATE ?? {
+          settings: {default_countdown_minutes:25, pomodoro_focus_minutes:25, pomodoro_short_break_minutes:5,
+            pomodoro_long_break_minutes:15, pomodoro_long_break_every:4},
+          reminders:[], software_reminder_rules:[], current_timer:null, timer_laps:[], current_pomodoro:null,
+          today_completed_pomodoros:0, next_reminder_at:null, sampled_at_ms:Date.now(),
+        };
+      }
+      globalThis.__PATINA_SMOKE_TOOLS_SNAPSHOT = toolsSnapshot;
+
       export async function invoke(command, payload = {}) {
+        if (command === "cmd_get_tools_snapshot") {
+          globalThis.__PATINA_SMOKE_TOOLS_READS = (globalThis.__PATINA_SMOKE_TOOLS_READS || 0) + 1;
+          return structuredClone(toolsSnapshot());
+        }
+        if (command === "cmd_get_tool_alerts") return [];
+        if (command === "cmd_start_timer") {
+          globalThis.__PATINA_SMOKE_TOOLS_STARTS = (globalThis.__PATINA_SMOKE_TOOLS_STARTS || 0) + 1;
+          const now = Date.now();
+          globalThis.__PATINA_SMOKE_TOOLS_STATE = {...toolsSnapshot(), sampled_at_ms:now, current_timer:{
+            id:1, mode:payload.input.mode, label:payload.input.label ?? null, duration_ms:payload.input.durationMs ?? null,
+            accumulated_ms:0, started_at:now, paused_at:null, completed_at:null, status:'running', created_at:now, updated_at:now,
+          }};
+          const confirmation = structuredClone(toolsSnapshot());
+          if (globalThis.__PATINA_SMOKE_TOOLS_BLOCK_RESPONSE) {
+            await new Promise(resolve => { globalThis.__PATINA_SMOKE_TOOLS_RELEASE = resolve; });
+          }
+          return confirmation;
+        }
         if (command === "cmd_get_cached_icon_page") {
           globalThis.__PATINA_SMOKE_ICON_CALLS=(globalThis.__PATINA_SMOKE_ICON_CALLS??0)+1;
           if (globalThis.__PATINA_SMOKE_ICON_BLOCK) await new Promise(resolve=>{globalThis.__PATINA_SMOKE_ICON_RELEASE=resolve;});
@@ -1636,6 +1664,62 @@ try {
       0,
       "Tools section rail should stay icon-only after switching sections",
     );
+  });
+
+  await runTest("Tools ignores duplicate clicks and late start confirmations after a pause event", async () => {
+    const start = `document.querySelector('[aria-label=' + ${jsonString(JSON.stringify(COPY["zh-CN"].accessibility.tools.startTimer))} + ']')`;
+    const helper = `document.querySelector('[data-tools-section="timer"] .tools-time-display span')`;
+    await evaluate(client!, sessionId, `document.querySelector('[aria-label=' + ${jsonString(JSON.stringify(TOOLS_TEXT.timerTitle))} + ']').click()`);
+    await evaluate(client!, sessionId, `(() => {
+      const input = document.querySelector('#tools-countdown-duration');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '1');
+      input.dispatchEvent(new Event('input', {bubbles:true}));
+    })()`);
+    await waitForExpression(client!, sessionId, `${start}?.disabled === false`);
+    const readsBefore = Number(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_TOOLS_READS`));
+    try {
+      await evaluate(client!, sessionId, `(() => {
+        globalThis.__PATINA_SMOKE_TOOLS_STARTS = 0;
+        globalThis.__PATINA_SMOKE_TOOLS_BLOCK_RESPONSE = true;
+        ${start}.click(); ${start}.click();
+      })()`);
+      await waitForExpression(client!, sessionId, `typeof globalThis.__PATINA_SMOKE_TOOLS_RELEASE === 'function' && ${start}.disabled`);
+      assert.equal(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_TOOLS_STARTS`), 1);
+      await evaluate(client!, sessionId, `(() => {
+        const state = structuredClone(globalThis.__PATINA_SMOKE_TOOLS_STATE);
+        state.sampled_at_ms -= 10000;
+        state.current_timer.status = 'paused'; state.current_timer.started_at = null;
+        state.current_timer.paused_at = state.sampled_at_ms; state.current_timer.accumulated_ms = 1000;
+        globalThis.__PATINA_SMOKE_TOOLS_STATE = state;
+        globalThis.__PATINA_SMOKE_EMIT('tools-runtime-changed', state);
+      })()`);
+      await waitForExpression(client!, sessionId, `${helper}?.textContent === ${jsonString(TOOLS_TEXT.timerStatus.paused)}`);
+      await evaluate(client!, sessionId, `(() => {
+        globalThis.__PATINA_SMOKE_TOOLS_LABELS = [];
+        globalThis.__PATINA_SMOKE_TOOLS_OBSERVER = new MutationObserver(records => {
+          for (const record of records) globalThis.__PATINA_SMOKE_TOOLS_LABELS.push(record.oldValue);
+          globalThis.__PATINA_SMOKE_TOOLS_LABELS.push(${helper}.textContent);
+        });
+        globalThis.__PATINA_SMOKE_TOOLS_OBSERVER.observe(${helper},
+          {subtree:true, childList:true, characterData:true, characterDataOldValue:true});
+        globalThis.__PATINA_SMOKE_TOOLS_BLOCK_RESPONSE = false;
+        globalThis.__PATINA_SMOKE_TOOLS_RELEASE();
+        delete globalThis.__PATINA_SMOKE_TOOLS_RELEASE;
+      })()`);
+      await waitForExpression(client!, sessionId, `globalThis.__PATINA_SMOKE_TOOLS_READS > ${readsBefore}`);
+      await waitForExpression(client!, sessionId, `${helper}?.textContent === ${jsonString(TOOLS_TEXT.timerStatus.paused)}`);
+      assert.equal(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_TOOLS_LABELS.includes(${jsonString(TOOLS_TEXT.timerStatus.running)})`), false);
+      assert.equal(await evaluate(client!, sessionId, `globalThis.__PATINA_SMOKE_TOOLS_STARTS`), 1);
+    } finally {
+      await evaluate(client!, sessionId, `(() => {
+        globalThis.__PATINA_SMOKE_TOOLS_OBSERVER?.disconnect();
+        globalThis.__PATINA_SMOKE_TOOLS_BLOCK_RESPONSE = false;
+        globalThis.__PATINA_SMOKE_TOOLS_RELEASE?.();
+        globalThis.__PATINA_SMOKE_TOOLS_STATE = null;
+        globalThis.__PATINA_SMOKE_EMIT('tools-runtime-changed', globalThis.__PATINA_SMOKE_TOOLS_SNAPSHOT());
+        document.querySelector('[aria-label=' + ${jsonString(JSON.stringify(TOOLS_TEXT.pomodoroTitle))} + ']').click();
+      })()`);
+    }
   });
 
   await runTest("warm primary navigation avoids app loading after startup warmup", async () => {

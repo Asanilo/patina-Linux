@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { UI_TEXT, type UiText } from "../../../shared/copy/uiText.ts";
 import type {
   StartPomodoroInput,
@@ -60,6 +60,12 @@ export function useToolsPageState({
   const [snapshot, setSnapshot] = useState<ToolsRuntimeSnapshot>(() => initialSnapshot ?? DEFAULT_SNAPSHOT);
   const [loading, setLoading] = useState(() => initialSnapshot === null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const activeActionRef = useRef<object | null>(null);
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [softwareReminderAppCandidates, setSoftwareReminderAppCandidates] = useState<ToolSoftwareReminderAppCandidate[]>([]);
   const [softwareReminderAppCandidatesLoaded, setSoftwareReminderAppCandidatesLoaded] = useState(false);
@@ -79,8 +85,10 @@ export function useToolsPageState({
 
     void toolsRuntimeSnapshotStore.refreshSnapshot()
       .catch((error) => {
-        console.warn("load tools snapshot failed", error);
-        onError?.(UI_TEXT.tools.loadFailed);
+        if (!cancelled) {
+          console.warn("load tools snapshot failed", error);
+          onError?.(UI_TEXT.tools.loadFailed);
+        }
       })
       .finally(() => {
         if (!cancelled) {
@@ -152,18 +160,22 @@ export function useToolsPageState({
     actionKey: string,
     action: () => Promise<ToolsRuntimeSnapshot>,
   ) => {
-    if (busyAction) return;
+    if (activeActionRef.current) return;
+    const ticket = {};
+    activeActionRef.current = ticket;
     setBusyAction(actionKey);
     try {
-      const nextSnapshot = await action();
-      toolsRuntimeSnapshotStore.publishSnapshot(nextSnapshot);
+      await toolsRuntimeSnapshotStore.runAction(action);
     } catch (error) {
-      console.warn(`tools action failed: ${actionKey}`, error);
-      onError?.(UI_TEXT.tools.actionFailed);
+      if (mountedRef.current) {
+        console.warn(`tools action failed: ${actionKey}`, error);
+        onError?.(UI_TEXT.tools.actionFailed);
+      }
     } finally {
-      setBusyAction(null);
+      if (activeActionRef.current === ticket) activeActionRef.current = null;
+      if (mountedRef.current) setBusyAction(null);
     }
-  }, [busyAction, onError]);
+  }, [onError]);
 
   const createReminder = useCallback((label: string, scheduledAt: number) => runAction(
     "create-reminder",

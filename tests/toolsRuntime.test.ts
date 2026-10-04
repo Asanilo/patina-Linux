@@ -823,7 +823,7 @@ await runTest("tools runtime snapshot store shares one runtime listener across s
   const unsubscribeB = store.subscribe((nextSnapshot) => {
     notificationsB.push(nextSnapshot.sampledAtMs);
   });
-  await Promise.resolve();
+  await new Promise<void>(resolve => setImmediate(resolve));
 
   assert.equal(listenCount, 1);
   emitSnapshot?.(snapshot({ sampledAtMs: 2_000 }));
@@ -857,6 +857,7 @@ await runTest("tools runtime snapshot store dedupes pending refreshes and publis
   });
   const firstRefresh = store.refreshSnapshot();
   const secondRefresh = store.refreshSnapshot();
+  await new Promise<void>(resolve => setImmediate(resolve));
   assert.equal(loadCount, 1);
   assert.equal(firstRefresh, secondRefresh);
 
@@ -864,10 +865,153 @@ await runTest("tools runtime snapshot store dedupes pending refreshes and publis
   assert.equal((await firstRefresh).sampledAtMs, 3_000);
   assert.deepEqual(notifications, [3_000]);
 
-  store.publishSnapshot(snapshot({ sampledAtMs: 4_000 }));
+  await store.runAction(async () => snapshot({ sampledAtMs: 4_000 }));
   assert.equal(store.getCurrentSnapshot()?.sampledAtMs, 4_000);
   assert.deepEqual(notifications, [3_000, 4_000]);
   unsubscribe();
+});
+
+await runTest("tools store never replaces an event snapshot with an older pending read", async () => {
+  let emit: ((value: ToolsRuntimeSnapshot) => void) | undefined;
+  let resolveRead: ((value: ToolsRuntimeSnapshot) => void) | undefined;
+  const store = createToolsRuntimeSnapshotStore({
+    getSnapshot: () => new Promise(resolve => { resolveRead = resolve; }),
+    onChanged: async listener => { emit = listener; return () => {}; },
+    warn: () => {},
+  });
+  const received: number[] = [];
+  const off = store.subscribe(value => received.push(value.sampledAtMs));
+  const pending = store.refreshSnapshot();
+  for (let turn = 0; turn < 10 && !resolveRead; turn++) await new Promise<void>(resolve => setImmediate(resolve));
+  assert.ok(emit && resolveRead);
+  // The newer event deliberately has an earlier wall-clock timestamp.
+  emit(snapshot({sampledAtMs: 1000}));
+  resolveRead(snapshot({sampledAtMs: 2000}));
+  assert.equal((await pending).sampledAtMs, 1000);
+  assert.deepEqual(received, [1000]);
+  assert.equal(store.getCurrentSnapshot()?.sampledAtMs, 1000);
+  off();
+});
+
+await runTest("Tools prewarm subscribes before reading and ignores callbacks after disposal", async () => {
+  let attach: ((dispose: () => void) => void) | undefined;
+  let emit: ((value: ToolsRuntimeSnapshot) => void) | undefined;
+  let reads = 0;
+  let disposed = 0;
+  const store = createToolsRuntimeSnapshotStore({
+    getSnapshot: async () => { reads++; return snapshot({sampledAtMs: 2000}); },
+    onChanged: listener => { emit = listener; return new Promise(resolve => { attach = resolve; }); },
+    warn: () => {},
+  });
+  const pending = store.refreshSnapshot();
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.ok(attach && emit);
+  assert.equal(reads, 0);
+  attach(() => { disposed++; });
+  await pending;
+  assert.equal(reads, 1);
+  assert.equal(disposed, 1);
+  emit(snapshot({sampledAtMs: 3000}));
+  assert.equal(store.getCurrentSnapshot()?.sampledAtMs, 2000);
+});
+
+await runTest("Tools writes dedupe immediately and late confirmations cannot replace events", async () => {
+  let emit: ((value: ToolsRuntimeSnapshot) => void) | undefined;
+  let resolveRead: ((value: ToolsRuntimeSnapshot) => void) | undefined;
+  let resolveWrite: ((value: ToolsRuntimeSnapshot) => void) | undefined;
+  let reads = 0;
+  let writes = 0;
+  const received: number[] = [];
+  const store = createToolsRuntimeSnapshotStore({
+    getSnapshot: () => ++reads === 1
+      ? new Promise(resolve => { resolveRead = resolve; })
+      : Promise.resolve(snapshot({sampledAtMs: 800})),
+    onChanged: async listener => { emit = listener; return () => {}; },
+    warn: () => {},
+  });
+  const off = store.subscribe(value => received.push(value.sampledAtMs));
+  const read = store.refreshSnapshot();
+  await new Promise<void>(resolve => setImmediate(resolve));
+  const action = () => { writes++; return new Promise<ToolsRuntimeSnapshot>(resolve => { resolveWrite = resolve; }); };
+  const write = store.runAction(action);
+  assert.equal(store.runAction(action), write);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(writes, 1);
+  assert.ok(emit && resolveRead && resolveWrite);
+  emit(snapshot({sampledAtMs: 900}));
+  resolveRead(snapshot({sampledAtMs: 1000}));
+  assert.equal((await read).sampledAtMs, 900);
+  resolveWrite(snapshot({sampledAtMs: 2000}));
+  await write;
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.deepEqual(received, [900, 800]);
+  assert.equal(reads, 2);
+  assert.equal(writes, 1);
+  off();
+});
+
+await runTest("Tools refresh waits for a pending write and failure rereads without retrying", async () => {
+  let current = snapshot({sampledAtMs: 1000});
+  let reads = 0;
+  let writes = 0;
+  let rejectWrite: ((error: Error) => void) | undefined;
+  const store = createToolsRuntimeSnapshotStore({
+    getSnapshot: async () => { reads++; return current; },
+    onChanged: async () => () => {},
+    warn: () => {},
+  });
+  const off = store.subscribe(() => {});
+  await store.refreshSnapshot();
+  const write = store.runAction(() => {
+    writes++;
+    return new Promise<ToolsRuntimeSnapshot>((_, reject) => { rejectWrite = reject; });
+  });
+  const read = store.refreshSnapshot();
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(reads, 1, "do not read an intermediate state while the command is pending");
+  assert.ok(rejectWrite);
+  const failed = assert.rejects(write, /response lost/);
+  current = snapshot({sampledAtMs: 500}); // Server committed but the reply was lost.
+  rejectWrite(new Error("response lost"));
+  await failed;
+  assert.equal((await read).sampledAtMs, 500);
+  assert.equal(store.getCurrentSnapshot()?.sampledAtMs, 500);
+  assert.equal(reads, 2);
+  assert.equal(writes, 1);
+  off();
+});
+
+await runTest("late Tools subscription completion cannot replace or dispose its successor", async () => {
+  const callbacks: Array<(value: ToolsRuntimeSnapshot) => void> = [];
+  const attach: Array<(dispose: () => void) => void> = [];
+  const disposed: number[] = [];
+  const received: number[] = [];
+  const store = createToolsRuntimeSnapshotStore({
+    getSnapshot: async () => snapshot(),
+    onChanged: listener => {
+      callbacks.push(listener);
+      return new Promise(resolve => { attach.push(resolve); });
+    },
+    warn: () => {},
+  });
+  const firstOff = store.subscribe(() => {});
+  await new Promise<void>(resolve => setImmediate(resolve));
+  firstOff();
+  const secondOff = store.subscribe(value => received.push(value.sampledAtMs));
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(attach.length, 2);
+  attach[1](() => disposed.push(2));
+  await new Promise<void>(resolve => setImmediate(resolve));
+  callbacks[1](snapshot({sampledAtMs: 2000}));
+  callbacks[0](snapshot({sampledAtMs: 3000}));
+  attach[0](() => disposed.push(1));
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.deepEqual(received, [2000]);
+  assert.deepEqual(disposed, [1]);
+  callbacks[1](snapshot({sampledAtMs: 1000}));
+  assert.deepEqual(received, [2000, 1000]);
+  secondOff();
+  assert.deepEqual(disposed, [1, 2]);
 });
 
 await runTest("gateway invokes commands, parses event payloads, and disposes listeners", async () => {

@@ -696,7 +696,7 @@ await runTest("tools status surfaces share the feature-owned runtime snapshot st
   const store = readUtf8("src/features/tools/services/toolsRuntimeSnapshotStore.ts");
 
   assert.match(pageState, /toolsRuntimeSnapshotStore\.subscribe/);
-  assert.match(pageState, /toolsRuntimeSnapshotStore\.publishSnapshot/);
+  assert.match(pageState, /toolsRuntimeSnapshotStore\.runAction/);
   assert.match(sidebarEntry, /toolsRuntimeSnapshotStore\.subscribe/);
   assert.doesNotMatch(pageState, /ToolsRuntimeService\.onToolsRuntimeChanged/);
   assert.doesNotMatch(sidebarEntry, /ToolsRuntimeService\.onToolsRuntimeChanged/);
