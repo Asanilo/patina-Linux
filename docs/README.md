@@ -48,6 +48,8 @@ Read only the references needed for the task:
 
 The stable-release closeout is complete. The authorized next stage is [one backend and multiple synchronized clients](./working/2026-10-03-multi-client-platform.md), developed on `feature/multi-client-platform` in its own worktree. Use its capability gaps and milestone evidence to distinguish planned clients from delivered functionality; retain unrelated paused items as deferred.
 
+For resuming this branch after the M6c checkpoint, start with the [branch handoff](./working/2026-10-04-multi-client-handoff.md), then consult the latest execution evidence in the stage plan.
+
 Only current execution documents belong under `working/`. Move them to `archive/` when they stop being the active implementation basis.
 
 ## Completed Stage Evidence
