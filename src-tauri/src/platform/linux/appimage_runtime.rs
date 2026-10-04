@@ -17,6 +17,120 @@ struct Identity {
     image_sha256: String,
 }
 
+/// Keeps a published legacy AppImage fixed while an installation owner migrates it.
+pub(crate) struct PublishedRuntime {
+    root: PathBuf,
+    destination: PathBuf,
+    identity: Identity,
+    _lock: File,
+}
+
+impl PublishedRuntime {
+    pub(crate) fn inspect(root: &Path) -> Result<Self, String> {
+        let validate_directory = |path: &Path| -> Result<(), String> {
+            let meta = fs::symlink_metadata(path).map_err(fail)?;
+            // SAFETY: geteuid has no pointer arguments.
+            if !meta.is_dir()
+                || meta.mode() & 0o077 != 0
+                || meta.uid() != unsafe { libc::geteuid() }
+            {
+                return Err(fail(
+                    "published runtime must use private user-owned directories",
+                ));
+            }
+            Ok(())
+        };
+        validate_directory(root)?;
+        let root = root.canonicalize().map_err(fail)?;
+        validate_directory(&root.join("versions"))?;
+        let lock = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(root.join("install.lock"))
+            .map_err(fail)?;
+        let meta = lock.metadata().map_err(fail)?;
+        // SAFETY: geteuid has no pointer arguments.
+        if !meta.is_file()
+            || meta.nlink() != 1
+            || meta.mode() & 0o7777 != 0o600
+            || meta.uid() != unsafe { libc::geteuid() }
+        {
+            return Err(fail("invalid published runtime lock"));
+        }
+        lock.try_lock_exclusive()
+            .map_err(|_| fail("another AppImage installation is in progress"))?;
+        // Install the guard before fallible reads, so error paths explicitly unlock.
+        let mut result = Self {
+            root: root.clone(),
+            destination: PathBuf::new(),
+            identity: Identity {
+                format: 1,
+                version: String::new(),
+                image_sha256: String::new(),
+            },
+            _lock: lock,
+        };
+        let relative = fs::read_link(root.join("current")).map_err(fail)?;
+        if !valid_relative_version(&relative) {
+            return Err(fail("invalid published runtime link"));
+        }
+        let destination = root.join(&relative);
+        validate_directory(&destination)?;
+        let value = identity(&destination)?;
+        if relative != Path::new("versions").join(&value.image_sha256) {
+            return Err(fail(
+                "published runtime identity differs from its directory",
+            ));
+        }
+        for entry in ["AppRun", "usr/bin/Patina", "usr/bin/patinad"] {
+            let file = destination.join(entry).canonicalize().map_err(fail)?;
+            if !file.starts_with(&destination)
+                || !file.is_file()
+                || fs::metadata(file).map_err(fail)?.mode() & 0o100 == 0
+            {
+                return Err(fail("published runtime entry point is invalid"));
+            }
+        }
+        result.destination = destination;
+        result.identity = value;
+        Ok(result)
+    }
+    pub(crate) fn version(&self) -> &str {
+        &self.identity.version
+    }
+    pub(crate) fn image_sha256(&self) -> &str {
+        &self.identity.image_sha256
+    }
+    pub(crate) async fn verify(&self) -> Result<(), String> {
+        if fs::read_link(self.root.join("current")).map_err(fail)?
+            != Path::new("versions").join(&self.identity.image_sha256)
+        {
+            return Err(fail(
+                "published AppImage selection changed during migration",
+            ));
+        }
+        let current = identity(&self.destination)?;
+        if current.version != self.identity.version
+            || current.image_sha256 != self.identity.image_sha256
+        {
+            return Err(fail("published AppImage identity changed during migration"));
+        }
+        verify_launcher(
+            &self.destination.join("AppRun"),
+            &self.identity.version,
+            std::time::Duration::from_secs(10),
+        )
+        .await
+    }
+}
+
+impl Drop for PublishedRuntime {
+    fn drop(&mut self) {
+        let _ = FileExt::unlock(&self._lock);
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct PreparedRuntime {
     root: PathBuf,
@@ -536,6 +650,37 @@ mod tests {
         assert!(fixture.prepare("1.9.0-beta.20", 'c').is_err());
         drop(next);
         fixture.prepare("1.9.0-beta.20", 'c').unwrap();
+    }
+
+    #[tokio::test]
+    async fn migration_inspection_holds_source_lock_and_rejects_changed_pointer() {
+        let fixture = Fixture::new();
+        let root = fixture.0.join("store");
+        assert!(PublishedRuntime::inspect(&root).is_err());
+        assert!(!root.exists());
+        fs::write(
+            fixture.0.join("source/AppRun"),
+            "#!/bin/sh\nprintf 'patinad 1.9.2\\n'\n",
+        )
+        .unwrap();
+        fixture.prepare("1.9.2", 'a').unwrap().publish().unwrap();
+        let source = PublishedRuntime::inspect(&root).unwrap();
+        assert_eq!(source.version(), "1.9.2");
+        assert_eq!(source.image_sha256(), "a".repeat(64));
+        source.verify().await.unwrap();
+        assert!(fixture.prepare("1.9.3", 'b').is_err());
+        let inherited = source._lock.try_clone().unwrap();
+        fs::remove_file(root.join("current")).unwrap();
+        symlink(
+            Path::new("versions").join("b".repeat(64)),
+            root.join("current"),
+        )
+        .unwrap();
+        assert!(source.verify().await.is_err());
+        drop(source);
+        let next = fixture.prepare("1.9.3", 'b').unwrap();
+        drop(inherited);
+        drop(next);
     }
 
     #[test]

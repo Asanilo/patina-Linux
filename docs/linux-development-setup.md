@@ -93,8 +93,8 @@ archives carry a `-debug` filename suffix. The manifest records file sizes and
 modes; these hashes are integrity evidence, not a publisher signature. Existing
 outputs are never replaced. The archive includes a systemd **template** only:
 it does not install, enable, restart or replace a service. Explicit activation tooling
-is described below; old-package migration and formal release integration remain
-work in the active multi-client plan. This candidate is not a universal or static
+is described below, including explicit migration of known legacy services; formal
+release integration remains in the active multi-client plan. This candidate is not a universal or static
 Linux binary and does not change the public DEB/AppImage release workflow.
 
 Stage an already verified, extracted candidate with a staging-capable daemon:
@@ -115,7 +115,7 @@ directory named by the manifest digest. Repeating the command revalidates and re
 that version; damaged installed files are rejected without repair. The JSON receipt
 identifies the directory, build and binary digest. This command does not execute the
 candidate, select a current version, create a profile, or change a service. Activation
-is an explicit operation described below; legacy DEB/AppImage ownership migration remains pending.
+is an explicit operation described below; staging itself never migrates a legacy service.
 
 Inspect or explicitly select a staged version:
 
@@ -161,7 +161,7 @@ It neither creates those roots nor reads/replaces an existing unit. This is a
 reviewable candidate only: it does not check manager environment, unit ownership,
 drop-ins, cutover state or running readiness. Do not install the preview over an
 existing service; use the explicit activation entry below only within its supported
-ownership boundary. Legacy service migration remains pending.
+ownership boundary. Known legacy sources require the migration options below.
 
 ### Explicit standalone activation (development branch)
 
@@ -179,8 +179,8 @@ user manager. Use persistent paths visible to the service, such as a runtime roo
 under the user's data directory; the unit uses `PrivateTmp=true`, so host `/tmp` and
 `/var/tmp` paths are unsuitable for a real installation. It accepts a new profile or a compatible existing cutover, preserves
 login preferences, and does not enable or disable login startup. Existing embedded
-data without a cutover, legacy DEB/AppImage units, custom units, masks and drop-ins
-require separate migration and are refused. A discrepancy between saved login intent
+data without a cutover, custom units, masks and drop-ins are refused. Known legacy
+DEB/AppImage units require explicit source confirmation below. A discrepancy between saved login intent
 and the manager's enabled state is also refused without changing either setting.
 
 Activation persists intent in the profile control root's `standalone-activation.json`
@@ -192,6 +192,35 @@ Only then are activation and owner cutover confirmed. Retry the same explicit co
 after inspecting an interrupted operation; an already ready matching runtime is not
 restarted. Errors retain pending state and never trigger an automatic binary rollback.
 
+For an existing daemon-owned profile, migrate a known packaged service or managed
+AppImage service by adding all three source options:
+
+```bash
+/absolute/path/patinad --activate-runtime <selected-manifest-sha256> \
+  --runtime-root /absolute/path/private-parent/runtime \
+  --migrate-from packaged \
+  --source-unit-sha256 <confirmed-existing-unit-sha256> \
+  --source-version <confirmed-installed-daemon-version>
+# Use --migrate-from appimage for the existing managed AppImage service.
+```
+
+`packaged` means the known root-owned `/usr/bin/patinad` and system unit layout;
+it does not infer package-manager provenance. The installer checks the fixed unit
+recipe, loaded command/environment, source executable version and, when active,
+the service PID against the selected profile's held runtime lease and API identity.
+The target cannot be older than the confirmed source. The AppImage source is held
+under its own installation lock while migrating. System package files remain
+untouched; a user unit overrides them. The known AppImage user unit is conditionally
+replaced, with its original text saved in the activation record first. Custom
+configuration is preserved. No package is uninstalled and no login setting is changed.
+
+If interrupted after publishing the new unit but before reloading or starting it,
+inspect the pending record and retry the same target; its saved migration proof
+allows recovery without repeating the source options. Completed migration history
+does not implicitly authorize taking over a later replacement service. Desktop reads
+only the stable binding fields, so additional installer audit fields do not couple
+client compatibility to the installer schema.
+
 For adapter acceptance, `scripts/acceptance/standalone-activation.py` takes the
 controller, extracted candidate and expected manifest digest, optionally a second
 candidate/digest, plus `--allow-debug` where needed. It starts a new private D-Bus
@@ -200,6 +229,16 @@ and checks interrupted cutover recovery, repeated activation, optional binary sw
 disabled login startup and data retention. It requires `dbus-run-session` and system
 Python with `dbus-python`/GLib. This is not actual systemd login or production installation
 acceptance; it never connects its manager fixture to the host user bus.
+
+The same fixture accepts `--migrate-from packaged|appimage`, `--login-enabled` and
+`--fail-first-reload`. It can run the installed `/usr/bin/patinad` in a private profile
+as the old daemon, reject changed source observations before stopping it, migrate,
+and recover from an injected reload failure after unit replacement. AppImage mode
+constructs a synthetic AppDir containing that daemon: it is not a real AppImage
+artifact or FUSE acceptance. Enabled-state simulation and retained symlinks do not
+replace real systemd login, package uninstall, or desktop session acceptance.
+`--change-unit-after-stop` with AppImage mode verifies that an external unit edit
+during shutdown is preserved; only explicit fixture repair permits the retry.
 
 ## Daemon Analytical Read Isolation
 

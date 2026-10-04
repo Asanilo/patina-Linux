@@ -6,15 +6,19 @@ This verifies the adapter and recovery flow, not a real systemd login or host in
 Requires /usr/bin/python3 with dbus-python and GLib, plus dbus-run-session.
 """
 import json
+import argparse
+import hashlib
 import os
 from pathlib import Path
 import signal
+import shutil
 import socket
 import sqlite3
 import subprocess
 import sys
 import tempfile
 import time
+import urllib.request
 
 
 def main():
@@ -24,15 +28,24 @@ def main():
         subprocess.run(["dbus-run-session", "--", "/usr/bin/python3", str(Path(__file__).resolve()), "--inside", *args], env=env, check=True)
         return
     args.pop(0)
-    allow_debug = args[-1:] == ["--allow-debug"]
-    if allow_debug:
-        args.pop()
-    if len(args) not in (3, 5):
-        raise SystemExit(__doc__)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("controller")
+    parser.add_argument("candidate")
+    parser.add_argument("manifest")
+    parser.add_argument("second", nargs="*")
+    parser.add_argument("--allow-debug", action="store_true")
+    parser.add_argument("--migrate-from", choices=["packaged", "appimage"])
+    parser.add_argument("--fail-first-reload", action="store_true")
+    parser.add_argument("--login-enabled", action="store_true")
+    parser.add_argument("--change-unit-after-stop", action="store_true")
+    options = parser.parse_args(args)
+    assert len(options.second) in (0, 2)
+    assert not options.fail_first_reload or options.migrate_from
+    assert not options.change_unit_after_stop or options.migrate_from == "appimage"
     private_bus = os.environ.get("DBUS_SESSION_BUS_ADDRESS")
     assert private_bus and private_bus != os.environ.get("PATINA_ACCEPTANCE_PARENT_BUS", "")
-    controller, source, manifest = args[:3]
-    second = args[3:] or None
+    controller, source, manifest = options.controller, options.candidate, options.manifest
+    second = options.second or None
     controller, source = str(Path(controller).resolve(strict=True)), str(Path(source).resolve(strict=True))
     os.umask(0o077)
     root = Path(tempfile.mkdtemp(prefix="patina-activate-private-"))
@@ -44,11 +57,14 @@ def main():
                XDG_RUNTIME_DIR=str(root / "xdg-runtime"), DBUS_SYSTEM_BUS_ADDRESS=f"unix:path={root}/no-system-bus",
                PULSE_SERVER=f"unix:{root}/no-pulse", XDG_SESSION_TYPE="unspecified", XDG_CURRENT_DESKTOP="")
     (root / "xdg-runtime").mkdir(mode=0o700)
-    debug = ["--allow-debug"] if allow_debug else []
+    debug = ["--allow-debug"] if options.allow_debug else []
 
-    def command(*values):
+    def command(*values, error=None):
         result = subprocess.run([controller, *values, "--runtime-root", str(runtime), *debug], env=env,
                                 capture_output=True, timeout=90)
+        if error is not None:
+            assert result.returncode != 0 and error in result.stderr.decode(), result.stderr.decode()
+            return
         assert result.returncode == 0, result.stderr.decode()
         return json.loads(result.stdout)
 
@@ -57,10 +73,50 @@ def main():
     plan = command("--print-runtime-service", manifest, "--config-root", str(config), "--data-root", str(data))
     unit_path = Path(plan["unit_path"])
     unit_path.parent.mkdir(parents=True)
-    unit_path.write_text(plan["unit_text"])
     binary = runtime / "current/bin/patinad"
+    legacy_binary = Path("/usr/bin/patinad")
+    migration_args, source_definition = [], None
+    if options.migrate_from:
+        source_version = subprocess.check_output([str(legacy_binary), "--version"], env=env, text=True).strip().removeprefix("patinad ")
+        packaged_path = Path("/usr/lib/systemd/user/patinad.service")
+        original_unit = packaged_path.read_text()
+        source_argv = [str(legacy_binary)]
+        source_environment = ["PATINA_SYSTEMD_SERVICE=patinad.service"]
+        if options.migrate_from == "appimage":
+            # Synthetic AppDir layout with the installed daemon, not an AppImage
+            # distribution/FUSE acceptance. No host package or service is changed.
+            old_root = data / "Patina/runtime-appimage"
+            destination = old_root / "versions" / ("a" * 64)
+            (destination / "usr/bin").mkdir(parents=True)
+            for filename in ("patinad", "Patina"):
+                shutil.copyfile(legacy_binary, destination / "usr/bin" / filename)
+                (destination / "usr/bin" / filename).chmod(0o700)
+            launcher = destination / "AppRun"
+            launcher.write_text('#!/bin/sh\n[ "$1" = "--patinad" ] || exit 2\nshift\nbase=$(dirname "$(readlink -f "$0")")\nexec "$base/usr/bin/patinad" "$@"\n')
+            launcher.chmod(0o700)
+            (destination / ".patina-runtime.json").write_text(json.dumps(dict(format=1, version=source_version, image_sha256="a" * 64)))
+            (old_root / "install.lock").touch(mode=0o600)
+            (old_root / "current").symlink_to("versions/" + "a" * 64)
+            stable_launcher = old_root / "current/AppRun"
+            original_unit = "# Managed by Patina AppImage runtime v1\n" + original_unit.replace(
+                "ExecStart=/usr/bin/patinad", f'ExecStart="{stable_launcher}" --patinad').replace(
+                "[Service]\n", f'[Service]\nEnvironment="XDG_CONFIG_HOME={config}"\nEnvironment="XDG_DATA_HOME={data}"\n')
+            source_argv = [str(stable_launcher), "--patinad"]
+            source_environment.extend(["XDG_CONFIG_HOME=" + str(config), "XDG_DATA_HOME=" + str(data)])
+            unit_path.write_text(original_unit)
+        source_definition = dict(unit_path=str(packaged_path if options.migrate_from == "packaged" else unit_path),
+                                 argv=source_argv + ["--profile", "production", "--serve-api", "--track"], environment=source_environment)
+        migration_args = ["--migrate-from", options.migrate_from, "--source-unit-sha256",
+                          hashlib.sha256(original_unit.encode()).hexdigest(), "--source-version", source_version]
+    else:
+        unit_path.write_text(plan["unit_text"])
+    wants = unit_path.parent / "default.target.wants/patinad.service"
+    if options.login_enabled:
+        wants.parent.mkdir()
+        wants.symlink_to(source_definition["unit_path"] if source_definition else unit_path)
+    wants_before = wants.readlink() if options.login_enabled else None
     with (root / "prepare.log").open("w") as log:
-        subprocess.run([str(binary), "--profile", "production"], env=env, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=30)
+        subprocess.run([str(legacy_binary if options.migrate_from else binary), "--profile", "production"], env=env, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=30)
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
@@ -74,16 +130,19 @@ def main():
     control = config / "Patina"
     control.mkdir(parents=True, exist_ok=True)
     cutover_id = "cutover_" + "a" * 32
-    cutover = dict(version=1, request_id=cutover_id, profile="production", status="prepared", requested_at_ms=1,
-                   updated_at_ms=1, requested_desktop_pid=os.getpid(), background_tracking_at_login=False,
+    cutover = dict(version=1, request_id=cutover_id, profile="production", status="completed" if options.migrate_from else "prepared", requested_at_ms=1,
+                   updated_at_ms=1, requested_desktop_pid=os.getpid(), background_tracking_at_login=options.login_enabled,
                    desktop_launch_at_login=False, failure_code=None, failure_message=None)
     (control / "runtime-owner-cutover.json").write_text(json.dumps(cutover))
     activation = dict(format_version=1, runtime_root=str(runtime), config_root=str(config), data_root=str(data),
                       manifest_sha256=manifest, binary_sha256=selected["binary_sha256"], cutover_request_id=cutover_id,
                       phase="prepared", last_error=None)
-    (control / "standalone-activation.json").write_text(json.dumps(activation))
+    if not options.migrate_from:
+        (control / "standalone-activation.json").write_text(json.dumps(activation))
     fixture = dict(private_bus=private_bus, config=str(config), data=str(data), binary=str(binary),
-                   unit_path=str(unit_path), unit_text=plan["unit_text"])
+                   unit_path=str(unit_path), unit_text=plan["unit_text"], source=source_definition,
+                   enabled=options.login_enabled, fail_first_reload=options.fail_first_reload,
+                   change_unit_after_stop=options.change_unit_after_stop)
     fixture_path = root / "fixture.json"
     fixture_path.write_text(json.dumps(fixture))
     manager_log = (root / "manager.log").open("w")
@@ -95,12 +154,56 @@ def main():
             assert manager.poll() is None, (root / "manager.log").read_text()
             assert time.monotonic() < deadline
             time.sleep(.05)
-        first = command("--activate-runtime", manifest, "--api-port", str(port))
+        if options.migrate_from:
+            deadline = time.monotonic() + 30
+            while True:
+                try:
+                    token = (data / "Patina/api_token").read_text().strip()
+                    request = urllib.request.Request(f"http://127.0.0.1:{port}/api/v1/capabilities", headers={"Authorization": "Bearer " + token})
+                    with urllib.request.urlopen(request, timeout=1) as response:
+                        if json.load(response)["data"]["tracking"]["ready"]:
+                            break
+                except (OSError, ValueError):
+                    pass
+                assert time.monotonic() < deadline, (root / "daemon.log").read_text()
+                time.sleep(.1)
+            invalid = migration_args.copy()
+            invalid[3] = "0" * 64
+            command("--activate-runtime", manifest, "--api-port", str(port), *invalid, error="known service recipe")
+            for drift, message in [("pid", "PID does not own"), ("environment", "environment differs"), ("drop_in", "drop-ins preserved")]:
+                overrides = root / "inspection-overrides.json"
+                overrides.write_text(json.dumps({drift: True}))
+                command("--activate-runtime", manifest, "--api-port", str(port), *migration_args, error=message)
+                overrides.unlink()
+                assert not (control / "standalone-activation.json").exists()
+            assert json.loads((root / "manager-counts.json").read_text()) == dict(start=0, stop=0, reload=0)
+        if options.change_unit_after_stop:
+            command("--activate-runtime", manifest, "--api-port", str(port), *migration_args, error="source user unit changed")
+            assert unit_path.read_text() == "# externally edited during stop\n"
+            assert json.loads((root / "manager-counts.json").read_text()) == dict(start=0, stop=1, reload=0)
+            pending = json.loads((control / "standalone-activation.json").read_text())
+            assert pending["phase"] == "prepared" and pending["migration"]["original_unit"] == original_unit
+            # Explicit fixture repair; the application must never undo the edit.
+            unit_path.write_text(original_unit)
+        if options.fail_first_reload:
+            command("--activate-runtime", manifest, "--api-port", str(port), *migration_args, error="injected reload failure")
+            pending = json.loads((control / "standalone-activation.json").read_text())
+            assert pending["phase"] == "prepared" and pending["migration"]["original_unit"] == original_unit
+            assert unit_path.read_text() == plan["unit_text"]
+            first = command("--activate-runtime", manifest, "--api-port", str(port))
+        else:
+            first = command("--activate-runtime", manifest, "--api-port", str(port), *migration_args)
         assert first["phase"] == "completed" and first["binary_sha256"] == selected["binary_sha256"]
         counts = json.loads((root / "manager-counts.json").read_text())
         assert command("--activate-runtime", manifest, "--api-port", str(port)) == first
         assert json.loads((root / "manager-counts.json").read_text()) == counts
-        assert counts == {"start": 1, "stop": 0, "reload": 1}
+        # Recovery does not send another StopUnit for an already inactive source.
+        expected_counts = dict(start=1, stop=int(bool(options.migrate_from)), reload=1 + int(options.fail_first_reload))
+        assert counts == expected_counts, counts
+        if options.migrate_from:
+            assert first["migration"]["original_unit"] == original_unit
+            assert first["migration"]["request"]["kind"] == options.migrate_from
+            assert packaged_path.read_text() == Path(__file__).resolve().parents[2].joinpath("packaging/systemd/patinad.service").read_text()
         switched = False
         if second:
             source_b, manifest_b = second
@@ -110,18 +213,21 @@ def main():
             updated = command("--activate-runtime", manifest_b, "--api-port", str(port))
             assert updated["phase"] == "completed" and updated["binary_sha256"] == staged_b["binary_sha256"]
             counts = json.loads((root / "manager-counts.json").read_text())
-            assert counts == {"start": 2, "stop": 1, "reload": 2}
+            assert counts == {key: value + 1 for key, value in expected_counts.items()}
             switched = True
         cutover_after = json.loads((control / "runtime-owner-cutover.json").read_text())
         assert cutover_after["status"] == "completed" and cutover_after["request_id"] == cutover_id
-        assert cutover_after["background_tracking_at_login"] is False and cutover_after["desktop_launch_at_login"] is False
-        assert not (unit_path.parent / "default.target.wants/patinad.service").exists()
+        assert cutover_after["background_tracking_at_login"] == options.login_enabled and cutover_after["desktop_launch_at_login"] is False
+        assert wants.readlink() == wants_before if options.login_enabled else not wants.is_symlink()
         with sqlite3.connect(db) as connection:
-            assert connection.execute("SELECT value FROM settings WHERE key='background_tracking_at_login'").fetchone() == ("0",)
+            assert connection.execute("SELECT value FROM settings WHERE key='background_tracking_at_login'").fetchone() == ("1" if options.login_enabled else "0",)
             assert connection.execute("SELECT duration FROM sessions WHERE exe_name='fixture'").fetchone() == (1000,)
         result = dict(passed=True, evidence=str(root), binary_sha256=selected["binary_sha256"], real_daemon=True,
                       private_dbus_manager=True, actual_systemd=False, production_state_used=False,
-                      resumed_cutover=True, repeated_activation_no_restart=True, login_disabled_preserved=True,
+                      resumed_cutover=not bool(options.migrate_from), repeated_activation_no_restart=True, login_preference_preserved=True,
+                      migration_source=options.migrate_from, synthetic_appimage_layout=options.migrate_from == "appimage",
+                      resumed_after_unit_replacement=options.fail_first_reload,
+                      post_stop_external_edit_preserved=options.change_unit_after_stop,
                       history_preserved=True, controlled_binary_switch=switched, counts=counts)
         (root / "result.json").write_text(json.dumps(result, indent=2) + "\n")
         print(json.dumps(result))

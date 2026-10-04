@@ -13,6 +13,8 @@ pub(super) struct NativeHost {
     token_path: PathBuf,
     control_root: PathBuf,
     port: u16,
+    migration: Option<super::migration::LegacySource>,
+    stable_launcher: PathBuf,
 }
 
 impl NativeHost {
@@ -22,6 +24,8 @@ impl NativeHost {
         runtime_root: &Path,
         selected: &standalone_runtime::StagedRuntime,
         port: u16,
+        migration_request: Option<super::migration::MigrationRequest>,
+        previous: Option<&ActivationRecord>,
     ) -> Result<Self, String> {
         if !(selected.build.protocol.min_supported_client
             ..=selected.build.protocol.max_supported_client)
@@ -31,10 +35,28 @@ impl NativeHost {
                 "selected runtime does not support this installer's client protocol".into(),
             );
         }
+        let unit_text = unit::standalone(runtime_root, &roots.config, &roots.data)?;
+        let previous = previous.filter(|record| {
+            record.runtime_root == runtime_root
+                && record.config_root == roots.config
+                && record.data_root == roots.data
+        });
+        let migration = migration_request
+            .map(|request| {
+                super::migration::LegacySource::open(
+                    roots,
+                    paths,
+                    request,
+                    &selected.build.package_version,
+                    &unit_text,
+                    previous,
+                )
+            })
+            .transpose()?;
         Ok(Self {
             roots: roots.clone(),
             unit_path: roots.config.join("systemd/user/patinad.service"),
-            unit_text: unit::standalone(runtime_root, &roots.config, &roots.data)?,
+            unit_text,
             executable: selected.directory.join("bin/patinad"),
             identity: DaemonExecutableIdentity {
                 build: selected.build.clone(),
@@ -43,6 +65,8 @@ impl NativeHost {
             token_path: paths.api_token_path.clone(),
             control_root: paths.control_root.clone(),
             port,
+            migration,
+            stable_launcher: runtime_root.join("current/bin/patinad"),
         })
     }
 
@@ -55,10 +79,45 @@ impl NativeHost {
                     Err("unidentified loaded patinad service must not be replaced".into())
                 } else { Ok(()) }
             },
-            Some(definition) if Path::new(&definition.fragment_path) == self.unit_path => Ok(()),
+            Some(definition) if Path::new(&definition.fragment_path) == self.unit_path => {
+                if self.migration.is_some() { self.verify_target_launch().await?; }
+                Ok(())
+            },
             None if allow_missing => Ok(()),
             _ => Err("systemd patinad definition is not the expected standalone user unit".into()),
         }
+    }
+
+    async fn verify_target_launch(&self) -> Result<(), String> {
+        let launch = systemd::inspect_patinad_launch().await?;
+        let executable = self
+            .stable_launcher
+            .to_str()
+            .ok_or("standalone launcher must be UTF-8")?;
+        let arguments = [
+            executable,
+            "--profile",
+            "production",
+            "--serve-api",
+            "--track",
+        ]
+        .map(str::to_owned)
+        .to_vec();
+        let mut environment = vec![
+            "PATINA_SYSTEMD_SERVICE=patinad.service".to_string(),
+            format!("XDG_CONFIG_HOME={}", self.roots.config.display()),
+            format!("XDG_DATA_HOME={}", self.roots.data.display()),
+        ];
+        let mut actual = launch.environment;
+        actual.sort();
+        environment.sort();
+        if launch.commands != vec![(executable.to_owned(), arguments, false)]
+            || actual != environment
+            || !launch.environment_files.is_empty()
+        {
+            return Err("loaded standalone command or environment differs from its binding".into());
+        }
+        Ok(())
     }
 
     async fn verify_build(&self) -> Result<(), String> {
@@ -110,6 +169,9 @@ impl NativeHost {
 }
 
 impl ActivationHost for NativeHost {
+    fn migration_proof(&self) -> Option<super::migration::MigrationProof> {
+        self.migration.as_ref().map(|source| source.proof.clone())
+    }
     async fn preflight(&self) -> Result<(), String> {
         let environment = systemd::manager_environment().await?;
         let value = |key: &str| {
@@ -126,32 +188,56 @@ impl ActivationHost for NativeHost {
             return Err("installer and systemd manager profile roots differ".into());
         }
         let existing = unit::read_existing(&self.unit_path)?;
-        if existing
-            .as_ref()
-            .is_some_and(|text| text != &self.unit_text)
-        {
-            return Err(
-                "custom or legacy user unit preserved; explicit service migration is required"
-                    .into(),
-            );
-        }
-        if existing.is_none()
-            && [
-                "/usr/lib/systemd/user/patinad.service",
-                "/lib/systemd/user/patinad.service",
-                "/etc/systemd/user/patinad.service",
-            ]
-            .iter()
-            .any(|path| fs::symlink_metadata(path).is_ok())
-        {
-            return Err(
+        if let Some(source) = &self.migration {
+            let original = match source.proof.request.kind {
+                super::migration::SourceKind::Packaged => None,
+                super::migration::SourceKind::Appimage => Some(source.proof.original_unit.as_str()),
+            };
+            if existing.as_deref() != Some(self.unit_text.as_str())
+                && existing.as_deref() != original
+            {
+                return Err("source user unit changed; existing configuration preserved".into());
+            }
+            if existing.as_deref() == Some(self.unit_text.as_str())
+                && self.definition_matches(false).await.is_ok()
+            {
+                // The matching durable intent permits recovery after file publication.
+            } else {
+                let definition = systemd::load_patinad_definition()
+                    .await?
+                    .ok_or("migration source is not loaded")?;
+                source
+                    .verify_source(&definition, &self.control_root, &self.token_path, self.port)
+                    .await?;
+            }
+        } else {
+            if existing
+                .as_ref()
+                .is_some_and(|text| text != &self.unit_text)
+            {
+                return Err(
+                    "custom or legacy user unit preserved; explicit service migration is required"
+                        .into(),
+                );
+            }
+            if existing.is_none()
+                && [
+                    "/usr/lib/systemd/user/patinad.service",
+                    "/lib/systemd/user/patinad.service",
+                    "/etc/systemd/user/patinad.service",
+                ]
+                .iter()
+                .any(|path| fs::symlink_metadata(path).is_ok())
+            {
+                return Err(
                 "packaged patinad service requires explicit migration before standalone activation"
                     .into(),
             );
+            }
+            // An owned unit may have been published just before an interrupted reload.
+            // Empty inactive definitions can be recovered; loaded foreign units cannot.
+            self.definition_matches(true).await?;
         }
-        // An owned unit may have been published just before an interrupted reload.
-        // Empty inactive definitions can be recovered; loaded foreign units cannot.
-        self.definition_matches(true).await?;
         let state = systemd::inspect_patinad_service().await;
         if !state.manager_available || state.error.is_some() {
             return Err("cannot verify service login preference".into());
@@ -173,7 +259,21 @@ impl ActivationHost for NativeHost {
         Ok(())
     }
     async fn install(&self) -> Result<(), String> {
-        unit::install_identical_or_new(&self.roots.config, &self.unit_text)?;
+        if let Some(source) = &self.migration {
+            source.verify_files().await?;
+            match source.proof.request.kind {
+                super::migration::SourceKind::Packaged => {
+                    unit::install_identical_or_new(&self.roots.config, &self.unit_text)?
+                }
+                super::migration::SourceKind::Appimage => unit::replace_known(
+                    &self.roots.config,
+                    &source.proof.original_unit,
+                    &self.unit_text,
+                )?,
+            }
+        } else {
+            unit::install_identical_or_new(&self.roots.config, &self.unit_text)?;
+        }
         systemd::reload_user_units().await?;
         self.definition_matches(false).await
     }

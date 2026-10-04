@@ -122,6 +122,54 @@ pub async fn wait_for_runtime_lease_release(
     }
 }
 
+/// Read the identity only while another open file description owns the lease.
+/// Stale metadata in an unlocked file is not evidence of a running process.
+#[cfg(target_os = "linux")]
+pub(crate) fn inspect_locked_owner(control_root: &Path) -> Result<Option<RuntimeOwner>, String> {
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+    let file = match OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(control_root.join(RUNTIME_LEASE_FILE_NAME))
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.to_string()),
+    };
+    let metadata = file.metadata().map_err(|error| error.to_string())?;
+    // SAFETY: geteuid takes no pointers and has no side effects.
+    if !metadata.is_file()
+        || metadata.nlink() != 1
+        || metadata.len() > 4096
+        || metadata.mode() & 0o022 != 0
+        || metadata.uid() != unsafe { libc::geteuid() }
+    {
+        return Err("runtime owner identity must be a bounded user-owned regular file".into());
+    }
+    match FileExt::try_lock_shared(&file) {
+        Ok(()) => {
+            FileExt::unlock(&file).map_err(|error| error.to_string())?;
+            Ok(None)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+            let mut bytes = Vec::new();
+            file.take(4097)
+                .read_to_end(&mut bytes)
+                .map_err(|error| error.to_string())?;
+            if bytes.len() > 4096 {
+                return Err("runtime owner identity exceeds size limit".into());
+            }
+            let owner: RuntimeOwner =
+                serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+            if owner.pid == 0 {
+                return Err("runtime owner PID is invalid".into());
+            }
+            Ok(Some(owner))
+        }
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 fn runtime_lease_is_available(control_root: &Path) -> Result<bool, String> {
     let path = control_root.join(RUNTIME_LEASE_FILE_NAME);
     let file = match OpenOptions::new().read(true).write(true).open(&path) {
@@ -186,6 +234,37 @@ mod tests {
             "patina-runtime-lease-{label}-{}-{nonce}",
             std::process::id()
         ))
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn inspection_requires_a_held_lock_and_preserves_metadata() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let root = temp_root("inspect");
+        assert!(inspect_locked_owner(&root).unwrap().is_none());
+        assert!(!root.exists());
+        let lease =
+            acquire_runtime_lease(&root, AppProfile::Production, RuntimeRole::Daemon).unwrap();
+        let path = root.join(RUNTIME_LEASE_FILE_NAME);
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        let original = fs::read(&path).unwrap();
+        assert_eq!(
+            inspect_locked_owner(&root).unwrap(),
+            Some(lease.owner.clone())
+        );
+        assert_eq!(fs::read(&path).unwrap(), original);
+        drop(lease);
+        assert!(inspect_locked_owner(&root).unwrap().is_none());
+        assert_eq!(fs::read(&path).unwrap(), original);
+        fs::hard_link(&path, root.join("alias")).unwrap();
+        assert!(inspect_locked_owner(&root).is_err());
+        fs::remove_file(&path).unwrap();
+        symlink(root.join("alias"), &path).unwrap();
+        assert!(inspect_locked_owner(&root).is_err());
+        fs::remove_file(&path).unwrap();
+        fs::write(&path, vec![b'x'; 4097]).unwrap();
+        assert!(inspect_locked_owner(&root).is_err());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

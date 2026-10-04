@@ -30,6 +30,8 @@ pub(crate) struct ActivationRecord {
     pub cutover_request_id: String,
     pub phase: Phase,
     pub last_error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub migration: Option<super::migration::MigrationProof>,
 }
 
 pub(super) struct Store {
@@ -123,6 +125,51 @@ impl Store {
 }
 
 pub(super) fn read_at(root: &Path) -> Result<Option<ActivationRecord>, String> {
+    let Some(bytes) = read_bytes(root)? else {
+        return Ok(None);
+    };
+    let record: ActivationRecord =
+        serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+    validate(&record)?;
+    Ok(Some(record))
+}
+
+// A client only needs the stable binding, not the installer's evolving audit fields.
+#[cfg(feature = "desktop")]
+#[derive(Deserialize)]
+pub(super) struct Binding {
+    format_version: u32,
+    pub runtime_root: PathBuf,
+    pub config_root: PathBuf,
+    pub data_root: PathBuf,
+}
+
+#[cfg(feature = "desktop")]
+pub(super) fn read_binding_at(root: &Path) -> Result<Option<Binding>, String> {
+    let Some(bytes) = read_bytes(root)? else {
+        return Ok(None);
+    };
+    let binding: Binding = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+    if binding.format_version != 1
+        || [
+            &binding.runtime_root,
+            &binding.config_root,
+            &binding.data_root,
+        ]
+        .iter()
+        .any(|path| {
+            !path.is_absolute()
+                || path
+                    .to_str()
+                    .is_none_or(|value| value.chars().any(char::is_control))
+        })
+    {
+        return Err("invalid standalone binding".into());
+    }
+    Ok(Some(binding))
+}
+
+fn read_bytes(root: &Path) -> Result<Option<Vec<u8>>, String> {
     let file = match OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
@@ -140,13 +187,13 @@ pub(super) fn read_at(root: &Path) -> Result<Option<ActivationRecord>, String> {
     if bytes.len() as u64 > LIMIT {
         return Err("activation state exceeds size limit".into());
     }
-    let record: ActivationRecord =
-        serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
-    validate(&record)?;
-    Ok(Some(record))
+    Ok(Some(bytes))
 }
 
 fn validate(record: &ActivationRecord) -> Result<(), String> {
+    if let Some(proof) = &record.migration {
+        proof.validate()?;
+    }
     let digest = |value: &str| {
         value.len() == 64
             && value
@@ -190,6 +237,26 @@ pub(super) fn random_id() -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "desktop")]
+    #[test]
+    fn client_binding_does_not_require_the_installers_audit_schema() {
+        let root = std::env::temp_dir().join(format!("patina-binding-{}", random_id().unwrap()));
+        fs::create_dir(&root).unwrap();
+        let record = serde_json::json!({"format_version":1, "runtime_root":"/runtime", "config_root":"/config", "data_root":"/data", "future_audit_field": {"migration":"v2"}});
+        let path = root.join(RECORD);
+        fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        assert_eq!(
+            read_binding_at(&root).unwrap().unwrap().runtime_root,
+            Path::new("/runtime")
+        );
+        assert!(read_at(&root).is_err());
+        let mut invalid = record;
+        invalid["runtime_root"] = "relative".into();
+        fs::write(&path, serde_json::to_vec(&invalid).unwrap()).unwrap();
+        assert!(read_binding_at(&root).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn activation_guard_unlocks_before_duplicate_file_descriptions_close() {
         let root =

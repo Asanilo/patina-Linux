@@ -1,5 +1,6 @@
 //! Local installation host. This owns activation intent, not tracking or business writes.
 mod journal;
+pub(crate) mod migration;
 mod native;
 
 use crate::app::{runtime_lease, runtime_owner_cutover as cutover};
@@ -15,6 +16,9 @@ use std::{
 };
 
 trait ActivationHost {
+    fn migration_proof(&self) -> Option<migration::MigrationProof> {
+        None
+    }
     async fn preflight(&self) -> Result<(), String>;
     async fn stop(&self) -> Result<(), String>;
     async fn install(&self) -> Result<(), String>;
@@ -28,6 +32,7 @@ pub(crate) async fn activate(
     expected: &str,
     api_port: u16,
     allow_debug: bool,
+    migration_request: Option<migration::MigrationRequest>,
 ) -> Result<ActivationRecord, String> {
     if api_port < 1024 {
         return Err("activation requires the configured API port in 1024..65535".into());
@@ -38,15 +43,24 @@ pub(crate) async fn activate(
         &roots,
         AppProfile::Production,
     )?;
+    let store = Store::open(&paths.control_root)?;
+    let previous = store.read()?;
+    let migration_request = migration_request.or_else(|| {
+        previous
+            .as_ref()
+            .filter(|record| record.phase != Phase::Completed)
+            .and_then(|record| record.migration.as_ref().map(|proof| proof.request.clone()))
+    });
     let host = native::NativeHost::new(
         &roots,
         &paths,
         selection.root(),
         &selection.selected,
         api_port,
+        migration_request,
+        previous.as_ref(),
     )?;
     host.preflight().await?;
-    let store = Store::open(&paths.control_root)?;
     execute(
         &store,
         &paths,
@@ -148,6 +162,11 @@ async fn execute(
         cutover_request_id: request_id,
         phase: Phase::Prepared,
         last_error: None,
+        migration: host.migration_proof().or_else(|| {
+            previous
+                .as_ref()
+                .and_then(|record| record.migration.clone())
+        }),
     };
     store.write(&record)?;
     let result = async {
@@ -230,7 +249,7 @@ pub(crate) fn uses_standalone_binding(
     roots: &AppPathRoots,
     control_root: &Path,
 ) -> Result<bool, String> {
-    let Some(record) = journal::read_at(control_root)? else {
+    let Some(record) = journal::read_binding_at(control_root)? else {
         return Ok(false);
     };
     if record.config_root != roots.config || record.data_root != roots.data {

@@ -39,6 +39,16 @@ pub(crate) fn read_existing(path: &Path) -> Result<Option<String>, String> {
 }
 
 pub(crate) fn install_identical_or_new(config: &Path, expected: &str) -> Result<(), String> {
+    publish(config, None, expected)
+}
+
+/// The migration owner must hold its profile/source locks and persist the old
+/// text before calling this. Unknown units and masks are never replaced.
+pub(crate) fn replace_known(config: &Path, original: &str, expected: &str) -> Result<(), String> {
+    publish(config, Some(original), expected)
+}
+
+fn publish(config: &Path, original: Option<&str>, expected: &str) -> Result<(), String> {
     use std::{
         fs::{self, File, OpenOptions},
         io::Write,
@@ -65,12 +75,12 @@ pub(crate) fn install_identical_or_new(config: &Path, expected: &str) -> Result<
     }
     let parent = config.join("systemd/user");
     let path = parent.join("patinad.service");
-    if let Some(existing) = read_existing(&path)? {
-        return if existing == expected {
-            Ok(())
-        } else {
-            Err("custom or different installation unit preserved".into())
-        };
+    let existing = read_existing(&path)?;
+    if existing.as_deref() == Some(expected) {
+        return Ok(());
+    }
+    if existing.as_deref() != original {
+        return Err("custom, missing or different installation unit preserved".into());
     }
     let mut random = [0_u8; 16];
     getrandom::fill(&mut random).map_err(|error| error.to_string())?;
@@ -88,6 +98,18 @@ pub(crate) fn install_identical_or_new(config: &Path, expected: &str) -> Result<
         file.write_all(expected.as_bytes())
             .and_then(|_| file.sync_all())
             .map_err(|error| error.to_string())?;
+        if original.is_some() {
+            // Supported installers are serialized by the caller's locks. Recheck
+            // an external edit immediately before publication; this is not a CAS
+            // against an arbitrary concurrent editor running as the same user.
+            if read_existing(&path)?.as_deref() != original {
+                return Err("source user unit changed before publication".into());
+            }
+            fs::rename(&temporary, &path).map_err(|error| error.to_string())?;
+            return File::open(&parent)
+                .and_then(|directory| directory.sync_all())
+                .map_err(|error| error.to_string());
+        }
         use std::{ffi::CString, os::unix::ffi::OsStrExt};
         let source =
             CString::new(temporary.as_os_str().as_bytes()).map_err(|error| error.to_string())?;
@@ -116,11 +138,9 @@ pub(crate) fn install_identical_or_new(config: &Path, expected: &str) -> Result<
     result
 }
 
-#[cfg(feature = "desktop")]
 pub(crate) const APPIMAGE_HEADER: &str = "# Managed by Patina AppImage runtime v1\n";
 pub(crate) const STANDALONE_HEADER: &str = "# Managed by Patina standalone runtime v1\n";
 
-#[cfg(feature = "desktop")]
 pub(crate) fn appimage(launcher: &Path, config: &Path, data: &Path) -> Result<String, String> {
     render(launcher, config, data, APPIMAGE_HEADER, " --patinad")
 }
@@ -201,15 +221,27 @@ mod tests {
         assert_eq!(fs::metadata(&path).unwrap().ino(), inode);
         assert!(install_identical_or_new(&config, "different unit").is_err());
         assert_eq!(fs::read_to_string(&path).unwrap(), "known unit");
+        assert!(replace_known(&config, "wrong baseline", "new unit").is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "known unit");
+        replace_known(&config, "known unit", "new unit").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "new unit");
+        assert_eq!(fs::metadata(&path).unwrap().nlink(), 1);
+        let published = fs::metadata(&path).unwrap().ino();
+        replace_known(&config, "known unit", "new unit").unwrap();
+        assert_eq!(fs::metadata(&path).unwrap().ino(), published);
         fs::remove_file(&path).unwrap();
+        assert!(replace_known(&config, "known unit", "new unit").is_err());
+        assert!(!path.exists());
         symlink("/dev/null", &path).unwrap();
         assert!(install_identical_or_new(&config, "known unit").is_err());
+        assert!(replace_known(&config, "known unit", "new unit").is_err());
         assert_eq!(fs::read_link(&path).unwrap(), Path::new("/dev/null"));
         fs::remove_file(&path).unwrap();
         let outside = root.join("outside");
         fs::write(&outside, "outside contents").unwrap();
         fs::hard_link(&outside, &path).unwrap();
         assert!(install_identical_or_new(&config, "known unit").is_err());
+        assert!(replace_known(&config, "outside contents", "new unit").is_err());
         assert_eq!(fs::read_to_string(&outside).unwrap(), "outside contents");
         fs::remove_dir_all(root).unwrap();
     }

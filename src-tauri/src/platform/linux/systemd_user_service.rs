@@ -153,6 +153,74 @@ pub(crate) struct ServiceDefinition {
     pub drop_in_paths: Vec<String>,
 }
 
+type ExecStartEntry = (String, Vec<String>, bool, u64, u64, u64, u64, u32, i32, i32);
+
+#[proxy(
+    default_service = "org.freedesktop.systemd1",
+    interface = "org.freedesktop.systemd1.Service"
+)]
+trait SystemdUserService {
+    #[zbus(property, name = "MainPID")]
+    fn main_pid(&self) -> zbus::Result<u32>;
+    #[zbus(property)]
+    fn exec_start(&self) -> zbus::Result<Vec<ExecStartEntry>>;
+    #[zbus(property)]
+    fn environment(&self) -> zbus::Result<Vec<String>>;
+    #[zbus(property)]
+    fn environment_files(&self) -> zbus::Result<Vec<(String, bool)>>;
+}
+
+pub(crate) struct ServiceLaunch {
+    pub main_pid: u32,
+    pub commands: Vec<(String, Vec<String>, bool)>,
+    pub environment: Vec<String>,
+    pub environment_files: Vec<(String, bool)>,
+}
+
+pub(crate) async fn inspect_patinad_launch() -> Result<ServiceLaunch, String> {
+    tokio::time::timeout(INSPECTION_TIMEOUT, async {
+        let connection = zbus::Connection::session()
+            .await
+            .map_err(|error| error.to_string())?;
+        let manager = SystemdUserManagerProxy::new(&connection)
+            .await
+            .map_err(|error| error.to_string())?;
+        let path = manager
+            .load_unit(PATINAD_SERVICE_NAME)
+            .await
+            .map_err(|error| error.to_string())?;
+        let service = SystemdUserServiceProxy::builder(&connection)
+            .path(path)
+            .map_err(|error| error.to_string())?
+            .build()
+            .await
+            .map_err(|error| error.to_string())?;
+        Ok(ServiceLaunch {
+            main_pid: service
+                .main_pid()
+                .await
+                .map_err(|error| error.to_string())?,
+            commands: service
+                .exec_start()
+                .await
+                .map_err(|error| error.to_string())?
+                .into_iter()
+                .map(|entry| (entry.0, entry.1, entry.2))
+                .collect(),
+            environment: service
+                .environment()
+                .await
+                .map_err(|error| error.to_string())?,
+            environment_files: service
+                .environment_files()
+                .await
+                .map_err(|error| error.to_string())?,
+        })
+    })
+    .await
+    .map_err(|_| "systemd launch inspection timed out".to_string())?
+}
+
 pub(crate) async fn load_patinad_definition() -> Result<Option<ServiceDefinition>, String> {
     tokio::time::timeout(INSPECTION_TIMEOUT, async {
         let connection = zbus::Connection::session()

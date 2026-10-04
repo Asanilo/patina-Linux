@@ -59,7 +59,7 @@ HTTP API 索引和源码以当前实现为准；索引中历史的 unreleased/st
 | M3 | 浏览器会话和适配层；共享 React 核心界面，复用 Quiet Pro | Tauri＋Web 并行读取／修改分类并同步，真实浏览器验收 | 待实施 |
 | M4 | Rust SDK typed 能力逐步补全，TUI 接入同一核心链路 | 实际交互式 TUI 可查看／筛选／修改分类，并参与同步；CLI 示例不算完成 | 待实施 |
 | M5 | GPUI 客户端，同一能力和同步契约，独立视图 | 可运行 GPUI 核心链路和四端同步验收；评估启动、资源和维护成本 | 待实施 |
-| M6 | 后端独立安装、兼容矩阵、异常恢复、发布集成 | 无 Desktop 后端运行、四端适用覆盖矩阵、可重复回归；范围冻结后再准备候选 | M6a–M6e 已验证；M6f 新／standalone 激活与恢复已有私有总线证据，旧包迁移、Desktop 重载目标接入、真实 systemd 登录及发布集成待完成 |
+| M6 | 后端独立安装、兼容矩阵、异常恢复、发布集成 | 无 Desktop 后端运行、四端适用覆盖矩阵、可重复回归；范围冻结后再准备候选 | M6a–M6g 已有分层验证；新／standalone 激活和已知旧服务迁移已有私有总线证据，Desktop 重载目标接入、旧包卸载／分包归属、真实 systemd 登录及发布集成待完成 |
 
 M1 的第二客户端示例用于证明独立依赖和真实连接，不能提前宣称 TUI 或 GPUI 已交付。M3 优先于完整 TUI／GPUI 开发，以先取得共享 UI 的直接收益。只有出现真实并行需要才增加工作分支。
 
@@ -621,3 +621,23 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 可重复的原生适配器验收入口为 `scripts/acceptance/standalone-activation.py` 和 `standalone-systemd-mock.py`：新建私有 D-Bus 总线、明确拒绝宿主总线，使用模拟 manager 和真实 daemon。覆盖已准备但未完成的 cutover 恢复、重复激活不再重启、两份同版本不同构建的受控切换、历史保留与自启动关闭；实际发生两次 start、一次 stop、两次 reload，没有 enable／disable。
 - 最终控制程序及首次载荷 SHA256 `7c03e101888f59558311394682226ef475770b9242e2778b0fca6856ff481a03`，manifest SHA256 `54412d576afd7d4db349c0f94456e89ef1ad9d08d160515b121f3f7663458916`；第二次显式切换到已验证的 M6e 构建 `cc7ff6e9e0ff8be35196a52ba70cffcaa1bde99fe9bba8216e25c7694a4594bc`。证据在 `tmp/acceptance/multi-client-m6f-activation/`、`tmp/acceptance/m6f-private-activation-final.log`、`/tmp/patina-activate-private-9_c6dw72/`。这是本地 debug 候选及私有 Production profile 的模拟 manager 验收，不是真实 systemd 登录、PrivateTmp 命名空间或 GNOME 硬件验收，也不是生产安装／公开签名升级。
 - 下一工作包应在上述激活流程上完成旧 DEB/AppImage 的具名迁移，再使 Desktop 的重载诊断按已安装目标与协议兼容性验证；保留版本精确比较的旧入口尚未退出。还需真实 systemd／登录环境和正式交付验收，以及此前列出的业务契约与产品讨论项。main、生产服务及自启动配置保持原状；本批只本地实现、验收和提交，未推送、合并或发布。
+
+### M6g 执行设计：已知系统包／AppImage 服务的显式迁移
+
+- 基线 `283b3074` 已核对。迁移沿用 M6f 的锁、持久意图、RuntimeLease 和目标核对；CLI 必须明确源类别、源 unit 摘要及源版本。只接受仓库已知 unit 配方，源文件和 mask／drop-in／自定义配置仍保留，不通过一个“强制”开关接管任意服务。
+- 停止前核对 systemd 实际加载的启动命令／环境；运行中的源还须与该 profile 的锁 owner PID 对应，并经 API 确认 daemon 身份与版本。已在本机只读核对 `ExecStart`、`Environment`、`EnvironmentFiles`、`MainPID` 的实际 D-Bus 签名，未改变服务。目标不能低于确认的源版本；源运行版本高于声明源版本时拒绝继续。
+- AppImage 迁移持有旧 runtime 安装锁，冻结已发布版本并复用版本预检；系统包 unit 只读取验证，在用户目录安装覆盖项，保留系统包文件。AppImage 的已知用户 unit 在停止和维护锁内按旧内容条件替换；旧 unit 文本随迁移证据保存，不自动降级回滚。
+- 迁移证据必须先于 unit 替换持久化，以识别“已换文件但尚未 reload／确认”的重试。普通独立激活不能借历史证据重新接管后来出现的其他配置。客户端读取稳定绑定字段，不因安装器审计字段扩展而失去协议兼容连接能力。
+- 验收覆盖源识别拒绝、过期确认、停止前后的源变化、替换后中断恢复、偏好和数据保留；不在本机执行真实迁移。旧 DEB 文件的卸载／分包归属和真实 systemd 登录继续作为交付验收范围。
+
+### M6g 已知旧服务迁移检查点（2026-10-05）
+
+- `--activate-runtime` 新增成组的 `--migrate-from packaged|appimage`、`--source-unit-sha256`、`--source-version`。源确认、实际加载命令／环境、profile 锁 PID、源版本和目标版本通过检查后才持久化迁移意图和停止服务。源未知、drop-in、配置漂移或降级目标均拒绝；系统包文件保持只读，AppImage unit 仅按已知旧内容替换。
+- AppImage 已发布 runtime 的检查不初始化旧根，并在整个迁移中持有原安装锁；回归覆盖在途更新被拒绝、current 被外部改动后拒绝继续，以及继承文件描述符不拖延解锁。RuntimeLease 新增只读 owner 检查，未持锁的陈旧 metadata 不算运行进程证据。用户 unit 替换保留未知文本、mask 和硬链接；迁移前保存原文，失败不自动回滚。
+- Desktop 读取稳定绑定投影，安装器仍严格验证完整 journal。未知审计字段不阻止客户端读取绑定，非法 roots 仍拒绝。profile 安装锁在读取旧迁移意图前取得，避免从未串行的旧记录构造恢复来源。
+- 完整 `npm run check:full` 通过：68 个 TypeScript 文件、49 项浏览器检查、48 项 SDK 测试、Desktop 830 passed / 22 ignored、无桌面后端 691 passed / 11 ignored；类型生成、依赖／架构边界、Clippy、bundle 预算通过。证据为 `tmp/acceptance/m6g-full.log`。之后 Rust 仅有格式调整；补充的验收夹具检查单独执行。
+- 候选是本地 `1.9.2` debug 构建，二进制 SHA256 `4e9c6e6ecf03f7f35d36ff4800680cfe1cd5241445773a26db9fbe0b73b730b2`，manifest SHA256 `9cceef1807e755cc30a4937d5a6d2174b9fc4b31cc89efa667a91141acc5d8e7`；归档与逐场景日志位于 `tmp/acceptance/multi-client-m6g-migration/`。旧进程使用只读的已安装 `/usr/bin/patinad`，所有进程连接私有 D-Bus／临时 profile，数据库只有合成验收记录。
+- standalone 回归、系统包迁移、合成 AppImage 布局迁移均通过；两个源类别都覆盖登录启用时 unit 已替换但首次 reload 失败，再凭 journal 无源参数重试。确认原 unit 文本有记录、源 PID／环境／drop-in 漂移在 stop 前被拒绝、重复已完成激活不重启、历史数据与后台／Desktop 登录偏好保留。两个恢复场景分别在 `/tmp/patina-activate-private-dftzz22e/` 和 `/tmp/patina-activate-private-mf8vbuud/`。
+- 额外的系统包迁移后再次切换已验证 M6f 同版本不同构建通过（`migration-then-switch.log`、`/tmp/patina-activate-private-oolluun_/`），不隐式重做源迁移。AppImage 停服期间的外部 unit 编辑被保留并中止发布；只有测试夹具显式恢复原内容后才能继续（`appimage-external-edit.log`、`/tmp/patina-activate-private-0ruhx1za/`）。首轮恢复验收错误地预期向已停止服务再次发送 StopUnit，已按既有幂等控制行为修正断言并重验；应用没有为迎合断言新增停止操作。
+- 离线 `systemctl --root=<temporary> --global is-enabled` 验证用户层等价覆盖加入前后、夹具中移除原系统 unit 后均为 enabled，原链接未改；证据 `/tmp/patina-unit-enable-offline-stqbcylz/result.json`。这是离线查找语义，连同模拟 manager 的启用状态均不能替代真实 systemd 登录验收。AppImage 使用合成 AppDir，不宣称真实 AppImage／FUSE 分发通过。
+- 下一项处理 Desktop 的重载／版本诊断：独立后端按已安装目标身份和协议就绪检查，不再要求版本等于 Desktop；旧整包兼容路径保留必要验证。还需核对安装元数据和客户端连接的边界，避免安装器内部状态扩展意外阻止兼容客户端连接。旧包卸载／分包、真实 systemd 登录及正式交付仍未完成；本批不安装、不合并、不推送、不发布，不进入新客户端 UI。
