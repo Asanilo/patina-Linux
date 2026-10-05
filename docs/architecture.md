@@ -274,6 +274,8 @@ Linux 固定 service unit 的路径转义与基础策略渲染归 `platform/linu
 
 独立安装的激活宿主归 `app/standalone_activation`。安装根锁稳定已选目标，profile 级锁串行该 profile 的安装意图；`standalone-activation.json` 记录目标摘要、profile roots、cutover request ID、prepared／starting／completed 阶段和有界错误。新 cutover 的 ID 必须先持久化，再通过共享 `runtime_owner_cutover` 预约，保证两文件之间中断后可识别归属；该模块同时用于 headless 和 Desktop，不另造 embedded／client 判断规则。切换前停止受管服务并等待 RuntimeLease，持有 Maintenance lease 准备文件，启动前释放；服务就绪和实际映像匹配后才确认完成。已启动且核对成功的重试只完成状态确认，不再次重启；失败不自动选择旧版本或降级数据库。
 
+该登记中的 `runtime_start_allowed` 是稳定启动准入字段，旧记录缺省为 true；读取准入不要求理解安装器的完整审计或 phase schema。false 或损坏登记使 Desktop 启动决策保持阻止状态，不能退回 embedded；普通客户端重载也不能恢复准入。daemon 在取得 RuntimeLease 后、存储维护／SQLite 初始化前执行同一检查。显式安装宿主单独读取 cutover 归属，准备阶段写入 false，固定 unit 安装完成后随 starting 状态写入 true，再启动并验证目标；已验证健康目标的显式激活可只更新登记。这个字段不代替 systemd 屏蔽，也不能约束不认识该字段的旧二进制；用户级停用／卸载必须同时完成服务归属检查和持久屏蔽。
+
 显式激活接收新 profile／受认可 standalone unit，以及既有 completed 或本安装意图对应的 cutover；已知旧系统包／AppImage 服务必须额外确认源类别、unit 摘要和源版本。迁移宿主核对实际加载的 argv／环境、源版本及活跃服务 PID 对应的 profile lease，目标不低于确认的源版本；其他迁移、mask、drop-in 或配置冲突必须保留并拒绝接管。systemd manager 与安装进程的 profile roots 必须一致，登录启用状态应与持久偏好一致，激活不调用 enable／disable。managed daemon 启动后由自身 writer 将 activating／completed cutover 的后台登录偏好镜像到设置；AppImage Desktop 识别合法 standalone 绑定后复用该服务，不再发布自己的 runtime。旧包卸载／分包归属以及真实登录验收仍按工作计划另行完成。
 
 旧服务迁移复用同一激活 journal，先持久化源证据及原 unit 文本，再在停止服务和取得 Maintenance lease 后安装用户覆盖项或条件替换已知 AppImage unit。系统包文件只读保留；AppImage 旧 runtime 的安装锁与新目标锁一起持有。替换后、reload 前中断可凭未完成记录继续，不能用已完成历史隐式接管后来出现的服务。客户端仅消费稳定绑定字段，不依赖安装器完整审计 schema；源文件摘要和旧 AppImage marker 不构成发行者签名认证。

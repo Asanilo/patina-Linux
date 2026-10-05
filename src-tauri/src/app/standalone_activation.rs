@@ -89,7 +89,8 @@ async fn execute(
     }) {
         return Err("activation belongs to a different installation or profile; explicit migration is required".into());
     }
-    let decision = cutover::decide_desktop_startup(&paths.control_root, AppProfile::Production);
+    let decision =
+        cutover::decide_owner_for_installation(&paths.control_root, AppProfile::Production);
     let (request_id, background, desktop, create_cutover) = match decision {
         cutover::RuntimeOwnerStartupDecision::Embedded => {
             // A rolled-back reservation is not an uninitialized profile.
@@ -152,6 +153,7 @@ async fn execute(
             completed.manifest_sha256 = selected.manifest_sha256.clone();
             completed.binary_sha256 = selected.binary_sha256.clone();
             completed.phase = Phase::Completed;
+            completed.runtime_start_allowed = true;
             completed.last_error = None;
             store.write(&completed)?;
             return Ok(completed);
@@ -166,6 +168,7 @@ async fn execute(
         binary_sha256: selected.binary_sha256.clone(),
         cutover_request_id: request_id,
         phase: Phase::Prepared,
+        runtime_start_allowed: false,
         last_error: None,
         migration: host.migration_proof().or_else(|| {
             previous
@@ -196,7 +199,7 @@ async fn execute(
                 now(),
             )?;
         }
-        match cutover::decide_desktop_startup(&paths.control_root, AppProfile::Production) {
+        match cutover::decide_owner_for_installation(&paths.control_root, AppProfile::Production) {
             cutover::RuntimeOwnerStartupDecision::DaemonClient { reservation, .. }
                 if reservation.request_id == record.cutover_request_id =>
             {
@@ -213,6 +216,7 @@ async fn execute(
         }
         host.install().await?;
         record.phase = Phase::Starting;
+        record.runtime_start_allowed = true;
         store.write(&record)?;
         drop(lease);
         host.start().await?;
@@ -249,6 +253,12 @@ fn now() -> u64 {
     crate::engine::runtime_context::now_ms()
 }
 
+/// Read only the stable startup permission, never the installer's audit schema.
+/// Call after acquiring the runtime lease, before storage work or SQLite startup.
+pub(crate) fn require_runtime_start(control_root: &Path) -> Result<(), String> {
+    journal::require_runtime_start(control_root)
+}
+
 #[cfg(feature = "desktop")]
 pub(crate) fn registered_runtime_root(
     roots: &AppPathRoots,
@@ -270,6 +280,7 @@ pub(crate) struct ClientReloadGuard {
 
 #[cfg(feature = "desktop")]
 pub(crate) fn require_completed_registration(control_root: &Path) -> Result<(), String> {
+    require_runtime_start(control_root)?;
     if !journal::activation_completed(control_root)? {
         return Err(
             "standalone activation is incomplete; finish installation before reloading".into(),

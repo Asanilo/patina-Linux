@@ -140,6 +140,85 @@ struct Host {
     wait_on_verify: AtomicBool,
     verification_entered: tokio::sync::Notify,
 }
+
+#[tokio::test]
+async fn disabled_startup_keeps_daemon_ownership_and_requires_explicit_activation() {
+    let fixture = Fixture::new();
+    let host = fixture.host();
+    let store = Store::open(&fixture.paths.control_root).unwrap();
+    let root = fixture.root.join("runtime");
+    let mut record = execute(
+        &store,
+        &fixture.paths,
+        &fixture.roots,
+        &root,
+        &fixture.selected,
+        &host,
+    )
+    .await
+    .unwrap();
+    let original_cutover = cutover::diagnose(&fixture.paths.control_root, AppProfile::Production);
+    record.runtime_start_allowed = false;
+    store.write(&record).unwrap();
+    drop(store);
+    assert!(require_runtime_start(&fixture.paths.control_root).is_err());
+    assert!(matches!(
+        cutover::decide_desktop_startup(&fixture.paths.control_root, AppProfile::Production),
+        cutover::RuntimeOwnerStartupDecision::Blocked { .. }
+    ));
+    assert!(matches!(
+        cutover::decide_owner_for_installation(&fixture.paths.control_root, AppProfile::Production),
+        cutover::RuntimeOwnerStartupDecision::DaemonClient { .. }
+    ));
+    #[cfg(feature = "desktop")]
+    assert!(hold_client_reload(&fixture.roots, &fixture.paths.control_root, Some(&root)).is_err());
+    let store = Store::open(&fixture.paths.control_root).unwrap();
+    host.effects.lock().unwrap().clear();
+    // Explicit activation can re-admit a verified healthy target without restart.
+    let restored = execute(
+        &store,
+        &fixture.paths,
+        &fixture.roots,
+        &root,
+        &fixture.selected,
+        &host,
+    )
+    .await
+    .unwrap();
+    assert!(restored.runtime_start_allowed);
+    assert!(require_runtime_start(&fixture.paths.control_root).is_ok());
+    assert_eq!(*host.effects.lock().unwrap(), vec!["preflight", "verify"]);
+    assert_eq!(
+        cutover::diagnose(&fixture.paths.control_root, AppProfile::Production).request_id,
+        original_cutover.request_id
+    );
+}
+
+#[test]
+fn disabled_or_invalid_installation_cannot_fall_back_to_embedded_without_cutover() {
+    use std::os::unix::fs::PermissionsExt;
+    let fixture = Fixture::new();
+    fs::create_dir_all(&fixture.paths.control_root).unwrap();
+    let record = serde_json::json!({"format_version":1, "runtime_root":fixture.root.join("runtime"),
+        "config_root":fixture.roots.config, "data_root":fixture.roots.data, "runtime_start_allowed":false});
+    let path = fixture
+        .paths
+        .control_root
+        .join("standalone-activation.json");
+    fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(
+        !cutover::decide_desktop_startup(&fixture.paths.control_root, AppProfile::Production)
+            .owns_embedded_runtime()
+    );
+    fs::write(&path, b"{incomplete").unwrap();
+    assert!(
+        !cutover::decide_desktop_startup(&fixture.paths.control_root, AppProfile::Production)
+            .owns_embedded_runtime()
+    );
+    assert!(!fixture.paths.db_path.exists());
+}
+
 impl Host {
     fn effect(&self, stage: &'static str) -> Result<(), String> {
         self.effects.lock().unwrap().push(stage);
@@ -155,11 +234,13 @@ impl ActivationHost for Host {
     }
     async fn stop(&self) -> Result<(), String> {
         assert!(journal::read_at(&self.control)?.is_some());
+        assert!(require_runtime_start(&self.control).is_err());
         self.effect("stop")?;
         self.running.store(false, Ordering::SeqCst);
         Ok(())
     }
     async fn install(&self) -> Result<(), String> {
+        assert!(require_runtime_start(&self.control).is_err());
         assert!(
             runtime_lease::acquire_runtime_lease(
                 &self.control,
@@ -172,6 +253,7 @@ impl ActivationHost for Host {
         self.effect("install")
     }
     async fn start(&self) -> Result<(), String> {
+        require_runtime_start(&self.control)?;
         assert_eq!(
             journal::read_at(&self.control)?.unwrap().phase,
             Phase::Starting
@@ -317,13 +399,11 @@ async fn interrupted_activation_resumes_same_cutover_without_implicit_rollback()
         assert_ne!(pending.phase, Phase::Completed);
         assert!(pending.last_error.unwrap().contains(stage));
         assert_eq!(pending.binary_sha256, fixture.selected.binary_sha256);
-        if stage != "stop" {
-            assert!(!cutover::decide_desktop_startup(
-                &fixture.paths.control_root,
-                AppProfile::Production
-            )
-            .owns_embedded_runtime());
-        }
+        assert!(!cutover::decide_desktop_startup(
+            &fixture.paths.control_root,
+            AppProfile::Production
+        )
+        .owns_embedded_runtime());
         *host.failure.lock().unwrap() = None;
         let completed = execute(
             &store,

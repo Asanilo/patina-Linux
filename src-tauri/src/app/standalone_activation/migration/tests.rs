@@ -56,6 +56,7 @@ impl Fixture {
             binary_sha256: "b".repeat(64),
             cutover_request_id: format!("cutover_{}", "a".repeat(32)),
             phase: Phase::Prepared,
+            runtime_start_allowed: true,
             last_error: None,
             migration: Some(self.proof.clone()),
         }

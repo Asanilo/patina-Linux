@@ -697,3 +697,20 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - `scripts/acceptance/daemon-deb-lifecycle.py` 在私有 dpkg 根及 user／mount／PID／network namespace 中通过 10 个阶段：旧包安装、安装器 A 共存、升 B、先移除旧包再移除安装器、重装两包、反向移除及最后重装 B。两个包无文件重叠，逐阶段检查状态、版本、内容与权限；用户数据／用户 unit 夹具及从 A 复制的真实 runtime 全程保留，无新自动启用链接。正常 dpkg 依赖检查仅使用宿主已安装包的元数据副本，不是依赖载荷安装验收。证据 `/tmp/patina-backend-deb-acceptance-vkzbdel2/evidence.json`、`lifecycle.json` 和逐阶段日志。
 - 使用上述包管理验收保留的实际 A／B 载荷，私有 D-Bus＋真实 daemon 的激活和 Desktop 原生重载通过：A 二进制 `4dada826664929e0d9961b6abc07651151498072d91e1d17beb83ae498d75ce2` 切换到 B 的 `413a1634232a4393a9422098b278a6f32aadab94a70deb3acb766a55237c7ea0`，最终版本 2.0.0-test.1，历史、登录偏好和重载后安装记录收敛通过；计数 start 1、stop 0、reload 1、controlled_restart 1。证据 `/tmp/patina-activate-private-lr8sdvwr/`、`tmp/acceptance/m6j-packaged-native.log`。保留的 `/usr/bin/patina-backend` 相对入口也实际通过 build-info／version／stage／select／inspect，证据 `/tmp/patina-backend-launcher-2ahlfx4o/result.json`。
 - 本批证明分包文件归属与真实载荷可用，不证明真实 systemd 登录或无 Desktop 的 GNOME 采集。移除旧包会移除其系统 GNOME 扩展；独立桌面集成交付、用户 runtime 退出／卸载、纯客户端 Desktop 和正式后端签名／更新仍待完成。当前优先继续用户级 runtime 退出与卸载边界，防止清理后落回旧服务／embedded owner；M2 网页／偏好业务选择和 M3–M5 新客户端讨论仍保留。生产安装、main、远端和公开 Release 均未改动。
+
+### M6k 执行设计：用户级停用、恢复与卸载
+
+- 安装宿主继续归 `app/standalone_activation`，单 runtime／安装根／profile 锁保持原职责。用户数据、cutover 归属和安装登记保留；退出独立安装不等于返回 embedded，也不自动恢复旧系统包服务。包管理器移除安装器与此处用户级操作仍是两个边界。
+- 先补持久启动准入：安装登记新增稳定的 `runtime_start_allowed` 投影，旧记录缺省允许启动；读取方不依赖安装器完整审计字段或 phase schema。拒绝／损坏状态阻止 Desktop 启动后台及 embedded 回退，daemon 在取得 runtime lease 后、任何存储维护／SQLite 初始化前拒绝。显式激活在安装与就绪流程中重新开放准入，不由普通客户端重载隐式恢复。
+- 停用流程将先持久化拒绝启动，再核对并停止属于本安装的服务，持有 Maintenance lease 后将已知用户 unit 改为本安装登记的 mask；完成必须确认 manager 已加载屏蔽状态且无运行 owner。失败保留可恢复意图，不自动回到旧后端。保留用户原有登录意图，但被停用的服务不能因此自动恢复。
+- 恢复只接受相同登记、受认可的 mask／unit 和显式目标；安装根与 profile 锁内恢复固定 unit、重新加载、开放启动并核对实际运行身份。保留最低已激活版本，拒绝因卸载／重装造成自动降级。未知 unit、外部 mask、drop-in 或运行 owner 仍保留并拒绝接管。
+- 载荷卸载在停用成立后执行，先核对完整安装清单，再只清理有归属的版本文件与选择；保留阻止旧服务／embedded 接管所需的登记、锁及 mask。不能用递归删除任意用户目录，也不能把部分删除后的失败当成功。启动准入、服务停用／恢复、载荷清理分批验证；全部完成前不宣称卸载功能已经交付。
+
+### M6k 启动准入检查点（2026-10-05；停用／卸载尚未完成）
+
+- 安装登记已增加缺省为 true 的 `runtime_start_allowed`；稳定读取投影校验版本、绑定路径、文件权限和布尔类型，不依赖未知审计字段或新 phase 表示。false、格式损坏或不可信权限会阻止启动；没有登记和旧登记继续兼容。
+- daemon 在取得 runtime lease 后、存储路径准备／维护和 SQLite 初始化前执行准入检查。Desktop 的启动决策遇拒绝保持 blocked，即使 cutover 缺失也不回到 embedded；客户端重载必须同时满足准入与完成登记。显式激活单独核对 cutover 归属，在 prepared 阶段关闭准入、unit 安装后随 starting 开放；已核验健康目标可通过显式激活只恢复登记而不重复重启。
+- Rust 回归证明异常安装状态不自动启用、未知安装器审计字段不破坏稳定投影、客户端重载不能隐式恢复、停止前／安装期间准入关闭、实际启动前准入已开放，以及显式激活保持原 cutover 身份。完整 `npm run check:full` 通过：68 个 TypeScript 测试文件、49 项浏览器检查、48 项 SDK 测试、Desktop 841 passed / 23 ignored、无桌面后端 698 passed / 11 ignored，生成类型、边界、Clippy 和 bundle 均通过。证据 `tmp/acceptance/m6k-admission-full.log`。
+- 新的 `scripts/acceptance/standalone-admission.py` 使用真实无桌面二进制和独立合成 Production profile，验证 false／错误类型在数据目录创建前失败，旧记录与 true 正常初始化并退出；对已有数据库再次拒绝启动，SQLite 文件摘要保持不变。metadata 入口仍可用，安装登记未被启动修改。四组场景通过，证据 `/tmp/patina-runtime-admission-8ukxlmxi/result.json` 及各 profile 日志。
+- 二进制 SHA256 `03a7f394d4b59ba53c004ad96b2f92717bc8dc881c6d54d29c11061bc8b6547b`，manifest `d2ceb7d7589e99b6d9289d33601dac3bd8007eb06eb29c64192024470207d47e`，位于 `tmp/acceptance/m6k-admission/`。私有 D-Bus＋真实 daemon 的中断安装恢复、就绪核对、重复激活不重启、历史和登录偏好保留通过：`/tmp/patina-activate-private-pbodg3zk/`、`m6k-admission-activation.log`，start 1／stop 0／reload 1。
+- 这批只有启动准入和激活衔接，没有对外停用／卸载命令，没有 systemd mask 或载荷删除。旧二进制不认识该字段，后续必须补齐服务屏蔽、归属和停止证明、显式恢复、版本下限及可恢复载荷清理；不能以手改生产登记作为停用方式。main、生产安装和远端未变，目标继续进行。

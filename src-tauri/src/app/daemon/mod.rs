@@ -77,6 +77,8 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
         crate::app::runtime_lease::RuntimeRole::Daemon,
     )
     .map_err(|error| error.to_string())?;
+    #[cfg(target_os = "linux")]
+    crate::app::standalone_activation::require_runtime_start(&default_paths.control_root)?;
     println!(
         "[patinad] runtime lease acquired for profile {} as {:?}",
         runtime_lease.owner.profile, runtime_lease.owner.role

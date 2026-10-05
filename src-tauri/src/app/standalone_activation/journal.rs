@@ -10,6 +10,10 @@ use std::{
 const RECORD: &str = "standalone-activation.json";
 const LIMIT: u64 = 16 * 1024;
 
+fn start_allowed_by_default() -> bool {
+    true
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Phase {
@@ -29,6 +33,9 @@ pub(crate) struct ActivationRecord {
     pub binary_sha256: String,
     pub cutover_request_id: String,
     pub phase: Phase,
+    // Stable startup contract, independent of the installer's audit/phase schema.
+    #[serde(default = "start_allowed_by_default")]
+    pub runtime_start_allowed: bool,
     pub last_error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub migration: Option<super::migration::MigrationProof>,
@@ -135,13 +142,34 @@ pub(super) fn read_at(root: &Path) -> Result<Option<ActivationRecord>, String> {
 }
 
 // A client only needs the stable binding, not the installer's evolving audit fields.
-#[cfg(feature = "desktop")]
 #[derive(Deserialize)]
 pub(super) struct Binding {
     format_version: u32,
     pub runtime_root: PathBuf,
     pub config_root: PathBuf,
     pub data_root: PathBuf,
+}
+
+pub(super) fn require_runtime_start(root: &Path) -> Result<(), String> {
+    #[derive(Deserialize)]
+    struct StartPolicy {
+        #[serde(flatten)]
+        binding: Binding,
+        #[serde(default = "start_allowed_by_default")]
+        runtime_start_allowed: bool,
+    }
+    let Some(bytes) = read_bytes(root)? else {
+        return Ok(());
+    };
+    let policy: StartPolicy = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+    validate_binding(&policy.binding)?;
+    if !policy.runtime_start_allowed {
+        return Err(
+            "standalone backend startup is disabled; resume it through explicit runtime activation"
+                .into(),
+        );
+    }
+    Ok(())
 }
 
 #[cfg(feature = "desktop")]
@@ -164,6 +192,11 @@ pub(super) fn read_binding_at(root: &Path) -> Result<Option<Binding>, String> {
         return Ok(None);
     };
     let binding: Binding = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+    validate_binding(&binding)?;
+    Ok(Some(binding))
+}
+
+fn validate_binding(binding: &Binding) -> Result<(), String> {
     if binding.format_version != 1
         || [
             &binding.runtime_root,
@@ -180,7 +213,7 @@ pub(super) fn read_binding_at(root: &Path) -> Result<Option<Binding>, String> {
     {
         return Err("invalid standalone binding".into());
     }
-    Ok(Some(binding))
+    Ok(())
 }
 
 fn read_bytes(root: &Path) -> Result<Option<Vec<u8>>, String> {
@@ -251,6 +284,49 @@ pub(super) fn random_id() -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn startup_policy_is_stable_and_invalid_state_cannot_enable_a_runtime() {
+        let root =
+            std::env::temp_dir().join(format!("patina-start-policy-{}", random_id().unwrap()));
+        fs::create_dir(&root).unwrap();
+        let path = root.join(RECORD);
+        let baseline = serde_json::json!({"format_version":1, "runtime_root":"/runtime", "config_root":"/config", "data_root":"/data",
+            "phase":{"future_format":2}, "future_audit":{"value":1}});
+        let write = |value: &serde_json::Value| {
+            fs::write(&path, serde_json::to_vec(value).unwrap()).unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        };
+        assert!(require_runtime_start(&root).is_ok());
+        write(&baseline);
+        assert!(
+            require_runtime_start(&root).is_ok(),
+            "old records default to allowed, regardless of audit schema"
+        );
+        let mut denied = baseline.clone();
+        denied["runtime_start_allowed"] = false.into();
+        write(&denied);
+        assert!(require_runtime_start(&root)
+            .unwrap_err()
+            .contains("startup is disabled"));
+        for (field, value) in [
+            ("runtime_start_allowed", serde_json::json!("false")),
+            ("runtime_start_allowed", serde_json::Value::Null),
+            ("format_version", serde_json::json!(2)),
+            ("runtime_root", serde_json::json!("relative")),
+        ] {
+            let mut invalid = baseline.clone();
+            invalid[field] = value;
+            write(&invalid);
+            assert!(require_runtime_start(&root).is_err(), "invalid {field}");
+        }
+        fs::write(&path, b"{broken").unwrap();
+        assert!(require_runtime_start(&root).is_err());
+        write(&baseline);
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(require_runtime_start(&root).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
     #[cfg(feature = "desktop")]
     #[test]
     fn client_binding_does_not_require_the_installers_audit_schema() {

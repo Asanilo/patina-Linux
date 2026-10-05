@@ -116,6 +116,19 @@ pub fn decide_desktop_startup(
     control_root: &Path,
     profile: AppProfile,
 ) -> RuntimeOwnerStartupDecision {
+    #[cfg(target_os = "linux")]
+    if let Err(reason) = crate::app::standalone_activation::require_runtime_start(control_root) {
+        return RuntimeOwnerStartupDecision::Blocked { reason };
+    }
+    decide_owner_for_installation(control_root, profile)
+}
+
+/// Explicit installation may restore startup permission after preparing the unit.
+/// Its ownership check must remain separate from automatic client startup policy.
+pub(crate) fn decide_owner_for_installation(
+    control_root: &Path,
+    profile: AppProfile,
+) -> RuntimeOwnerStartupDecision {
     let reservation = match read_reservation(control_root, profile) {
         Ok(Some(reservation)) => reservation,
         Ok(None) => return RuntimeOwnerStartupDecision::Embedded,

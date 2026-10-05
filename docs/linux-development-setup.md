@@ -100,6 +100,20 @@ probe for these checks; old candidates can omit executable identity. It does not
 a service or validate real GNOME tracking. If sharing `CARGO_TARGET_DIR` across configurations, preserve the
 selected binary before another build replaces `debug/patinad`.
 
+To exercise the actual binary's installation startup permission independently:
+
+```bash
+python3 scripts/acceptance/standalone-admission.py /absolute/path/current-branch-patinad
+```
+
+This creates synthetic Production profiles with no API listener, tracking, desktop
+session or host service access. Denied/invalid installation permission must prevent
+storage initialization; legacy records and explicit permission still initialize and
+shut down normally. Denying a later start must leave the existing SQLite file intact.
+The helper preserves logs and a result manifest under `/tmp`. This checks startup
+admission, not a user-facing stop/uninstall command or a systemd mask. Do not manually
+edit a real installation record to simulate deactivation.
+
 For standalone delivery development, `patinad --build-info` prints static JSON
 with the executable version, Cargo target, protocol compatibility range, and
 desktop/debug build flags. It does not acquire a runtime lease, open a database,
