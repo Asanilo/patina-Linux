@@ -1,107 +1,112 @@
 # 多客户端基础分支交接
 
-日期：2026-10-04。代码检查点：`ce8baab4`；本交接作为后续文档提交加入同一分支。本文是接续入口，详细执行证据以[阶段计划的最新记录](./2026-10-03-multi-client-platform.md)为准，长期边界以 [architecture](../architecture.md) 为准。后续检查点取代本文时将其归档。
+更新：2026-10-05；沿用文件名保持链接稳定。**本小阶段在 M6k 停用与恢复收尾，用户已明确要求暂停，等其说继续。** 已验收代码检查点为 `3b8a2479483dac0dc6f86c6e2546a58d387c5277`；本交接由随后的一次文档提交更新。
 
-接续更新（2026-10-05）：此处的 M6c 停止点已推进到 M6i 独立版本来源，已有 Desktop 1.9.2 适配器与真实 2.0.0-test.1 后端的私有总线重载及双 SDK 验收；仓库版本仍为 1.9.2，AppImage 源迁移使用合成 AppDir。本交接保留原检查点，当前代码和验证结果请读取阶段计划末尾；正式分包、旧包卸载归属、真实 systemd 登录及剩余业务契约仍待完成。跨版本源码验收须使用专用 Cargo 缓存，不能再与普通开发 target 共用输出槽。
+本文是当前接续入口，取代原 M6c 交接内容。详细证据见[阶段计划末尾](./2026-10-03-multi-client-platform.md)，长期边界见 [architecture](../architecture.md)。整体后端交付和四端计划尚未完成，历史记录中的“继续下一项”不取消本次暂停。
 
-## 分支与授权
+## 分支、授权与停止点
 
-- 仓库：`Asanilo/patina-Linux`，远端 `origin`；开发分支 `feature/multi-client-platform`。
-- 本机 worktree：`/home/arinp22/code/patina/.worktrees/multi-client`。稳定 main 在 `/home/arinp22/code/patina`，基线为 `f344c8a93b21d6ca8dac89adb56be96e7ce929c7`。
-- 代码检查点领先 main 30 个本地提交；本交接提交另计。用户本轮明确授权将本开发分支推送远端。推送结果以 Git 远端核对为准，不能用本文代替网络操作成功证据。
-- 用户授权继续建设后端和整体架构基础，必要时重构；进入新 Web／TUI／GPUI 界面及多客户端产品交互前讨论。例行实现和验证可继续，无须重复询问已确定方向。
-- 用户已选择：**后端独立安装和升级，Desktop 按协议兼容连接**。这不是本机安装、合并 main、创建 PR、tag 或公开发布授权；过去稳定版的发布授权不能自动套用于本分支。
-- 默认单 agent；当前无新增子代理授权。主线和生产 1.9.2 未被本阶段替换；历史上游草稿 worktree 不在本任务范围。
+- 仓库：`Asanilo/patina-Linux`；分支 `feature/multi-client-platform`；worktree：`/home/arinp22/code/patina/.worktrees/multi-client`。
+- 稳定 main：`/home/arinp22/code/patina`，保持 `f344c8a93b21d6ca8dac89adb56be96e7ce929c7`。本阶段没有替换生产 1.9.2。
+- 当前本地跟踪引用 `origin/feature/multi-client-platform` 为 `bde592f354dc795df2b425857cba8bcecf9335ca`。验收代码领先该引用 10 个提交，收尾文档提交另计；本轮未联网核对远端，不把本地引用当作实时远端状态。
+- 本轮仅收尾、保存草稿并本地提交；没有推送、合并 main、安装、PR、tag 或公开发布授权。早期交接中的一次性推送授权已执行，不能用于本次新增提交。
+- 已确定产品方向：**后端独立安装和升级；Desktop 按协议兼容连接**。恢复后可继续原已授权的后端与架构基础实现；进入新 Web／TUI／GPUI 界面及产品交互前讨论。默认单 agent。
+- 开发代码恢复为已验收检查点；未完成的 M6l 文件删除实现保存为草稿，不随本次提交交付。不要因其存在于本机就视为功能已实现。
 
-## 目标和实际交付
+## 已实现及未完成的边界
 
-目标是一套业务后端，Tauri、TUI、GPUI、Web 复用事实、规则和同步契约；界面与宿主能力按客户端实现。后端兼容更新不等于自动生成四套界面。
-
-| 能力 | 代码检查点状态 |
+| 能力 | 当前状态 |
 | --- | --- |
-| 独立协议和 SDK | `crates/patina-protocol` 与 `crates/patina-client` 已提取；SDK 不依赖 Tauri、GTK、SQLx 或 tracking；Desktop 按用例接入同一 SDK |
-| 同步基础 | 能力协商、认证 HTTP/SSE、订阅与快照协调、事件缺口恢复、daemon 实例更换和陈旧响应屏蔽已有回归；写入失败不自动重试 |
-| 核心读取 | Dashboard、应用聚合、精确 History 与小时统计等核心链路返回后端产品结果；分类、排除、导入优先级不由这些客户端调用方重复实现 |
-| 设置与资源 | 分类、普通追踪策略、浏览器／音频资源具备快照与条件写入；过期编辑产生冲突；设置页保留原始编辑基线 |
-| Tools | 类型化 SDK 操作与 Desktop 共用契约；单项写入事务、owner 串行、快照与事件次序及前端异步响应协调已完成 |
-| 读写隔离 | daemon 分析读取使用独立只读 WAL 池和准入／查询期限，避免长分析占住 writer；这不意味着任意 Rust 计算可被强制抢占 |
-| 后端构建 | 同一产品 crate 的无默认 feature 投影可构建不链接 Tauri／GTK／WebKit 的 patinad，保留同一业务实现 |
-| 独立交付基础 | 静态构建身份、确定性候选归档、完整性校验、版本化存放已实现；激活、旧包迁移、升级目标验证尚未完成 |
-| 新客户端 | 只有独立 SDK 验收探针，尚无交互式 TUI、GPUI 或可用 Web 客户端；浏览器会话／CSRF／静态入口仍待实现 |
+| 协议与客户端基础 | `crates/patina-protocol`、`crates/patina-client` 已提取；SDK 不依赖 Tauri、GTK、SQLx 或 tracking；现有 Desktop 复用 SDK |
+| 同步与核心业务 | HTTP/SSE、快照协调、事件缺口／实例更换恢复、条件写入，以及应用聚合、Dashboard／History、设置资源和 Tools 等已有回归；网页 Desktop 迁移和本地偏好边界仍有缺口 |
+| 无桌面后端与独立版本 | 同一业务 crate 的 headless 投影可独立构建；`packaging/daemon/VERSION` 提供后端版本，实际 Desktop 1.9.2 与后端 2.0.0-test.1 已通过隔离重载及双 SDK 验收 |
+| 安装与激活 | 候选完整性校验、stage／inspect／条件 select、服务计划、显式 activate 和中断恢复已实现；版本选择、实际运行身份与安装审计分别核对 |
+| 旧交付迁移与重载 | 已知 DEB／AppImage 布局显式迁移，保留自定义 unit／mask；standalone 重载验证目标摘要、实例和协议，不要求产品版本等于 Desktop |
+| 分包基础 | 独立安装器 DEB 已有隔离 dpkg 共存、升级、两种移除顺序及重装证据；包管理器移除安装器不会移除用户 runtime 或数据。公开 DEB／AppImage 仍是旧整包 |
+| 停用与恢复 | `--deactivate-runtime` 关闭启动准入并停止／屏蔽本安装服务，保留数据、载荷、登录意图和版本下限；`--activate-runtime` 显式恢复；错误归属与外部变更拒绝接管 |
+| 尚未交付 | 用户 runtime 载荷卸载、真实 user systemd／登录验收、无 Desktop 的 GNOME 集成交付、纯客户端 Desktop 包、独立后端正式签名更新链路 |
+| 新客户端 | 只有 SDK 验收探针，无交互式 TUI、GPUI 或可用 Web 客户端；浏览器 session／CSRF／静态入口仍待实现。后端兼容更新不等于四套 UI 自动生成 |
 
-关键源码入口：
+停用失败保留可恢复意图；恢复重载失败重新屏蔽，普通客户端不能隐式重新启用。启动准入在 daemon 存储初始化之前检查，也阻止 Desktop 回落 embedded。载荷仍保留；当前没有 `--uninstall-runtime` 命令。
 
-- `crates/patina-protocol/`、`crates/patina-client/`：契约、传输和客户端能力；类型生成不能把开发依赖带入运行时。
-- `src-tauri/src/engine/tracking/runtime_settings.rs`：普通策略更新及追踪状态协调。
-- `src-tauri/src/data/repositories/tools/`、`src-tauri/src/engine/api/tools_contract.rs`：Tools 事务与协议转换。
-- `src/features/tools/services/toolsRuntimeSnapshotStore.ts`：前端 Tools 快照／动作协调。
-- `src-tauri/src/app/daemon/installation.rs`：显式 staging 参数解析；业务与文件校验不在 CLI 中堆积。
-- `src-tauri/src/platform/linux/standalone_runtime.rs`：私有安装根、独占锁、候选校验和原子版本目录发布。
-- `scripts/package-daemon.py`：从实际二进制构建候选归档，输出归档及 manifest 摘要。
-- `src-tauri/src/app/daemon_service/{appimage,upgrade}.rs`：下一批必须处理的既有服务归属与重载检查。
+当前主要源码入口：
 
-## 最近提交与当前停止点
+- `src-tauri/src/platform/linux/standalone_runtime{.rs,/selection.rs,/probe.rs}`：载荷、选择、元数据核验；不是业务生命周期 owner。
+- `src-tauri/src/app/standalone_activation{.rs,/native.rs,/journal.rs,/deactivation.rs}`：安装状态、迁移、停用与恢复编排。
+- `src-tauri/src/platform/linux/patinad_service_unit/mask.rs`：有归属的 mask 发布与恢复。
+- `src-tauri/src/app/daemon/installation/`：薄 CLI；`app/daemon_service/upgrade.rs`：Desktop 重载目标验证。
+- `scripts/package-daemon{,-deb}.py`、`packaging/daemon/`：候选、安装器及说明；实际使用命令见[开发文档](../linux-development-setup.md)。
+
+## 本小阶段新增提交
 
 | 提交 | 内容 |
 | --- | --- |
-| `a22cb049` | History 精确小时统计由后端统一，覆盖时区与夏令时边界 |
-| `fda67ad1` | History 最短会话设置使用条件写入，迟到确认不能覆盖新状态 |
-| `7b83fac4` | Tools 共享契约、类型生成与独立 SDK 操作 |
-| `46974347` | Tools 写侧事务与串行 owner，修复并发编号、重复完成和部分回滚 |
-| `adf9d69a` | Tools 前端读取／写确认协调，防止旧响应回退已收到的新状态 |
-| `6ebc7673` | `--build-info` 与独立后端候选归档 |
-| `ce8baab4` | `--stage-runtime` 及版本化存放 |
+| `bdd3382c` | 共享服务客户端暴露实际运行映像身份 |
+| `02c6f843` | 安装版本检查与条件选择 |
+| `ea50a848` | 已选 runtime 的服务绑定预览 |
+| `283b3074` | 激活与可恢复 owner 交接 |
+| `30262413` | 已知旧服务迁移 |
+| `337dfb02` | Desktop 按独立后端目标验证重载 |
+| `d35dab60` | 后端独立版本来源 |
+| `9e310d32` | 独立安装器 DEB 与生命周期检查 |
+| `955c3bda` | 存储访问前的持久启动准入 |
+| `3b8a2479` | 显式停用、恢复及中断重试 |
 
-M6c 已完成并提交，未开始下一批代码。staging 接收显式目录、绝对 runtime 根及预期 manifest SHA256；验证固定文件集合、大小、模式、哈希、目标和构建投影后发布到 `versions/<manifest SHA256>`。重复操作重新验证已有版本，损坏时拒绝而非静默修复。它不运行候选、不选择 current、不操作 systemd、不读写 profile。摘要只能证明与预期内容一致，不能代替发布者签名。
+## 验证与证据
 
-## 验证证据及复现
+最终源码的门禁组成项均通过：68 个 TypeScript 测试文件、49 项浏览器检查、48 项 SDK 测试；Desktop **848 passed / 23 ignored**，headless **705 passed / 11 ignored**，两种 Rust 投影的 Clippy 与依赖／架构边界通过；安装器打包回归 11 项通过。忽略项未算作通过。首次完整运行有 Clippy 失败，修复后补齐最终 Rust 门禁，不将第一次完整日志误标为全部成功。
 
-`ce8baab4` 的完整 `npm run check:full` 已通过：68 个 TypeScript 测试文件、49 项浏览器检查、44 项 SDK 测试；Desktop 796 passed / 22 ignored，无桌面后端 637 passed / 11 ignored。类型生成比较、依赖／架构边界、Clippy 和 bundle 预算通过。忽略项未算作通过；细节见阶段记录。
+本机证据不随 Git 推送；`/tmp` 目录可能被系统清理：
 
-本机证据（忽略文件，不随 Git 推送；临时目录可能被系统清理）：
+| 证据 | 范围 |
+| --- | --- |
+| `tmp/acceptance/m6k-deactivation-full.log` | 未再变化的前端、浏览器、SDK、生成契约和 bundle 检查；包含已修复的首轮 Clippy 失败 |
+| `tmp/acceptance/m6k-recovery-rust-final.log` | 最终两种 Rust 投影及 Clippy |
+| `tmp/acceptance/m6k-packaging.log` | 11 项打包回归 |
+| `/tmp/patina-activate-private-c9b56z_f/result.json` | 新安装、登录关闭、启动故障后的停用／恢复 |
+| `/tmp/patina-activate-private-h5qtg6l5/result.json` | 旧 DEB 迁移、登录开启、停用／恢复 |
+| `/tmp/patina-activate-private-162o54rn/result.json` | 合成 AppDir 迁移、启动故障、停用／恢复 |
+| `/tmp/patina-mask-offline-hv9cpwo9/result.json` | 真实 systemctl 离线识别 mask／恢复 unit |
+| `/tmp/patina-backend-deb-acceptance-vkzbdel2/` | M6j 私有 dpkg 根中的 10 阶段共存／升级／移除／重装 |
+| `/tmp/patina-activate-private-lr8sdvwr/` | M6j 包内真实 A／B 后端载荷与 Desktop 跨版本重载 |
 
-- `tmp/acceptance/m6c-full.log`：完整门禁。
-- `tmp/acceptance/multi-client-m6c-staging/`：存放回执、候选路径、metadata 验收；控制程序 SHA256 `e0507c4fe1d24908f9e50df868d72ef5ca2f0ba370e84424484d96293d3358bd`。
-- 存放载荷是已验证的 M6b debug 二进制，SHA256 `45b8b0c3408062f3637f9ffdd60df18ac1096bb2cb24a63fe0372f9f09762b88`；并不包含 M6c 新 CLI。两次存放返回同一身份，只有一个版本，无服务、current 或 profile 副作用。
-- `tmp/acceptance/m6c-independent-client.log`、`/tmp/patina-independent-client-mcffgxrc/`：存放后载荷的双 SDK 分类／Tools 同步、条件写入、认证拒绝、关闭／重启及数据保留检查。
-- `/tmp/patina-m6c-stage-qtxtiygj/`：私有版本存放根。
+最终 M6k 候选为 `tmp/acceptance/m6k-deactivation/candidate-3/`，版本仍为 **1.9.2 debug**；该轮没有重新生成 DEB。
 
-上述隔离运行不能代替生产安装、真实 GNOME 采样、签名发布或四客户端 UI 验收；debug 成品仍依赖 X11／XCB／Pulse 等库，不能承诺所有 Linux 发行版直接运行。
+- 二进制 SHA256：`079661825a4a0d33dff6cf88e68d08fbf8fa6f096c63d425a9b90528f5838a07`。
+- manifest SHA256：`5430451fa56c8f9d5bf364c2fea8c8a3469ee18243a3475da3da75852a205b57`。
+- TAR SHA256：`e9d1e098ea3f6c3629c3a2456f7255cdcd3ab476dc26807064bcae07c2488651`。
 
-从分支根目录验证：
+三条停用／恢复路径使用真实 daemon、私有 D-Bus 和模拟服务管理器，覆盖错误 PID／环境／drop-in、外部 mask、重载失败、重复操作、停止前就绪失败、磁盘 unit 与 manager 缓存不一致，以及历史／登录偏好保留。**不是实际用户 systemd、登录、GNOME 采集、完整 React 交互或实际 AppImage/FUSE 验收。** dpkg 验收的依赖检查使用宿主包元数据副本，没有安装依赖载荷。旧正式 DEB 的验签不代表独立后端已完成签名发布。
 
-```bash
-npm run check:full
-cargo build --locked --manifest-path src-tauri/Cargo.toml --no-default-features --bin patinad
-cargo build --locked --manifest-path crates/patina-client/Cargo.toml --example inspect
-python3 scripts/acceptance/daemon-build-info.py /absolute/path/patinad
-python3 scripts/acceptance/independent-client.py /absolute/path/patinad /absolute/path/inspect
-```
+恢复开发时按变更范围运行 `npm run check:full`、`npm run test:backend-packaging` 及相关 `scripts/acceptance/` 脚本。已通过且源码未变的检查不必反复重跑。本次收尾只有文档变更，校验路径、提交、证据摘要、UTF-8、diff 和分支状态。
 
-本机曾使用 `CARGO_TARGET_DIR=/home/arinp22/code/patina/src-tauri/target` 共享缓存，并以 `CARGO_NET_OFFLINE=true` 使用已有依赖；新机器需要先准备依赖。构建不同投影会替换共享 `debug/patinad`，验收前复制并记录对应二进制摘要。独立探针位于选用 target 目录的 `debug/examples/inspect`。运行验收脚本会创建临时 Local profile、使用回环临时端口并隔离显示／D-Bus／音频，不应替换成生产 profile。安装存放命令见[开发文档](../linux-development-setup.md)。
+本机普通构建使用 `CARGO_TARGET_DIR=/home/arinp22/code/patina/src-tauri/target`，缓存依赖可设 `CARGO_NET_OFFLINE=true`。不同构建投影会覆盖 `debug/patinad`，验收前保存并记录准确产物摘要。**临时源码副本／改版本的验收须用独立 target**；已有版本夹具使用 `target/daemon-version-acceptance`，不得与普通 target 混用。
 
-本次交接只修改文档，做路径、提交引用、UTF-8 和 diff 一致性检查，不重复无变化的完整门禁。
+## 未完成草稿
 
-## 接续顺序与完成标准
+M6l 文件层草稿未编译、未测试、未接入 CLI／安装宿主，已从开发代码撤回。两份备份：
 
-先完成独立后端安装／升级工作包，再收口剩余业务契约。开始前核对分支、工作区和当前源码，避免照旧记录重复实现。
+- 本 worktree 内 `tmp/handoff/patina-m6l-draft-20261005-00iz9dz0/`（Git 忽略，可跨重启保留）。
+- `/tmp/patina-m6l-draft-20261005-00iz9dz0/`（临时副本）。
 
-1. **激活与身份设计。** 在现有 M6c 文件边界之上明确激活 owner、安装身份、目标路径和失败恢复状态。记录短执行设计后继续实现，不因“需要决定 owner”本身重复请求授权。不能仅删除版本相等判断。
-2. **旧交付迁移。** 当前 DEB 同时拥有 `/usr/bin/patinad` 与 `/usr/lib/systemd/user/patinad.service`；AppImage 有自己的持久 runtime 和 user unit。处理与独立安装的归属冲突，保留自定义 unit／mask、RuntimeLease、交接 reservation 和用户关闭开机启动的意图，防止双 owner。
-3. **运行目标验证。** 区分已安装版本和正在运行版本；重载后验证新实例和预期安装身份，再按协议／capability 判断 Desktop 兼容性。现有 `upgrade.rs` 仍要求后端版本等于 Desktop，在替代检查就绪前保留保护。
-4. **隔离安装升级验收。** 无 Desktop 场景覆盖初装、重复操作、版本切换、失败恢复、数据保留和明确不兼容；数据库迁移后不得自动降级二进制。正式签名／发布流程接入与本机安装分别处理。
-5. **剩余 Desktop 契约清单。** 网页查询、本机偏好存储、运行诊断及维护等仍有旧 facade／数据库／宿主边界；逐项核对并记录保留理由。备份恢复的路径权限不能直接暴露给 Web。
+备份包括原文件、tracked patch、基线提交和逐文件 SHA256。恢复前核对当前源码与设计；不要直接覆盖后来改动。M6l 设计保留在阶段计划末尾，代码可参考或重写。
 
-以上完成后再讨论新客户端的首个完整场景。阶段计划原顺序是先 Web 复用现有 React 页面，再 TUI／GPUI；这是规划，尚未授权跳过新交互讨论直接交付这些界面。
+## 用户恢复后的顺序
 
-## 待讨论事项与已知限制
+1. **完成载荷卸载／重装。** 先核对固定清单，再在已证明停用和排他 lease 下按有归属文件逐项删除；持久计划支持中断恢复。保留个人数据、mask、cutover 和版本下限，未知内容不递归删除。重装及重复请求不得误删新载荷。
+2. **补真实平台与交付证据。** 真实 user systemd 的初装、迁移、升级、失败恢复、停用、卸载和重新登录；安排无 Desktop 的 GNOME 集成，明确扩展及纯客户端包的文件归属。生产安装仍需相应授权。
+3. **完成剩余业务契约。** 先审计已存在的网页 API 与 Desktop 读取、客户端偏好、维护和备份边界，避免重复实现已有后端；对下表涉及的产品变化先讨论。
+4. **形成独立交付候选。** 固定协议兼容矩阵、签名／更新入口和恢复说明。正式包、实装和公开发布分别记录证据与授权；旧整包发布结论不能代替独立后端验收。
+5. **再讨论首个新客户端完整场景。** 原规划优先 Web 复用 React，再 TUI／GPUI；在用户讨论前不开始新界面开发。
 
-| 未决问题 | 当前建议（未获选择，不得当作已批准） | 影响 |
-| --- | --- | --- |
-| 停止浏览器记录后是否仍展示历史 | 保留过去历史可见 | 网页业务读取迁移 |
-| URL 隐私是否各客户端统一 | 统一策略；不默认让 Desktop 绕过裁剪 | 网页 DTO 与权限设计 |
-| 数据恢复时是否恢复客户端外观偏好 | 保留当前客户端偏好 | 偏好的物理存储迁移和备份兼容 |
+## 尚未选择的产品问题
 
-这些选择不阻塞独立后端交付基础。其他明确限制：混合设置保存不是跨系统资源的全局事务；Tools 单操作事务不承诺多请求原子性或 OS 通知恰好一次；断连期间的计时显示／新鲜度语义尚未全部解决。剩余直接数据库路径不能据此扩展成第二份业务实现。
+| 问题 | 先前建议，尚未批准 |
+| --- | --- |
+| 停止浏览器记录后是否仍展示过去历史 | 保留过去历史可见 |
+| URL 隐私是否跨客户端统一 | 统一策略，不默认让 Desktop 绕过裁剪 |
+| 恢复数据时是否恢复客户端外观偏好 | 保留当前客户端偏好 |
 
-Widget、KDE／wlroots、Flatpak、大规模 Windows 清理和 Cargo workspace 重排继续保持独立范围；不要从历史文档恢复暂停事项。本轮只交接并推送该分支，不开始这些扩展工作。
+这些选择不阻塞先完成独立后端生命周期。混合设置保存不是跨系统资源的全局事务；Tools 单操作事务不保证多请求原子性或 OS 通知恰好一次；剩余直接数据库路径仍需逐项记录退出或保留理由。
+
+R1 长时间观察、Widget、KDE／wlroots、Flatpak、上游草稿、大规模 Windows 清理和 Cargo workspace 重排继续保持原暂停或独立范围。用户明确恢复前不开展下一批工作。
