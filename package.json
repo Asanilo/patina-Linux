@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "build:patinad:release": "cargo build --manifest-path src-tauri/Cargo.toml --release --bin patinad",
     "test": "node --experimental-strip-types scripts/run-tests.ts",
+    "test:backend-packaging": "python3 -B scripts/acceptance/daemon-package-tests.py && python3 -B scripts/acceptance/daemon-deb-tests.py",
     "test:tracking-lifecycle": "node --experimental-strip-types --experimental-specifier-resolution=node tests/trackingLifecycle.test.ts",
     "test:replay": "node --experimental-strip-types --experimental-specifier-resolution=node tests/trackingReplay.test.ts",
     "test:history-timeline": "node --experimental-strip-types --experimental-specifier-resolution=node tests/historyTimelineViewModel.test.ts && node --experimental-strip-types --experimental-specifier-resolution=node tests/historyWebActivityViewModel.test.ts && node --experimental-strip-types --experimental-specifier-resolution=node tests/historyReadModel.test.ts && node --experimental-strip-types --experimental-specifier-resolution=node tests/historyFormatting.test.ts",

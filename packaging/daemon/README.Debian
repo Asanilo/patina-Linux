@@ -1,0 +1,39 @@
+Patina backend installer
+========================
+
+This package supplies a per-user installer and a standalone candidate. It does
+not enable a service, select a runtime, or replace files owned by Patina Desktop.
+
+The command is patina-backend. The candidate is installed at:
+  /usr/lib/patina-backend-installer/candidate
+
+Use the candidate's manifest digest from verified delivery evidence. Staging
+copies and verifies its files into a private, persistent user runtime directory:
+
+  patina-backend --stage-runtime /usr/lib/patina-backend-installer/candidate \
+    --runtime-root /absolute/user-owned/runtime --manifest-sha256 DIGEST
+  patina-backend --inspect-runtime --runtime-root /absolute/user-owned/runtime
+  patina-backend --select-runtime DIGEST --runtime-root /absolute/user-owned/runtime \
+    --expected-current none
+  patina-backend --activate-runtime DIGEST --runtime-root /absolute/user-owned/runtime
+
+Use the observed current manifest instead of "none" when upgrading. For local
+debug candidates, add --allow-debug explicitly to those commands. Existing
+DEB/AppImage services require the source confirmation described in the repository's
+Linux development guide. Do not copy the service template over a live unit.
+
+Activation runs as the current user and preserves existing login preferences.
+It requires that user's systemd manager and matching profile roots. Use a durable
+directory under user data storage; a real unit's PrivateTmp makes host /tmp paths
+unsuitable. API verification uses the configured backend port (default 14840).
+
+Package upgrades only replace the installer candidate. Explicit selection and
+activation control the user's running version. Removing this installer package
+does not uninstall or stop a separately activated user runtime, nor remove data.
+User runtime deactivation/removal is a separate operation; this development
+candidate is not a complete public installation/uninstallation workflow yet.
+
+Desktop/backend protocol compatibility, publisher authentication and supported
+Linux environments require their own checks. A manifest hash is content integrity
+evidence, not a publisher signature. This DEB targets Debian-family amd64 GNU
+systems; the standalone TAR is a separate delivery format.

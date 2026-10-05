@@ -679,3 +679,21 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 使用当前 Desktop 1.9.2 的实际 Rust 重载适配器，在私有 D-Bus＋真实 daemon 中从 M6h 1.9.2 切换到该 2.0.0-test.1：协议、实际构建与摘要、重载 ticket／新实例、安装记录收敛、历史和登录偏好均通过。证据 `/tmp/patina-activate-private-y0k53btb/` 及上述候选目录的 `cross-version-reload.log`；计数仍为首次 StartUnit 1、Reload 1、StopUnit 0、受控进程重启 1，没有因 Desktop 版本不同而再次重载。
 - 两个已有 SDK 探针同样通过最终不同版本后端的独立 Local profile 验收；CLI、health、capabilities、OpenAPI 与运行 build-info 的版本一致，SSE／条件写／重启保留等既有场景通过。SDK 探针沿用已验证的 `c4483109ae525659732f7668545b1ffd619b2ae45c68edd0318e899ab9aada4f`，证据 `tmp/acceptance/m6i-independent-client-final.log` 和 `/tmp/patina-independent-client-9g1i35vn/`。
 - 下一项是独立发行载荷的安装路径和旧整包文件归属，随后处理真实 systemd／登录及正式交付验收。版本独立性已经有不同版本真实程序证据，但当前公开 DEB／AppImage 仍是旧整包；没有改动生产安装、创建 tag、推送或公开发布。M2 剩余业务契约与客户端偏好、M3–M5 新客户端 UI 讨论继续保留。
+
+### M6j 执行设计：独立安装器 DEB 与文件归属
+
+- 包名采用 `patina-backend-installer`，入口 `/usr/bin/patina-backend`，载荷放在 `/usr/lib/patina-backend-installer/candidate/`。DEB 只交付安装器及候选载荷；用户级 runtime 继续通过现有 stage／select／activate 管理，不让 root 包脚本替所有用户选择版本或登录行为。
+- 不接管旧 `patina` 的 `/usr/bin/patinad` 或系统 unit；不引入 Replaces／Conflicts、maintainer scripts、triggers 或自动启用链接。安装器升级／移除不改变已复制到用户目录的运行版本或数据。移除安装器不是运行时卸载，后者须另行实现明确的用户级退出／清理边界，公开交付前必须完成相应说明和验收。
+- 复用 TAR 的同一 manifest／载荷生成逻辑；首批 DEB 只接受本机 amd64 GNU 构建，由 dpkg-shlibdeps 推导实际共享库依赖。debug 包使用低于对应发行版本且带 manifest 标识的独立 Debian 版本，禁止覆盖已有输出。
+- 隔离验收覆盖与旧布局共存、两版安装器升级、移除旧包、移除／重装安装器、载荷一致性和用户数据保留；随后从包中实际载荷运行既有 runtime 验收。不安装到宿主、不修改公开 Desktop 打包配置、不推送或发布。
+
+### M6j 独立安装器 DEB 检查点（2026-10-05）
+
+- `scripts/package-daemon-deb.py` 生成独立安装器，TAR／DEB 共用同一 runtime manifest 和四项载荷。真实 ELF 由 `dpkg-shlibdeps` 推导依赖，当前为 libc6、libgcc-s1、libpulse0、libx11-6、libxcb1 和入口所需 coreutils；没有 Desktop／GTK／WebKit 依赖。首批限制原生 amd64 GNU，debug 候选有显式许可和低于对应非 debug 版的 Debian 版本；不会覆盖已有输出。
+- `scripts/acceptance/daemon-deb.py` 独立检查固定路径、root 所有权、普通文件／权限、MD5 清单和 SHA256、manifest／版本／构建投影、依赖边界及入口。拒绝包脚本、触发器、覆盖关系、链接、额外路径和重复 JSON 键；不执行载荷、不冒充发布者验签。元数据预检也改为私有 profile、无桌面／真实总线连接、5 秒和 16 KiB 输出上限；错误程序创建文件、stderr、溢出和超时均有实际 ELF 夹具回归。
+- `npm run test:backend-packaging` 的包回归 11 项通过（TAR 3 项、DEB／预检 8 项，含多个篡改子场景），覆盖可重复生成、TAR／DEB 同摘要、不覆盖、debug 许可和版本排序，以及对路径侵占、脚本、软／硬链接、权限、控制字段和载荷篡改的拒绝。专用 DEB／实际 ELF 预检测试与日常前端检查分开，避免让非 Debian 开发环境依赖 dpkg／cc；普通测试仍运行纯归档回归。`npm run check` 通过全部 68 个 TypeScript 测试文件、49 项浏览器检查、构建和 bundle 门禁；调整测试入口后的 `npm test`、`test:release` 与版本文件校验通过。日志 `tmp/acceptance/m6j-backend-packaging-final.log`、`m6j-check.log`、`m6j-tests-final.log`、`m6j-release-tests-final.log`、`m6j-versions.log`。本批未修改 Rust runtime 或前端实现，不重复 M6i 已通过的 Rust／SDK 门禁。
+- 真实 debug 包 A 为 1.9.2，DEB SHA256 `85331023bcc1e7c6114bb9bc0823cbf1cc8e694de82612a69c0b0282a7f222f5`、manifest `eaad421f6445ac03050ed6d0abc3b66220f5154ab171ad7b27059aba9695abad`；B 复用 M6i 专用版本夹具 2.0.0-test.1，DEB SHA256 `73347c550f18a5a448e67804981248720d0fb54f770db86b0960be52090cc31b`、manifest `e4b3029af04cae27addc7fe775831f43e79309836c580a329155e0df703f48c9`。记录位于 `tmp/acceptance/multi-client-m6j-packages/` 和 `m6j-package-next.json`；没有仓库升版或公开候选承诺。
+- 从公开 v1.9.2 下载旧 Desktop DEB，SHA256 `d9e8abcd43aa0dc6ae3f847da2749a31061732339463ce3811eaaefcc6ba1914`，使用源码配置中的正式公钥和更新清单签名验证，并验证改动一字节后拒绝。宿主缺少 minisign CLI／apt 工具索引，因此使用已有缓存的 minisign-verify 0.2.5 在 `/tmp/patina-m6j-public-192/verifier/` 构建一次性验签入口，未安装系统工具、读取或生成私钥；证据 `verified.json` 和 `verification.log`。
+- `scripts/acceptance/daemon-deb-lifecycle.py` 在私有 dpkg 根及 user／mount／PID／network namespace 中通过 10 个阶段：旧包安装、安装器 A 共存、升 B、先移除旧包再移除安装器、重装两包、反向移除及最后重装 B。两个包无文件重叠，逐阶段检查状态、版本、内容与权限；用户数据／用户 unit 夹具及从 A 复制的真实 runtime 全程保留，无新自动启用链接。正常 dpkg 依赖检查仅使用宿主已安装包的元数据副本，不是依赖载荷安装验收。证据 `/tmp/patina-backend-deb-acceptance-vkzbdel2/evidence.json`、`lifecycle.json` 和逐阶段日志。
+- 使用上述包管理验收保留的实际 A／B 载荷，私有 D-Bus＋真实 daemon 的激活和 Desktop 原生重载通过：A 二进制 `4dada826664929e0d9961b6abc07651151498072d91e1d17beb83ae498d75ce2` 切换到 B 的 `413a1634232a4393a9422098b278a6f32aadab94a70deb3acb766a55237c7ea0`，最终版本 2.0.0-test.1，历史、登录偏好和重载后安装记录收敛通过；计数 start 1、stop 0、reload 1、controlled_restart 1。证据 `/tmp/patina-activate-private-lr8sdvwr/`、`tmp/acceptance/m6j-packaged-native.log`。保留的 `/usr/bin/patina-backend` 相对入口也实际通过 build-info／version／stage／select／inspect，证据 `/tmp/patina-backend-launcher-2ahlfx4o/result.json`。
+- 本批证明分包文件归属与真实载荷可用，不证明真实 systemd 登录或无 Desktop 的 GNOME 采集。移除旧包会移除其系统 GNOME 扩展；独立桌面集成交付、用户 runtime 退出／卸载、纯客户端 Desktop 和正式后端签名／更新仍待完成。当前优先继续用户级 runtime 退出与卸载边界，防止清理后落回旧服务／embedded owner；M2 网页／偏好业务选择和 M3–M5 新客户端讨论仍保留。生产安装、main、远端和公开 Release 均未改动。

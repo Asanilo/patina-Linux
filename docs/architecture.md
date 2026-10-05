@@ -264,6 +264,8 @@ Tools HTTP 请求／快照类型由 `patina-protocol::tools` 定义，独立 SDK
 
 编译产物版本归 `platform/build_metadata`：无桌面投影从 `packaging/daemon/VERSION` 读取独立后端版本，Desktop／旧整包投影继续使用 Cargo 配套版本。构建脚本负责 SemVer 校验，运行时不读取版本文件或接受环境覆盖。daemon CLI、运行身份、API context 和备份 writer 元数据使用同一 artifact 版本；OpenAPI 取实际 context 的版本。协议、数据库 schema 与备份格式各有自己的版本，不以 artifact 版本代替兼容条件。这是一个业务实现的两种交付投影，不是复制两套后端。
 
+独立 Debian 候选的包管理 owner 是 `patina-backend-installer`：仅拥有 `/usr/bin/patina-backend`、`/usr/lib/patina-backend-installer/candidate/` 和自己的文档。它不接管旧 `patina` 包的 daemon、systemd unit 或 GNOME 扩展，不使用覆盖关系、安装脚本或自动启用链接。实际运行版本由下述用户级 stage／select／activate 复制并管理；更新／移除安装器不等于切换／卸载已激活的 runtime。用户运行时退出与卸载、Desktop 纯客户端交付和桌面采集集成仍须各自收口，不能把包文件共存视为这些流程已完成。开发候选只覆盖原生 amd64 GNU DEB，公开发行状态仍以发布规则和验收记录为准。
+
 独立 runtime 的文件存放归 `platform/linux/standalone_runtime`，CLI 只解析显式候选目录、runtime 根和预期 manifest 摘要。固定文件清单、大小、模式、内容摘要、构建目标与投影通过校验后，在用户私有且有身份标记的根中持有独占安装锁，原子发布到 `versions/<manifest SHA256>`；复用已有版本必须重新校验，损坏时拒绝而非静默覆盖。暂存不执行候选、不选择 current、不操作 systemd 或 profile；调用方仍负责确认归档来源，摘要不是签名。服务激活、旧包迁移与运行目标身份验证由下述宿主负责，不归暂存入口承担。
 
 独立安装的期望版本由同一 owner 下的 `selection` 管理，以 `current -> versions/<manifest SHA256>` 为唯一选择记录；inspect 持有共享安装锁并完整校验当前载荷，select 持有独占安装锁，比较显式旧摘要／none 后原子替换链接。非预期 current 内容不得覆盖，较低 SemVer 选择被拒绝，同版本不同构建仍以摘要区分；选择不证明数据格式兼容或服务就绪。提交后的 IO 错误可能意味着选择已经改变，调用方应重读，不能自动切回旧二进制。已选目标与运行身份是两个事实；服务 owner 后续负责受控切换，文件选择入口不操作 profile、systemd 或开机启动偏好。

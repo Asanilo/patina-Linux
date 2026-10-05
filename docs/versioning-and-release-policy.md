@@ -386,6 +386,8 @@ GitHub Release 继续作为正式发布源、主下载入口和主更新清单�
 
 ## 10. 发布前的最低验证门槛
 
+`feature/multi-client-platform` 的独立后端交付仍处开发验收阶段：`patina-backend-installer` DEB 使用独立包名和路径，构建前运行 `npm run test:backend-packaging`，成品由 `scripts/acceptance/daemon-deb.py` 检查；既有 `release:verify-daemon-deb` 继续只验收 `patina` Desktop 整包，不能混用。独立候选的构建、包管理共存或私有 runtime 验收不构成发布授权，也不接入当前 Desktop updater。正式签名、后端分发通道、用户运行时卸载及无 Desktop 的采集集成验收完成前，不宣称独立后端公开交付已经完成。
+
 main 已合入 daemon 架构。首个 daemon-backed beta 保持 DEB-only，直到 AppImage 的持久 AppDir、固定 user unit、验签后原子替换、公开 updater 投递、旧客户端回退目标和隔离登录生命周期通过后，才在 `1.9.1` 稳定版恢复双包发布。保留旧运行时/包不等于允许自动降级数据库；后续版本仍须按变更影响复核 release workflow、双包 manifest、签名与升级恢复，不能仅修改 bundles 列表。Fedora 的隔离 AppImage 验收不自动扩大公开支持范围。开发时通过 `createUpdaterArtifacts=false` 构建的本地未签名包不得作为公开更新资产使用。
 
 正式签名候选可通过手动的 [`appimage-acceptance.yml`](../.github/workflows/appimage-acceptance.yml) 独立验收：仅允许本仓库 `main` 的确定提交，使用既有 Actions 签名 Secret，先运行完整门禁，再构建并用应用配置中的公钥验证 AppImage。候选与源码 SHA/摘要只保存为短期 Actions artifact；该流程没有 tag、Release 或 updater manifest 发布步骤，token 只读。推送及运行远端流程仍需用户授权。正式私钥不导出到本机，也不用临时测试密钥冒充正式签名。以本地 HTTP fixture 验证生产公钥、Tauri 下载和原子替换时，必须明确它不覆盖公开更新源分发；真实运行时升级另需隔离安装用户的生命周期、服务版本和数据验收。

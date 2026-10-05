@@ -124,6 +124,62 @@ is described below, including explicit migration of known legacy services; forma
 release integration remains in the active multi-client plan. This candidate is not a universal or static
 Linux binary and does not change the public DEB/AppImage release workflow.
 
+For a native amd64 GNU Debian build, the same payload can be delivered as an
+independent **installer** DEB. This needs `dpkg-deb` and `dpkg-shlibdeps` (from
+`dpkg-dev`) with the build's native-library dependency metadata available:
+
+```bash
+npm run test:backend-packaging
+python3 scripts/package-daemon-deb.py --binary /absolute/path/patinad --output /absolute/path/new-package-dir
+python3 scripts/acceptance/daemon-deb.py /absolute/path/patina-backend-installer_VERSION_amd64.deb \
+  --manifest-sha256 <expected-manifest-sha256>
+# Append --allow-debug to both Python commands for an explicitly local debug candidate.
+```
+
+The dedicated packaging regressions also require a C compiler (`cc`) for inert
+metadata-probe fixtures. They run separately from the everyday frontend checks,
+so non-Debian development does not acquire a dpkg prerequisite.
+
+The builder derives shared-library dependencies from the ELF; it requires the
+no-desktop target and a native amd64 build host. The verifier checks the fixed
+namespace, root-owned regular files, modes, digests, manifest/build identity,
+dependency boundary and absence of maintainer scripts or ownership overrides.
+It does not execute package programs or authenticate the publisher. Debug DEBs
+sort below the corresponding non-debug Debian version and include a manifest
+identifier. Their backend SemVer remains the version reported by the executable.
+
+`patina-backend-installer` owns `/usr/bin/patina-backend` and the candidate under
+`/usr/lib/patina-backend-installer/candidate/`. Use that candidate path and the
+`patina-backend` command with the explicit staging/selection/activation operations
+below. The package does not own `/usr/bin/patinad`, install an active service,
+enable login startup, or replace the Desktop package's GNOME extension. Installing
+or upgrading it only delivers a candidate. Removing it leaves separately copied
+user runtimes and data intact. User runtime deactivation/uninstallation is still
+a separate incomplete delivery item; see [the package instructions](../packaging/daemon/README.Debian).
+
+For opt-in package-manager acceptance, supply a legacy Desktop DEB and two
+independent installer versions (the candidate Debian version must be newer):
+
+```bash
+python3 scripts/acceptance/daemon-deb-lifecycle.py \
+  --desktop /absolute/path/Patina_OLD_amd64.deb \
+  --baseline /absolute/path/patina-backend-installer_A_amd64.deb \
+  --baseline-manifest-sha256 <manifest-A> \
+  --candidate /absolute/path/patina-backend-installer_B_amd64.deb \
+  --candidate-manifest-sha256 <manifest-B>
+# Append --allow-debug only for local debug packages.
+```
+
+Run as an ordinary user on Linux with user namespaces and bubblewrap. The helper
+rejects scripts, triggers and file ownership collisions before invoking dpkg in
+a private root and network/PID/mount namespace. It checks coexistence, upgrade,
+removal in both orders, reinstall and preservation of synthetic user files plus
+the actual copied baseline runtime. Normal dependency checks use only copied
+host package metadata; dependency payloads, running services, GNOME and login
+are not exercised. It retains manifests, per-stage logs and the final candidate
+for separate runtime acceptance. Verify release signatures separately before
+using published packages. The public Desktop release pipeline remains unchanged.
+
 Stage an already verified, extracted candidate with a staging-capable daemon:
 
 ```bash
