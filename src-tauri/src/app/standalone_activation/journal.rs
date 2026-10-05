@@ -20,6 +20,8 @@ pub(crate) enum Phase {
     Prepared,
     Starting,
     Completed,
+    Deactivating,
+    Deactivated,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -36,6 +38,12 @@ pub(crate) struct ActivationRecord {
     // Stable startup contract, independent of the installer's audit/phase schema.
     #[serde(default = "start_allowed_by_default")]
     pub runtime_start_allowed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub minimum_runtime_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deactivation_mask: Option<crate::platform::linux::patinad_service_unit::OwnedMask>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deactivation_binary_sha256: Option<String>,
     pub last_error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub migration: Option<super::migration::MigrationProof>,
@@ -238,6 +246,23 @@ fn read_bytes(root: &Path) -> Result<Option<Vec<u8>>, String> {
 }
 
 fn validate(record: &ActivationRecord) -> Result<(), String> {
+    if let Some(mask) = &record.deactivation_mask {
+        mask.validate()?;
+    }
+    if let Some(version) = &record.minimum_runtime_version {
+        if version.len() > 64 || semver::Version::parse(version).is_err() {
+            return Err("invalid standalone runtime version floor".into());
+        }
+    }
+    if matches!(record.phase, Phase::Deactivating | Phase::Deactivated)
+        && (record.runtime_start_allowed
+            || record.deactivation_mask.is_none()
+            || record.minimum_runtime_version.is_none())
+    {
+        return Err(
+            "deactivation requires disabled startup, version floor and mask identity".into(),
+        );
+    }
     if let Some(proof) = &record.migration {
         proof.validate()?;
     }
@@ -247,6 +272,14 @@ fn validate(record: &ActivationRecord) -> Result<(), String> {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
     };
+    if record
+        .deactivation_binary_sha256
+        .as_ref()
+        .is_some_and(|value| !digest(value))
+        || record.deactivation_mask.is_some() != record.deactivation_binary_sha256.is_some()
+    {
+        return Err("invalid saved deactivation executable identity".into());
+    }
     if record.format_version != 1
         || !digest(&record.manifest_sha256)
         || !digest(&record.binary_sha256)
@@ -268,7 +301,8 @@ fn validate(record: &ActivationRecord) -> Result<(), String> {
             .last_error
             .as_ref()
             .is_some_and(|error| error.chars().count() > 512)
-        || (record.phase == Phase::Completed && record.last_error.is_some())
+        || (matches!(record.phase, Phase::Completed | Phase::Deactivated)
+            && record.last_error.is_some())
     {
         return Err("invalid standalone activation record".into());
     }

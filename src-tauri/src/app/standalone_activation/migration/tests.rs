@@ -57,6 +57,9 @@ impl Fixture {
             cutover_request_id: format!("cutover_{}", "a".repeat(32)),
             phase: Phase::Prepared,
             runtime_start_allowed: true,
+            minimum_runtime_version: None,
+            deactivation_mask: None,
+            deactivation_binary_sha256: None,
             last_error: None,
             migration: Some(self.proof.clone()),
         }

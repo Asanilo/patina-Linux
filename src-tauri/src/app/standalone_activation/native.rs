@@ -14,6 +14,7 @@ pub(super) struct NativeHost {
     port: u16,
     migration: Option<super::migration::LegacySource>,
     runtime_root: PathBuf,
+    restore_mask: Option<unit::OwnedMask>,
 }
 
 impl NativeHost {
@@ -40,6 +41,12 @@ impl NativeHost {
                 && record.config_root == roots.config
                 && record.data_root == roots.data
         });
+        let restore_mask = previous.and_then(|record| record.deactivation_mask.clone());
+        if restore_mask.is_some() && migration_request.is_some() {
+            return Err(
+                "a deactivated standalone installation cannot also migrate a legacy source".into(),
+            );
+        }
         let migration = migration_request
             .map(|request| {
                 super::migration::LegacySource::open(
@@ -66,6 +73,7 @@ impl NativeHost {
             port,
             migration,
             runtime_root: runtime_root.to_path_buf(),
+            restore_mask,
         })
     }
 
@@ -103,19 +111,39 @@ impl ActivationHost for NativeHost {
         self.migration.as_ref().map(|source| source.proof.clone())
     }
     async fn preflight(&self) -> Result<(), String> {
-        let environment = systemd::manager_environment().await?;
-        let value = |key: &str| {
-            environment.iter().rev().find_map(|entry| {
-                let (name, value) = entry.split_once('=')?;
-                (name == key && !value.is_empty()).then(|| PathBuf::from(value))
-            })
-        };
-        let home = value("HOME").ok_or("systemd manager does not expose HOME")?;
-        if value("XDG_CONFIG_HOME").unwrap_or_else(|| home.join(".config")) != self.roots.config
-            || value("XDG_DATA_HOME").unwrap_or_else(|| home.join(".local/share"))
-                != self.roots.data
-        {
-            return Err("installer and systemd manager profile roots differ".into());
+        verify_manager_roots(&self.roots).await?;
+        if let Some(mask) = &self.restore_mask {
+            if mask.is_installed(&self.roots.config)? {
+                super::deactivation::verify_masked(&self.roots, mask).await?;
+                return standalone_runtime::verify_executable_metadata(
+                    &self.executable,
+                    &self.identity.build,
+                )
+                .await;
+            }
+            // A crash may occur after the owned unit is restored on disk but
+            // before Reload updates a cached masked (or unloaded) definition.
+            if unit::read_existing(&self.unit_path)?.as_deref() != Some(self.unit_text.as_str()) {
+                return Err(
+                    "restoring standalone unit changed; existing configuration preserved".into(),
+                );
+            }
+            if systemd::patinad_load_state()
+                .await?
+                .as_deref()
+                .is_none_or(|state| state == "masked")
+            {
+                let state = systemd::inspect_patinad_service().await;
+                if !state.manager_available || state.error.is_some() || state.active {
+                    return Err("restoring standalone unit has an unexpected active owner".into());
+                }
+                validate_login_intent(&self.control_root, state.enabled)?;
+                return standalone_runtime::verify_executable_metadata(
+                    &self.executable,
+                    &self.identity.build,
+                )
+                .await;
+            }
         }
         let existing = unit::read_existing(&self.unit_path)?;
         if let Some(source) = &self.migration {
@@ -172,10 +200,18 @@ impl ActivationHost for NativeHost {
         if !state.manager_available || state.error.is_some() {
             return Err("cannot verify service login preference".into());
         }
+        if self.restore_mask.is_some() {
+            self.verify_target_launch().await?;
+        }
         validate_login_intent(&self.control_root, state.enabled)?;
         standalone_runtime::verify_executable_metadata(&self.executable, &self.identity.build).await
     }
     async fn stop(&self) -> Result<(), String> {
+        if let Some(mask) = &self.restore_mask {
+            if mask.is_installed(&self.roots.config)? {
+                return super::deactivation::verify_masked(&self.roots, mask).await;
+            }
+        }
         let state = systemd::inspect_patinad_service().await;
         if let Some(error) = state.error {
             return Err(error);
@@ -189,6 +225,35 @@ impl ActivationHost for NativeHost {
         Ok(())
     }
     async fn install(&self) -> Result<(), String> {
+        if let Some(mask) = &self.restore_mask {
+            let restored = async {
+                unit::restore_owned_mask(&self.roots.config, &self.unit_text, mask)?;
+                systemd::reload_user_units().await?;
+                self.definition_matches(false).await?;
+                self.verify_target_launch().await?;
+                let state = systemd::inspect_patinad_service().await;
+                if !state.manager_available || state.error.is_some() || state.active {
+                    return Err("cannot confirm restored standalone unit is inactive".into());
+                }
+                validate_login_intent(&self.control_root, state.enabled)
+            }
+            .await;
+            if let Err(error) = restored {
+                let protection = async {
+                    unit::publish_owned_mask(&self.roots.config, &self.unit_text, mask)?;
+                    systemd::reload_user_units().await?;
+                    super::deactivation::verify_masked(&self.roots, mask).await
+                }
+                .await;
+                return Err(match protection {
+                    Ok(()) => error,
+                    Err(protection) => {
+                        format!("{error}; could not confirm restored mask: {protection}")
+                    }
+                });
+            }
+            return Ok(());
+        }
         if let Some(source) = &self.migration {
             source.verify_files().await?;
             match source.proof.request.kind {
@@ -228,11 +293,42 @@ impl ActivationHost for NativeHost {
     async fn verify(&self) -> Result<(), String> {
         tokio::time::timeout(Duration::from_secs(45), async {
             loop {
-                if self.matches_target().await? { return self.definition_matches(false).await; }
+                if self.matches_target().await? {
+                    self.definition_matches(false).await?;
+                    return Ok(());
+                }
                 tokio::time::sleep(Duration::from_millis(250)).await;
             }
         }).await.map_err(|_| "activation target was not confirmed ready; inspect the pending installation before retrying".to_string())?
     }
+    fn finished(&self) {
+        // Runtime readiness and the completed record are already durable. A
+        // leftover inactive temporary mask must not turn success into a retry.
+        if let Some(mask) = &self.restore_mask {
+            if let Err(error) = unit::discard_owned_mask(&self.roots.config, mask) {
+                eprintln!(
+                    "[patinad] active runtime confirmed; saved mask cleanup deferred: {error}"
+                );
+            }
+        }
+    }
+}
+
+pub(super) async fn verify_manager_roots(roots: &AppPathRoots) -> Result<(), String> {
+    let environment = systemd::manager_environment().await?;
+    let value = |key: &str| {
+        environment.iter().rev().find_map(|entry| {
+            let (name, value) = entry.split_once('=')?;
+            (name == key && !value.is_empty()).then(|| PathBuf::from(value))
+        })
+    };
+    let home = value("HOME").ok_or("systemd manager does not expose HOME")?;
+    if value("XDG_CONFIG_HOME").unwrap_or_else(|| home.join(".config")) != roots.config
+        || value("XDG_DATA_HOME").unwrap_or_else(|| home.join(".local/share")) != roots.data
+    {
+        return Err("installer and systemd manager profile roots differ".into());
+    }
+    Ok(())
 }
 
 fn validate_login_intent(control_root: &Path, observed_enabled: bool) -> Result<(), String> {

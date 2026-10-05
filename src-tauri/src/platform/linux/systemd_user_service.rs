@@ -135,6 +135,8 @@ pub(crate) async fn manager_environment() -> Result<Vec<String>, String> {
 )]
 trait SystemdUserUnit {
     #[zbus(property)]
+    fn load_state(&self) -> zbus::Result<String>;
+    #[zbus(property)]
     fn fragment_path(&self) -> zbus::Result<String>;
 
     #[zbus(property)]
@@ -276,6 +278,35 @@ pub(crate) async fn reload_user_units() -> Result<(), String> {
     })
     .await
     .map_err(|_| "systemd user reload timed out".to_string())?
+}
+
+/// Inspect the cached unit without loading a new definition. None means unloaded.
+pub(crate) async fn patinad_load_state() -> Result<Option<String>, String> {
+    tokio::time::timeout(INSPECTION_TIMEOUT, async {
+        let connection = zbus::Connection::session()
+            .await
+            .map_err(|error| error.to_string())?;
+        let manager = SystemdUserManagerProxy::new(&connection)
+            .await
+            .map_err(|error| error.to_string())?;
+        let path = match manager.get_unit(PATINAD_SERVICE_NAME).await {
+            Ok(path) => path,
+            Err(error) if is_missing_unit_error(&error) => return Ok(None),
+            Err(error) => return Err(error.to_string()),
+        };
+        let unit = SystemdUserUnitProxy::builder(&connection)
+            .path(path)
+            .map_err(|error| error.to_string())?
+            .build()
+            .await
+            .map_err(|error| error.to_string())?;
+        unit.load_state()
+            .await
+            .map(Some)
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|_| "systemd load-state inspection timed out".to_string())?
 }
 
 pub async fn control_patinad_service(

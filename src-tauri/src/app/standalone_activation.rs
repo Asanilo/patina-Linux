@@ -1,4 +1,5 @@
 //! Local installation host. This owns activation intent, not tracking or business writes.
+pub(crate) mod deactivation;
 mod journal;
 pub(crate) mod migration;
 mod native;
@@ -25,6 +26,7 @@ trait ActivationHost {
     async fn start(&self) -> Result<(), String>;
     async fn matches_target(&self) -> Result<bool, String>;
     async fn verify(&self) -> Result<(), String>;
+    fn finished(&self) {}
 }
 
 pub(crate) async fn activate(
@@ -48,7 +50,10 @@ pub(crate) async fn activate(
     let migration_request = migration_request.or_else(|| {
         previous
             .as_ref()
-            .filter(|record| record.phase != Phase::Completed)
+            .filter(|record| {
+                matches!(record.phase, Phase::Prepared | Phase::Starting)
+                    && record.deactivation_mask.is_none()
+            })
             .and_then(|record| record.migration.as_ref().map(|proof| proof.request.clone()))
     });
     let host = native::NativeHost::new(
@@ -80,8 +85,15 @@ async fn execute(
     selected: &standalone_runtime::StagedRuntime,
     host: &impl ActivationHost,
 ) -> Result<ActivationRecord, String> {
-    host.preflight().await?;
     let previous = store.read()?;
+    if previous
+        .as_ref()
+        .is_some_and(|record| record.phase == Phase::Deactivating)
+    {
+        return Err("finish the pending deactivation before explicitly reactivating".into());
+    }
+    require_version_floor(previous.as_ref(), &selected.build.package_version)?;
+    host.preflight().await?;
     if previous.as_ref().is_some_and(|record| {
         record.runtime_root != runtime_root
             || record.config_root != roots.config
@@ -154,8 +166,12 @@ async fn execute(
             completed.binary_sha256 = selected.binary_sha256.clone();
             completed.phase = Phase::Completed;
             completed.runtime_start_allowed = true;
+            completed.minimum_runtime_version = Some(selected.build.package_version.clone());
+            completed.deactivation_mask = None;
+            completed.deactivation_binary_sha256 = None;
             completed.last_error = None;
             store.write(&completed)?;
+            host.finished();
             return Ok(completed);
         }
     }
@@ -169,6 +185,13 @@ async fn execute(
         cutover_request_id: request_id,
         phase: Phase::Prepared,
         runtime_start_allowed: false,
+        minimum_runtime_version: Some(selected.build.package_version.clone()),
+        deactivation_mask: previous
+            .as_ref()
+            .and_then(|record| record.deactivation_mask.clone()),
+        deactivation_binary_sha256: previous
+            .as_ref()
+            .and_then(|record| record.deactivation_binary_sha256.clone()),
         last_error: None,
         migration: host.migration_proof().or_else(|| {
             previous
@@ -228,8 +251,11 @@ async fn execute(
             now(),
         )?;
         record.phase = Phase::Completed;
+        record.deactivation_mask = None;
+        record.deactivation_binary_sha256 = None;
         record.last_error = None;
         store.write(&record)?;
+        host.finished();
         Ok::<(), String>(())
     }
     .await;
@@ -251,6 +277,20 @@ async fn execute(
 
 fn now() -> u64 {
     crate::engine::runtime_context::now_ms()
+}
+
+fn require_version_floor(previous: Option<&ActivationRecord>, version: &str) -> Result<(), String> {
+    let target = semver::Version::parse(version).map_err(|error| error.to_string())?;
+    if let Some(floor) = previous.and_then(|record| record.minimum_runtime_version.as_deref()) {
+        let floor = semver::Version::parse(floor).map_err(|error| error.to_string())?;
+        if target.cmp_precedence(&floor).is_lt() {
+            return Err(
+                "standalone activation would downgrade below the saved installation version floor"
+                    .into(),
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Read only the stable startup permission, never the installer's audit schema.

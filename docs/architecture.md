@@ -276,6 +276,10 @@ Linux 固定 service unit 的路径转义与基础策略渲染归 `platform/linu
 
 该登记中的 `runtime_start_allowed` 是稳定启动准入字段，旧记录缺省为 true；读取准入不要求理解安装器的完整审计或 phase schema。false 或损坏登记使 Desktop 启动决策保持阻止状态，不能退回 embedded；普通客户端重载也不能恢复准入。daemon 在取得 RuntimeLease 后、存储维护／SQLite 初始化前执行同一检查。显式安装宿主单独读取 cutover 归属，准备阶段写入 false，固定 unit 安装完成后随 starting 状态写入 true，再启动并验证目标；已验证健康目标的显式激活可只更新登记。这个字段不代替 systemd 屏蔽，也不能约束不认识该字段的旧二进制；用户级停用／卸载必须同时完成服务归属检查和持久屏蔽。
 
+显式停用归该宿主的 `deactivation`：选择锁与 profile 锁内核对绑定、cutover、磁盘／已加载 unit、启动环境、服务 PID 对应的 runtime lease 和内核持有的 executable 摘要，不依赖 API 健康。拒绝启动的记录先于 stop；获得 Maintenance lease 后再次检查外部配置，再发布并重载用户 mask，确认磁盘和 manager 均屏蔽、服务不活跃才完成。已建立独立 unit 但启动未就绪的 starting 状态也可停用，不能要求先成功启动坏版本。
+
+mask 的文件操作归 `platform/linux/patinad_service_unit`，持久登记设备／inode 身份并保留同 inode 的私有固定引用，避免原 mask 被删除后 inode 复用使外部 mask 被误认。只接受这两个已知引用及受控发布临时项；不接管外部 mask、额外链接或自定义 unit。恢复固定 unit 后，仍保留 mask 引用到激活完成；重载／验证失败时重新发布同一 mask，失败意图可重试。完成后的无效临时引用清理失败不撤销已核验的运行状态，未知文件仍保留。安装版本下限在登记中保留，不因停用丢失；它至少保留已选择版本的降级保护，不声称只有成功运行过的版本才进入该下限。停用保留数据、载荷和登录偏好，载荷卸载及真实 systemd 登录验收另行完成。
+
 显式激活接收新 profile／受认可 standalone unit，以及既有 completed 或本安装意图对应的 cutover；已知旧系统包／AppImage 服务必须额外确认源类别、unit 摘要和源版本。迁移宿主核对实际加载的 argv／环境、源版本及活跃服务 PID 对应的 profile lease，目标不低于确认的源版本；其他迁移、mask、drop-in 或配置冲突必须保留并拒绝接管。systemd manager 与安装进程的 profile roots 必须一致，登录启用状态应与持久偏好一致，激活不调用 enable／disable。managed daemon 启动后由自身 writer 将 activating／completed cutover 的后台登录偏好镜像到设置；AppImage Desktop 识别合法 standalone 绑定后复用该服务，不再发布自己的 runtime。旧包卸载／分包归属以及真实登录验收仍按工作计划另行完成。
 
 旧服务迁移复用同一激活 journal，先持久化源证据及原 unit 文本，再在停止服务和取得 Maintenance lease 后安装用户覆盖项或条件替换已知 AppImage unit。系统包文件只读保留；AppImage 旧 runtime 的安装锁与新目标锁一起持有。替换后、reload 前中断可凭未完成记录继续，不能用已完成历史隐式接管后来出现的服务。客户端仅消费稳定绑定字段，不依赖安装器完整审计 schema；源文件摘要和旧 AppImage marker 不构成发行者签名认证。

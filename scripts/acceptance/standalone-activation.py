@@ -39,11 +39,15 @@ def main():
     parser.add_argument("--login-enabled", action="store_true")
     parser.add_argument("--change-unit-after-stop", action="store_true")
     parser.add_argument("--reload-test-binary", type=Path)
+    parser.add_argument("--deactivate-roundtrip", action="store_true")
+    parser.add_argument("--deactivate-after-failed-start", action="store_true")
     options = parser.parse_args(args)
     assert len(options.second) in (0, 2)
     assert not options.fail_first_reload or options.migrate_from
     assert not options.change_unit_after_stop or options.migrate_from == "appimage"
     assert not options.reload_test_binary or (len(options.second) == 2 and not options.migrate_from)
+    assert not options.deactivate_roundtrip or (not options.second and not options.reload_test_binary)
+    assert not options.deactivate_after_failed_start or (options.deactivate_roundtrip and not options.fail_first_reload and not options.change_unit_after_stop)
     private_bus = os.environ.get("DBUS_SESSION_BUS_ADDRESS")
     assert private_bus and private_bus != os.environ.get("PATINA_ACCEPTANCE_PARENT_BUS", "")
     controller, source, manifest = options.controller, options.candidate, options.manifest
@@ -188,7 +192,15 @@ def main():
             assert pending["phase"] == "prepared" and pending["migration"]["original_unit"] == original_unit
             # Explicit fixture repair; the application must never undo the edit.
             unit_path.write_text(original_unit)
-        if options.fail_first_reload:
+        if options.deactivate_after_failed_start:
+            (root / "control-faults.json").write_text(json.dumps({"fail_next_start": True}))
+            command("--activate-runtime", manifest, "--api-port", str(port), *migration_args, error="injected start failure")
+            pending = json.loads((control / "standalone-activation.json").read_text())
+            assert pending["phase"] == "starting"
+            stopped = command("--deactivate-runtime", manifest)
+            assert stopped["phase"] == "deactivated" and not stopped["runtime_start_allowed"]
+            first = command("--activate-runtime", manifest, "--api-port", str(port))
+        elif options.fail_first_reload:
             command("--activate-runtime", manifest, "--api-port", str(port), *migration_args, error="injected reload failure")
             pending = json.loads((control / "standalone-activation.json").read_text())
             assert pending["phase"] == "prepared" and pending["migration"]["original_unit"] == original_unit
@@ -201,7 +213,7 @@ def main():
         assert command("--activate-runtime", manifest, "--api-port", str(port)) == first
         assert json.loads((root / "manager-counts.json").read_text()) == counts
         # Recovery does not send another StopUnit for an already inactive source.
-        expected_counts = dict(start=1, stop=int(bool(options.migrate_from)), reload=1 + int(options.fail_first_reload))
+        expected_counts = dict(start=1, stop=int(bool(options.migrate_from)), reload=1 + int(options.fail_first_reload) + 2 * int(options.deactivate_after_failed_start))
         if options.reload_test_binary:
             expected_counts["controlled_restart"] = 0
         assert counts == expected_counts, counts
@@ -236,6 +248,81 @@ def main():
             else:
                 assert counts == {key: value + 1 for key, value in expected_counts.items()}
             switched = True
+        if options.deactivate_roundtrip:
+            import dbus
+            activation_path = control / "standalone-activation.json"
+            baseline_counts = dict(counts)
+            overrides = root / "inspection-overrides.json"
+            for fault in ("pid", "environment", "drop_in"):
+                overrides.write_text(json.dumps({fault: True}))
+                command("--deactivate-runtime", manifest, error="")
+                assert json.loads((root / "manager-counts.json").read_text()) == baseline_counts
+                assert json.loads(activation_path.read_text())["runtime_start_allowed"]
+            overrides.unlink()
+            # An externally installed mask is never claimed merely because its
+            # target is also /dev/null. Preserve it and the active service state.
+            unit_path.unlink()
+            unit_path.symlink_to("/dev/null")
+            foreign_inode = unit_path.lstat().st_ino
+            command("--deactivate-runtime", manifest, error="")
+            assert unit_path.lstat().st_ino == foreign_inode
+            assert json.loads((root / "manager-counts.json").read_text()) == baseline_counts
+            unit_path.unlink()
+            unit_path.write_text(plan["unit_text"])
+            faults = root / "control-faults.json"
+            faults.write_text(json.dumps({"fail_reload_numbers": [baseline_counts["reload"] + 1]}))
+            command("--deactivate-runtime", manifest, error="injected reload failure")
+            pending = json.loads(activation_path.read_text())
+            assert pending["phase"] == "deactivating" and not pending["runtime_start_allowed"]
+            assert unit_path.is_symlink() and os.readlink(unit_path) == "/dev/null"
+            mask = pending["deactivation_mask"]
+            stopped = command("--deactivate-runtime", manifest)
+            assert stopped["phase"] == "deactivated" and stopped["deactivation_mask"] == mask
+            assert not stopped["runtime_start_allowed"]
+            stopped_counts = json.loads((root / "manager-counts.json").read_text())
+            assert stopped_counts["stop"] == baseline_counts["stop"] + 1
+            assert stopped_counts["start"] == baseline_counts["start"]
+            command("--deactivate-runtime", manifest)
+            assert json.loads((root / "manager-counts.json").read_text()) == stopped_counts
+            manager_proxy = dbus.Interface(dbus.SessionBus().get_object("org.freedesktop.systemd1", "/org/freedesktop/systemd1"), "org.freedesktop.systemd1.Manager")
+            try:
+                manager_proxy.StartUnit("patinad.service", "replace")
+                raise AssertionError("masked service started")
+            except dbus.exceptions.DBusException as error:
+                assert error.get_dbus_name() == "org.freedesktop.systemd1.UnitMasked"
+            before_db = hashlib.sha256(db.read_bytes()).hexdigest()
+            denied = subprocess.run([controller, "--profile", "production"], env=env, capture_output=True, timeout=15)
+            assert denied.returncode != 0 and b"startup is disabled" in denied.stderr
+            assert hashlib.sha256(db.read_bytes()).hexdigest() == before_db
+            # Replacing a saved mask with a new external mask must block resume.
+            parked = root / "saved-mask"
+            unit_path.rename(parked)
+            unit_path.symlink_to("/dev/null")
+            foreign_inode = unit_path.lstat().st_ino
+            command("--activate-runtime", manifest, "--api-port", str(port), error="")
+            assert unit_path.lstat().st_ino == foreign_inode
+            unit_path.unlink()
+            parked.rename(unit_path)
+            faults.write_text(json.dumps({"fail_reload_numbers": [stopped_counts["reload"] + 1]}))
+            command("--activate-runtime", manifest, "--api-port", str(port), error="injected reload failure")
+            pending = json.loads(activation_path.read_text())
+            assert pending["phase"] == "prepared" and not pending["runtime_start_allowed"]
+            assert unit_path.is_symlink() and unit_path.lstat().st_ino == mask["inode"]
+            assert json.loads((root / "manager-counts.json").read_text())["start"] == baseline_counts["start"]
+            # Model interruption between atomic unit restoration and Reload:
+            # disk contains our exact unit while the manager still holds a mask.
+            restored_unit = root / "interrupted-restored-unit"
+            restored_unit.write_text(plan["unit_text"])
+            restored_unit.replace(unit_path)
+            resumed = command("--activate-runtime", manifest, "--api-port", str(port))
+            assert resumed["phase"] == "completed" and resumed["runtime_start_allowed"]
+            assert "deactivation_mask" not in resumed
+            assert resumed["minimum_runtime_version"] == selected["build"]["package_version"]
+            assert unit_path.read_text() == plan["unit_text"]
+            counts = json.loads((root / "manager-counts.json").read_text())
+            assert counts["start"] == baseline_counts["start"] + 1 and counts["stop"] == baseline_counts["stop"] + 1
+            command("--activate-runtime", manifest, "--api-port", str(port))
+            assert json.loads((root / "manager-counts.json").read_text()) == counts
         cutover_after = json.loads((control / "runtime-owner-cutover.json").read_text())
         assert cutover_after["status"] == "completed" and cutover_after["request_id"] == cutover_id
         assert cutover_after["background_tracking_at_login"] == options.login_enabled and cutover_after["desktop_launch_at_login"] is False
@@ -250,6 +337,8 @@ def main():
                       resumed_after_unit_replacement=options.fail_first_reload,
                       post_stop_external_edit_preserved=options.change_unit_after_stop,
                       desktop_native_reload=bool(options.reload_test_binary),
+                      deactivation_roundtrip=options.deactivate_roundtrip,
+                      deactivation_after_failed_start=options.deactivate_after_failed_start,
                       activation_adopted_reloaded_target=bool(options.reload_test_binary),
                       history_preserved=True, controlled_binary_switch=switched, counts=counts)
         (root / "result.json").write_text(json.dumps(result, indent=2) + "\n")

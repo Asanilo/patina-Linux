@@ -30,8 +30,21 @@ unsuitable. API verification uses the configured backend port (default 14840).
 Package upgrades only replace the installer candidate. Explicit selection and
 activation control the user's running version. Removing this installer package
 does not uninstall or stop a separately activated user runtime, nor remove data.
-User runtime deactivation/removal is a separate operation; this development
-candidate is not a complete public installation/uninstallation workflow yet.
+To explicitly stop and mask the registered user's backend while retaining data,
+payloads and login preferences, use the selected digest reported by inspect:
+
+  patina-backend --deactivate-runtime DIGEST --runtime-root /absolute/user-owned/runtime
+
+Add --allow-debug for a local debug candidate. Resume with --activate-runtime
+above (and --api-port if configured differently). Other clients cannot implicitly
+resume a deactivated installation. Failures preserve a pending operation; inspect
+the error and retry the same operation after correcting the cause. Custom units,
+external masks and unexpected runtime owners are preserved. Activation cannot
+go below the saved installation version floor.
+
+Deactivation does not remove staged payloads. User runtime removal remains a
+separate unfinished operation; this development candidate is not a complete
+public installation/uninstallation workflow yet.
 
 Desktop/backend protocol compatibility, publisher authentication and supported
 Linux environments require their own checks. A manifest hash is content integrity

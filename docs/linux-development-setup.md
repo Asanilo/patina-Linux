@@ -276,7 +276,7 @@ user manager. Use persistent paths visible to the service, such as a runtime roo
 under the user's data directory; the unit uses `PrivateTmp=true`, so host `/tmp` and
 `/var/tmp` paths are unsuitable for a real installation. It accepts a new profile or a compatible existing cutover, preserves
 login preferences, and does not enable or disable login startup. Existing embedded
-data without a cutover, custom units, masks and drop-ins are refused. Known legacy
+data without a cutover, custom units, unregistered masks and drop-ins are refused. Known legacy
 DEB/AppImage units require explicit source confirmation below. A discrepancy between saved login intent
 and the manager's enabled state is also refused without changing either setting.
 
@@ -288,6 +288,39 @@ is bracketed by matching service instances so a restart cannot mix two responses
 Only then are activation and owner cutover confirmed. Retry the same explicit command
 after inspecting an interrupted operation; an already ready matching runtime is not
 restarted. Errors retain pending state and never trigger an automatic binary rollback.
+
+Explicitly deactivate a registered backend without deleting its data or payloads:
+
+```bash
+/absolute/path/patinad --deactivate-runtime <selected-manifest-sha256> \
+  --runtime-root /absolute/path/private-parent/runtime
+# Local debug candidates require --allow-debug.
+```
+
+Use the currently selected digest reported by inspect. The command checks profile
+and service ownership, disables startup in the durable registration, stops the
+identified service, and waits for exclusive runtime access before masking it.
+Active ownership is verified using the manager's PID, the kernel-held profile
+lease and executable digest, so a broken API need not prevent deactivation. An
+installed backend that failed during startup can also be deactivated. Incomplete
+steps retain intent for explicit retry; custom configuration and foreign owners
+are preserved. A completed retry does not stop or reload the service again.
+
+Resume with `--activate-runtime`, including the configured API port where needed.
+Only the saved mask identity can be restored. The installer keeps an anchored
+reference to that mask until activation succeeds, preventing inode reuse from
+making a newly created external mask appear owned. Failed reloads republish the
+same mask. Successful activation records the new runtime before best-effort cleanup
+of the inactive reference; an interrupted cleanup can leave an inactive temporary
+file, but cannot unmask another service or change the confirmed running target.
+
+Deactivation preserves login preferences and the existing enablement links;
+the mask prevents login startup while inactive. Resume requires those preferences
+to remain consistent and does not enable/disable them implicitly. The saved
+installation version floor retains the selected version's downgrade protection,
+including when selection had advanced beyond the last running version. Deactivation
+does not switch to embedded mode, reactivate a legacy package, or uninstall payloads.
+Payload cleanup and real systemd/login acceptance remain separate work.
 
 For an existing daemon-owned profile, migrate a known packaged service or managed
 AppImage service by adding all three source options:
@@ -336,6 +369,16 @@ artifact or FUSE acceptance. Enabled-state simulation and retained symlinks do n
 replace real systemd login, package uninstall, or desktop session acceptance.
 `--change-unit-after-stop` with AppImage mode verifies that an external unit edit
 during shutdown is preserved; only explicit fixture repair permits the retry.
+
+Add `--deactivate-roundtrip` to a single-candidate run to check owned-mask identity,
+PID/environment/drop-in rejection, deactivation reload failure and retry, repeated
+deactivation, a masked StartUnit refusal, startup admission, external mask preservation,
+failed restore re-masking, interruption after unit publication but before manager
+reload, explicit resume, history and login preferences. This can
+follow `--migrate-from packaged|appimage` and accepts `--login-enabled`. Add
+`--deactivate-after-failed-start` to first inject a startup failure and deactivate
+that unready installation before recovering. These are private manager/real binary
+checks, not proof of actual systemd login or an actual AppImage distribution.
 
 ### Desktop reload of an independent backend
 

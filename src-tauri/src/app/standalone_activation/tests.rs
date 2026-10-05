@@ -141,6 +141,305 @@ struct Host {
     verification_entered: tokio::sync::Notify,
 }
 
+struct StopHost<'a> {
+    fixture: &'a Fixture,
+    unit: String,
+    fail_reload: AtomicBool,
+    change_on_stop: bool,
+    calls: Mutex<Vec<&'static str>>,
+}
+
+impl deactivation::DeactivationHost for StopHost<'_> {
+    async fn preflight(&self, record: &ActivationRecord) -> Result<(), String> {
+        let mask = record
+            .deactivation_mask
+            .as_ref()
+            .is_some_and(|mask| mask.is_installed(&self.fixture.roots.config).unwrap());
+        if !mask
+            && crate::platform::linux::patinad_service_unit::read_existing(
+                &self
+                    .fixture
+                    .roots
+                    .config
+                    .join("systemd/user/patinad.service"),
+            )?
+            .as_deref()
+                != Some(self.unit.as_str())
+        {
+            return Err("changed unit preserved".into());
+        }
+        Ok(())
+    }
+    fn prepare_mask(
+        &self,
+    ) -> Result<crate::platform::linux::patinad_service_unit::OwnedMask, String> {
+        crate::platform::linux::patinad_service_unit::prepare_owned_mask(
+            &self.fixture.roots.config,
+            &self.unit,
+        )
+    }
+    async fn stop(&self) -> Result<(), String> {
+        assert!(require_runtime_start(&self.fixture.paths.control_root).is_err());
+        self.calls.lock().unwrap().push("stop");
+        if self.change_on_stop {
+            fs::write(
+                self.fixture
+                    .roots
+                    .config
+                    .join("systemd/user/patinad.service"),
+                "external edit",
+            )
+            .unwrap();
+        }
+        Ok(())
+    }
+    async fn install_mask(
+        &self,
+        mask: &crate::platform::linux::patinad_service_unit::OwnedMask,
+    ) -> Result<(), String> {
+        assert!(runtime_lease::acquire_runtime_lease(
+            &self.fixture.paths.control_root,
+            AppProfile::Production,
+            runtime_lease::RuntimeRole::Daemon
+        )
+        .is_err());
+        crate::platform::linux::patinad_service_unit::publish_owned_mask(
+            &self.fixture.roots.config,
+            &self.unit,
+            mask,
+        )?;
+        self.calls.lock().unwrap().push("reload");
+        if self.fail_reload.swap(false, Ordering::SeqCst) {
+            return Err("injected reload failure".into());
+        }
+        Ok(())
+    }
+    async fn verify_masked(
+        &self,
+        mask: &crate::platform::linux::patinad_service_unit::OwnedMask,
+    ) -> Result<(), String> {
+        assert!(mask.is_installed(&self.fixture.roots.config)?);
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn deactivation_failure_keeps_admission_closed_and_resumes_the_same_mask() {
+    let fixture = Fixture::new();
+    let store = Store::open(&fixture.paths.control_root).unwrap();
+    let root = fixture.root.join("runtime");
+    let active = execute(
+        &store,
+        &fixture.paths,
+        &fixture.roots,
+        &root,
+        &fixture.selected,
+        &fixture.host(),
+    )
+    .await
+    .unwrap();
+    let unit = crate::platform::linux::patinad_service_unit::standalone(
+        &root,
+        &fixture.roots.config,
+        &fixture.roots.data,
+    )
+    .unwrap();
+    crate::platform::linux::patinad_service_unit::install_identical_or_new(
+        &fixture.roots.config,
+        &unit,
+    )
+    .unwrap();
+    let host = StopHost {
+        fixture: &fixture,
+        unit,
+        fail_reload: AtomicBool::new(true),
+        change_on_stop: false,
+        calls: Mutex::new(Vec::new()),
+    };
+    assert!(deactivation::execute_deactivation(
+        &store,
+        &fixture.paths,
+        &fixture.roots,
+        &root,
+        &fixture.selected,
+        &host
+    )
+    .await
+    .unwrap_err()
+    .contains("reload"));
+    let pending = store.read().unwrap().unwrap();
+    assert_eq!(pending.phase, Phase::Deactivating);
+    assert!(!pending.runtime_start_allowed);
+    assert!(matches!(
+        cutover::decide_desktop_startup(&fixture.paths.control_root, AppProfile::Production),
+        cutover::RuntimeOwnerStartupDecision::Blocked { .. }
+    ));
+    let mask = serde_json::to_value(&pending.deactivation_mask).unwrap();
+    let stopped = deactivation::execute_deactivation(
+        &store,
+        &fixture.paths,
+        &fixture.roots,
+        &root,
+        &fixture.selected,
+        &host,
+    )
+    .await
+    .unwrap();
+    assert_eq!(stopped.phase, Phase::Deactivated);
+    assert_eq!(
+        serde_json::to_value(&stopped.deactivation_mask).unwrap(),
+        mask
+    );
+    assert_eq!(stopped.cutover_request_id, active.cutover_request_id);
+    assert_eq!(
+        stopped.minimum_runtime_version.as_deref(),
+        Some(fixture.selected.build.package_version.as_str())
+    );
+    assert!(!stopped.runtime_start_allowed);
+    host.calls.lock().unwrap().clear();
+    deactivation::execute_deactivation(
+        &store,
+        &fixture.paths,
+        &fixture.roots,
+        &root,
+        &fixture.selected,
+        &host,
+    )
+    .await
+    .unwrap();
+    assert!(
+        host.calls.lock().unwrap().is_empty(),
+        "repeated deactivation must not stop or reload again"
+    );
+    let mut lower = standalone_runtime::StagedRuntime {
+        manifest_sha256: fixture.selected.manifest_sha256.clone(),
+        binary_sha256: fixture.selected.binary_sha256.clone(),
+        directory: fixture.selected.directory.clone(),
+        build: fixture.selected.build.clone(),
+    };
+    lower.build.package_version = "0.0.1".into();
+    assert!(execute(
+        &store,
+        &fixture.paths,
+        &fixture.roots,
+        &root,
+        &lower,
+        &fixture.host()
+    )
+    .await
+    .unwrap_err()
+    .contains("downgrade"));
+}
+
+#[tokio::test]
+async fn deactivation_rechecks_external_configuration_after_stop() {
+    let fixture = Fixture::new();
+    let store = Store::open(&fixture.paths.control_root).unwrap();
+    let root = fixture.root.join("runtime");
+    execute(
+        &store,
+        &fixture.paths,
+        &fixture.roots,
+        &root,
+        &fixture.selected,
+        &fixture.host(),
+    )
+    .await
+    .unwrap();
+    let unit = crate::platform::linux::patinad_service_unit::standalone(
+        &root,
+        &fixture.roots.config,
+        &fixture.roots.data,
+    )
+    .unwrap();
+    crate::platform::linux::patinad_service_unit::install_identical_or_new(
+        &fixture.roots.config,
+        &unit,
+    )
+    .unwrap();
+    let host = StopHost {
+        fixture: &fixture,
+        unit,
+        fail_reload: AtomicBool::new(false),
+        change_on_stop: true,
+        calls: Mutex::new(Vec::new()),
+    };
+    assert!(deactivation::execute_deactivation(
+        &store,
+        &fixture.paths,
+        &fixture.roots,
+        &root,
+        &fixture.selected,
+        &host
+    )
+    .await
+    .is_err());
+    assert_eq!(
+        fs::read_to_string(fixture.roots.config.join("systemd/user/patinad.service")).unwrap(),
+        "external edit"
+    );
+    assert_eq!(*host.calls.lock().unwrap(), vec!["stop"]);
+    assert!(!store.read().unwrap().unwrap().runtime_start_allowed);
+}
+
+#[tokio::test]
+async fn an_unready_installed_runtime_can_be_deactivated_without_completing_activation() {
+    let fixture = Fixture::new();
+    let store = Store::open(&fixture.paths.control_root).unwrap();
+    let root = fixture.root.join("runtime");
+    let activation = fixture.host();
+    *activation.failure.lock().unwrap() = Some("verify");
+    assert!(execute(
+        &store,
+        &fixture.paths,
+        &fixture.roots,
+        &root,
+        &fixture.selected,
+        &activation
+    )
+    .await
+    .is_err());
+    assert_eq!(store.read().unwrap().unwrap().phase, Phase::Starting);
+    assert_eq!(
+        cutover::diagnose(&fixture.paths.control_root, AppProfile::Production).state,
+        "activating"
+    );
+    let unit = crate::platform::linux::patinad_service_unit::standalone(
+        &root,
+        &fixture.roots.config,
+        &fixture.roots.data,
+    )
+    .unwrap();
+    crate::platform::linux::patinad_service_unit::install_identical_or_new(
+        &fixture.roots.config,
+        &unit,
+    )
+    .unwrap();
+    let host = StopHost {
+        fixture: &fixture,
+        unit,
+        fail_reload: AtomicBool::new(false),
+        change_on_stop: false,
+        calls: Mutex::new(Vec::new()),
+    };
+    let stopped = deactivation::execute_deactivation(
+        &store,
+        &fixture.paths,
+        &fixture.roots,
+        &root,
+        &fixture.selected,
+        &host,
+    )
+    .await
+    .unwrap();
+    assert_eq!(stopped.phase, Phase::Deactivated);
+    assert!(!stopped.runtime_start_allowed);
+    assert!(
+        !cutover::decide_desktop_startup(&fixture.paths.control_root, AppProfile::Production)
+            .owns_embedded_runtime()
+    );
+}
+
 #[tokio::test]
 async fn disabled_startup_keeps_daemon_ownership_and_requires_explicit_activation() {
     let fixture = Fixture::new();

@@ -22,6 +22,7 @@ if fixture.get("restart_on_exit"):
     counts["controlled_restart"] = 0
 child = None
 loaded_source = fixture.get("source")
+loaded_mask = False
 log = (root / "daemon.log").open("w")
 
 
@@ -82,6 +83,9 @@ class Manager(Properties):
     @dbus.service.method("org.freedesktop.systemd1.Manager", in_signature="s", out_signature="s")
     def GetUnitFileState(self, unit):
         assert unit == "patinad.service"
+        path = Path(fixture["unit_path"])
+        if path.is_symlink() and os.readlink(path) == "/dev/null":
+            return "masked"
         return "enabled" if fixture.get("enabled", False) else "disabled"
 
     @dbus.service.method("org.freedesktop.systemd1.Manager", in_signature="s", out_signature="o")
@@ -95,17 +99,30 @@ class Manager(Properties):
 
     @dbus.service.method("org.freedesktop.systemd1.Manager", in_signature="", out_signature="")
     def Reload(self):
-        global loaded_source
+        global loaded_source, loaded_mask
         counts["reload"] += 1
         save()
         if fixture.get("fail_first_reload") and counts["reload"] == 1:
             raise dbus.exceptions.DBusException("injected reload failure", name="org.freedesktop.systemd1.Error.Failed")
-        assert Path(fixture["unit_path"]).read_text() == fixture["unit_text"]
+        faults = root / "control-faults.json"
+        if faults.exists() and counts["reload"] in json.loads(faults.read_text()).get("fail_reload_numbers", []):
+            raise dbus.exceptions.DBusException("injected reload failure", name="org.freedesktop.systemd1.Error.Failed")
+        path = Path(fixture["unit_path"])
+        loaded_mask = path.is_symlink() and os.readlink(path) == "/dev/null"
+        if not loaded_mask:
+            assert path.read_text() == fixture["unit_text"]
         loaded_source = None
 
     @dbus.service.method("org.freedesktop.systemd1.Manager", in_signature="ss", out_signature="o")
     def StartUnit(self, unit, mode):
         assert unit == "patinad.service" and mode == "replace"
+        if loaded_mask:
+            raise dbus.exceptions.DBusException("unit is masked", name="org.freedesktop.systemd1.UnitMasked")
+        faults = root / "control-faults.json"
+        configuration = json.loads(faults.read_text()) if faults.exists() else {}
+        if configuration.pop("fail_next_start", False):
+            faults.write_text(json.dumps(configuration))
+            raise dbus.exceptions.DBusException("injected start failure", name="org.freedesktop.systemd1.Error.Failed")
         assert Path(fixture["unit_path"]).read_text() == fixture["unit_text"]
         start_child()
         counts["start"] += 1
@@ -133,7 +150,8 @@ class Unit(Properties):
             environment = [*environment, "OTHER_PROFILE=fixture"]
         entry = dbus.Struct([dbus.String(argv[0]), dbus.Array(argv, signature="s"), dbus.Boolean(False),
                              *[dbus.UInt64(0) for _ in range(4)], dbus.UInt32(0), dbus.Int32(0), dbus.Int32(0)], signature="sasbttttuii")
-        return {"FragmentPath": dbus.String(fragment), "DropInPaths": dbus.Array(["/custom.conf"] if overrides.get("drop_in") else [], signature="s"),
+        return {"LoadState": dbus.String("masked" if loaded_mask else "loaded"),
+                "FragmentPath": dbus.String("/dev/null" if loaded_mask else fragment), "DropInPaths": dbus.Array(["/custom.conf"] if overrides.get("drop_in") else [], signature="s"),
                 "MainPID": dbus.UInt32(1 if overrides.get("pid") else child.pid if active else 0),
                 "ExecStart": dbus.Array([entry], signature="(sasbttttuii)"),
                 "Environment": dbus.Array(environment, signature="s"),

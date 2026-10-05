@@ -54,6 +54,9 @@ pub fn run(args: impl IntoIterator<Item = impl AsRef<str>>) -> Result<(), String
     if args.get(1).is_some_and(|arg| arg == "--activate-runtime") {
         return installation::activate_from_args(&args);
     }
+    if args.get(1).is_some_and(|arg| arg == "--deactivate-runtime") {
+        return installation::deactivate_from_args(&args);
+    }
     if args.get(1).is_some_and(|arg| matches!(arg.as_str(), "--stage-runtime" | "--select-runtime" | "--inspect-runtime" | "--print-runtime-service")) {
         return installation::run_from_args(&args);
     }

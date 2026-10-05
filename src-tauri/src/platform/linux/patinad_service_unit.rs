@@ -1,5 +1,9 @@
 //! Fixed service commands shared by the two Linux distribution hosts.
 use std::path::Path;
+mod mask;
+pub(crate) use mask::{
+    discard_owned_mask, prepare_owned_mask, publish_owned_mask, restore_owned_mask, OwnedMask,
+};
 
 pub(crate) fn read_existing(path: &Path) -> Result<Option<String>, String> {
     use std::{
@@ -48,11 +52,10 @@ pub(crate) fn replace_known(config: &Path, original: &str, expected: &str) -> Re
     publish(config, Some(original), expected)
 }
 
-fn publish(config: &Path, original: Option<&str>, expected: &str) -> Result<(), String> {
+fn validate_directories(config: &Path) -> Result<(), String> {
     use std::{
-        fs::{self, File, OpenOptions},
-        io::Write,
-        os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt},
+        fs,
+        os::unix::fs::{DirBuilderExt, MetadataExt},
     };
     for directory in [
         config.to_path_buf(),
@@ -73,6 +76,16 @@ fn publish(config: &Path, original: Option<&str>, expected: &str) -> Result<(), 
             return Err("user unit directory must be user-owned and not writable by others".into());
         }
     }
+    Ok(())
+}
+
+fn publish(config: &Path, original: Option<&str>, expected: &str) -> Result<(), String> {
+    use std::{
+        fs::{self, File, OpenOptions},
+        io::Write,
+        os::unix::fs::OpenOptionsExt,
+    };
+    validate_directories(config)?;
     let parent = config.join("systemd/user");
     let path = parent.join("patinad.service");
     let existing = read_existing(&path)?;

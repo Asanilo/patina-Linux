@@ -703,7 +703,7 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 安装宿主继续归 `app/standalone_activation`，单 runtime／安装根／profile 锁保持原职责。用户数据、cutover 归属和安装登记保留；退出独立安装不等于返回 embedded，也不自动恢复旧系统包服务。包管理器移除安装器与此处用户级操作仍是两个边界。
 - 先补持久启动准入：安装登记新增稳定的 `runtime_start_allowed` 投影，旧记录缺省允许启动；读取方不依赖安装器完整审计字段或 phase schema。拒绝／损坏状态阻止 Desktop 启动后台及 embedded 回退，daemon 在取得 runtime lease 后、任何存储维护／SQLite 初始化前拒绝。显式激活在安装与就绪流程中重新开放准入，不由普通客户端重载隐式恢复。
 - 停用流程将先持久化拒绝启动，再核对并停止属于本安装的服务，持有 Maintenance lease 后将已知用户 unit 改为本安装登记的 mask；完成必须确认 manager 已加载屏蔽状态且无运行 owner。失败保留可恢复意图，不自动回到旧后端。保留用户原有登录意图，但被停用的服务不能因此自动恢复。
-- 恢复只接受相同登记、受认可的 mask／unit 和显式目标；安装根与 profile 锁内恢复固定 unit、重新加载、开放启动并核对实际运行身份。保留最低已激活版本，拒绝因卸载／重装造成自动降级。未知 unit、外部 mask、drop-in 或运行 owner 仍保留并拒绝接管。
+- 恢复只接受相同登记、受认可的 mask／unit 和显式目标；安装根与 profile 锁内恢复固定 unit、重新加载、开放启动并核对实际运行身份。保留安装版本下限，至少延续已选择版本的降级保护，拒绝因卸载／重装清空选择而绕过该保护。未知 unit、外部 mask、drop-in 或运行 owner 仍保留并拒绝接管。
 - 载荷卸载在停用成立后执行，先核对完整安装清单，再只清理有归属的版本文件与选择；保留阻止旧服务／embedded 接管所需的登记、锁及 mask。不能用递归删除任意用户目录，也不能把部分删除后的失败当成功。启动准入、服务停用／恢复、载荷清理分批验证；全部完成前不宣称卸载功能已经交付。
 
 ### M6k 启动准入检查点（2026-10-05；停用／卸载尚未完成）
@@ -714,3 +714,15 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 新的 `scripts/acceptance/standalone-admission.py` 使用真实无桌面二进制和独立合成 Production profile，验证 false／错误类型在数据目录创建前失败，旧记录与 true 正常初始化并退出；对已有数据库再次拒绝启动，SQLite 文件摘要保持不变。metadata 入口仍可用，安装登记未被启动修改。四组场景通过，证据 `/tmp/patina-runtime-admission-8ukxlmxi/result.json` 及各 profile 日志。
 - 二进制 SHA256 `03a7f394d4b59ba53c004ad96b2f92717bc8dc881c6d54d29c11061bc8b6547b`，manifest `d2ceb7d7589e99b6d9289d33601dac3bd8007eb06eb29c64192024470207d47e`，位于 `tmp/acceptance/m6k-admission/`。私有 D-Bus＋真实 daemon 的中断安装恢复、就绪核对、重复激活不重启、历史和登录偏好保留通过：`/tmp/patina-activate-private-pbodg3zk/`、`m6k-admission-activation.log`，start 1／stop 0／reload 1。
 - 这批只有启动准入和激活衔接，没有对外停用／卸载命令，没有 systemd mask 或载荷删除。旧二进制不认识该字段，后续必须补齐服务屏蔽、归属和停止证明、显式恢复、版本下限及可恢复载荷清理；不能以手改生产登记作为停用方式。main、生产安装和远端未变，目标继续进行。
+
+### M6k 停用与恢复检查点（2026-10-05；载荷卸载仍待完成）
+
+- 新增 `--deactivate-runtime <selected digest> --runtime-root <root>`，只控制登记的 Production 独立后端，保留数据、版本载荷和登录偏好。CLI 仍为薄入口，安装宿主在选择锁／profile 锁内验证绑定和 cutover；原生适配器检查实际磁盘与已加载 unit、无 drop-in、启动环境、MainPID 对应的内核持锁 owner 和 `/proc/<pid>/exe` 的有界摘要。停用不需要 API token 或 API 就绪；记录中的已激活映像、当前选择及首次停用时的选择分别用于辨认允许停止的后端。
+- 持久关闭启动准入后才停止服务；Maintenance lease 内重检外部配置、发布 mask、重载并确认 manager 的 LoadState／UnitFileState 都不能启动该服务。成功阶段为 deactivated，失败保留 deactivating 和错误，可重试同一意图；重复完成的停用不再 stop／reload。starting 中的未就绪安装、以及已有 mask 的中断恢复也可停用，不要求先把坏版本启动成功。
+- `platform/linux/patinad_service_unit/mask.rs` 拥有 mask 文件操作。保存随机命名的固定引用和设备／inode 身份，通过同 inode 的硬链接发布 `/dev/null` mask；固定引用避免 mask 删除后 inode 复用，额外未知链接、外部 mask 和自定义 unit 均拒绝接管。恢复用每次新建的临时文件原子替换 unit，部分写入中断不会阻塞后续新尝试；保留 mask 引用以便重载失败时重新屏蔽。激活完成记录持久化之后才清理无效引用，清理失败不撤销已经确认的运行结果，未知文件不删除。
+- `--activate-runtime` 可显式恢复登记的 mask，重新加载后核对命令／环境及登录意图，再开放启动并确认运行身份。恢复过程不复用历史迁移证明去接管旧包；若在磁盘 unit 已恢复、manager 仍缓存 mask／尚未加载时中断，只接受精确匹配的 unit 和不活跃状态继续重载，已有普通定义还须核对其启动命令与环境。安装版本下限随选择保留，拒绝恢复较低版本；停用后不回到 embedded，也不让 Desktop 普通重载隐式恢复。真实 user manager 与登录仍需独立验收。
+- 完整门禁的全部组成项通过：68 个 TypeScript 文件、49 项浏览器检查、48 项 SDK 测试、Desktop 848 passed / 23 ignored、headless 705 passed / 11 ignored，生成类型／边界／bundle 检查通过。首次完整运行在 Clippy 的布尔表达式简化处失败，修正后补跑两种 Rust 投影的 Clippy 与 headless 门禁；恢复临时文件调整另通过 6 项 unit/mask 回归。最后补齐磁盘／manager 不一致的中断恢复后，两种 Rust 投影的完整检查再次通过，最终 Rust 证据为 `tmp/acceptance/m6k-recovery-rust-final.log`。前端／SDK 证据沿用 `m6k-deactivation-full.log`，未重复未变化的检查。更新安装器说明后的 11 项打包回归通过，见 `m6k-packaging.log`。
+- 最终实际候选位于 `tmp/acceptance/m6k-deactivation/candidate-3/`，二进制 SHA256 `079661825a4a0d33dff6cf88e68d08fbf8fa6f096c63d425a9b90528f5838a07`，manifest `5430451fa56c8f9d5bf364c2fea8c8a3469ee18243a3475da3da75852a205b57`，TAR SHA256 `e9d1e098ea3f6c3629c3a2456f7255cdcd3ab476dc26807064bcae07c2488651`。仍是 1.9.2 debug 验收产物，没有升版、生成新 DEB 或接入公开发行。
+- 私有 D-Bus＋真实二进制的三条路径通过：新安装／登录关闭／StartUnit 故障后先停用再恢复（`/tmp/patina-activate-private-c9b56z_f/`，start 2／stop 1／reload 8）；旧 DEB 迁移／登录启用（`/tmp/patina-activate-private-h5qtg6l5/`，2／2／6）；旧 AppImage 布局迁移／登录启用／StartUnit 故障（`/tmp/patina-activate-private-162o54rn/`，2／2／8）。均覆盖错误 PID／环境／drop-in 拒绝、外部 mask 保留、停用重载失败恢复、重复停用无副作用、masked StartUnit 拒绝、已有 SQLite 在拒绝启动后保持字节一致、恢复失败重新屏蔽、磁盘 unit 已恢复但 manager 仍缓存 mask 的中断恢复、显式恢复及历史／登录偏好保留。AppImage 路径使用合成 AppDir，不是新的实际 AppImage/FUSE 验收。对应日志 `m6k-recovery-disabled.log`、`m6k-recovery-packaged.log`、`m6k-recovery-appimage.log`。
+- 真实 `systemctl --root <private-root> --global is-enabled` 识别硬链接 symlink mask 为 masked，恢复普通 unit 后为 disabled；证据 `/tmp/patina-mask-offline-hv9cpwo9/result.json`。此项只验证离线文件识别，不能替代真实 user manager／登录。早期原型及 candidate-2 的通过记录只覆盖其当时的场景，最终中断恢复依据上述 candidate-3。
+- 下一项继续已停用载荷的可恢复清理：只删除已核对的版本文件与选择，保留数据、阻止旧服务接管的 mask／登记及版本下限；清理中断、未知文件与重装都要验证。尚未实现该载荷卸载命令，也未完成无 Desktop 的桌面集成或正式后端交付。main、生产安装、远端和公开版本保持原状。
