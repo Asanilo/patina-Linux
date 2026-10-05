@@ -277,7 +277,7 @@ async fn run_restore_cases(webdav: bool) {
         .await;
         assert_eq!(
             capabilities["data"]["server_version"],
-            env!("CARGO_PKG_VERSION")
+            crate::platform::build_metadata::ARTIFACT_VERSION
         );
         let before_pid = unit.pid();
         assert_ne!(before_pid, "0");

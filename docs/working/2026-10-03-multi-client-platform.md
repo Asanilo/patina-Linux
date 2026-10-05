@@ -59,7 +59,7 @@ HTTP API 索引和源码以当前实现为准；索引中历史的 unreleased/st
 | M3 | 浏览器会话和适配层；共享 React 核心界面，复用 Quiet Pro | Tauri＋Web 并行读取／修改分类并同步，真实浏览器验收 | 待实施 |
 | M4 | Rust SDK typed 能力逐步补全，TUI 接入同一核心链路 | 实际交互式 TUI 可查看／筛选／修改分类，并参与同步；CLI 示例不算完成 | 待实施 |
 | M5 | GPUI 客户端，同一能力和同步契约，独立视图 | 可运行 GPUI 核心链路和四端同步验收；评估启动、资源和维护成本 | 待实施 |
-| M6 | 后端独立安装、兼容矩阵、异常恢复、发布集成 | 无 Desktop 后端运行、四端适用覆盖矩阵、可重复回归；范围冻结后再准备候选 | M6a–M6h 已有分层验证；激活、已知旧服务迁移和 Desktop 独立目标重载已有私有总线证据，独立版本／正式分包、旧包卸载归属、真实 systemd 登录及发布集成待完成 |
+| M6 | 后端独立安装、兼容矩阵、异常恢复、发布集成 | 无 Desktop 后端运行、四端适用覆盖矩阵、可重复回归；范围冻结后再准备候选 | M6a–M6i 已有分层验证；独立版本来源和跨产品版本重载已有真实进程／私有总线证据，正式分包、旧包卸载归属、真实 systemd 登录及发布集成待完成 |
 
 M1 的第二客户端示例用于证明独立依赖和真实连接，不能提前宣称 TUI 或 GPUI 已交付。M3 优先于完整 TUI／GPUI 开发，以先取得共享 UI 的直接收益。只有出现真实并行需要才增加工作分支。
 
@@ -660,3 +660,22 @@ M1 的第二客户端示例用于证明独立依赖和真实连接，不能提�
 - 最终原生宿主验收使用私有 D-Bus＋真实 daemon，从 M6g 构建 `4e9c6e6ecf03f7f35d36ff4800680cfe1cd5241445773a26db9fbe0b73b730b2` 切换到本批 `c46655359ccfa418f79a9a1154b7cb784c2bef4e259a2328f027561642b30b85`；目标 manifest `cb24d078ab5ec8a35cd09d354ec1e211c226039f69cf89eedbbf4d9840757e84`。明确运行默认忽略的 `native_reload_selected_backend`，一次通过；证据 `tmp/acceptance/multi-client-m6h-reload/final/`、`/tmp/patina-activate-private-859mv80k/`。
 - 原生验收确认目标选择和 profile 激活均被锁住，单次 API restart 让旧进程以 75 退出、模拟 manager 启动新目标，API 核对实际摘要、实例和就绪。重载后再调用 CLI 激活，安装器更新目标记录而不重复停启；全过程包括首次启动共一次 StartUnit、一次 Reload、零次 StopUnit、一次受控进程重启，历史与登录偏好保留。它不等于真实 systemd 登录、完整 Tauri 窗口或正式安装升级验收。
 - 下一批继续独立后端自身版本与正式交付边界、旧整包文件归属及剩余业务契约清单。现有构建仍共享产品版本来源，不能把诊断允许不同版本视为独立发布流程已经完成；M2 网页／偏好边界和 M3–M5 新客户端讨论也仍保留。本批只在功能分支本地实现和验收，main、生产安装和远端保持原状。
+
+### M6i 执行设计：独立后端版本来源
+
+- 无桌面构建从专用后端版本文件读取 artifact 版本，Desktop／旧整包投影继续使用 Cargo／Tauri 的配套版本。保留一份业务实现，不为版本拆分重排整个 workspace；Cargo 包版本不再冒充独立后端发行版本。版本文件初值保持 1.9.2，本轮不推进正式版本号。
+- CLI `--version`、`--build-info`、服务运行身份、health／capabilities／OpenAPI 及新导出备份的 writer 版本必须一致。OpenAPI 使用实际 API context 的版本，不另读编译常量；备份格式／数据库 schema 版本保持各自契约，不能以产品版本相等代替恢复兼容判断。
+- 不提供任意环境变量覆盖正式 artifact 版本。用临时源码副本只改后端版本文件构建不同版本的 debug 候选，验证 Desktop 版本文件不变、真实后台切换、协议连接及数据保留；正式源码和公开版本不随验收夹具升版。
+- 后续分包先明确发行载荷与当前用户激活 runtime 的归属。现有公开 DEB 的 `/usr/bin/patinad`／系统 unit 不能被新包静默抢占；独立载荷可采用独有路径，用户激活仍复用已验证的版本化存放和迁移。正式签名、发行 workflow、旧包卸载及真实登录继续单独验收，不以本轮版本解耦代替交付完成。
+
+### M6i 独立版本来源检查点（2026-10-05）
+
+- 新增 `packaging/daemon/VERSION` 和构建时 SemVer 校验；无桌面投影从该文件获得 artifact 版本，默认 Desktop／旧整包投影保持 Cargo 配套版本。`platform/build_metadata` 提供编译后的值，CLI、build-info、启动状态、API context 和两条备份导出路径共用；运行时不读取版本文件。新 build dependency semver 已在锁文件中，Cargo.lock 未变。
+- OpenAPI 改用传入 API context 的版本，覆盖自定义 context 的 1.8.3 回归；health／capabilities 原有 context 通道保留。备份流式归档与内存快照都断言 writer 版本，断言位于时间元数据归一化前，避免比较步骤掩盖版本差异。协议／schema／备份格式值没有随本批升版。
+- `npm run check:full` 全部通过：68 个 TypeScript 文件、49 项浏览器检查、48 项 SDK 测试、Desktop 838 passed / 23 ignored、无桌面后端 695 passed / 11 ignored；类型生成、依赖／架构边界、Clippy 和 bundle 预算通过。证据 `tmp/acceptance/m6i-full.log`；发布版本文件校验也通过，本批未准备公开 release。
+- 可重复的 `scripts/acceptance/daemon-version-independence.py` 记录源码输入摘要，在临时源码副本中仅将后端 VERSION 改为 `2.0.0-test.1`，生成明确的 debug 夹具；原仓库六个版本输入文件保持字节一致，Desktop／后端版本仍为 1.9.2。不同版本副本中的备份导出回归通过，证据 `tmp/acceptance/m6i-different-version-backup.log`，实际验证两条导出路径均使用 2.0.0-test.1。
+- 首轮构建暴露 Cargo 共享 target 的输出槽问题：临时源码覆盖 `debug/patinad` 后，返回原工作区的 fresh 构建仍留下临时版本。没有把这个输出视作恢复成功；已触发原 VERSION 文件依赖重建（仅时间戳变化），核对当前工作区输出恢复为无桌面 1.9.2。验收助手现在拒绝普通非空开发缓存，只接收空目录或有专用标记的版本验收缓存；拒绝检查发生在导出／编译前。专用缓存重建完成后，原开发输出仍为 1.9.2。
+- 最终专用缓存候选 SHA256 `413a1634232a4393a9422098b278a6f32aadab94a70deb3acb766a55237c7ea0`，manifest `e4b3029af04cae27addc7fe775831f43e79309836c580a329155e0df703f48c9`，源码副本 `/tmp/patina-version-source-ojli1s1j/`；完整输入／构建／归档证据在 `tmp/acceptance/multi-client-m6i-version-dedicated/`。该 2.0.0-test.1 只是版本独立性夹具，不是仓库升版或公开候选承诺。
+- 使用当前 Desktop 1.9.2 的实际 Rust 重载适配器，在私有 D-Bus＋真实 daemon 中从 M6h 1.9.2 切换到该 2.0.0-test.1：协议、实际构建与摘要、重载 ticket／新实例、安装记录收敛、历史和登录偏好均通过。证据 `/tmp/patina-activate-private-y0k53btb/` 及上述候选目录的 `cross-version-reload.log`；计数仍为首次 StartUnit 1、Reload 1、StopUnit 0、受控进程重启 1，没有因 Desktop 版本不同而再次重载。
+- 两个已有 SDK 探针同样通过最终不同版本后端的独立 Local profile 验收；CLI、health、capabilities、OpenAPI 与运行 build-info 的版本一致，SSE／条件写／重启保留等既有场景通过。SDK 探针沿用已验证的 `c4483109ae525659732f7668545b1ffd619b2ae45c68edd0318e899ab9aada4f`，证据 `tmp/acceptance/m6i-independent-client-final.log` 和 `/tmp/patina-independent-client-9g1i35vn/`。
+- 下一项是独立发行载荷的安装路径和旧整包文件归属，随后处理真实 systemd／登录及正式交付验收。版本独立性已经有不同版本真实程序证据，但当前公开 DEB／AppImage 仍是旧整包；没有改动生产安装、创建 tag、推送或公开发布。M2 剩余业务契约与客户端偏好、M3–M5 新客户端 UI 讨论继续保留。

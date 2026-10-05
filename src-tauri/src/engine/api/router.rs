@@ -46,7 +46,7 @@ pub(crate) async fn route_request(
         ("GET", "/api/v1/capabilities") => {
             handlers::capabilities::get_capabilities(context, surface)
         }
-        ("GET", "/api/v1/openapi.json") => handlers::openapi::get_openapi(surface),
+        ("GET", "/api/v1/openapi.json") => handlers::openapi::get_openapi(surface, context.version()),
         ("GET", "/api/v1/diagnostics") => handlers::diagnostics::get_diagnostics(context).await,
         ("GET", "/api/v1/current") => handlers::health::get_current(context),
         ("GET", "/api/v1/sessions") => handlers::sessions::get_sessions(context, query).await,
@@ -712,6 +712,8 @@ mod tests {
         )
         .await;
         assert_eq!(capabilities.body["data"]["server_version"], "1.8.3");
+        let schema = route(&context, surface, "GET", "/api/v1/openapi.json", serde_json::Value::Null).await;
+        assert_eq!(schema.body["info"]["version"], "1.8.3");
         assert_eq!(capabilities.body["data"]["protocol"]["current"], 2);
         assert_eq!(capabilities.body["data"]["write_api"]["available"], true);
 

@@ -11,7 +11,7 @@ use patina_protocol::{
 pub fn current() -> DaemonBuildInfo {
     DaemonBuildInfo {
         format_version: BUILD_INFO_FORMAT_VERSION,
-        package_version: env!("CARGO_PKG_VERSION").to_string(),
+        package_version: crate::platform::build_metadata::ARTIFACT_VERSION.to_string(),
         protocol: ProtocolCapability {
             current: CURRENT_PROTOCOL_VERSION,
             min_supported_client: MIN_SUPPORTED_CLIENT_PROTOCOL_VERSION,
@@ -31,7 +31,10 @@ mod tests {
     fn identity_matches_actual_build_and_server_protocol() {
         let info = current();
         assert_eq!(info.format_version, 1);
-        assert_eq!(info.package_version, env!("CARGO_PKG_VERSION"));
+        assert_eq!(
+            info.package_version,
+            crate::platform::build_metadata::ARTIFACT_VERSION
+        );
         assert!(semver::Version::parse(&info.package_version).is_ok());
         assert!(!info.target.is_empty());
         assert_eq!(info.desktop_feature, cfg!(feature = "desktop"));

@@ -233,7 +233,7 @@ async fn export_snapshot(
         meta: BackupMeta {
             exported_at_ms: now_ms(),
             schema_version: CURRENT_BACKUP_SCHEMA_VERSION,
-            app_version: env!("CARGO_PKG_VERSION").into(),
+            app_version: crate::platform::build_metadata::ARTIFACT_VERSION.into(),
         },
         sessions: vec![],
         title_samples: vec![],

@@ -51,7 +51,7 @@ pub fn build_context(
 ) -> ApiRuntimeContext {
     let context = ApiRuntimeContext::with_state_and_events(
         runtime,
-        env!("CARGO_PKG_VERSION"),
+        crate::platform::build_metadata::ARTIFACT_VERSION,
         std::env::consts::OS,
         Arc::new(DaemonApiRuntimeState {
             tracking,

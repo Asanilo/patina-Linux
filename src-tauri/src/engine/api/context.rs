@@ -69,7 +69,7 @@ impl ApiRuntimeContext {
     pub fn new(runtime: RuntimeContext) -> Self {
         Self::with_state(
             runtime,
-            env!("CARGO_PKG_VERSION"),
+            crate::platform::build_metadata::ARTIFACT_VERSION,
             std::env::consts::OS,
             Arc::new(UnavailableApiRuntimeState),
         )

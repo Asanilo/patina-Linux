@@ -36,7 +36,7 @@
 
 ## 4. 版本号的单一来源
 
-每次发布时，下列位置必须保持同一个版本语义：
+现有 Desktop／整包发布时，下列位置必须保持同一个版本语义：
 
 - `package.json` 的 `version`
 - `package-lock.json` 的 `version`
@@ -62,6 +62,21 @@
 - 代码版本：`1.0.1`
 - Git tag：`v1.0.1`
 - GitHub Release 标题：`Patina v1.0.1`
+
+### 4.1 独立后端构建版本
+
+多客户端分支的无桌面后端以 `packaging/daemon/VERSION` 为 artifact 版本来源。
+`build.rs` 验证该文件是最多 64 字节的 SemVer，并将结果编译进程序；不提供环境变量升版开关。
+CLI、构建身份、服务 API 与由该程序导出的备份 writer 版本使用同一来源。
+Cargo 包版本继续服务于 Desktop／旧整包与内部构建图，不代表独立后端发行版本。
+默认 `desktop` 投影（包括仍随 Desktop 交付的旧 `patinad`）继续使用 Cargo 配套版本。
+
+`release:sync-version` 仍只同步上面的 Desktop／整包文件，不隐式修改后端 VERSION。
+后端版本、协议版本、数据库 schema 和备份格式分别演进；客户端按协议和 capability 连接，
+恢复按备份格式／schema 验证，不能以产品版本相等代替兼容判断。
+独立后端的正式 tag／签名／更新通道仍须完成专用交付验收后启用，不能混用 Desktop 的
+`latest.json` 或覆盖其 Latest Release。临时源码副本中的不同版本 debug 候选不构成发布，
+也不授权推进仓库版本、推送 tag 或公开资产。
 
 ---
 

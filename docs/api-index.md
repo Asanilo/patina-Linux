@@ -33,6 +33,11 @@ Current caveats:
 - The HTTP `Host` authority must be `localhost` or a loopback IP. API request bodies are limited to 64 KiB.
 - `/api/v1/openapi.json` exposes the machine-readable OpenAPI 3.1 schema with paths, query/path parameters, request bodies, response envelopes, auth, error envelopes, and field-level component schemas.
 - The OpenAPI server URL uses a configurable `{port}` variable whose default is `14840`.
+- Health `version`, capabilities `server_version` and OpenAPI `info.version` identify
+  the serving runtime artifact. An independent backend can have a different product
+  version from Desktop; negotiate protocol ranges and capabilities instead of requiring
+  equal product versions. Backup `appVersion`/`meta.app_version` identifies its exporter,
+  while backup format and database schema versions govern data compatibility.
 - This document remains the human-maintained reference for behavior notes and implementation caveats.
 - The desktop runtime exposes the shared JSON endpoints below. Default `patinad` mode exposes authenticated reads plus SSE and rejects all `POST` endpoints. Explicit `--track` mode is the current runtime owner and additionally exposes the bounded activity-import, scheduled-backup, remote-backup list/upload/restore, backup-restore, app-mapping, app-settings, classification, data-maintenance, local-API, runtime, service, Tools, and tracker writes listed by `/api/v1/capabilities`.
 - Default daemon mode remains historical/read-only: `GET /api/v1/current` returns `503` and live tracker/browser diagnostics are `null`.

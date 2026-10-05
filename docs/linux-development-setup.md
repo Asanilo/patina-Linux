@@ -46,6 +46,33 @@ The daemon still uses Linux tracking/audio libraries such as XCB and PulseAudio.
 Use `readelf -d` and `ldd` on the actual binary when validating native dependencies;
 the Cargo dependency check alone does not prove its ELF dependencies.
 
+The no-desktop artifact takes its version from `packaging/daemon/VERSION`, validated
+at build time. Default Desktop/bundled builds keep the Cargo/Tauri version. Cargo may
+therefore report compiling the internal `patina` package at a different version from
+the resulting standalone binary; use `patinad --version` and `--build-info` to identify
+that artifact. API health, capabilities, OpenAPI and backup writer metadata report
+the serving/exporting artifact's version. Protocol and data format versions remain
+separate compatibility contracts.
+
+To verify independent versions without changing repository version files:
+
+```bash
+python3 scripts/acceptance/daemon-version-independence.py \
+  --version 2.0.0-test.1 \
+  --output /absolute/path/new-evidence-directory \
+  --target-dir /absolute/path/dedicated-version-test-target
+```
+
+The helper copies the working source into a private temporary directory, records an
+input inventory, changes only its backend VERSION, builds a debug candidate offline,
+and checks that the original version files remain byte-identical. Source symlinks are
+kept inside the snapshot; external links are refused. It retains the source copy and
+binary for further isolated SDK, backup and lifecycle acceptance. The fixture version
+must differ from Desktop and is not a release version change.
+Its Cargo target must be empty or already marked as a version-fixture cache. Do not
+share the ordinary development target: different source copies can overwrite the
+same executable path while Cargo still considers the original workspace fresh.
+
 `check:full` includes both Desktop and independent daemon tests. Desktop tests
 use the explicit `desktop-tests` feature for Tauri mock support; production
 Desktop builds do not enable that test feature. The no-desktop projection permits

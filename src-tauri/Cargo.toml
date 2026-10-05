@@ -32,6 +32,7 @@ name = "patina_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
+semver = "1"
 tauri-build = { version = "=2.6.3", features = [], optional = true }
 
 [dependencies]

@@ -771,7 +771,7 @@ mod tests {
     #[test]
     fn daemon_read_only_routes_and_openapi_are_bidirectionally_equal() {
         let response =
-            crate::engine::api::handlers::openapi::get_openapi(ApiSurface::DaemonReadOnly);
+            crate::engine::api::handlers::openapi::get_openapi(ApiSurface::DaemonReadOnly, "1.9.2");
         let advertised = response.body["paths"]
             .as_object()
             .unwrap()
@@ -858,7 +858,7 @@ mod tests {
     #[test]
     fn daemon_tracking_routes_and_openapi_are_bidirectionally_equal() {
         let response =
-            crate::engine::api::handlers::openapi::get_openapi(ApiSurface::DaemonTracking);
+            crate::engine::api::handlers::openapi::get_openapi(ApiSurface::DaemonTracking, "1.9.2");
         let advertised = response.body["paths"]
             .as_object()
             .unwrap()

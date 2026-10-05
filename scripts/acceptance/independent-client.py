@@ -77,13 +77,14 @@ def main():
             else:
                 raise AssertionError("unauthenticated read succeeded")
             token = token_file.read_text().strip()
-            def tools_request(path, payload=None):
+            def tools_request(path, payload=None, *, raw=False):
                 request = urllib.request.Request(f"http://127.0.0.1:{port}/api/v1/{path}",
                     data=None if payload is None else json.dumps(payload).encode(),
                     headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
                     method="GET" if payload is None else "POST")
                 with opener.open(request, timeout=5) as response:
-                    return json.load(response)["data"]
+                    value = json.load(response)
+                    return value if raw else value["data"]
 
             until = time.monotonic() + 10
             while not tools_request("capabilities")["tools"]["ready"]:
@@ -93,6 +94,11 @@ def main():
             assert service_before["executable"]["binary_sha256"] == expected_binary_sha256
             assert service_before["executable"]["build"]["desktop_feature"] is False
             assert not service_before.get("executable_error")
+            artifact_version = service_before["executable"]["build"]["package_version"]
+            assert tools_request("health")["version"] == artifact_version
+            assert tools_request("capabilities")["server_version"] == artifact_version
+            assert tools_request("openapi.json", raw=True)["info"]["version"] == artifact_version
+            assert subprocess.check_output([str(daemon), "--version"], env=env, text=True).strip() == "patinad " + artifact_version
             # Replacing the launch path must not report the replacement as running.
             replacement = root / "replacement"
             replacement.write_bytes(b"not the running image\n")

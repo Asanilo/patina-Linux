@@ -207,7 +207,7 @@ async fn load_backup_payload_from_pool(pool: &Pool<Sqlite>) -> Result<BackupPayl
         meta: BackupMeta {
             exported_at_ms: now_ms(),
             schema_version: CURRENT_BACKUP_SCHEMA_VERSION,
-            app_version: env!("CARGO_PKG_VERSION").to_string(),
+            app_version: crate::platform::build_metadata::ARTIFACT_VERSION.to_string(),
         },
         sessions,
         title_samples,
@@ -1296,8 +1296,10 @@ mod tests {
                 INSERT INTO tool_pomodoro_runs VALUES(1,'focus','running',1,100,20,50,4,10,NULL,NULL,0,10,30);
                 INSERT INTO tool_daily_stats VALUES('2026-09-18',2,30);").await.unwrap();
             let expected = load_backup_payload_from_pool(&pool).await.unwrap();
+            assert_eq!(expected.meta.app_version, crate::platform::build_metadata::ARTIFACT_VERSION);
             export_backup_from_pool(&pool, &target).await.unwrap();
             let mut actual = read_backup_payload(&target).unwrap();
+            assert_eq!(actual.meta.app_version, crate::platform::build_metadata::ARTIFACT_VERSION);
             let preview =
                 preview::decode(&mut open_backup_archive(&target).unwrap(), &target).unwrap();
             let async_preview = preview_backup(target.to_string_lossy().into_owned())

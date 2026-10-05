@@ -2,14 +2,14 @@ use crate::engine::api::surface::ApiSurface;
 use crate::engine::api::types::RouteResponse;
 use serde_json::{json, Value};
 
-pub fn get_openapi(surface: ApiSurface) -> RouteResponse {
+pub fn get_openapi(surface: ApiSurface, version: &str) -> RouteResponse {
     RouteResponse {
         status: 200,
         body: json!({
             "openapi": "3.1.0",
             "info": {
                 "title": "Patina Local API",
-                "version": env!("CARGO_PKG_VERSION"),
+                "version": version,
                 "description": "Local-first Patina API for scripts, MCP wrappers, and external AI analysis."
             },
             "servers": [
@@ -2604,7 +2604,8 @@ fn enum_schema(values: Vec<&str>) -> Value {
 mod tests {
     #[test]
     fn openapi_accepts_current_cleanup_and_conditional_policy_capabilities() {
-        let document = super::get_openapi(super::ApiSurface::DaemonTracking).body;
+        let document = super::get_openapi(super::ApiSurface::DaemonTracking, "2.0.0").body;
+        assert_eq!(document["info"]["version"], "2.0.0");
         let values = document
             .pointer("/components/schemas/WriteApiCapability/properties/operations/items/enum")
             .unwrap()
@@ -2623,7 +2624,7 @@ mod tests {
 
     #[test]
     fn openapi_exposes_field_level_schemas_and_parameters() {
-        let response = super::get_openapi(crate::engine::api::surface::ApiSurface::Desktop);
+        let response = super::get_openapi(crate::engine::api::surface::ApiSurface::Desktop, "1.9.2");
         assert_eq!(response.status, 200);
 
         let schemas = response
@@ -2687,7 +2688,7 @@ mod tests {
             "desktop OpenAPI must not advertise the daemon-only upload route"
         );
 
-        let daemon = super::get_openapi(crate::engine::api::surface::ApiSurface::DaemonTracking);
+        let daemon = super::get_openapi(crate::engine::api::surface::ApiSurface::DaemonTracking, "2.0.0");
         assert_eq!(
             daemon
                 .body

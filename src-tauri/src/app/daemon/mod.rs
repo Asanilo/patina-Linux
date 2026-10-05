@@ -269,7 +269,7 @@ pub fn run_with_options(options: DaemonRunOptions) -> Result<(), String> {
         requested_port
     };
     let status = build_startup_status(
-        env!("CARGO_PKG_VERSION"),
+        crate::platform::build_metadata::ARTIFACT_VERSION,
         options,
         &storage_paths,
         confirmed_port,
@@ -480,7 +480,7 @@ mod tests {
         .await;
         assert_eq!(health.status, 200);
         assert_eq!(health.body["data"]["status"], "ok");
-        assert_eq!(health.body["data"]["version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(health.body["data"]["version"], crate::platform::build_metadata::ARTIFACT_VERSION);
 
         let openapi = crate::engine::api::router::route_request(
             request("GET", "/api/v1/openapi.json"),
